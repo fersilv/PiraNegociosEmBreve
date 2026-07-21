@@ -1,5 +1,8 @@
 {
   "name": "PiraNegócios - Coming Soon",
   "description": "Landing page de lançamento para o portal PiraNegócios com links sociais.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

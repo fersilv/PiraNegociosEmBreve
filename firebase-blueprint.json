@@ -1,0 +1,109 @@
+{
+  "projectInfo": {
+    "name": "PiraNegócios Jobs",
+    "description": "Jobs portal with candidate and company flows"
+  },
+  "collections": [
+    {
+      "name": "users",
+      "description": "Users of the platform (candidates and companies)",
+      "fields": [
+        { "name": "name", "type": "string" },
+        { "name": "treatment", "type": "string" },
+        { "name": "phone", "type": "string" },
+        { "name": "email", "type": "string" },
+        { "name": "type", "type": "string", "description": "'COMPANY' or 'CANDIDATE'" },
+        { "name": "companyId", "type": "string", "description": "Optional, if type is COMPANY" },
+        { "name": "bio", "type": "string", "description": "For candidates" },
+        { "name": "resumeURL", "type": "string", "description": "For candidates" },
+        { "name": "fcmToken", "type": "string", "description": "FCM Registration Token" },
+        { "name": "fcmTokenUpdatedAt", "type": "timestamp", "description": "FCM Token updated timestamp" },
+        { "name": "createdAt", "type": "timestamp" }
+      ],
+      "access": {
+        "read": "user can read their own profile, companies can read candidate profiles if they applied",
+        "create": "authenticated user can create their own profile",
+        "update": "user can update their own profile",
+        "delete": "user can delete their own profile"
+      }
+    },
+    {
+      "name": "companies",
+      "description": "Companies registered on the platform",
+      "fields": [
+        { "name": "name", "type": "string" },
+        { "name": "description", "type": "string" },
+        { "name": "ownerId", "type": "string" },
+        { "name": "createdAt", "type": "timestamp" }
+      ],
+      "access": {
+        "read": "public",
+        "create": "authenticated users can create",
+        "update": "only owner can update",
+        "delete": "only owner can delete"
+      }
+    },
+    {
+      "name": "jobs",
+      "description": "Job listings",
+      "fields": [
+        { "name": "title", "type": "string" },
+        { "name": "companyId", "type": "string" },
+        { "name": "companyName", "type": "string" },
+        { "name": "location", "type": "string" },
+        { "name": "salary", "type": "string" },
+        { "name": "type", "type": "string" },
+        { "name": "description", "type": "string" },
+        { "name": "isSponsored", "type": "boolean" },
+        { "name": "postedAt", "type": "timestamp" },
+        { "name": "active", "type": "boolean" },
+        { "name": "ownerId", "type": "string" }
+      ],
+      "access": {
+        "read": "public",
+        "create": "authenticated users with type COMPANY can create",
+        "update": "only owner can update",
+        "delete": "only owner can delete"
+      }
+    },
+    {
+      "name": "applications",
+      "description": "Job applications",
+      "fields": [
+        { "name": "jobId", "type": "string" },
+        { "name": "candidateId", "type": "string" },
+        { "name": "companyId", "type": "string" },
+        { "name": "status", "type": "string" },
+        { "name": "appliedAt", "type": "timestamp" },
+        { "name": "resumeURL", "type": "string" }
+      ],
+      "access": {
+        "read": "candidate can read their own, company owner can read applications for their company",
+        "create": "candidates can create",
+        "update": "company owner can update status",
+        "delete": "no one can delete"
+      }
+    },
+    {
+      "name": "notifications",
+      "description": "System push and in-app notifications",
+      "fields": [
+        { "name": "userId", "type": "string" },
+        { "name": "title", "type": "string" },
+        { "name": "message", "type": "string" },
+        { "name": "type", "type": "string", "description": "'status_update' or 'new_job'" },
+        { "name": "createdAt", "type": "timestamp" },
+        { "name": "read", "type": "boolean" },
+        { "name": "jobId", "type": "string", "description": "Optional reference to a job" },
+        { "name": "jobTitle", "type": "string", "description": "Optional job title" },
+        { "name": "companyName", "type": "string", "description": "Optional company name" }
+      ],
+      "access": {
+        "read": "recipient of the notification can read",
+        "create": "companies, admins, or systems can create",
+        "update": "recipient of the notification can update (mark as read)",
+        "delete": "recipient of the notification can delete"
+      }
+    }
+  ]
+}

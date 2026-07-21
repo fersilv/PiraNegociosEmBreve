@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.type == 'ADMIN';
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Users
+    match /users/{userId} {
+      // Anyone can read for now to simplify companies reading candidate profiles
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId);
+      allow update, delete: if isOwner(userId) || isAdmin();
+    }
+    
+    // Companies
+    match /companies/{companyId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAdmin() || (isAuthenticated() && (resource.data.ownerId == request.auth.uid || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == companyId));
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.ownerId == request.auth.uid);
+    }
+    
+    // Jobs
+    match /jobs/{jobId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isAdmin() || (isAuthenticated() && (resource.data.ownerId == request.auth.uid || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.companyId == resource.data.companyId));
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.ownerId == request.auth.uid);
+    }
+    
+    // Ads
+    match /ads/{adId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // Configurations (including Google Ads / AdMob configurations)
+    match /configs/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // Applications
+    match /applications/{applicationId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.candidateId == request.auth.uid;
+      allow update: if isAuthenticated();
+      allow delete: if false;
+    }
+    
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read, update, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated();
+    }
+    // Email Templates
+    match /emailTemplates/{templateId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Company Hiring Config
+    match /company_hiring_config/{configId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+  }
+}
