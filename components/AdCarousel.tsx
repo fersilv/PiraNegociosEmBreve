@@ -1,8 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { AdSpace } from './AdSpace';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { api } from '../lib/api';
 
 export function AdCarousel() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -13,11 +12,9 @@ export function AdCarousel() {
   useEffect(() => {
     const fetchAds = async () => {
       try {
-        const q = query(collection(db, 'ads'), where('type', '==', 'carousel'), where('active', '==', true));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          setAds(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        }
+        const res = await api.get('/ads');
+        const carouselAds = (res.data || []).filter((a: any) => a.type === 'carousel' && a.active);
+        setAds(carouselAds);
       } catch (e) {
         console.error(e);
       }

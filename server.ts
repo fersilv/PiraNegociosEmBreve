@@ -1,15 +1,70 @@
 import express from 'express';
+import 'dotenv/config';
 import path from 'path';
+import { readFileSync } from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
+import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+
+type AuthenticatedRequest = express.Request & { firebaseUser?: { uid: string; email?: string } };
+
+function initializeFirebaseAdmin() {
+  if (getApps().length > 0) return true;
+  try {
+    const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    const credentialPath = process.env.FIREBASE_CREDENTIALS;
+    const credential = serviceAccount
+      ? cert(JSON.parse(serviceAccount))
+      : credentialPath
+        ? cert(JSON.parse(readFileSync(credentialPath, 'utf8')))
+        : applicationDefault();
+    initializeApp({ credential });
+    return true;
+  } catch (error) {
+    console.error('Firebase Admin não foi configurado para proteger as rotas de IA.', error);
+    return false;
+  }
+}
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   // Configure body parsing for base64 resumes and images
-  app.use(express.json({ limit: '20mb' }));
-  app.use(express.urlencoded({ limit: '20mb', extended: true }));
+  app.use(express.json({ limit: '16mb' }));
+  app.use(express.urlencoded({ limit: '16mb', extended: true }));
+
+  const firebaseReady = initializeFirebaseAdmin();
+  const aiRequests = new Map<string, number[]>();
+
+  const requireFirebaseUser: express.RequestHandler = async (req: AuthenticatedRequest, res, next) => {
+    if (!firebaseReady) {
+      return res.status(503).json({ error: 'Serviço de autenticação indisponível.' });
+    }
+    const token = req.header('authorization')?.replace(/^Bearer\s+/i, '');
+    if (!token) return res.status(401).json({ error: 'Autenticação obrigatória.' });
+    try {
+      const decoded = await getAuth().verifyIdToken(token);
+      req.firebaseUser = { uid: decoded.uid, email: decoded.email };
+      next();
+    } catch {
+      return res.status(401).json({ error: 'Sessão inválida ou expirada.' });
+    }
+  };
+
+  const limitAiRequests = (maximumPerHour: number): express.RequestHandler => (req: AuthenticatedRequest, res, next) => {
+    const uid = req.firebaseUser?.uid;
+    if (!uid) return res.status(401).json({ error: 'Autenticação obrigatória.' });
+    const now = Date.now();
+    const recent = (aiRequests.get(uid) || []).filter(time => now - time < 60 * 60 * 1000);
+    if (recent.length >= maximumPerHour) {
+      return res.status(429).json({ error: 'Limite temporário de análises atingido. Tente novamente mais tarde.' });
+    }
+    recent.push(now);
+    aiRequests.set(uid, recent);
+    next();
+  };
 
   // Shared server-side Gemini client
   const ai = new GoogleGenAI({
@@ -22,10 +77,10 @@ async function startServer() {
   });
 
   // REST API Endpoint for AI resume analysis & parsing
-  app.post('/api/gemini/analyze-resume', async (req, res) => {
+  app.post('/api/gemini/analyze-resume', requireFirebaseUser, limitAiRequests(10), async (req, res) => {
     try {
       const { base64File, mimeType } = req.body;
-      if (!base64File) {
+      if (typeof base64File !== 'string' || !base64File) {
         return res.status(400).json({ error: 'Nenhum arquivo de currículo enviado.' });
       }
 
@@ -45,6 +100,11 @@ async function startServer() {
           cleanMimeType = parts[0].split(':')[1];
           cleanBase64 = parts[1];
         }
+      }
+
+      const allowedMimeTypes = new Set(['application/pdf', 'image/png', 'image/jpeg']);
+      if (!allowedMimeTypes.has(cleanMimeType) || cleanBase64.length > 14 * 1024 * 1024) {
+        return res.status(400).json({ error: 'Envie um PDF, PNG ou JPEG de até 10 MB.' });
       }
 
       const filePart = {
@@ -176,18 +236,16 @@ Certifique-se de que todas as datas e nomes próprios estejam capitalizados de f
 
     } catch (err: any) {
       console.error('AI Resume parsing error:', err);
-      return res.status(500).json({ 
-        error: err.message || 'Erro interno ao realizar a análise do currículo por IA.' 
-      });
+      return res.status(500).json({ error: 'Não foi possível analisar o currículo agora. Tente novamente.' });
     }
   });
 
   // REST API Endpoint for AI job matching
-  app.post('/api/gemini/job-match', async (req, res) => {
+  app.post('/api/gemini/job-match', requireFirebaseUser, limitAiRequests(20), async (req, res) => {
     try {
       const { profile, jobs, applications } = req.body;
       
-      if (!profile || !jobs) {
+      if (!profile || !Array.isArray(jobs) || jobs.length === 0 || jobs.length > 100) {
         return res.status(400).json({ error: 'Perfil do candidato e lista de vagas são obrigatórios.' });
       }
 
@@ -266,9 +324,7 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
 
     } catch (err: any) {
       console.error('AI Job Match error:', err);
-      return res.status(500).json({ 
-        error: err.message || 'Erro interno ao realizar o match de vagas por IA.' 
-      });
+      return res.status(500).json({ error: 'Não foi possível gerar recomendações agora. Tente novamente.' });
     }
   });
 

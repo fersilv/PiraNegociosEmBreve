@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, query, getDocs, getDoc, updateDoc, doc, deleteDoc, addDoc, setDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { api } from '../lib/api';
 import { 
   Shield, 
   Briefcase, 
@@ -22,7 +21,6 @@ import {
   FileText,
   Loader2
 } from 'lucide-react';
-import { sendNotificationToUser } from '../lib/notifications';
 import { FileUpload } from '../components/FileUpload';
 
 export function AdminDashboard() {
@@ -67,30 +65,18 @@ export function AdminDashboard() {
     setLoading(true);
     try {
       if (activeTab === 'jobs') {
-        const snap = await getDocs(query(collection(db, 'jobs')));
-        setJobs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const res = await api.get('/admin/jobs');
+        setJobs(res.data || []);
       } else if (activeTab === 'users') {
-        const userSnap = await getDocs(query(collection(db, 'users')));
-        const companySnap = await getDocs(query(collection(db, 'companies')));
-        
-        const companyMap: Record<string, any> = {};
-        companySnap.docs.forEach(docSnap => {
-          companyMap[docSnap.id] = { id: docSnap.id, ...docSnap.data() };
-        });
-        
-        setUsers(userSnap.docs.map(d => {
-          const u = d.data();
-          const linkedCompany = u.companyId ? companyMap[u.companyId] : null;
-          return { id: d.id, linkedCompany, ...u };
-        }));
+        const res = await api.get('/admin/users');
+        setUsers(res.data || []);
       } else if (activeTab === 'ads') {
-        const snap = await getDocs(query(collection(db, 'ads')));
-        setAds(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const adsRes = await api.get('/admin/ads');
+        setAds(adsRes.data || []);
 
-        // Fetch global Google Ads / AdMob configurations
-        const configDoc = await getDoc(doc(db, 'configs', 'advertising'));
-        if (configDoc.exists()) {
-          const configData = configDoc.data();
+        const configRes = await api.get('/admin/configs/advertising').catch(() => null);
+        if (configRes && configRes.data) {
+          const configData = configRes.data;
           setGoogleAdsEnabled(configData.googleAdsEnabled ?? false);
           setGoogleAdsClient(configData.googleAdsClient ?? '');
           setGoogleAdsSlotLeaderboard(configData.googleAdsSlotLeaderboard ?? '');
@@ -101,25 +87,12 @@ export function AdminDashboard() {
           setAdMobUnitIdInterstitial(configData.adMobUnitIdInterstitial ?? '');
         }
       } else if (activeTab === 'emails') {
-        const snap = await getDocs(query(collection(db, 'emailTemplates')));
-        if (snap.empty) {
-          const defaults = [
-            { id: 'welcome_email', subject: 'Bem-vindo ao PiraNegócios!', html: '<p>Olá {{name}}!</p><p>Bem-vindo à nossa plataforma.</p>', variables: 'name, email' },
-            { id: 'application_received', subject: 'Candidatura Recebida', html: '<p>Olá {{name}}!</p><p>Sua candidatura para a vaga {{job_title}} foi recebida com sucesso pela empresa {{company_name}}.</p>', variables: 'name, job_title, company_name' },
-            { id: 'interview_scheduled', subject: 'Entrevista Agendada', html: '<p>Olá {{name}}!</p><p>Sua entrevista para a vaga {{job_title}} foi agendada para {{date}}.</p>', variables: 'name, job_title, date' },
-            { id: 'feedback_sent', subject: 'Atualização sobre sua candidatura', html: '<p>Olá {{name}}!</p><p>Temos uma atualização sobre sua candidatura para {{job_title}}.</p><p>{{feedback_message}}</p>', variables: 'name, job_title, feedback_message' },
-          ];
-          for (const t of defaults) {
-            await setDoc(doc(db, 'emailTemplates', t.id), t);
-          }
-          setEmailTemplates(defaults);
-        } else {
-          setEmailTemplates(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        }
+        const res = await api.get('/admin/email-templates');
+        setEmailTemplates(res.data || []);
       } else if (activeTab === 'ai') {
-        const configDoc = await getDoc(doc(db, 'configs', 'ai'));
-        if (configDoc.exists()) {
-          setAiLimitInput(configDoc.data().limit ?? 1);
+        const res = await api.get('/admin/configs/ai').catch(() => null);
+        if (res && res.data) {
+          setAiLimitInput(res.data.limit ?? 1);
         } else {
           setAiLimitInput(1);
         }
@@ -139,9 +112,7 @@ export function AdminDashboard() {
     setSavingAiLimit(true);
     setAiConfigSuccess(false);
     try {
-      await setDoc(doc(db, 'configs', 'ai'), {
-        limit: Number(aiLimitInput) || 1
-      });
+      await api.put('/admin/configs/ai', { limit: Number(aiLimitInput) || 1 });
       setAiConfigSuccess(true);
       setTimeout(() => setAiConfigSuccess(false), 4000);
     } catch (err) {
@@ -152,45 +123,45 @@ export function AdminDashboard() {
   };
 
   const toggleJobStatus = async (jobId: string, currentStatus: boolean) => {
-    await updateDoc(doc(db, 'jobs', jobId), { active: !currentStatus });
+    await api.put(`/admin/jobs/${jobId}/status`, { active: !currentStatus });
     fetchData();
   };
 
   const toggleJobSponsor = async (jobId: string, currentSponsor: boolean) => {
-    await updateDoc(doc(db, 'jobs', jobId), { isSponsored: !currentSponsor });
+    await api.put(`/admin/jobs/${jobId}/sponsor`, { isSponsored: !currentSponsor });
     fetchData();
   };
 
   const deleteJob = async (jobId: string) => {
     if (confirm('Tem certeza que deseja excluir esta vaga?')) {
-      await deleteDoc(doc(db, 'jobs', jobId));
+      await api.delete(`/admin/jobs/${jobId}`);
       fetchData();
     }
   };
 
   const deleteUser = async (userId: string) => {
     if (confirm('Tem certeza que deseja excluir este usuário?')) {
-      await deleteDoc(doc(db, 'users', userId));
+      await api.delete(`/admin/users/${userId}`);
       fetchData();
     }
   };
 
   const promoteToAdmin = async (userId: string) => {
     if (confirm('Tornar este usuário um Administrador?')) {
-      await updateDoc(doc(db, 'users', userId), { type: 'ADMIN' });
+      await api.put(`/admin/users/${userId}/promote`);
       fetchData();
     }
   };
 
   const toggleVerification = async (userId: string, currentStatus: boolean) => {
-    await updateDoc(doc(db, 'users', userId), { isVerified: !currentStatus });
+    await api.put(`/admin/users/${userId}/verify`, { isVerified: !currentStatus });
     fetchData();
   };
 
   const handleSaveAdvertisingConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await setDoc(doc(db, 'configs', 'advertising'), {
+      await api.put('/admin/configs/advertising', {
         googleAdsEnabled,
         googleAdsClient,
         googleAdsSlotLeaderboard,
@@ -198,8 +169,7 @@ export function AdminDashboard() {
         adMobEnabled,
         adMobAppId,
         adMobUnitIdBanner,
-        adMobUnitIdInterstitial,
-        updatedAt: new Date().toISOString()
+        adMobUnitIdInterstitial
       });
       alert('Configurações de publicidade Google Ads e AdMob salvas com sucesso!');
       fetchData();
@@ -212,23 +182,7 @@ export function AdminDashboard() {
   const handleApproveCompany = async (companyId: string, companyUserId: string) => {
     setSubmittingReview(true);
     try {
-      await updateDoc(doc(db, 'companies', companyId), {
-        verificationStatus: 'VERIFIED',
-        isVerified: true,
-        rejectionReason: ''
-      });
-
-      await updateDoc(doc(db, 'users', companyUserId), {
-        isVerified: true
-      });
-
-      await sendNotificationToUser(
-        companyUserId,
-        'Cadastro Aprovado! 🎉',
-        'O perfil de sua empresa foi verificado com sucesso por nossa administração. Você já pode publicar e moderar vagas de forma pública!',
-        'status_update'
-      );
-
+      await api.post(`/admin/companies/${companyId}/approve`, { userId: companyUserId });
       alert('Empresa aprovada e certificada com sucesso!');
       setReviewingUser(null);
       fetchData();
@@ -247,23 +201,10 @@ export function AdminDashboard() {
     }
     setSubmittingReview(true);
     try {
-      await updateDoc(doc(db, 'companies', companyId), {
-        verificationStatus: 'REJECTED',
-        isVerified: false,
-        rejectionReason: rejectionReasonInput
+      await api.post(`/admin/companies/${companyId}/reject`, { 
+        userId: companyUserId,
+        reason: rejectionReasonInput 
       });
-
-      await updateDoc(doc(db, 'users', companyUserId), {
-        isVerified: false
-      });
-
-      await sendNotificationToUser(
-        companyUserId,
-        'Cadastro de Empresa Recusado ❌',
-        `A aprovação de sua empresa foi recusada. Motivo: ${rejectionReasonInput}`,
-        'status_update'
-      );
-
       alert('Cadastro recusado com sucesso. O usuário foi notificado para realizar as correções.');
       setReviewingUser(null);
       setRejectionReasonInput('');
@@ -289,9 +230,9 @@ export function AdminDashboard() {
       };
       
       if (editingAdId) {
-        await updateDoc(doc(db, 'ads', editingAdId), adData);
+        await api.put(`/admin/ads/${editingAdId}`, adData);
       } else {
-        await addDoc(collection(db, 'ads'), adData);
+        await api.post('/admin/ads', adData);
       }
       setIsAdFormOpen(false);
       fetchData();
@@ -303,13 +244,13 @@ export function AdminDashboard() {
 
   const deleteAd = async (adId: string) => {
     if (confirm('Excluir este anúncio?')) {
-      await deleteDoc(doc(db, 'ads', adId));
+      await api.delete(`/admin/ads/${adId}`);
       fetchData();
     }
   };
 
   const toggleAdStatus = async (adId: string, currentStatus: boolean) => {
-    await updateDoc(doc(db, 'ads', adId), { active: !currentStatus });
+    await api.put(`/admin/ads/${adId}/status`, { active: !currentStatus });
     fetchData();
   };
 
@@ -336,7 +277,7 @@ export function AdminDashboard() {
     e.preventDefault();
     if (!editingTemplateId) return;
     try {
-      await updateDoc(doc(db, 'emailTemplates', editingTemplateId), {
+      await api.put(`/admin/email-templates/${editingTemplateId}`, {
         subject: templateSubject,
         html: templateHtml
       });

@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { doc, getDoc, updateDoc, onSnapshot, addDoc, collection } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { api } from '../lib/api';
 import { Loader2, ArrowLeft, CheckCircle2, AlertTriangle, XCircle, Save, Smartphone, QrCode, FileText, Check, Lock, Send, Clock } from 'lucide-react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { FileUpload } from '../components/FileUpload';
 import { DEFAULT_HIRING_DOCUMENTS } from './CompanyHiringConfig';
 import { openBase64InNewTab } from '../lib/fileViewer';
+import { ApplicationChat } from '../components/ApplicationChat';
 
 export function CandidateOnboardingPage() {
   const { appId } = useParams<{ appId: string }>();
@@ -24,72 +24,45 @@ export function CandidateOnboardingPage() {
   const [consentStorage, setConsentStorage] = useState(true);
   const [showMainQrModal, setShowMainQrModal] = useState(false);
 
+  const fetchOnboardingData = async () => {
+    try {
+      const appRes = await api.get(`/applications/${appId}`);
+      const appData = appRes.data;
+      
+      setApplication(appData);
+      if (appData.onboardingDocs) {
+        setUploadedDocs(appData.onboardingDocs);
+      }
+
+      const companyId = appData.companyId;
+      if (companyId) {
+        const configRes = await api.get(`/companies/${companyId}/hiring-config`).catch(() => null);
+        if (configRes && configRes.data) {
+          setCompanyConfig(configRes.data);
+        }
+      }
+      setIs404(false);
+    } catch (error) {
+      console.error("fetchOnboardingData error:", error);
+      setIs404(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
+    let interval: any;
     if (!authLoading) {
       if (appId && user) {
-        setIs404(false);
         setLoading(true);
-
-        // Real-time synchronization across devices (Mobile & Desktop)
-        const unsubscribe = onSnapshot(doc(db, 'applications', appId), async (appSnap) => {
-          if (appSnap.exists()) {
-            const appData = appSnap.data();
-            let companyOwnerId = appData.companyId;
-
-            if (appData.jobId) {
-              try {
-                const jobRef = await getDoc(doc(db, 'jobs', appData.jobId));
-                if (jobRef.exists()) {
-                  companyOwnerId = companyOwnerId || jobRef.data().ownerId || jobRef.data().companyId;
-                }
-              } catch (e) {}
-            }
-
-            // Sync candidateId if missing or different
-            if (user?.uid && (profile?.type === 'CANDIDATE' || !appData.candidateId || appData.candidateId !== user.uid)) {
-              if (!appData.candidateId || (user.email && appData.candidateEmail && appData.candidateEmail.toLowerCase() === user.email.toLowerCase())) {
-                try {
-                  await updateDoc(doc(db, 'applications', appSnap.id), { 
-                    candidateId: user.uid,
-                    candidateEmail: user.email || appData.candidateEmail || ''
-                  });
-                  appData.candidateId = user.uid;
-                } catch (e) {
-                  console.error('Failed to sync candidateId:', e);
-                }
-              }
-            }
-
-            setApplication({ id: appSnap.id, ...appData });
-            if (appData.onboardingDocs) {
-              setUploadedDocs(appData.onboardingDocs);
-            }
-
-            // Load company hiring config
-            const idsToTry = Array.from(new Set([appData.companyId, companyOwnerId, profile?.companyId, profile?.uid].filter(Boolean)));
-            for (const cid of idsToTry) {
-              const compRef = await getDoc(doc(db, 'company_hiring_config', cid as string));
-              if (compRef.exists()) {
-                setCompanyConfig(compRef.data());
-                break;
-              }
-            }
-            setLoading(false);
-          } else {
-            setIs404(true);
-            setLoading(false);
-          }
-        }, (error) => {
-          console.error("onSnapshot error:", error);
-          setIs404(true);
-          setLoading(false);
-        });
-
-        return () => unsubscribe();
+        fetchOnboardingData();
+        // Polling para substituir onSnapshot e manter sincronia entre celular e desktop
+        interval = setInterval(fetchOnboardingData, 5000);
       } else if (!user) {
         navigate(`/login?returnTo=${encodeURIComponent(window.location.pathname)}`, { replace: true });
       }
     }
+    return () => clearInterval(interval);
   }, [appId, user, authLoading]);
 
   const handleUpload = async (docId: string, base64: string) => {
@@ -110,31 +83,16 @@ export function CandidateOnboardingPage() {
   const saveDocs = async (docs: any) => {
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'applications', appId!), {
+      const activeDocsList = (companyConfig?.documents && companyConfig.documents.length > 0)
+        ? companyConfig.documents
+        : DEFAULT_HIRING_DOCUMENTS;
+        
+      await api.put(`/applications/${appId}/docs`, {
         onboardingDocs: docs,
-        submittedForReview: true,
-        onboardingStatus: 'under_review',
-        updatedAt: new Date().toISOString()
+        consentStorage,
+        activeDocsList: activeDocsList
       });
 
-      if (consentStorage && user) {
-        const profileRef = doc(db, 'users', user.uid);
-        const pSnap = await getDoc(profileRef);
-        if (pSnap.exists()) {
-          const currentSaved = pSnap.data().savedDocs || {};
-          const docsToSave: any = { ...currentSaved };
-          const activeDocsList = (companyConfig?.documents && companyConfig.documents.length > 0)
-            ? companyConfig.documents
-            : DEFAULT_HIRING_DOCUMENTS;
-          const allActiveDocs = [...activeDocsList, ...(application?.customDocs || [])];
-          for (const d of allActiveDocs) {
-            if (docs[d.id] && docs[d.id].url) {
-              docsToSave[d.name] = docs[d.id].url;
-            }
-          }
-          await updateDoc(profileRef, { savedDocs: docsToSave });
-        }
-      }
     } catch (e) {
       console.error(e);
       alert('Erro ao salvar o documento.');
@@ -146,30 +104,9 @@ export function CandidateOnboardingPage() {
   const handleConfirmAndSubmit = async () => {
     setSubmitting(true);
     try {
-      await updateDoc(doc(db, 'applications', appId!), {
-        submittedForReview: true,
-        onboardingStatus: 'under_review',
-        submittedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-
-      // Notify company
-      if (application?.companyId) {
-        try {
-          await addDoc(collection(db, 'notifications'), {
-            userId: application.companyId,
-            type: 'ONBOARDING_SUBMITTED',
-            title: 'Documentos Recebidos para Análise',
-            message: `O candidato ${profile?.socialName || profile?.name || 'Candidato'} enviou a documentação de admissão da vaga ${application.jobTitle}.`,
-            jobId: application.jobId,
-            appId: application.id,
-            read: false,
-            createdAt: new Date().toISOString()
-          });
-        } catch (e) {}
-      }
-
+      await api.post(`/applications/${appId}/submit-docs`);
       alert('Documentação enviada para análise da empresa com sucesso! Seus documentos estão agora bloqueados aguardando validação.');
+      fetchOnboardingData();
     } catch (e) {
       console.error(e);
       alert('Erro ao confirmar envio.');
@@ -533,6 +470,14 @@ export function CandidateOnboardingPage() {
       </div>
 
       {/* QR CODE MODAL FOR MOBILE SCANNING */}
+      {(application.documentsRequested || ['DOCUMENTS_REQUESTED', 'DOCUMENTS_SUBMITTED', 'HIRED'].includes(application.status)) && (
+        <ApplicationChat
+          applicationId={application.id}
+          documentOptions={requiredDocs.map((document: any) => ({ id: document.id, name: document.name }))}
+          onApplicationUpdated={fetchOnboardingData}
+        />
+      )}
+
       {showMainQrModal && (
         <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl relative border border-stone-200">

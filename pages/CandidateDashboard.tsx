@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth, getGreetingName } from '../contexts/AuthContext';
-import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { api } from '../lib/api';
 import { Briefcase, FileText, Sparkles, Loader2, ArrowRight, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
 import { openBase64InNewTab } from '../lib/fileViewer';
 import { Link } from 'react-router-dom';
@@ -19,29 +18,28 @@ export function CandidateDashboard() {
 
   useEffect(() => {
     if (!user) return;
-    setLoadingApps(true);
-
-    const q = query(collection(db, 'applications'), where('candidateId', '==', user.uid));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const apps = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMyApplications(apps);
-      setLoadingApps(false);
-    }, (err) => {
-      console.error('Error listening to applications:', err);
-      setLoadingApps(false);
-    });
-
-    fetchJobsMap();
-
-    return () => unsubscribe();
+    fetchDashboardData();
   }, [user]);
+
+  const fetchDashboardData = async () => {
+    setLoadingApps(true);
+    try {
+      await fetchJobsMap();
+      const res = await api.get('/applications/me');
+      setMyApplications(res.data || []);
+    } catch (err) {
+      console.error('Error fetching applications:', err);
+    } finally {
+      setLoadingApps(false);
+    }
+  };
 
   const handleWithdraw = async (appId: string) => {
     if (confirm('Tem certeza que deseja desistir desta candidatura? Isso não pode ser desfeito.')) {
       try {
-        const { deleteDoc, doc } = await import('firebase/firestore');
-        await deleteDoc(doc(db, 'applications', appId));
+        await api.delete(`/applications/${appId}`);
         alert('Candidatura cancelada com sucesso.');
+        fetchDashboardData();
       } catch (e) {
         console.error(e);
         alert('Erro ao cancelar candidatura.');
@@ -51,10 +49,10 @@ export function CandidateDashboard() {
 
   const fetchJobsMap = async () => {
     try {
-      const snap = await getDocs(collection(db, 'jobs'));
+      const res = await api.get('/jobs');
       const map: Record<string, any> = {};
-      snap.docs.forEach(doc => {
-        map[doc.id] = { id: doc.id, ...doc.data() };
+      (res.data || []).forEach((job: any) => {
+        map[job.id] = job;
       });
       setJobsMap(map);
     } catch (e) {
@@ -63,6 +61,7 @@ export function CandidateDashboard() {
   };
 
   const handleMatchAI = async () => {
+    if (!user) return;
     setMatching(true);
     setMatchError('');
     try {
@@ -72,27 +71,21 @@ export function CandidateDashboard() {
         return;
       }
 
-      const res = await fetch('/api/gemini/job-match', {
+      const response = await fetch('/api/gemini/job-match', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          profile,
-          jobs: activeJobs,
-          applications: myApplications
-        })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${await user.getIdToken()}`,
+        },
+        body: JSON.stringify({ profile, jobs: activeJobs, applications: myApplications }),
       });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Erro na requisição');
-      }
-
-      const data = await res.json();
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Não foi possível gerar recomendações.');
       setMatchResults(data.matches);
 
     } catch (err: any) {
       console.error(err);
-      setMatchError(err.message || 'Erro ao processar as recomendações.');
+      setMatchError(err.response?.data?.error || err.message || 'Erro ao processar as recomendações.');
     } finally {
       setMatching(false);
     }

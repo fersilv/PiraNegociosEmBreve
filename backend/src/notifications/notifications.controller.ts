@@ -1,0 +1,54 @@
+import { BadRequestException, Controller, ForbiddenException, Get, Post, Put, Delete, Body, Param, UseGuards, Req } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { NotificationsService } from './notifications.service';
+import { FirebaseAuthGuard } from '../auth/auth.guard';
+import { Notification } from './entities/notification.entity';
+import { User, UserType } from '../users/entities/user.entity';
+
+@Controller('notifications')
+@UseGuards(FirebaseAuthGuard)
+export class NotificationsController {
+  constructor(
+    private readonly notifsService: NotificationsService,
+    @InjectRepository(User) private readonly usersRepository: Repository<User>,
+  ) {}
+
+  @Get()
+  findAll(@Req() req: any) {
+    return this.notifsService.findAllForUser(req.user.uid);
+  }
+
+  @Post()
+  create(@Req() req: any, @Body() createData: Partial<Notification>) {
+    if (createData.userId !== req.user.uid) {
+      throw new ForbiddenException('Notificações para terceiros são criadas apenas por fluxos internos autorizados.');
+    }
+    return this.notifsService.create({ ...createData, userId: req.user.uid });
+  }
+
+  @Post('new-job')
+  async notifyNewJob(@Req() req: any, @Body() jobData: any) {
+    const user = await this.usersRepository.findOne({ where: { id: req.user.uid } });
+    if (!user || ![UserType.COMPANY, UserType.ADMIN].includes(user.type)) {
+      throw new ForbiddenException('Apenas empresas podem publicar alertas de vaga.');
+    }
+    if (!jobData?.jobId || !jobData?.jobTitle) throw new BadRequestException('Dados da vaga inválidos.');
+    return this.notifsService.notifyNewJob(jobData);
+  }
+
+  @Put('read-all')
+  markAllAsRead(@Req() req: any) {
+    return this.notifsService.markAllAsRead(req.user.uid);
+  }
+
+  @Put(':id/read')
+  markAsRead(@Req() req: any, @Param('id') id: string) {
+    return this.notifsService.markAsRead(req.user.uid, id);
+  }
+
+  @Delete(':id')
+  remove(@Req() req: any, @Param('id') id: string) {
+    return this.notifsService.remove(req.user.uid, id);
+  }
+}

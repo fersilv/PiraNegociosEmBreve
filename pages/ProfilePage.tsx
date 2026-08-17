@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth, ProfessionalExperience, ExtraCourse, AcademicEducation, ResumeAIAnalysis } from '../contexts/AuthContext';
-import { doc, updateDoc, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { api } from '../lib/api';
 import { 
   User, 
   Phone, 
@@ -93,7 +92,7 @@ export function ProfilePage() {
   useEffect(() => {
     if (!user || !profile) return;
     
-    setUserName(profile.name || '');
+    setUserName(profile.displayName || profile.fullName || profile.name || '');
     setUserSocialName(profile.socialName || '');
     setUserPhone(profile.phone || '');
     setUserTreatment(profile.treatment || '');
@@ -125,7 +124,8 @@ export function ProfilePage() {
     setLoading(true);
     try {
       const updates: any = {
-        name: userName,
+        displayName: userName,
+        fullName: userName,
         socialName: userSocialName,
         phone: userPhone,
         treatment: userTreatment,
@@ -145,7 +145,7 @@ export function ProfilePage() {
         updates.linkedinURL = linkedinURL;
       }
 
-      await updateDoc(doc(db, 'users', user.uid), updates);
+      await api.post('/users/me', updates);
       await refreshProfile();
       alert('Seu perfil foi atualizado com sucesso!');
     } catch (err) {
@@ -340,6 +340,7 @@ export function ProfilePage() {
 
   // Run AI Resume Extraction & Optimization
   const runAiResumeAnalysis = async () => {
+    if (!user) return;
     if (!candidateResumeUrl) {
       alert('Faça o upload do seu currículo primeiro para que a IA possa analisá-lo.');
       return;
@@ -351,11 +352,10 @@ export function ProfilePage() {
     // Fetch and check limits
     let globalLimit = 1; // Default to 1 free analysis
     try {
-      const aiConfigDoc = await getDoc(doc(db, 'configs', 'ai'));
-      if (aiConfigDoc.exists()) {
-        const configData = aiConfigDoc.data();
-        if (configData.limit !== undefined) {
-          globalLimit = Number(configData.limit);
+      const aiConfigResponse = await api.get('/configs/ai').catch(() => null);
+      if (aiConfigResponse && aiConfigResponse.data) {
+        if (aiConfigResponse.data.limit !== undefined) {
+          globalLimit = Number(aiConfigResponse.data.limit);
         }
       }
     } catch (err) {
@@ -400,7 +400,8 @@ export function ProfilePage() {
       const response = await fetch('/api/gemini/analyze-resume', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${await user.getIdToken()}`
         },
         body: JSON.stringify({
           base64File: candidateResumeUrl,
@@ -416,14 +417,7 @@ export function ProfilePage() {
       const parsedData = await response.json();
       setAiResult(parsedData);
 
-      // Increment AI count in user's profile and refresh
-      if (user) {
-        const newCount = currentCount + 1;
-        await updateDoc(doc(db, 'users', user.uid), {
-          aiAnalysisCount: newCount
-        });
-        await refreshProfile();
-      }
+      // O consumo é controlado pelo servidor; o navegador não pode alterar a cota.
     } catch (err: any) {
       console.error(err);
       alert('Erro na análise da IA: ' + (err.message || 'Erro desconhecido.'));

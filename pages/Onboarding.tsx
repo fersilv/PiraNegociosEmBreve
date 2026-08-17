@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Navigate, useSearchParams } from 'react-router-dom';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Building2, UserCircle, Loader2 } from 'lucide-react';
 import { FileUpload } from '../components/FileUpload';
@@ -26,6 +25,12 @@ export function Onboarding() {
   const [photoURL, setPhotoURL] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
+  // Personal fields (For Google Users)
+  const [name, setName] = useState(profile?.name || profile?.displayName || '');
+  const [phone, setPhone] = useState(profile?.phone || '');
+  const [socialName, setSocialName] = useState(profile?.socialName || '');
+  const [treatment, setTreatment] = useState(profile?.treatment || 'ele/dele');
+
   if (profile?.type) {
     // If they somehow got here but already have a type
     return <Navigate to="/dashboard" replace />;
@@ -44,7 +49,6 @@ export function Onboarding() {
       const updates: any = { type: selectedType, acceptedTerms: true };
       
       if (selectedType === 'COMPANY') {
-        // TODO: Actually create a company document and link it, but for simplicity let's store basics on user or separate collection
         updates.companyName = companyName;
         updates.companyDescription = companyDescription;
         updates.companyLogo = companyLogo;
@@ -55,7 +59,18 @@ export function Onboarding() {
         updates.photoURL = photoURL;
       }
 
-      await updateDoc(doc(db, 'users', user.uid), updates);
+      if (!profile?.phone) {
+        updates.name = name;
+        updates.phone = phone;
+        updates.socialName = socialName;
+        updates.treatment = treatment;
+        
+        if (profile?.name && !profile?.displayName) {
+          updates.displayName = profile.name;
+        }
+      }
+
+      await api.post('/users/me', updates);
       await refreshProfile();
       navigate(returnTo || '/dashboard');
     } catch (e) {
@@ -108,6 +123,61 @@ export function Onboarding() {
           </div>
         )}
 
+        {step === 2 && !profile?.phone && (
+          <div className="space-y-4 mb-8 pb-8 border-b border-stone-200">
+            <h3 className="font-bold text-lg text-stone-900 mb-4">Informações Básicas</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Nome Completo *</label>
+                <input 
+                  type="text" 
+                  required 
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:border-terracotta-500 outline-none"
+                  placeholder="Seu nome completo"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Telefone *</label>
+                <input 
+                  type="tel" 
+                  required 
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:border-terracotta-500 outline-none"
+                  placeholder="(00) 00000-0000"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Nome Social (Opcional)</label>
+                <input 
+                  type="text" 
+                  value={socialName}
+                  onChange={(e) => setSocialName(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:border-terracotta-500 outline-none"
+                  placeholder="Como prefere ser chamado"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Tratamento</label>
+                <select 
+                  value={treatment}
+                  onChange={(e) => setTreatment(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:border-terracotta-500 outline-none"
+                >
+                  <option value="ele/dele">Ele/Dele</option>
+                  <option value="ela/dela">Ela/Dela</option>
+                  <option value="elu/delu">Elu/Delu</option>
+                  <option value="indiferente">Indiferente / Qualquer pronome</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
         {step === 2 && selectedType === 'COMPANY' && (
           <div className="space-y-4 mb-8">
             <div>
@@ -145,9 +215,8 @@ export function Onboarding() {
         {step === 2 && selectedType === 'CANDIDATE' && (
           <div className="space-y-6 mb-8">
             <div>
-              <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Resumo Profissional / Bio *</label>
+              <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Resumo Profissional / Bio (Opcional)</label>
               <textarea 
-                required
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:border-terracotta-500 outline-none min-h-[100px]"
@@ -207,7 +276,14 @@ export function Onboarding() {
           )}
           <button 
             onClick={handleNext}
-            disabled={!selectedType || loading || (step === 2 && !acceptedTerms) || (step === 2 && selectedType === 'COMPANY' && !companyName) || (step === 2 && selectedType === 'CANDIDATE' && (!bio || !resumeURL))}
+            disabled={
+              !selectedType || 
+              loading || 
+              (step === 2 && !acceptedTerms) || 
+              (step === 2 && selectedType === 'COMPANY' && !companyName) || 
+              (step === 2 && selectedType === 'CANDIDATE' && !resumeURL) ||
+              (step === 2 && !profile?.phone && (!name || !phone))
+            }
             className="flex items-center justify-center gap-2 bg-terracotta-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-terracotta-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (step === 1 ? 'Continuar' : 'Finalizar Cadastro')}

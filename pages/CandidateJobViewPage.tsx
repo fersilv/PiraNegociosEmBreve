@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, getDocs, addDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Briefcase, MapPin, DollarSign, Calendar, Building2, ArrowLeft, CheckCircle2, Loader2, AlertCircle, Clock, Laptop } from 'lucide-react';
+import { ApplicationChat } from '../components/ApplicationChat';
 
 export function CandidateJobViewPage() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -16,6 +16,16 @@ export function CandidateJobViewPage() {
   const [applying, setApplying] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  const statusLabel: Record<string, string> = {
+    PENDING: 'Candidatura enviada',
+    REVIEWING: 'Em análise',
+    DOCUMENTS_REQUESTED: 'Documentos solicitados',
+    DOCUMENTS_SUBMITTED: 'Documentos em análise',
+    HIRED: 'Contratado(a)',
+    REJECTED: 'Encerrada',
+    WITHDRAWN: 'Desistência confirmada',
+  };
+
   useEffect(() => {
     loadJobAndApplication();
   }, [jobId, user]);
@@ -26,30 +36,21 @@ export function CandidateJobViewPage() {
     setErrorMsg('');
     try {
       // Fetch Job
-      const jobDoc = await getDoc(doc(db, 'jobs', jobId));
-      if (!jobDoc.exists()) {
+      const jobRes = await api.get(`/jobs/${jobId}`).catch(() => null);
+      if (!jobRes || !jobRes.data) {
         setErrorMsg('Vaga não encontrada.');
         setLoading(false);
         return;
       }
-
-      const jobData = { id: jobDoc.id, ...jobDoc.data() };
-      setJob(jobData);
+      setJob(jobRes.data);
 
       // Fetch candidate application if logged in
       if (user) {
-        const q = query(
-          collection(db, 'applications'),
-          where('jobId', '==', jobId),
-          where('candidateId', '==', user.uid)
-        );
-        const appSnap = await getDocs(q);
-        if (!appSnap.empty) {
-          const appDoc = appSnap.docs[0];
-          setApplication({ id: appDoc.id, ...appDoc.data() });
+        const appRes = await api.get('/applications/me').catch(() => null);
+        if (appRes && Array.isArray(appRes.data)) {
+          setApplication(appRes.data.find((item: any) => item.jobId === jobId) || null);
         }
       }
-
     } catch (e: any) {
       console.error(e);
       setErrorMsg('Erro ao carregar detalhes da vaga.');
@@ -71,27 +72,12 @@ export function CandidateJobViewPage() {
 
     setApplying(true);
     try {
-      const docRef = await addDoc(collection(db, 'applications'), {
+      const response = await api.post('/applications', {
         jobId: job.id,
-        jobTitle: job.title,
-        companyName: job.isConfidential ? 'Empresa Confidencial' : job.companyName,
-        candidateId: user.uid,
-        companyId: job.ownerId,
-        status: 'Enviado',
-        appliedAt: new Date().toISOString(),
         resumeURL: profile.resumeURL || ''
       });
 
-      setApplication({
-        id: docRef.id,
-        jobId: job.id,
-        jobTitle: job.title,
-        companyName: job.isConfidential ? 'Empresa Confidencial' : job.companyName,
-        candidateId: user.uid,
-        status: 'Enviado',
-        appliedAt: new Date().toISOString()
-      });
-
+      setApplication(response.data);
       alert('Candidatura realizada com sucesso!');
     } catch (e) {
       console.error(e);
@@ -105,7 +91,7 @@ export function CandidateJobViewPage() {
     if (!application) return;
     if (confirm('Tem certeza que deseja desistir desta vaga?')) {
       try {
-        await deleteDoc(doc(db, 'applications', application.id));
+        await api.delete(`/applications/${application.id}`);
         setApplication(null);
         alert('Candidatura cancelada com sucesso.');
       } catch (e) {
@@ -231,9 +217,9 @@ export function CandidateJobViewPage() {
                   <span className="text-sm font-bold text-stone-900">Você já se candidatou</span>
                 </div>
                 <div className="text-xs text-stone-500 font-medium">
-                  Status atual: <span className="font-bold text-stone-800">{application.status || 'Enviado'}</span>
+                  Status atual: <span className="font-bold text-stone-800">{statusLabel[application.status] || application.status || 'Candidatura enviada'}</span>
                 </div>
-                {(application.documentsRequested || application.status === 'Em Contratação' || application.status === 'Aguardando Exame Médico' || (application.status && (application.status.toLowerCase().includes('contrat') || application.status.toLowerCase().includes('exame') || application.status.toLowerCase().includes('documento')))) && (
+                {(application.documentsRequested || ['DOCUMENTS_REQUESTED', 'DOCUMENTS_SUBMITTED'].includes(application.status)) && (
                   <Link
                     to={`/dashboard/admissao/${application.id}`}
                     className="mt-2 bg-terracotta-600 hover:bg-terracotta-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl text-center transition-colors shadow-sm animate-pulse"
@@ -241,7 +227,7 @@ export function CandidateJobViewPage() {
                     Enviar Documentos / ASO
                   </Link>
                 )}
-                {application.status !== 'Não Classificado' && application.status !== 'Desistiu' && (
+                {!['REJECTED', 'WITHDRAWN', 'HIRED'].includes(application.status) && (
                   <button
                     onClick={handleWithdraw}
                     className="mt-1 text-red-600 hover:text-red-700 font-bold text-xs text-center transition-colors"
@@ -250,7 +236,7 @@ export function CandidateJobViewPage() {
                   </button>
                 )}
               </div>
-            ) : isJobActive ? (
+            ) : isJobActive && job.acceptsPlatformApplications !== false ? (
               <button
                 onClick={handleApply}
                 disabled={applying}
@@ -268,6 +254,11 @@ export function CandidateJobViewPage() {
                   </>
                 )}
               </button>
+            ) : isJobActive ? (
+              <div className="w-full md:w-auto bg-amber-50 border border-amber-200 text-amber-900 font-medium py-3.5 px-5 rounded-xl text-sm max-w-xl">
+                <p className="font-bold">Esta empresa recebe currículos fora da plataforma.</p>
+                <p className="mt-1 whitespace-pre-wrap">{job.externalApplicationInstructions || 'Consulte a empresa para saber como enviar o currículo.'}</p>
+              </div>
             ) : null}
           </div>
         </div>
@@ -321,6 +312,14 @@ export function CandidateJobViewPage() {
             {job.description || 'Nenhuma descrição fornecida.'}
           </div>
         </div>
+
+        {application && (application.documentsRequested || ['DOCUMENTS_REQUESTED', 'DOCUMENTS_SUBMITTED', 'HIRED'].includes(application.status)) && (
+          <ApplicationChat
+            applicationId={application.id}
+            documentOptions={(application.customDocs || []).map((document: any) => ({ id: document.id, name: document.name }))}
+            onApplicationUpdated={loadJobAndApplication}
+          />
+        )}
       </div>
     </div>
   );

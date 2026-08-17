@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { api } from '../lib/api';
 import { Plus, Trash2, Save, FileText, Loader2, ArrowLeft, Tag, Layers, Settings, CheckCircle2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -47,12 +46,9 @@ export function CompanyHiringConfig() {
 
   const loadConfig = async () => {
     try {
-      let docRef = await getDoc(doc(db, 'company_hiring_config', user!.uid));
-      if (!docRef.exists() && profile?.companyId) {
-        docRef = await getDoc(doc(db, 'company_hiring_config', profile.companyId));
-      }
-      if (docRef.exists()) {
-        const data = docRef.data();
+      const res = await api.get('/company-hiring-config').catch(() => null);
+      if (res && res.data) {
+        const data = res.data;
         if (data.documents && Array.isArray(data.documents)) {
           setDocuments(data.documents);
         }
@@ -80,13 +76,9 @@ export function CompanyHiringConfig() {
         documents,
         customStatuses,
         defaultJobDurationDays: Number(defaultJobDurationDays) || 30,
-        notifyOnNewCandidate,
-        updatedAt: new Date().toISOString()
+        notifyOnNewCandidate
       };
-      await setDoc(doc(db, 'company_hiring_config', user!.uid), payload, { merge: true });
-      if (profile?.companyId) {
-        await setDoc(doc(db, 'company_hiring_config', profile.companyId), payload, { merge: true });
-      }
+      await api.put('/company-hiring-config', payload);
       alert('Configurações salvas com sucesso!');
     } catch (e) {
       console.error(e);

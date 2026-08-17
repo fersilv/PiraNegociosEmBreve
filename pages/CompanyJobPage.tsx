@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, query, where, getDocs, doc, getDoc, updateDoc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { api } from '../lib/api';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Loader2, ArrowLeft, Users, Filter, User, FileText, CheckCircle, CheckCircle2, XCircle, Clock, Eye, Briefcase, MapPin, Building2, Search, Edit, Phone, Laptop, AlertTriangle } from 'lucide-react';
 import { sendNotificationToUser } from '../lib/notifications';
@@ -33,66 +32,28 @@ export function CompanyJobPage() {
   const [editDescription, setEditDescription] = useState('');
   const [editIsConfidential, setEditIsConfidential] = useState(false);
   const [editIsTalentPool, setEditIsTalentPool] = useState(false);
+  const [editAcceptsPlatformApplications, setEditAcceptsPlatformApplications] = useState(true);
+  const [editExternalApplicationInstructions, setEditExternalApplicationInstructions] = useState('');
   const [savingJob, setSavingJob] = useState(false);
 
   useEffect(() => {
     if (user && jobId) {
       fetchJobData();
+      fetchApplications();
     }
   }, [user, jobId]);
-
-  useEffect(() => {
-    if (!jobId) return;
-    setLoadingApps(true);
-
-    const q = query(collection(db, 'applications'), where('jobId', '==', jobId));
-    const unsubscribe = onSnapshot(q, async (snap) => {
-      const apps = await Promise.all(snap.docs.map(async (docSnap) => {
-        const data = docSnap.data();
-        let candidateName = data.candidateName || 'Candidato';
-        let candidateProfile = null;
-        try {
-          const candidateSnap = await getDoc(doc(db, 'users', data.candidateId));
-          if (candidateSnap.exists()) {
-            const cData = candidateSnap.data();
-            candidateName = cData.name || candidateName;
-            candidateProfile = { id: candidateSnap.id, ...cData };
-          }
-        } catch (err) {
-          console.error("Erro ao buscar perfil:", err);
-        }
-        return { id: docSnap.id, candidateName, candidateProfile, ...data };
-      }));
-
-      setApplications(apps);
-      setLoadingApps(false);
-
-      // If managing app modal is currently open, keep its state synced
-      if (managingApp) {
-        const updatedCurrent = apps.find(a => a.id === managingApp.id);
-        if (updatedCurrent) {
-          setManagingApp(updatedCurrent);
-        }
-      }
-    }, (err) => {
-      console.error("Erro ao escutar candidaturas:", err);
-      setLoadingApps(false);
-    });
-
-    return () => unsubscribe();
-  }, [jobId]);
 
   const fetchJobData = async () => {
     if (!jobId) return;
     try {
-      const jobDoc = await getDoc(doc(db, 'jobs', jobId));
-      if (jobDoc.exists()) {
-        const data = jobDoc.data();
+      const response = await api.get(`/jobs/${jobId}`);
+      if (response.data) {
+        const data = response.data;
         if (data.ownerId !== user?.uid) {
           navigate('/dashboard'); // Not the owner
           return;
         }
-        setJob({ id: jobDoc.id, ...data });
+        setJob({ id: data.id, ...data });
         
         // Init edit form
         setEditTitle(data.title || '');
@@ -102,26 +63,44 @@ export function CompanyJobPage() {
         setEditDescription(data.description || '');
         setEditIsConfidential(data.isConfidential || false);
         setEditIsTalentPool(data.isTalentPool || false);
+        setEditAcceptsPlatformApplications(data.acceptsPlatformApplications !== false);
+        setEditExternalApplicationInstructions(data.externalApplicationInstructions || '');
       } else {
         navigate('/dashboard');
       }
     } catch (error) {
       console.error(error);
+      navigate('/dashboard');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchApplications = () => {
-    // Kept for backward compatibility when triggered manually by components
+  const fetchApplications = async () => {
+    if (!jobId) return;
+    setLoadingApps(true);
+    try {
+      const response = await api.get(`/applications/job/${jobId}`);
+      const apps = response.data || [];
+      setApplications(apps);
+
+      // If managing app modal is currently open, keep its state synced
+      if (managingApp) {
+        const updatedCurrent = apps.find((a: any) => a.id === managingApp.id);
+        if (updatedCurrent) {
+          setManagingApp(updatedCurrent);
+        }
+      }
+    } catch (err) {
+      console.error("Erro ao buscar candidaturas:", err);
+    } finally {
+      setLoadingApps(false);
+    }
   };
 
   const handleUpdateStatus = async (appId: string, candidateId: string, newStatus: string) => {
     try {
-      await updateDoc(doc(db, 'applications', appId), {
-        status: newStatus,
-        updatedAt: new Date().toISOString()
-      });
+      await api.put(`/applications/${appId}/status`, { status: newStatus });
 
       sendNotificationToUser(
         candidateId,
@@ -143,7 +122,7 @@ export function CompanyJobPage() {
     if (!jobId) return;
     setSavingJob(true);
     try {
-      await updateDoc(doc(db, 'jobs', jobId), {
+      await api.put(`/jobs/${jobId}`, {
         title: editTitle,
         location: editLocation,
         salary: editSalary,
@@ -151,6 +130,8 @@ export function CompanyJobPage() {
         description: editDescription,
         isConfidential: editIsConfidential,
         isTalentPool: editIsTalentPool,
+        acceptsPlatformApplications: editAcceptsPlatformApplications,
+        externalApplicationInstructions: editAcceptsPlatformApplications ? '' : editExternalApplicationInstructions,
       });
       alert('Vaga atualizada com sucesso!');
       fetchJobData();
@@ -179,10 +160,9 @@ export function CompanyJobPage() {
     }
 
     try {
-      await updateDoc(doc(db, 'jobs', jobId!), {
+      await api.put(`/jobs/${jobId}`, {
         active: newActiveState,
         deadlineDate: newDeadline || null,
-        updatedAt: new Date().toISOString()
       });
       fetchJobData();
       alert(newActiveState ? 'Vaga reaberta com sucesso!' : 'Processo de contratação encerrado.');
@@ -199,8 +179,7 @@ export function CompanyJobPage() {
     }
     if (confirm('Tem certeza que deseja excluir esta vaga permanentemente?')) {
       try {
-        const { deleteDoc } = await import('firebase/firestore');
-        await deleteDoc(doc(db, 'jobs', jobId!));
+        await api.delete(`/jobs/${jobId}`);
         alert('Vaga excluída com sucesso.');
         navigate('/dashboard');
       } catch (e) {
@@ -370,6 +349,13 @@ export function CompanyJobPage() {
                   <input type="checkbox" checked={editIsTalentPool} onChange={(e) => setEditIsTalentPool(e.target.checked)} className="w-5 h-5 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500" />
                   <span className="text-sm font-medium text-stone-700">Banco de Talentos (Sem vaga específica no momento)</span>
                 </label>
+                <label className="flex items-start gap-3 cursor-pointer rounded-xl border border-stone-200 p-3 bg-stone-50">
+                  <input type="checkbox" checked={editAcceptsPlatformApplications} onChange={(e) => setEditAcceptsPlatformApplications(e.target.checked)} className="w-5 h-5 mt-0.5 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500" />
+                  <span className="text-sm font-medium text-stone-700">Receber candidaturas pela plataforma</span>
+                </label>
+                {!editAcceptsPlatformApplications && (
+                  <textarea required value={editExternalApplicationInstructions} onChange={(e) => setEditExternalApplicationInstructions(e.target.value)} rows={3} className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white" placeholder="Informe e-mail, site, WhatsApp ou local para entrega do currículo." />
+                )}
               </div>
             </div>
             <div className="pt-4 border-t border-stone-100 flex justify-end">

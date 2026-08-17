@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { api } from '../lib/api';
 
 export interface ProfessionalExperience {
   company: string;
@@ -10,7 +10,7 @@ export interface ProfessionalExperience {
   endDate: string;
   current: boolean;
   description: string;
-  skills?: string[]; // Skills linked to this experience
+  skills?: string[];
 }
 
 export interface ExtraCourse {
@@ -36,7 +36,8 @@ export interface ResumeAIAnalysis {
 }
 
 export interface UserProfile {
-  name: string;
+  name?: string;
+  displayName?: string;
   fullName?: string;
   socialName?: string;
   treatment: string;
@@ -44,15 +45,17 @@ export interface UserProfile {
   email: string;
   type: 'COMPANY' | 'CANDIDATE' | 'ADMIN';
   companyId?: string;
+  companyName?: string;
+  companyDescription?: string;
+  companyLogo?: string;
+  photoURL?: string;
   bio?: string;
   resumeURL?: string;
   isVerified?: boolean;
   acceptedTerms?: boolean;
-  linkedinURL?: string; // Optional LinkedIn link
-  aiAnalysisLimit?: number; // Usage limit for AI analysis
-  aiAnalysisCount?: number; // Number of times analyzed
-  
-  // LinkedIn-style fields
+  linkedinURL?: string;
+  aiAnalysisLimit?: number;
+  aiAnalysisCount?: number;
   additionalPhones?: string[];
   experiences?: ProfessionalExperience[];
   skills?: string[];
@@ -60,6 +63,7 @@ export interface UserProfile {
   education?: AcademicEducation[];
   aiAnalysis?: ResumeAIAnalysis;
   hasAiAnalyzed?: boolean;
+  savedDocs?: Record<string, string>;
 }
 
 export function getFirstName(fullName: string | undefined | null): string {
@@ -71,7 +75,7 @@ export function getGreetingName(profile: UserProfile | undefined | null): string
   if (!profile) return 'Usuário';
   const nameToUse = profile.socialName && profile.socialName.trim() !== ''
     ? profile.socialName
-    : (profile.name || '');
+    : (profile.displayName || profile.fullName || profile.name || '');
   return getFirstName(nameToUse);
 }
 
@@ -96,20 +100,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchProfile = async (currentUser: User) => {
+    try {
+      // Pequeno delay para garantir que o token JWT do Firebase foi injetado pelo interceptor do Axios
+      const response = await api.get('/users/me');
+      const data = response.data as UserProfile;
+      
+      setProfile(data);
+    } catch (error) {
+      console.error("Erro ao buscar perfil da API:", error);
+      setProfile(null);
+    }
+  };
+
   const refreshProfile = async () => {
     if (auth.currentUser) {
-      const docRef = doc(db, 'users', auth.currentUser.uid);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data() as UserProfile;
-        if (auth.currentUser.email === 'fernandohmonteiros@gmail.com' && data.type !== 'ADMIN') {
-          await updateDoc(docRef, { type: 'ADMIN' });
-          data.type = 'ADMIN';
-        }
-        setProfile(data);
-      } else {
-        setProfile(null);
-      }
+      await fetchProfile(auth.currentUser);
     }
   };
 
@@ -117,18 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
       if (user) {
-        const docRef = doc(db, 'users', user.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data() as UserProfile;
-          if (user.email === 'fernandohmonteiros@gmail.com' && data.type !== 'ADMIN') {
-            await updateDoc(docRef, { type: 'ADMIN' });
-            data.type = 'ADMIN';
-          }
-          setProfile(data);
-        } else {
-          setProfile(null);
-        }
+        await fetchProfile(user);
       } else {
         setProfile(null);
       }

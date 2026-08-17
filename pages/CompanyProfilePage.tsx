@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { doc, getDoc, updateDoc, setDoc, addDoc, collection, query, where, getDocs, deleteDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { api } from '../lib/api';
 import { 
   Building2, 
   CheckCircle2, 
@@ -63,7 +62,6 @@ export function CompanyProfilePage() {
   const [inviteRole, setInviteRole] = useState<'admin' | 'colaborador'>('colaborador');
   const [inviting, setInviting] = useState(false);
 
-  // Check basic requirements for job posting: Name, Address, Phone
   const hasBasicInfoForJob = () => {
     return (
       companyName.trim() !== '' &&
@@ -72,7 +70,6 @@ export function CompanyProfilePage() {
     );
   };
 
-  // Check if complete profile (excluding optional Website and Social networks)
   const isCompanyComplete = () => {
     return (
       companyName.trim() !== '' &&
@@ -88,10 +85,8 @@ export function CompanyProfilePage() {
   const fetchEmployees = async (cid: string) => {
     setLoadingEmployees(true);
     try {
-      const q = query(collection(db, 'users'), where('companyId', '==', cid));
-      const snap = await getDocs(q);
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setEmployees(list);
+      const response = await api.get(`/companies/${cid}/employees`);
+      setEmployees(response.data);
     } catch (err) {
       console.error("Erro ao buscar funcionários:", err);
     } finally {
@@ -106,53 +101,41 @@ export function CompanyProfilePage() {
       try {
         let currentCompanyId = profile.companyId || null;
         
-        // If the user profile doesn't have a companyId, check if a company exists
         if (!currentCompanyId) {
-          const q = query(collection(db, 'companies'), where('ownerId', '==', user.uid));
-          const snap = await getDocs(q);
+          const response = await api.get('/companies/mine').catch(() => null);
+          const companies = response?.data || [];
           
-          if (!snap.empty) {
-            const compDoc = snap.docs[0];
+          if (companies.length > 0) {
+            const compDoc = companies[0];
             currentCompanyId = compDoc.id;
-            await updateDoc(doc(db, 'users', user.uid), { 
-              companyId: currentCompanyId,
-              companyName: compDoc.data().name || profile.companyName || ''
-            });
             await refreshProfile();
           } else {
             // Create a default company
             const nameToUse = profile.companyName || (profile.name ? `${profile.name} Ltda` : 'Nova Empresa');
-            const newCompanyRef = await addDoc(collection(db, 'companies'), {
+            const newCompanyResp = await api.post('/companies', {
               name: nameToUse,
-              description: '',
+              description: profile.companyDescription || '',
               documentType: 'CNPJ',
               cnpj: '',
               website: '',
               address: '',
               phone: profile.phone || '',
-              ownerId: user.uid,
               verificationStatus: 'DRAFT',
               isVerified: false,
-              logoURL: '',
-              documentURL: '',
-              createdAt: new Date().toISOString()
+              logoURL: profile.companyLogo || '',
+              documentURL: ''
             });
-            currentCompanyId = newCompanyRef.id;
-            await updateDoc(doc(db, 'users', user.uid), { 
-              companyId: currentCompanyId,
-              companyName: nameToUse
-            });
+            currentCompanyId = newCompanyResp.data.id;
             await refreshProfile();
           }
         }
 
         setCompanyId(currentCompanyId);
 
-        // Fetch company details
         if (currentCompanyId) {
-          const compDoc = await getDoc(doc(db, 'companies', currentCompanyId));
-          if (compDoc.exists()) {
-            const compData = compDoc.data();
+          const compResp = await api.get(`/companies/${currentCompanyId}`).catch(() => null);
+          if (compResp && compResp.data) {
+            const compData = compResp.data;
             setCompanyName(compData.name || '');
             setCompanyDescription(compData.description || '');
             setDocumentType(compData.documentType || 'CNPJ');
@@ -169,7 +152,6 @@ export function CompanyProfilePage() {
             setCompanyLogo(compData.logoURL || compData.companyLogo || '');
             setCompanyDocumentFile(compData.documentURL || compData.companyDocumentFile || '');
 
-            // Fetch employees
             await fetchEmployees(currentCompanyId);
           }
         }
@@ -205,11 +187,10 @@ export function CompanyProfilePage() {
         documentURL: companyDocumentFile
       };
 
-      await updateDoc(doc(db, 'companies', companyId), companyUpdates);
+      await api.put(`/companies/${companyId}`, companyUpdates);
 
-      // Keep user's profile synchronised with company name & logo!
       if (user) {
-        await updateDoc(doc(db, 'users', user.uid), {
+        await api.post('/users/me', {
           companyName: companyName,
           companyLogo: companyLogo
         });
@@ -234,18 +215,13 @@ export function CompanyProfilePage() {
 
     setLoading(true);
     try {
-      await updateDoc(doc(db, 'companies', companyId), {
+      await api.put(`/companies/${companyId}`, {
         verificationStatus: 'PENDING',
         isVerified: false
       });
       setCompanyStatus('PENDING');
       
-      if (user) {
-        await updateDoc(doc(db, 'users', user.uid), {
-          isVerified: false
-        });
-        await refreshProfile();
-      }
+      await refreshProfile();
 
       alert('Perfil enviado para análise da administração com sucesso! Você receberá uma notificação quando for verificado.');
     } catch (err) {
@@ -256,7 +232,6 @@ export function CompanyProfilePage() {
     }
   };
 
-  // Add/Invite Employee
   const handleInviteEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!companyId) return;
@@ -267,44 +242,17 @@ export function CompanyProfilePage() {
 
     setInviting(true);
     try {
-      // Check if email already registered as user
-      const q = query(collection(db, 'users'), where('email', '==', inviteEmail.trim()));
-      const snap = await getDocs(q);
-
-      if (!snap.empty) {
-        // User already exists in our system. Let's associate them with the company
-        const existingUserDoc = snap.docs[0];
-        const userId = existingUserDoc.id;
-        
-        await updateDoc(doc(db, 'users', userId), {
-          companyId: companyId,
-          companyName: companyName,
-          type: 'COMPANY',
-          isCompanyAdmin: inviteRole === 'admin',
-          status: 'ACTIVE'
-        });
-      } else {
-        // Create an invited placeholder document in 'users' collection
-        // We'll generate a random ID or use their email. Let's create a doc under the collection
-        await addDoc(collection(db, 'users'), {
-          name: inviteName.trim(),
-          email: inviteEmail.trim(),
-          phone: '',
-          type: 'COMPANY',
-          companyId: companyId,
-          companyName: companyName,
-          isCompanyAdmin: inviteRole === 'admin',
-          status: 'INVITED',
-          createdAt: new Date().toISOString()
-        });
-      }
+      await api.post(`/companies/${companyId}/employees`, {
+        name: inviteName.trim(),
+        email: inviteEmail.trim(),
+        role: inviteRole
+      });
 
       alert(`Colaborador ${inviteName} cadastrado com sucesso!`);
       setInviteName('');
       setInviteEmail('');
       setInviteRole('colaborador');
       
-      // Refresh employees list
       await fetchEmployees(companyId);
     } catch (err) {
       console.error(err);
@@ -314,11 +262,10 @@ export function CompanyProfilePage() {
     }
   };
 
-  // Change employee role
   const handleChangeRole = async (empId: string, isAdminRole: boolean) => {
     if (!companyId) return;
     try {
-      await updateDoc(doc(db, 'users', empId), {
+      await api.put(`/companies/${companyId}/employees/${empId}/role`, {
         isCompanyAdmin: isAdminRole
       });
       alert('Cargo do colaborador atualizado com sucesso!');
@@ -329,7 +276,6 @@ export function CompanyProfilePage() {
     }
   };
 
-  // Remove employee from company
   const handleRemoveEmployee = async (empId: string, empName: string) => {
     if (empId === user?.uid) {
       alert('Você não pode remover a si mesmo da empresa!');
@@ -340,14 +286,7 @@ export function CompanyProfilePage() {
     }
 
     try {
-      // Clear company associations. Reset them to candidates or just un-link
-      await updateDoc(doc(db, 'users', empId), {
-        companyId: null,
-        companyName: null,
-        type: 'CANDIDATE',
-        isCompanyAdmin: false,
-        status: null
-      });
+      await api.delete(`/companies/${companyId}/employees/${empId}`);
       alert('Colaborador removido com sucesso!');
       if (companyId) await fetchEmployees(companyId);
     } catch (err) {

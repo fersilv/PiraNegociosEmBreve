@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth, getGreetingName } from '../contexts/AuthContext';
-import { collection, query, where, getDocs, addDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { Plus, Briefcase, FileText, CheckCircle, BellRing, AlertTriangle, ArrowRight, EyeOff, User, Loader2 } from 'lucide-react';
+import { api } from '../lib/api';
+import { Plus, Briefcase, FileText, CheckCircle, BellRing, AlertTriangle, ArrowRight, EyeOff, User, Loader2, Clock } from 'lucide-react';
 import { sendNotificationToUser, notifyCandidatesOfNewJob } from '../lib/notifications';
 import { Link, useNavigate } from 'react-router-dom';
 import { openBase64InNewTab } from '../lib/fileViewer';
@@ -26,12 +25,14 @@ export function CompanyDashboard() {
   const [description, setDescription] = useState('');
   const [isConfidential, setIsConfidential] = useState(false);
   const [isTalentPool, setIsTalentPool] = useState(false);
+  const [acceptsPlatformApplications, setAcceptsPlatformApplications] = useState(true);
+  const [externalApplicationInstructions, setExternalApplicationInstructions] = useState('');
   
   const [loadingJobs, setLoadingJobs] = useState(true);
 
   const toggleJobActive = async (jobId: string, currentActive: boolean) => {
     try {
-      await updateDoc(doc(db, 'jobs', jobId), { active: !currentActive });
+      await api.put(`/jobs/${jobId}`, { active: !currentActive });
       fetchMyJobs();
     } catch (e) {
       console.error(e);
@@ -41,31 +42,23 @@ export function CompanyDashboard() {
 
   const deleteJob = async (jobId: string) => {
     try {
-      // check if it has candidates first
-      const q = query(collection(db, 'applications'), where('jobId', '==', jobId));
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        alert('Não é possível excluir a vaga pois ela já possui candidatos. Você pode ocultá-la (inativar).');
-        return;
-      }
       if (confirm('Tem certeza que deseja excluir esta vaga?')) {
-        const { deleteDoc } = await import('firebase/firestore');
-        await deleteDoc(doc(db, 'jobs', jobId));
+        await api.delete(`/jobs/${jobId}`);
         fetchMyJobs();
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert('Erro ao excluir vaga.');
+      alert(e.response?.data?.message || 'Erro ao excluir vaga.');
     }
   };
 
   const fetchMyJobs = async () => {
     setLoadingJobs(true);
     try {
-      const q = query(collection(db, 'jobs'), where('ownerId', '==', user.uid));
-      const snap = await getDocs(q);
-      const jobs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMyJobs(jobs);
+      const res = await api.get('/jobs/me');
+      setMyJobs(res.data || []);
+    } catch (err) {
+      console.error(err);
     } finally {
       setLoadingJobs(false);
     }
@@ -74,21 +67,9 @@ export function CompanyDashboard() {
   const fetchCompanyDetails = async () => {
     if (!user) return;
     try {
-      let cId = profile?.companyId || null;
-      if (!cId) {
-        const q = query(collection(db, 'companies'), where('ownerId', '==', user.uid));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          cId = snap.docs[0].id;
-        }
-      }
-      
-      if (cId) {
-        const docSnap = await getDoc(doc(db, 'companies', cId));
-        if (docSnap.exists()) {
-          setCompany({ id: docSnap.id, ...docSnap.data() });
-        }
-      }
+      const res = await api.get('/companies/mine');
+      const comp = Array.isArray(res.data) ? res.data[0] : res.data;
+      setCompany(comp);
     } catch (err) {
       console.error("Erro ao buscar detalhes da empresa:", err);
     } finally {
@@ -126,26 +107,23 @@ export function CompanyDashboard() {
       const companyName = company?.name || profile?.companyName || profile?.name || 'Empresa';
       const isVerified = company?.verificationStatus === 'VERIFIED' || company?.isVerified === true;
       
-      const docRef = await addDoc(collection(db, 'jobs'), {
+      const res = await api.post('/jobs', {
+        companyId: company?.id || profile?.companyId,
         title,
         location,
         salary,
         type,
         workModel: workModel || 'Presencial',
         description,
-        ownerId: user.uid,
-        companyName,
-        isSponsored: false,
-        active: true,
-        postedAt: new Date().toISOString(),
         isConfidential,
         isTalentPool,
-        isCompanyVerified: isVerified
+        acceptsPlatformApplications,
+        externalApplicationInstructions: acceptsPlatformApplications ? '' : externalApplicationInstructions,
       });
       
       // Notify all matching/active candidates of the new job
       try {
-        await notifyCandidatesOfNewJob(docRef.id, title, isConfidential ? 'Empresa Confidencial' : companyName, location);
+        await notifyCandidatesOfNewJob(res.data.id, title, isConfidential ? 'Empresa Confidencial' : companyName, location);
       } catch (notifErr) {
         console.error("Failed to trigger FCM notifications for new job:", notifErr);
       }
@@ -160,6 +138,8 @@ export function CompanyDashboard() {
       setDescription('');
       setIsConfidential(false);
       setIsTalentPool(false);
+      setAcceptsPlatformApplications(true);
+      setExternalApplicationInstructions('');
       
       fetchMyJobs();
       alert('Vaga publicada com sucesso! Candidatos compatíveis estão sendo notificados.');
@@ -187,6 +167,19 @@ export function CompanyDashboard() {
               Preencher dados no Perfil da Empresa
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Analysis pending banner */}
+      {!loadingCompany && hasBasicInfo() && company?.verificationStatus === 'PENDING' && (
+        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 flex items-start gap-4 text-amber-900 animate-in fade-in duration-300">
+          <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h4 className="font-bold text-sm">Empresa em Processo de Análise</h4>
+            <p className="text-amber-800 text-xs mt-1 leading-relaxed">
+              O perfil da sua empresa foi enviado e está em análise pela nossa equipe. Você já pode criar suas vagas, mas elas ganharão o selo de <strong>"Empresa Verificada"</strong> assim que a análise for concluída!
+            </p>
           </div>
         </div>
       )}
@@ -254,6 +247,19 @@ export function CompanyDashboard() {
             </div>
 
             <div className="pt-2 space-y-3">
+              <label className="flex items-start gap-3 cursor-pointer rounded-2xl border border-stone-200 p-4 bg-stone-50/60">
+                <input type="checkbox" checked={acceptsPlatformApplications} onChange={(e) => setAcceptsPlatformApplications(e.target.checked)} className="w-5 h-5 mt-0.5 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500" />
+                <div className="text-sm text-stone-700">
+                  <strong>Receber candidaturas pela plataforma</strong>
+                  <p className="text-xs text-stone-500 mt-1">Desative se quiser receber currículos por e-mail, WhatsApp, site próprio ou entrega presencial.</p>
+                </div>
+              </label>
+              {!acceptsPlatformApplications && (
+                <div className="pl-0 sm:pl-8">
+                  <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Como o candidato deve enviar ou entregar o currículo *</label>
+                  <textarea required value={externalApplicationInstructions} onChange={(e) => setExternalApplicationInstructions(e.target.value)} placeholder="Ex.: Envie para vagas@empresa.com.br com o assunto da vaga, ou entregue na recepção de segunda a sexta." className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 min-h-[96px]" />
+                </div>
+              )}
               <label className="flex items-center gap-3 cursor-pointer">
                 <input 
                   type="checkbox"

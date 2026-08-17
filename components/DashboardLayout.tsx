@@ -115,9 +115,18 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Content Viewport */}
-        <div className="flex-1 overflow-y-auto p-6 md:p-8">
+        <div className="flex-1 overflow-y-auto p-6 pb-24 md:p-8">
           {children}
         </div>
+
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-stone-200 px-3 py-2 flex items-center justify-around shadow-lg">
+          <MobileNavItem to="/dashboard" icon={<Home className="w-5 h-5" />} label="Início" />
+          {profile?.type === 'COMPANY' && <MobileNavItem to="/dashboard/vagas" icon={<Briefcase className="w-5 h-5" />} label="Vagas" />}
+          {profile?.type === 'COMPANY' && <MobileNavItem to="/dashboard/curriculos" icon={<FileText className="w-5 h-5" />} label="Currículos" />}
+          {profile?.type === 'COMPANY' && <MobileNavItem to="/dashboard/empresa" icon={<Building2 className="w-5 h-5" />} label="Empresa" />}
+          {profile?.type === 'ADMIN' && <MobileNavItem to="/dashboard/admin" icon={<Briefcase className="w-5 h-5" />} label="Moderação" />}
+          <MobileNavItem to="/dashboard/perfil" icon={<User className="w-5 h-5" />} label="Perfil" />
+        </nav>
       </main>
     </div>
   </div>
@@ -133,6 +142,15 @@ function NavItem({ to, icon, label }: { to: string, icon: React.ReactNode, label
     >
       {icon}
       {label}
+    </Link>
+  );
+}
+
+function MobileNavItem({ to, icon, label }: { to: string, icon: React.ReactNode, label: string }) {
+  return (
+    <Link to={to} className="min-w-12 flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold text-stone-600">
+      {icon}
+      <span>{label}</span>
     </Link>
   );
 }

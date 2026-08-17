@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Megaphone, Globe, Cpu } from 'lucide-react';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { api } from '../lib/api';
 
 interface AdSpaceProps {
   variant?: 'leaderboard' | 'rectangle' | 'sidebar';
@@ -17,9 +16,9 @@ export function AdSpace({ variant = 'leaderboard', className = '' }: AdSpaceProp
     const fetchAdAndConfig = async () => {
       try {
         // 1. Fetch advertising configurations
-        const configDoc = await getDoc(doc(db, 'configs', 'advertising'));
-        if (configDoc.exists()) {
-          const configData = configDoc.data();
+        const configRes = await api.get('/configs/advertising').catch(() => null);
+        if (configRes?.data) {
+          const configData = configRes.data;
           setConfig(configData);
 
           // If Google Ads is enabled, load Google Adsense script dynamically
@@ -37,10 +36,9 @@ export function AdSpace({ variant = 'leaderboard', className = '' }: AdSpaceProp
         }
 
         // 2. Fetch custom backup ads
-        const q = query(collection(db, 'ads'), where('type', '==', variant), where('active', '==', true));
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const ads = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const adsRes = await api.get('/ads');
+        const ads = (adsRes.data || []).filter((a: any) => a.type === variant && a.active);
+        if (ads.length > 0) {
           setAd(ads[Math.floor(Math.random() * ads.length)]);
         }
       } catch (e) {

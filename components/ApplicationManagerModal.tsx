@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, Plus, MessageSquare, Clock, User, Link as LinkIcon, FileText, CheckCircle2, XCircle, Download, Eye, ExternalLink, AlertTriangle, Upload } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { updateDoc, doc, arrayUnion, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { api } from '../lib/api';
 import { openBase64InNewTab, downloadBase64File } from '../lib/fileViewer';
 import { sendNotificationToUser } from '../lib/notifications';
+import { ApplicationChat } from './ApplicationChat';
 
 import { SYSTEM_DEFAULT_STATUSES, DEFAULT_HIRING_DOCUMENTS } from '../pages/CompanyHiringConfig';
 
@@ -48,9 +48,9 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
         ].filter(Boolean)));
 
         for (const cid of idsToTry) {
-          const compRef = await getDoc(doc(db, 'company_hiring_config', cid as string));
-          if (compRef.exists()) {
-            setCompanyConfig(compRef.data());
+          const res = await api.get(`/company-hiring-config/${cid}`).catch(() => null);
+          if (res && res.data) {
+            setCompanyConfig(res.data);
             return;
           }
         }
@@ -66,8 +66,7 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
     try {
       const updates: any = {
         status,
-        priority,
-        updatedAt: new Date().toISOString()
+        priority
       };
 
       const isDocStageStatus = status === 'Em Contratação' || status === 'Aguardando Exame Médico' || status.toLowerCase().includes('documento') || status.toLowerCase().includes('exame');
@@ -80,15 +79,19 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
       }
       
       if (newObs.trim()) {
-        updates.observations = arrayUnion({
+        const newObservation = {
           text: newObs.trim(),
           author: profile?.name || 'Empresa',
           date: new Date().toISOString()
-        });
+        };
+        updates.observations = [...(application.observations || []), newObservation];
       }
       
-      await updateDoc(doc(db, 'applications', application.id), updates);
+      await api.put(`/applications/${application.id}`, updates);
       application.status = status;
+      if (updates.observations) {
+        application.observations = updates.observations;
+      }
 
       // Notify candidate if status changed
       if (status !== initialStatus && application.candidateId) {
@@ -142,9 +145,8 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
         });
       }
 
-      await updateDoc(doc(db, 'applications', application.id), {
-        onboardingDocs: updatedDocs,
-        updatedAt: new Date().toISOString()
+      await api.put(`/applications/${application.id}`, {
+        onboardingDocs: updatedDocs
       });
 
       if (action === 'rejected' && application.candidateId) {
@@ -172,23 +174,26 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
         status: 'Em Contratação',
         documentsRequested: true,
         documentsRequestedAt: new Date().toISOString(),
-        priority,
-        updatedAt: new Date().toISOString()
+        priority
       };
 
       if (newObs.trim()) {
-        updates.observations = arrayUnion({
+        const newObservation = {
           text: newObs.trim(),
           author: profile?.name || 'Empresa',
           date: new Date().toISOString()
-        });
+        };
+        updates.observations = [...(application.observations || []), newObservation];
         setNewObs('');
       }
 
-      await updateDoc(doc(db, 'applications', application.id), updates);
+      await api.put(`/applications/${application.id}`, updates);
       setStatus('Em Contratação');
       application.status = 'Em Contratação';
       application.documentsRequested = true;
+      if (updates.observations) {
+        application.observations = updates.observations;
+      }
 
       // Notify candidate
       if (application.candidateId) {
@@ -263,18 +268,15 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
       };
 
       const targetStatus = status || application.status || 'Em Contratação';
+      const updatedCustomDocs = [...(application.customDocs || []), newDocItem];
 
-      await updateDoc(doc(db, 'applications', application.id), {
-        customDocs: arrayUnion(newDocItem),
+      await api.put(`/applications/${application.id}`, {
+        customDocs: updatedCustomDocs,
         documentsRequested: true,
-        status: targetStatus,
-        updatedAt: new Date().toISOString()
+        status: targetStatus
       });
 
-      if (!application.customDocs) {
-        application.customDocs = [];
-      }
-      application.customDocs.push(newDocItem);
+      application.customDocs = updatedCustomDocs;
       application.documentsRequested = true;
       application.status = targetStatus;
       setStatus(targetStatus);
@@ -330,9 +332,8 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
         setLocalDocs(updatedDocs);
         application.onboardingDocs = updatedDocs;
 
-        await updateDoc(doc(db, 'applications', application.id), {
-          onboardingDocs: updatedDocs,
-          updatedAt: new Date().toISOString()
+        await api.put(`/applications/${application.id}`, {
+          onboardingDocs: updatedDocs
         });
 
         if (application.candidateId) {
@@ -358,9 +359,8 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
     if (!confirm("Tem certeza que deseja remover esta solicitação de documento extra?")) return;
     try {
       const updatedCustomDocs = (application.customDocs || []).filter((d: any) => d.id !== docId);
-      await updateDoc(doc(db, 'applications', application.id), {
-        customDocs: updatedCustomDocs,
-        updatedAt: new Date().toISOString()
+      await api.put(`/applications/${application.id}`, {
+        customDocs: updatedCustomDocs
       });
       application.customDocs = updatedCustomDocs;
       onUpdated();
@@ -708,6 +708,16 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
            </div>
         </div>
         
+        {(application.documentsRequested || ['DOCUMENTS_REQUESTED', 'DOCUMENTS_SUBMITTED', 'HIRED'].includes(application.status)) && (
+          <div className="mt-8">
+            <ApplicationChat
+              applicationId={application.id}
+              canRequestDocuments
+              onApplicationUpdated={onUpdated}
+            />
+          </div>
+        )}
+
         <div className="mt-8 flex justify-end">
           <button 
             onClick={handleSave}
@@ -797,29 +807,26 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
                   <span className="text-red-600 font-bold">Motivo da recusa: {previewDoc.feedback}</span>
                 )}
               </div>
-
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => handleDocAction(previewDoc.id, 'approved')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    previewDoc.status === 'approved' ? 'bg-green-600 text-white shadow-sm' : 'bg-green-100 hover:bg-green-200 text-green-800'
-                  }`}
-                >
-                  ✓ {previewDoc.status === 'approved' ? 'Aprovado' : 'Aprovar Documento'}
-                </button>
-
-                <button 
-                  onClick={() => {
-                    const reason = prompt("Motivo da reprovação (enviado ao candidato):", previewDoc.feedback || "");
-                    if (reason !== null) handleDocAction(previewDoc.id, 'rejected', reason);
-                  }}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                    previewDoc.status === 'rejected' ? 'bg-red-600 text-white shadow-sm' : 'bg-red-100 hover:bg-red-200 text-red-800'
-                  }`}
-                >
-                  ✕ {previewDoc.status === 'rejected' ? 'Reprovado' : 'Reprovar Documento'}
-                </button>
-
+              <div className="flex gap-2">
+                {previewDoc.status !== 'approved' && (
+                  <button 
+                    onClick={() => handleDocAction(previewDoc.id, 'approved')}
+                    className="px-4 py-2 bg-green-100 hover:bg-green-200 text-green-800 text-xs font-bold rounded-xl transition-colors"
+                  >
+                    Aprovar Documento
+                  </button>
+                )}
+                {previewDoc.status !== 'rejected' && (
+                  <button 
+                    onClick={() => {
+                      const reason = prompt("Motivo da reprovação (enviado ao candidato):", previewDoc.feedback || "");
+                      if (reason !== null) handleDocAction(previewDoc.id, 'rejected', reason);
+                    }}
+                    className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 text-xs font-bold rounded-xl transition-colors"
+                  >
+                    Reprovar Documento
+                  </button>
+                )}
                 <button 
                   onClick={() => setPreviewDoc(null)}
                   className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, sendEmailVerification } from 'firebase/auth';
-import { doc, setDoc, getDoc, collection, query, where, getDocs, deleteDoc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { api } from '../lib/api';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -31,7 +31,20 @@ export function Login() {
 
   const toggleMode = () => {
     setIsLogin(!isLogin);
-    setAcceptedTerms(!isLogin); // If switching to register, set false. If switching to login, set true.
+    setAcceptedTerms(!isLogin);
+  };
+
+  const checkInvitation = async (userEmail: string) => {
+    try {
+      // Simula a busca de convite na nova API. A rota precisa existir no NestJS futuramente.
+      const response = await api.get(`/users/invitation?email=${encodeURIComponent(userEmail)}`).catch(() => null);
+      if (response && response.data) {
+        return response.data; // { inviteDocId, companyId, companyName, isCompanyAdmin }
+      }
+    } catch (err) {
+      console.error("Error looking up invitation:", err);
+    }
+    return null;
   };
 
   const handleGoogleLogin = async () => {
@@ -46,52 +59,35 @@ export function Login() {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
       
-      // Check if user profile exists
-      const docRef = doc(db, 'users', user.uid);
-      const docSnap = await getDoc(docRef);
-      
-      if (!docSnap.exists()) {
-        // Check for pre-existing invitation
-        let invitedData: any = {};
-        let inviteDocId: string | null = null;
-        if (user.email) {
-          try {
-            const q = query(collection(db, 'users'), where('email', '==', user.email.trim().toLowerCase()));
-            const inviteSnap = await getDocs(q);
-            if (!inviteSnap.empty) {
-              inviteDocId = inviteSnap.docs[0].id;
-              invitedData = inviteSnap.docs[0].data();
-            }
-          } catch (err) {
-            console.error("Error looking up invitation:", err);
+      try {
+        // Tenta buscar o perfil na API
+        await api.get('/users/me');
+      } catch (err: any) {
+        // Se retornar 404, o perfil não existe, então criamos
+        if (err.response && err.response.status === 404) {
+          const invitation = user.email ? await checkInvitation(user.email) : null;
+          
+          const profileData: any = {
+            displayName: user.displayName || '',
+            name: user.displayName || '',
+            fullName: user.displayName || '',
+            email: user.email,
+          };
+
+          if (invitation && invitation.companyId) {
+            profileData.companyId = invitation.companyId;
+            profileData.companyName = invitation.companyName || '';
+            profileData.type = 'COMPANY';
+            profileData.isCompanyAdmin = invitation.isCompanyAdmin || false;
+            profileData.status = 'ACTIVE';
           }
-        }
 
-        // Create basic profile from Google info
-        const profileData: any = {
-          name: user.displayName || '',
-          fullName: user.displayName || '',
-          email: user.email,
-          createdAt: new Date().toISOString()
-        };
+          // Cria/Atualiza o perfil usando a API
+          await api.post('/users/me', profileData);
 
-        // If they were invited to a company, link them immediately
-        if (invitedData.companyId) {
-          profileData.companyId = invitedData.companyId;
-          profileData.companyName = invitedData.companyName || '';
-          profileData.type = 'COMPANY';
-          profileData.isCompanyAdmin = invitedData.isCompanyAdmin || false;
-          profileData.status = 'ACTIVE';
-        }
-
-        await setDoc(docRef, profileData);
-
-        // Delete the temporary invitation document if it's different from user.uid
-        if (inviteDocId && inviteDocId !== user.uid) {
-          try {
-            await deleteDoc(doc(db, 'users', inviteDocId));
-          } catch (delErr) {
-            console.error("Error deleting placeholder invitation document:", delErr);
+          if (invitation && invitation.inviteDocId) {
+            // Remove o convite provisório (a rota DELETE precisa existir no NestJS)
+            await api.delete(`/users/invitation/${invitation.inviteDocId}`).catch(e => console.error(e));
           }
         }
       }
@@ -126,63 +122,52 @@ export function Login() {
           console.error("Failed to send verification email:", verifyErr);
         }
         
-        // Check for pre-existing invitation
-        let invitedData: any = {};
-        let inviteDocId: string | null = null;
-        try {
-          const q = query(collection(db, 'users'), where('email', '==', email.trim().toLowerCase()));
-          const inviteSnap = await getDocs(q);
-          if (!inviteSnap.empty) {
-            inviteDocId = inviteSnap.docs[0].id;
-            invitedData = inviteSnap.docs[0].data();
-          }
-        } catch (err) {
-          console.error("Error looking up invitation:", err);
-        }
+        const invitation = await checkInvitation(email.trim().toLowerCase());
 
         const profileData: any = {
-          name: socialName || name, // prefer social name if provided
+          displayName: socialName || name,
+          name: socialName || name,
           fullName: name,
           socialName,
           treatment,
           phone,
           email: email.trim().toLowerCase(),
-          createdAt: new Date().toISOString()
         };
 
-        // If they were invited to a company, link them immediately
-        if (invitedData.companyId) {
-          profileData.companyId = invitedData.companyId;
-          profileData.companyName = invitedData.companyName || '';
+        if (invitation && invitation.companyId) {
+          profileData.companyId = invitation.companyId;
+          profileData.companyName = invitation.companyName || '';
           profileData.type = 'COMPANY';
-          profileData.isCompanyAdmin = invitedData.isCompanyAdmin || false;
+          profileData.isCompanyAdmin = invitation.isCompanyAdmin || false;
           profileData.status = 'ACTIVE';
         }
 
-        // Save initial profile
-        await setDoc(doc(db, 'users', user.uid), profileData);
+        // Save initial profile na API
+        await api.post('/users/me', profileData);
 
-        // Delete the temporary invitation document if it's different from the user.uid
-        if (inviteDocId && inviteDocId !== user.uid) {
-          try {
-            await deleteDoc(doc(db, 'users', inviteDocId));
-          } catch (delErr) {
-            console.error("Error deleting placeholder invitation document:", delErr);
-          }
+        if (invitation && invitation.inviteDocId) {
+          await api.delete(`/users/invitation/${invitation.inviteDocId}`).catch(e => console.error(e));
         }
 
         await refreshProfile();
         
-        // If they were invited, redirect directly to dashboard as they are already a company member!
-        if (invitedData.companyId) {
+        if (invitation && invitation.companyId) {
           navigate(returnTo || '/dashboard');
         } else {
-          navigate(`/dashboard/onboarding${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`); // to select Candidate or Company
+          navigate(`/dashboard/onboarding${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`);
         }
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Ocorreu um erro.');
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setError('E-mail ou senha incorretos.');
+      } else if (err.code === 'auth/email-already-in-use') {
+        setError('Este e-mail já está em uso.');
+      } else if (err.code === 'auth/weak-password') {
+        setError('A senha deve ter pelo menos 6 caracteres.');
+      } else {
+        setError(err.message || 'Ocorreu um erro.');
+      }
     } finally {
       setLoading(false);
     }

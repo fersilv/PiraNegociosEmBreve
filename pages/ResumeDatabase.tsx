@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, query, getDocs, where } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { api } from '../lib/api';
 import { Lock, FileText, Search, User, Sparkles, Loader2, MapPin, Phone, MessageSquare, Filter, RefreshCw } from 'lucide-react';
 import { openBase64InNewTab } from '../lib/fileViewer';
 import { CandidateProfileModal } from '../components/CandidateProfileModal';
@@ -29,9 +28,8 @@ export function ResumeDatabase() {
     
     setLoading(true);
     try {
-      const q = query(collection(db, 'users'), where('type', '==', 'CANDIDATE'));
-      const snap = await getDocs(q);
-      setCandidates(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const res = await api.get('/candidates');
+      setCandidates(res.data || []);
     } catch (err) {
       console.error(err);
     } finally {

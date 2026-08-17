@@ -1,6 +1,6 @@
-import { collection, addDoc, query, where, onSnapshot, doc, updateDoc, getDocs, limit } from 'firebase/firestore';
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
-import { db, auth, app } from './firebase';
+import { app } from './firebase';
+import { api } from './api';
 
 // Helper to check if notifications are supported
 export const isNotificationSupported = () => {
@@ -22,18 +22,13 @@ export const getMessagingInstance = () => {
   return null;
 };
 
-// Save token to Firestore for the user
+// Save token to backend for the user
 export const saveTokenToFirestore = async (userId: string, token: string) => {
   try {
-    const userRef = doc(db, 'users', userId);
-    // Store in an array or a separate field on the user profile
-    await updateDoc(userRef, {
-      fcmToken: token,
-      fcmTokenUpdatedAt: new Date().toISOString()
-    });
-    console.log("FCM Token saved to user profile.");
+    await api.put(`/users/${userId}/fcm-token`, { token });
+    console.log("FCM Token saved to user profile via API.");
   } catch (err) {
-    console.error("Error saving FCM Token to Firestore:", err);
+    console.error("Error saving FCM Token via API:", err);
   }
 };
 
@@ -72,7 +67,7 @@ export const requestNotificationPermission = async (userId: string): Promise<str
   return null;
 };
 
-// Write a notification to Firestore
+// Write a notification to backend
 export const sendNotificationToUser = async (
   userId: string, 
   title: string, 
@@ -81,18 +76,16 @@ export const sendNotificationToUser = async (
   metadata: any = {}
 ) => {
   try {
-    await addDoc(collection(db, 'notifications'), {
+    await api.post('/notifications', {
       userId,
       title,
       message,
       type,
-      createdAt: new Date().toISOString(),
-      read: false,
       ...metadata
     });
-    console.log(`Notification of type ${type} written to Firestore for user ${userId}`);
+    console.log(`Notification of type ${type} sent via API for user ${userId}`);
   } catch (err) {
-    console.error("Failed to save notification to Firestore:", err);
+    console.error("Failed to save notification via API:", err);
   }
 };
 
@@ -104,25 +97,15 @@ export const notifyCandidatesOfNewJob = async (
   location: string
 ) => {
   try {
-    const q = query(collection(db, 'users'), where('type', '==', 'CANDIDATE'));
-    const snap = await getDocs(q);
-    
-    // Batch notifications or individual writes
-    const promises = snap.docs.map(docSnap => {
-      const candidateId = docSnap.id;
-      return sendNotificationToUser(
-        candidateId,
-        'Nova Vaga Compatível!',
-        `A empresa "${companyName}" publicou uma nova vaga de "${jobTitle}" em "${location}".`,
-        'new_job',
-        { jobId, jobTitle, companyName, location }
-      );
+    await api.post('/notifications/new-job', {
+      jobId,
+      jobTitle,
+      companyName,
+      location
     });
-    
-    await Promise.all(promises);
-    console.log(`Notified ${promises.length} candidates about new job ${jobTitle}`);
+    console.log(`Requested backend to notify candidates about new job ${jobTitle}`);
   } catch (err) {
-    console.error("Error notifying candidates of new job:", err);
+    console.error("Error notifying candidates of new job via API:", err);
   }
 };
 
@@ -140,38 +123,4 @@ export const setupForegroundFCMListener = (onMessageReceived: (payload: any) => 
     console.error("Error setting up active FCM listener:", err);
   }
   return () => {};
-};
-
-// Real-time listener for user notifications in Firestore (fallback & in-app alerts)
-export const setupFirestoreNotificationListener = (
-  userId: string, 
-  onNewNotification: (notification: any) => void
-) => {
-  const q = query(
-    collection(db, 'notifications'), 
-    where('userId', '==', userId),
-    where('read', '==', false)
-  );
-
-  return onSnapshot(q, (snapshot) => {
-    snapshot.docChanges().forEach((change) => {
-      if (change.type === 'added') {
-        const notif = { id: change.doc.id, ...change.doc.data() } as any;
-        
-        // Show native browser notification if app is in background or permission is granted
-        if (Notification.permission === 'granted') {
-          try {
-            new Notification(notif.title, {
-              body: notif.message,
-              icon: '/logo.png' // fallback icon
-            });
-          } catch (e) {
-            console.warn("Could not fire background Notification:", e);
-          }
-        }
-        
-        onNewNotification(notif);
-      }
-    });
-  });
 };

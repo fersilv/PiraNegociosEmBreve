@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, BellOff, Check, Trash2, ShieldCheck, Sparkles, AlertCircle } from 'lucide-react';
-import { collection, query, where, getDocs, doc, updateDoc, writeBatch, orderBy, limit, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { 
   isNotificationSupported, 
-  requestNotificationPermission, 
-  setupFirestoreNotificationListener 
+  requestNotificationPermission 
 } from '../lib/notifications';
 
 export function NotificationCenter() {
@@ -18,6 +16,21 @@ export function NotificationCenter() {
   const [isPushEnabled, setIsPushEnabled] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const fetchNotifications = async () => {
+    if (!user) return;
+    try {
+      const res = await api.get('/notifications');
+      if (Array.isArray(res.data)) {
+        setNotifications(res.data);
+      } else {
+        setNotifications([]);
+      }
+    } catch (err) {
+      console.error(err);
+      setNotifications([]);
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
 
@@ -26,23 +39,12 @@ export function NotificationCenter() {
       setIsPushEnabled(true);
     }
 
-    // Set up real-time listener for user notifications
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-      limit(25)
-    );
+    fetchNotifications();
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map(docSnap => ({
-        id: docSnap.id,
-        ...docSnap.data()
-      }));
-      setNotifications(items);
-    });
+    // Set up polling for real-time notifications
+    const intervalId = setInterval(fetchNotifications, 10000); // 10 seconds
 
-    return () => unsubscribe();
+    return () => clearInterval(intervalId);
   }, [user]);
 
   // Click outside to close
@@ -71,7 +73,8 @@ export function NotificationCenter() {
 
   const handleMarkAsRead = async (id: string) => {
     try {
-      await updateDoc(doc(db, 'notifications', id), { read: true });
+      await api.put(`/notifications/${id}/read`);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
     } catch (err) {
       console.error(err);
     }
@@ -80,13 +83,8 @@ export function NotificationCenter() {
   const handleMarkAllAsRead = async () => {
     if (!user || unreadCount === 0) return;
     try {
-      const batch = writeBatch(db);
-      notifications.forEach(n => {
-        if (!n.read) {
-          batch.update(doc(db, 'notifications', n.id), { read: true });
-        }
-      });
-      await batch.commit();
+      await api.put('/notifications/read-all');
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     } catch (err) {
       console.error(err);
     }
@@ -95,10 +93,8 @@ export function NotificationCenter() {
   const handleDeleteNotification = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      // In firestore.rules we allowed update/delete for notifications
-      // Let's delete this doc
-      const { deleteDoc } = await import('firebase/firestore');
-      await deleteDoc(doc(db, 'notifications', id));
+      await api.delete(`/notifications/${id}`);
+      setNotifications(prev => prev.filter(n => n.id !== id));
     } catch (err) {
       console.error(err);
     }

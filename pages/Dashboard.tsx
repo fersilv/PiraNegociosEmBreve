@@ -31,6 +31,19 @@ export function Dashboard() {
     return <Navigate to="/dashboard/onboarding" replace />;
   }
 
+  // Force users to fill mandatory fields if they bypassed the form
+  if (profile && profile.type === 'COMPANY' && (!profile.phone || !profile.companyName)) {
+    if (!location.pathname.includes('/empresa') && !location.pathname.includes('/perfil')) {
+      return <Navigate to="/dashboard/empresa" replace />;
+    }
+  }
+
+  if (profile && profile.type === 'CANDIDATE' && !profile.phone) {
+    if (!location.pathname.includes('/perfil')) {
+      return <Navigate to="/dashboard/perfil" replace />;
+    }
+  }
+
   return (
     <DashboardLayout>
       <Routes>
