@@ -2,12 +2,11 @@ import axios from 'axios';
 import { getAuth } from 'firebase/auth';
 
 // Never ship a localhost fallback: in production it would target the visitor's own machine.
-// Leave VITE_API_URL empty only when the reverse proxy serves the API on the same origin.
+// The production default is the same-origin reverse-proxy path, so a build cannot
+// accidentally call the frontend root when VITE_API_URL is omitted.
 const configuredApiUrl = import.meta.env.VITE_API_URL?.trim().replace(/\/$/, '');
-export const API_URL = configuredApiUrl || (import.meta.env.DEV ? 'http://localhost:3888' : '');
-const apiPath = configuredApiUrl
-  ? new URL(configuredApiUrl, window.location.origin).pathname.replace(/\/$/, '')
-  : '';
+export const API_URL = configuredApiUrl || (import.meta.env.DEV ? 'http://localhost:3888' : '/api');
+const apiPath = new URL(API_URL, window.location.origin).pathname.replace(/\/$/, '');
 export const SOCKET_PATH = `${apiPath}/socket.io`;
 
 /** Safely consumes endpoints that are expected to return a collection. */
