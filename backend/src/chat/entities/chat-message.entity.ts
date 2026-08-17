@@ -33,7 +33,7 @@ export class ChatMessage {
   @Column({ type: 'jsonb', nullable: true })
   attachment: { name: string; data: string; mimeType: string; size: number } | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   documentId: string | null;
 
   @Column({ type: 'jsonb', nullable: true })

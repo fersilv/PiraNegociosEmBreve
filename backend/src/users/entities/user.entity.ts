@@ -98,7 +98,7 @@ export class User {
   @Column({ type: 'jsonb', nullable: true })
   savedDocs: Record<string, string> | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   fcmToken: string | null;
 
   @CreateDateColumn()
