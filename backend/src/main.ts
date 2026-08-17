@@ -35,6 +35,8 @@ async function bootstrap() {
   await ensureDatabaseExists();
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Public API contract. Nginx forwards /api/* unchanged to this service.
+  app.setGlobalPrefix('api');
   
   // Habilitar CORS para o frontend em React
   app.enableCors();

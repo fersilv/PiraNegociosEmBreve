@@ -8,6 +8,7 @@ const defaultFrontendOrigins = process.env.NODE_ENV === 'production'
   : ['http://localhost:3000'];
 
 @WebSocketGateway({
+  path: '/api/socket.io',
   cors: { origin: (process.env.FRONTEND_ORIGIN || defaultFrontendOrigins.join(',')).split(','), credentials: true },
 })
 export class ChatGateway implements OnGatewayConnection {
