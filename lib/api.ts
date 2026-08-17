@@ -1,8 +1,14 @@
 import axios from 'axios';
 import { getAuth } from 'firebase/auth';
 
-// URL base do seu NestJS local (mude se for usar outra porta ou domínio na VPS)
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3888';
+// Never ship a localhost fallback: in production it would target the visitor's own machine.
+// Leave VITE_API_URL empty only when the reverse proxy serves the API on the same origin.
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim().replace(/\/$/, '');
+export const API_URL = configuredApiUrl || (import.meta.env.DEV ? 'http://localhost:3888' : '');
+const apiPath = configuredApiUrl
+  ? new URL(configuredApiUrl, window.location.origin).pathname.replace(/\/$/, '')
+  : '';
+export const SOCKET_PATH = `${apiPath}/socket.io`;
 
 export const api = axios.create({
   baseURL: API_URL,

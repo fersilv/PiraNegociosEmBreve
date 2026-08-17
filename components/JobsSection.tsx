@@ -32,6 +32,11 @@ export function JobsSection({ region }: { region: 'PIRASSUNUNGA' }) {
       alert('Você já se candidatou a esta vaga.');
       return;
     }
+    if (!profile.resumeURL?.trim()) {
+      alert('Para se candidatar, envie seu currículo no perfil. Você será direcionado agora.');
+      navigate('/dashboard/perfil');
+      return;
+    }
     try {
       await api.post('/applications', {
         jobId: job.id,

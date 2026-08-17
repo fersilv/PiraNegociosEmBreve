@@ -55,6 +55,9 @@ export function CompanyProfilePage() {
   // Employees list state
   const [employees, setEmployees] = useState<any[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [accessRequest, setAccessRequest] = useState<any | null>(null);
+  const [accessRequests, setAccessRequests] = useState<any[]>([]);
+  const [reviewingAccessRequest, setReviewingAccessRequest] = useState<string | null>(null);
 
   // Invite employee form state
   const [inviteName, setInviteName] = useState('');
@@ -94,6 +97,15 @@ export function CompanyProfilePage() {
     }
   };
 
+  const fetchAccessRequests = async (cid: string) => {
+    try {
+      const response = await api.get(`/companies/${cid}/access-requests`);
+      setAccessRequests(response.data || []);
+    } catch (err) {
+      console.error('Erro ao buscar solicitações de acesso:', err);
+    }
+  };
+
   useEffect(() => {
     const initCompanyProfile = async () => {
       if (!user || !profile) return;
@@ -102,32 +114,9 @@ export function CompanyProfilePage() {
         let currentCompanyId = profile.companyId || null;
         
         if (!currentCompanyId) {
-          const response = await api.get('/companies/mine').catch(() => null);
-          const companies = response?.data || [];
-          
-          if (companies.length > 0) {
-            const compDoc = companies[0];
-            currentCompanyId = compDoc.id;
-            await refreshProfile();
-          } else {
-            // Create a default company
-            const nameToUse = profile.companyName || (profile.name ? `${profile.name} Ltda` : 'Nova Empresa');
-            const newCompanyResp = await api.post('/companies', {
-              name: nameToUse,
-              description: profile.companyDescription || '',
-              documentType: 'CNPJ',
-              cnpj: '',
-              website: '',
-              address: '',
-              phone: profile.phone || '',
-              verificationStatus: 'DRAFT',
-              isVerified: false,
-              logoURL: profile.companyLogo || '',
-              documentURL: ''
-            });
-            currentCompanyId = newCompanyResp.data.id;
-            await refreshProfile();
-          }
+          const requestResponse = await api.get('/companies/access-requests/me').catch(() => null);
+          setAccessRequest(requestResponse?.data || null);
+          return;
         }
 
         setCompanyId(currentCompanyId);
@@ -153,6 +142,7 @@ export function CompanyProfilePage() {
             setCompanyDocumentFile(compData.documentURL || compData.companyDocumentFile || '');
 
             await fetchEmployees(currentCompanyId);
+            await fetchAccessRequests(currentCompanyId);
           }
         }
       } catch (err) {
@@ -295,11 +285,44 @@ export function CompanyProfilePage() {
     }
   };
 
+  const handleReviewAccessRequest = async (requestId: string, action: 'approve' | 'reject', role: 'admin' | 'colaborador' = 'colaborador') => {
+    if (!companyId) return;
+    setReviewingAccessRequest(requestId);
+    try {
+      await api.put(`/companies/${companyId}/access-requests/${requestId}`, { action, role });
+      await Promise.all([fetchAccessRequests(companyId), fetchEmployees(companyId)]);
+    } catch (err) {
+      console.error(err);
+      alert('Não foi possível processar a solicitação de acesso.');
+    } finally {
+      setReviewingAccessRequest(null);
+    }
+  };
+
   if (initialLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-stone-500">
         <Clock className="w-8 h-8 animate-spin text-terracotta-500 mb-2" />
         <p className="text-sm font-medium">Carregando dados da empresa...</p>
+      </div>
+    );
+  }
+
+  if (!companyId) {
+    const isRejected = accessRequest?.status === 'REJECTED';
+    return (
+      <div className="max-w-2xl mx-auto py-12">
+        <div className="bg-white rounded-3xl p-8 border border-stone-200 shadow-sm text-center">
+          <Clock className={`w-10 h-10 mx-auto mb-4 ${isRejected ? 'text-red-500' : 'text-terracotta-500'}`} />
+          <h1 className="text-2xl font-serif font-bold text-stone-900">{isRejected ? 'Solicitação não aprovada' : 'Aguardando vínculo com empresa'}</h1>
+          <p className="text-stone-500 mt-3 leading-relaxed">
+            {isRejected
+              ? `A solicitação para ${accessRequest?.companyName || 'a empresa'} não foi aprovada. Você pode entrar em contato com a empresa ou falar com o suporte.`
+              : accessRequest
+                ? `Sua solicitação para ${accessRequest.companyName} foi enviada. Um administrador da empresa ou da plataforma poderá aprovar e definir seu nível de acesso.`
+                : 'Você ainda não está vinculado a uma empresa. Refaça o cadastro empresarial para buscar ou cadastrar sua empresa.'}
+          </p>
+        </div>
       </div>
     );
   }
@@ -585,6 +608,29 @@ export function CompanyProfilePage() {
           </div>
         </form>
       </div>
+
+      {profile?.isCompanyAdmin && (
+        <div className="bg-white rounded-3xl p-6 md:p-8 border border-stone-200 shadow-sm space-y-4">
+          <div>
+            <h3 className="text-xl font-serif font-bold text-stone-900 flex items-center gap-2"><UserCheck className="text-terracotta-600 w-5 h-5" /> Solicitações de acesso</h3>
+            <p className="text-stone-500 text-sm mt-1">Aprove somente pessoas que realmente pertencem à empresa. Você define se entram como colaborador ou administrador.</p>
+          </div>
+          {accessRequests.length === 0 ? <p className="text-sm text-stone-500">Nenhuma solicitação pendente.</p> : (
+            <div className="divide-y divide-stone-100">
+              {accessRequests.map(request => (
+                <div key={request.id} className="py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div><p className="font-bold text-stone-900 text-sm">{request.requesterName}</p><p className="text-xs text-stone-500">{request.requesterEmail}</p></div>
+                  <div className="flex flex-wrap gap-2">
+                    <button disabled={reviewingAccessRequest === request.id} onClick={() => handleReviewAccessRequest(request.id, 'approve', 'colaborador')} className="px-3 py-2 rounded-lg text-xs font-bold bg-stone-100 text-stone-700 hover:bg-stone-200 disabled:opacity-50">Aprovar como colaborador</button>
+                    <button disabled={reviewingAccessRequest === request.id} onClick={() => handleReviewAccessRequest(request.id, 'approve', 'admin')} className="px-3 py-2 rounded-lg text-xs font-bold bg-terracotta-600 text-white hover:bg-terracotta-700 disabled:opacity-50">Aprovar como admin</button>
+                    <button disabled={reviewingAccessRequest === request.id} onClick={() => handleReviewAccessRequest(request.id, 'reject')} className="px-3 py-2 rounded-lg text-xs font-bold bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50">Recusar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Employees / Team Management Module */}
       <div className="bg-white rounded-3xl p-6 md:p-8 border border-stone-200 shadow-sm space-y-8">

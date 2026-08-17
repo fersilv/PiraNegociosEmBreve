@@ -49,7 +49,7 @@ export function CompanyJobPage() {
       const response = await api.get(`/jobs/${jobId}`);
       if (response.data) {
         const data = response.data;
-        if (data.ownerId !== user?.uid) {
+        if (profile?.type !== 'ADMIN' && data.ownerId !== user?.uid) {
           navigate('/dashboard'); // Not the owner
           return;
         }

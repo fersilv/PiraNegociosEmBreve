@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FileText, Loader2, MessageCircle, Paperclip, Send, X } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
-import { API_URL, api } from '../lib/api';
+import { API_URL, SOCKET_PATH, api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
 type ChatAttachment = { name: string; data: string; mimeType: string; size: number };
@@ -64,7 +64,7 @@ export function ApplicationChat({
     load();
     user.getIdToken().then(token => {
       if (!active) return;
-      const socket = io(API_URL, { auth: { token }, transports: ['websocket', 'polling'] });
+      const socket = io(API_URL, { path: SOCKET_PATH, auth: { token }, transports: ['websocket', 'polling'] });
       socket.on('chat:message', (message: ChatMessage) => {
         if (message.applicationId === applicationId) appendMessage(message);
       });

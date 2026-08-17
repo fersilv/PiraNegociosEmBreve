@@ -116,11 +116,6 @@ export function ProfilePage() {
     e.preventDefault();
     if (!user) return;
     
-    if (profile?.type === 'CANDIDATE' && !candidateResumeUrl) {
-      alert('Por favor, faça o upload de seu currículo para salvar o perfil.');
-      return;
-    }
-
     setLoading(true);
     try {
       const updates: any = {
@@ -722,7 +717,7 @@ export function ProfilePage() {
 
                 <div>
                   <FileUpload
-                    label="Arquivo de Currículo * (PDF ou Imagem)"
+                    label="Arquivo de Currículo (opcional; necessário para se candidatar)"
                     accept=".pdf,.png,.jpg,.jpeg"
                     value={candidateResumeUrl}
                     onChange={(base64) => setCandidateResumeUrl(base64)}

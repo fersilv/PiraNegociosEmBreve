@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
+  <rect width="180" height="180" rx="39" fill="#A63F2D"/>
+  <path fill="#FDF6F5" d="M45 54c0-6.2 5-11.2 11.2-11.2h67.6c6.2 0 11.2 5 11.2 11.2v73.1c0 6.2-5 11.2-11.2 11.2H56.2c-6.2 0-11.2-5-11.2-11.2V54Zm22.5 11.3v50.6h45V65.3h-45Z"/>
+  <text x="90" y="163" text-anchor="middle" fill="#FDF6F5" font-family="Arial, sans-serif" font-size="20" font-weight="700">PN</text>
+</svg>

@@ -25,18 +25,24 @@ export class UsersController {
   @Get('me')
   async getProfile(@Req() req: any) {
     const user = req.user; // Vem do AuthGuard
-    try {
-      return await this.usersService.findOne(user.uid);
-    } catch (e) {
-      if (this.isBootstrapAdmin(user.email)) {
+    const existing = await this.usersService.findOneOrNull(user.uid);
+
+    // The allowlist is also applied to an existing profile. This makes the
+    // bootstrap-admin configuration safe to add after the person has already
+    // completed onboarding as a candidate or company user.
+    if (this.isBootstrapAdmin(user.email)) {
+      if (!existing || existing.type !== UserType.ADMIN) {
         return await this.usersService.createOrUpdate(user.uid, {
           type: UserType.ADMIN,
-          displayName: 'Fernando Monteiro',
+          displayName: existing?.displayName || user.name || user.email,
           email: user.email,
         });
       }
-      throw e;
+      return existing;
     }
+
+    if (existing) return existing;
+    return await this.usersService.findOne(user.uid);
   }
 
   @Post('me')

@@ -74,7 +74,11 @@ export class ApplicationsController {
     if (!candidate || candidate.type !== UserType.CANDIDATE) throw new ForbiddenException('Apenas candidatos podem se candidatar.');
     if (!job || !job.active) throw new BadRequestException('Esta vaga não está disponível para candidaturas.');
     if (!job.acceptsPlatformApplications) throw new BadRequestException('Esta empresa recebe currículos por um canal externo indicado na vaga.');
-    return this.appsService.create(req.user.uid, job, createData.resumeURL || createData.resumeUrl || candidate.resumeURL || undefined);
+    const resumeUrl = createData.resumeURL || createData.resumeUrl || candidate.resumeURL || undefined;
+    if (!resumeUrl?.trim()) {
+      throw new BadRequestException('Envie seu currículo no perfil antes de se candidatar a uma vaga.');
+    }
+    return this.appsService.create(req.user.uid, job, resumeUrl);
   }
 
   @Put(':id/status')

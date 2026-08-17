@@ -3,8 +3,12 @@ import { ConnectedSocket, OnGatewayConnection, SubscribeMessage, WebSocketGatewa
 import { Server, Socket } from 'socket.io';
 import { FirebaseService } from '../auth/firebase.service';
 
+const defaultFrontendOrigins = process.env.NODE_ENV === 'production'
+  ? ['https://piranegocios.com.br', 'https://www.piranegocios.com.br']
+  : ['http://localhost:3000'];
+
 @WebSocketGateway({
-  cors: { origin: (process.env.FRONTEND_ORIGIN || 'http://localhost:3000').split(','), credentials: true },
+  cors: { origin: (process.env.FRONTEND_ORIGIN || defaultFrontendOrigins.join(',')).split(','), credentials: true },
 })
 export class ChatGateway implements OnGatewayConnection {
   @WebSocketServer() server: Server;

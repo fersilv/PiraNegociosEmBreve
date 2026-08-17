@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#A63F2D"/>
+  <path fill="#FDF6F5" d="M128 160c0-17.7 14.3-32 32-32h192c17.7 0 32 14.3 32 32v208c0 17.7-14.3 32-32 32H160c-17.7 0-32-14.3-32-32V160Zm64 32v144h128V192H192Z"/>
+  <path fill="#F3D1CC" d="M224 224h64v80h-64z"/>
+  <path fill="#FDF6F5" d="M96 224h32v144H96zM384 224h32v144h-32zM208 96h96v32h-96z"/>
+  <text x="256" y="462" text-anchor="middle" fill="#FDF6F5" font-family="Arial, sans-serif" font-size="43" font-weight="700">PN</text>
+</svg>

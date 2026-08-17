@@ -45,6 +45,7 @@ export interface UserProfile {
   email: string;
   type: 'COMPANY' | 'CANDIDATE' | 'ADMIN';
   companyId?: string;
+  isCompanyAdmin?: boolean;
   companyName?: string;
   companyDescription?: string;
   companyLogo?: string;

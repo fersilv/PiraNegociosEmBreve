@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Navigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
-import { Building2, UserCircle, Loader2 } from 'lucide-react';
+import { Building2, CheckCircle2, Loader2, Search, UserCircle } from 'lucide-react';
 import { FileUpload } from '../components/FileUpload';
 
 export function Onboarding() {
@@ -18,6 +18,9 @@ export function Onboarding() {
   const [companyName, setCompanyName] = useState('');
   const [companyDescription, setCompanyDescription] = useState('');
   const [companyLogo, setCompanyLogo] = useState('');
+  const [companyMatches, setCompanyMatches] = useState<Array<{ id: string; name: string; cityState?: string; verificationStatus?: string }>>([]);
+  const [selectedCompany, setSelectedCompany] = useState<{ id: string; name: string } | null>(null);
+  const [searchingCompanies, setSearchingCompanies] = useState(false);
   
   // Candidate fields
   const [bio, setBio] = useState('');
@@ -30,6 +33,25 @@ export function Onboarding() {
   const [phone, setPhone] = useState(profile?.phone || '');
   const [socialName, setSocialName] = useState(profile?.socialName || '');
   const [treatment, setTreatment] = useState(profile?.treatment || 'ele/dele');
+
+  useEffect(() => {
+    if (step !== 2 || selectedType !== 'COMPANY' || selectedCompany || companyName.trim().length < 2) {
+      if (companyName.trim().length < 2) setCompanyMatches([]);
+      return;
+    }
+    const timeout = window.setTimeout(async () => {
+      setSearchingCompanies(true);
+      try {
+        const response = await api.get(`/companies/search?q=${encodeURIComponent(companyName.trim())}`);
+        setCompanyMatches(response.data || []);
+      } catch {
+        setCompanyMatches([]);
+      } finally {
+        setSearchingCompanies(false);
+      }
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [companyName, selectedCompany, selectedType, step]);
 
   if (profile?.type) {
     // If they somehow got here but already have a type
@@ -49,10 +71,7 @@ export function Onboarding() {
       const updates: any = { type: selectedType, acceptedTerms: true };
       
       if (selectedType === 'COMPANY') {
-        updates.companyName = companyName;
-        updates.companyDescription = companyDescription;
-        updates.companyLogo = companyLogo;
-        updates.isVerified = false;
+        // The company link is granted only by the server, after ownership or approval.
       } else {
         updates.bio = bio;
         updates.resumeURL = resumeURL;
@@ -71,6 +90,18 @@ export function Onboarding() {
       }
 
       await api.post('/users/me', updates);
+      if (selectedType === 'COMPANY') {
+        if (selectedCompany) {
+          await api.post(`/companies/${selectedCompany.id}/access-requests`);
+        } else {
+          await api.post('/companies/register', {
+            name: companyName.trim(),
+            description: companyDescription,
+            logoURL: companyLogo,
+            verificationStatus: 'DRAFT',
+          });
+        }
+      }
       await refreshProfile();
       navigate(returnTo || '/dashboard');
     } catch (e) {
@@ -181,15 +212,41 @@ export function Onboarding() {
         {step === 2 && selectedType === 'COMPANY' && (
           <div className="space-y-4 mb-8">
             <div>
-              <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Nome da Empresa *</label>
+              <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Busque sua empresa *</label>
               <input 
                 type="text" 
                 required 
                 value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
+                onChange={(e) => {
+                  setCompanyName(e.target.value);
+                  setSelectedCompany(null);
+                }}
                 className="w-full px-4 py-3 rounded-xl border border-stone-200 focus:border-terracotta-500 outline-none"
+                placeholder="Digite o nome da empresa"
               />
+              {searchingCompanies && <p className="mt-2 text-xs text-stone-500 flex items-center gap-1"><Search className="w-3.5 h-3.5 animate-pulse" /> Buscando empresas cadastradas…</p>}
+              {!selectedCompany && companyMatches.length > 0 && (
+                <div className="mt-2 rounded-xl border border-stone-200 overflow-hidden bg-white">
+                  <p className="px-3 py-2 text-xs font-bold text-stone-500 bg-stone-50">Encontramos empresas parecidas. Se for a sua, solicite vínculo:</p>
+                  {companyMatches.map(company => (
+                    <button type="button" key={company.id} onClick={() => { setSelectedCompany(company); setCompanyName(company.name); setCompanyMatches([]); }} className="w-full px-3 py-3 text-left hover:bg-terracotta-50 border-t border-stone-100">
+                      <span className="font-bold text-sm text-stone-800">{company.name}</span>
+                      <span className="block text-xs text-stone-500">{company.cityState || 'Localização não informada'}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {selectedCompany && (
+                <div className="mt-3 rounded-xl border border-terracotta-200 bg-terracotta-50 p-3">
+                  <div className="flex gap-2 text-sm text-terracotta-900"><CheckCircle2 className="w-5 h-5 shrink-0" /><div><strong>{selectedCompany.name}</strong><p className="mt-1 text-xs">Você solicitará acesso. Se a empresa já tiver gestores, um deles precisará aprovar e definir seu cargo.</p></div></div>
+                  <button type="button" onClick={() => { setSelectedCompany(null); setCompanyName(''); }} className="mt-2 text-xs font-bold text-terracotta-700 hover:underline">Escolher outra empresa</button>
+                </div>
+              )}
+              {!selectedCompany && companyName.trim().length >= 2 && !searchingCompanies && companyMatches.length === 0 && (
+                <p className="mt-2 text-xs text-stone-500">Não encontramos esta empresa. Ao finalizar, será criado um novo cadastro sob sua responsabilidade.</p>
+              )}
             </div>
+            {!selectedCompany && <>
             <div>
               <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Descrição da Empresa</label>
               <textarea 
@@ -209,6 +266,7 @@ export function Onboarding() {
                 placeholder="Selecione ou arraste o logotipo da empresa"
               />
             </div>
+            </>}
           </div>
         )}
 
@@ -235,7 +293,7 @@ export function Onboarding() {
               />
               
               <FileUpload 
-                label="Upload do Currículo * (PDF ou Imagem)" 
+                label="Upload do Currículo (Opcional por enquanto)" 
                 accept=".pdf,.png,.jpg,.jpeg" 
                 value={resumeURL} 
                 onChange={(base64) => setResumeURL(base64)} 
@@ -281,7 +339,6 @@ export function Onboarding() {
               loading || 
               (step === 2 && !acceptedTerms) || 
               (step === 2 && selectedType === 'COMPANY' && !companyName) || 
-              (step === 2 && selectedType === 'CANDIDATE' && !resumeURL) ||
               (step === 2 && !profile?.phone && (!name || !phone))
             }
             className="flex items-center justify-center gap-2 bg-terracotta-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-terracotta-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"

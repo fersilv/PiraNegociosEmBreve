@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
+import { PwaInstallPrompt } from './components/PwaInstallPrompt';
 
 const Home = lazy(() => import('./pages/Home'));
 const Login = lazy(() => import('./pages/Login').then(module => ({ default: module.Login })));
@@ -15,6 +16,7 @@ function RouteLoader() {
 export default function App() {
   return (
     <AuthProvider>
+      <PwaInstallPrompt />
       <BrowserRouter>
         <Suspense fallback={<RouteLoader />}>
           <Routes>

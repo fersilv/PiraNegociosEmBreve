@@ -47,7 +47,12 @@ export const requestNotificationPermission = async (userId: string): Promise<str
       const messaging = getMessagingInstance();
       if (messaging) {
         try {
-          const token = await getToken(messaging, { vapidKey: import.meta.env.VITE_FCM_VAPID_KEY || VAPID_KEY });
+          const serviceWorkerRegistration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js')
+            || await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+          const token = await getToken(messaging, {
+            vapidKey: import.meta.env.VITE_FCM_VAPID_KEY || VAPID_KEY,
+            serviceWorkerRegistration,
+          });
           if (token) {
             await saveTokenToFirestore(userId, token);
             return token;

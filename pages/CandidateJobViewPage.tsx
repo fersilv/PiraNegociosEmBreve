@@ -70,6 +70,12 @@ export function CandidateJobViewPage() {
       return;
     }
 
+    if (!profile.resumeURL?.trim()) {
+      alert('Para se candidatar, envie seu currículo no perfil. Você será direcionado agora.');
+      navigate('/dashboard/perfil');
+      return;
+    }
+
     setApplying(true);
     try {
       const response = await api.post('/applications', {

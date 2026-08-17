@@ -20,6 +20,26 @@ export class CompaniesService {
     return this.companiesRepository.find({ where: { ownerId } });
   }
 
+  findAll(): Promise<Company[]> {
+    return this.companiesRepository.find({ order: { createdAt: 'DESC' } });
+  }
+
+  searchByName(term: string): Promise<Company[]> {
+    return this.companiesRepository
+      .createQueryBuilder('company')
+      .where('LOWER(company.name) LIKE LOWER(:term)', { term: `%${term}%` })
+      .orderBy('company.name', 'ASC')
+      .take(10)
+      .getMany();
+  }
+
+  findExactName(name: string): Promise<Company | null> {
+    return this.companiesRepository
+      .createQueryBuilder('company')
+      .where('LOWER(company.name) = LOWER(:name)', { name: name.trim() })
+      .getOne();
+  }
+
   async findOne(id: string): Promise<Company | null> {
     return this.companiesRepository.findOne({ where: { id } });
   }
