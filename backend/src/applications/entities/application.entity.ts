@@ -25,7 +25,7 @@ export class Application {
   @Column({ type: 'enum', enum: ApplicationStatus, default: ApplicationStatus.PENDING })
   status: ApplicationStatus;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   resumeUrl: string | null; // URL of the uploaded resume file
 
   @Column({ type: 'text', nullable: true })
