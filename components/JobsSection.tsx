@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Briefcase, MapPin, DollarSign, Clock, ArrowRight, Star, X, PlusCircle, Loader2, CheckCircle2, Laptop } from 'lucide-react';
 import { RevealText } from './RevealText';
-import { api } from '../lib/api';
+import { api, asArray } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
 import { JobCard } from './JobCard';
@@ -61,7 +61,7 @@ export function JobsSection({ region }: { region: 'PIRASSUNUNGA' }) {
     const fetchJobs = async () => {
       try {
         const res = await api.get('/jobs');
-        const fetchedJobs = (res.data || []).filter((job: Job) => job.active !== false); // Filter out inactive jobs
+        const fetchedJobs = asArray<Job>(res.data).filter(job => job.active !== false); // Filter out inactive jobs
         // Sort by postedAt desc
         fetchedJobs.sort((a: Job, b: Job) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
         setJobs(fetchedJobs);
@@ -79,7 +79,7 @@ export function JobsSection({ region }: { region: 'PIRASSUNUNGA' }) {
       const fetchMyApps = async () => {
         try {
           const res = await api.get('/applications/me');
-          setMyApplications((res.data || []).map((app: any) => app.jobId));
+          setMyApplications(asArray<any>(res.data).map(app => app.jobId));
         } catch (e) {
           console.error(e);
         }

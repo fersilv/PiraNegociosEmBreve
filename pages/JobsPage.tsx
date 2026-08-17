@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Search, MapPin, Briefcase, ChevronLeft, ChevronRight, X, Loader2 } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, asArray } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Job } from '../types/job';
 import { JobCard } from '../components/JobCard';
@@ -33,7 +33,7 @@ export default function JobsPage() {
     const fetchJobs = async () => {
       try {
         const res = await api.get('/jobs');
-        const fetchedJobs = (res.data || []).filter((job: Job) => job.active !== false);
+        const fetchedJobs = asArray<Job>(res.data).filter(job => job.active !== false);
         setJobs(fetchedJobs);
       } catch (e) {
         console.error(e);
@@ -49,7 +49,7 @@ export default function JobsPage() {
       const fetchMyApps = async () => {
         try {
           const res = await api.get('/applications/me');
-          setMyApplications((res.data || []).map((app: any) => app.jobId));
+          setMyApplications(asArray<any>(res.data).map(app => app.jobId));
         } catch (e) {
           console.error(e);
         }

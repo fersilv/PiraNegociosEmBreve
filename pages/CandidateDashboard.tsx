@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth, getGreetingName } from '../contexts/AuthContext';
-import { api } from '../lib/api';
+import { api, asArray } from '../lib/api';
 import { Briefcase, FileText, Sparkles, Loader2, ArrowRight, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
 import { openBase64InNewTab } from '../lib/fileViewer';
 import { Link } from 'react-router-dom';
@@ -26,7 +26,7 @@ export function CandidateDashboard() {
     try {
       await fetchJobsMap();
       const res = await api.get('/applications/me');
-      setMyApplications(res.data || []);
+      setMyApplications(asArray(res.data));
     } catch (err) {
       console.error('Error fetching applications:', err);
     } finally {
@@ -51,7 +51,7 @@ export function CandidateDashboard() {
     try {
       const res = await api.get('/jobs');
       const map: Record<string, any> = {};
-      (res.data || []).forEach((job: any) => {
+      asArray<any>(res.data).forEach(job => {
         map[job.id] = job;
       });
       setJobsMap(map);

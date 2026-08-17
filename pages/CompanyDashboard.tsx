@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth, getGreetingName } from '../contexts/AuthContext';
-import { api } from '../lib/api';
+import { api, asArray } from '../lib/api';
 import { Plus, Briefcase, FileText, CheckCircle, BellRing, AlertTriangle, ArrowRight, EyeOff, User, Loader2, Clock } from 'lucide-react';
 import { sendNotificationToUser, notifyCandidatesOfNewJob } from '../lib/notifications';
 import { Link, useNavigate } from 'react-router-dom';
@@ -56,7 +56,7 @@ export function CompanyDashboard() {
     setLoadingJobs(true);
     try {
       const res = await api.get('/jobs/me');
-      setMyJobs(res.data || []);
+      setMyJobs(asArray(res.data));
     } catch (err) {
       console.error(err);
     } finally {

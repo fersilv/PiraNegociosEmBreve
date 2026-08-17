@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { AdSpace } from './AdSpace';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, asArray } from '../lib/api';
 
 export function AdCarousel() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -13,7 +13,7 @@ export function AdCarousel() {
     const fetchAds = async () => {
       try {
         const res = await api.get('/ads');
-        const carouselAds = (res.data || []).filter((a: any) => a.type === 'carousel' && a.active);
+        const carouselAds = asArray<any>(res.data).filter(a => a.type === 'carousel' && a.active);
         setAds(carouselAds);
       } catch (e) {
         console.error(e);

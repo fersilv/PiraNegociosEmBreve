@@ -10,6 +10,9 @@ const apiPath = configuredApiUrl
   : '';
 export const SOCKET_PATH = `${apiPath}/socket.io`;
 
+/** Safely consumes endpoints that are expected to return a collection. */
+export const asArray = <T>(value: unknown): T[] => Array.isArray(value) ? value as T[] : [];
+
 export const api = axios.create({
   baseURL: API_URL,
   timeout: 15000,

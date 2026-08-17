@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '../lib/api';
+import { api, asArray } from '../lib/api';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Loader2, ArrowLeft, Users, Filter, User, FileText, CheckCircle, CheckCircle2, XCircle, Clock, Eye, Briefcase, MapPin, Building2, Search, Edit, Phone, Laptop, AlertTriangle } from 'lucide-react';
 import { sendNotificationToUser } from '../lib/notifications';
@@ -81,7 +81,7 @@ export function CompanyJobPage() {
     setLoadingApps(true);
     try {
       const response = await api.get(`/applications/job/${jobId}`);
-      const apps = response.data || [];
+      const apps = asArray<any>(response.data);
       setApplications(apps);
 
       // If managing app modal is currently open, keep its state synced

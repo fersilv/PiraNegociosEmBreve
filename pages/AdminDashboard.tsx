@@ -1,6 +1,6 @@
 import React, { FormEvent, useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../lib/api';
+import { api, asArray } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Briefcase, Building2, CheckCircle2, ChevronRight, Loader2, Plus, Search, Shield, Users, X } from 'lucide-react';
 
@@ -41,10 +41,10 @@ export function AdminDashboard() {
       const responses = await Promise.all(requests);
       setSummary(responses[0].data);
       let index = 1;
-      if (currentTab === 'companies' || currentTab === 'overview') setCompanies(responses[index++].data || []);
-      if (currentTab === 'jobs' || currentTab === 'overview') setJobs(responses[index++].data || []);
-      if (currentTab === 'users' || currentTab === 'overview') setUsers(responses[index++].data || []);
-      if (currentTab === 'overview') setAccessRequests(responses[index++].data || []);
+      if (currentTab === 'companies' || currentTab === 'overview') setCompanies(asArray(responses[index++].data));
+      if (currentTab === 'jobs' || currentTab === 'overview') setJobs(asArray(responses[index++].data));
+      if (currentTab === 'users' || currentTab === 'overview') setUsers(asArray(responses[index++].data));
+      if (currentTab === 'overview') setAccessRequests(asArray(responses[index++].data));
     } catch (requestError: any) { setError(requestError.response?.data?.message || 'Não foi possível carregar os dados administrativos.'); }
     finally { setLoading(false); }
   }, [tab]);

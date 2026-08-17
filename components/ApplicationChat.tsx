@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FileText, Loader2, MessageCircle, Paperclip, Send, X } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
-import { API_URL, SOCKET_PATH, api } from '../lib/api';
+import { API_URL, SOCKET_PATH, api, asArray } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
 type ChatAttachment = { name: string; data: string; mimeType: string; size: number };
@@ -54,7 +54,7 @@ export function ApplicationChat({
     const load = async () => {
       try {
         const response = await api.get(`/applications/${applicationId}/messages`);
-        if (active) setMessages(response.data || []);
+        if (active) setMessages(asArray<ChatMessage>(response.data));
       } catch {
         if (active) setError('Não foi possível carregar a conversa.');
       } finally {

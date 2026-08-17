@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '../lib/api';
+import { api, asArray } from '../lib/api';
 import { 
   Building2, 
   CheckCircle2, 
@@ -100,7 +100,7 @@ export function CompanyProfilePage() {
   const fetchAccessRequests = async (cid: string) => {
     try {
       const response = await api.get(`/companies/${cid}/access-requests`);
-      setAccessRequests(response.data || []);
+      setAccessRequests(asArray(response.data));
     } catch (err) {
       console.error('Erro ao buscar solicitações de acesso:', err);
     }

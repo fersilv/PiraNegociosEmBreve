@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Megaphone, Globe, Cpu } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, asArray } from '../lib/api';
 
 interface AdSpaceProps {
   variant?: 'leaderboard' | 'rectangle' | 'sidebar';
@@ -37,7 +37,7 @@ export function AdSpace({ variant = 'leaderboard', className = '' }: AdSpaceProp
 
         // 2. Fetch custom backup ads
         const adsRes = await api.get('/ads');
-        const ads = (adsRes.data || []).filter((a: any) => a.type === variant && a.active);
+        const ads = asArray<any>(adsRes.data).filter(a => a.type === variant && a.active);
         if (ads.length > 0) {
           setAd(ads[Math.floor(Math.random() * ads.length)]);
         }

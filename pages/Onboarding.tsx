@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, Navigate, useSearchParams } from 'react-router-dom';
-import { api } from '../lib/api';
+import { api, asArray } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Building2, CheckCircle2, Loader2, Search, UserCircle } from 'lucide-react';
 import { FileUpload } from '../components/FileUpload';
@@ -43,7 +43,7 @@ export function Onboarding() {
       setSearchingCompanies(true);
       try {
         const response = await api.get(`/companies/search?q=${encodeURIComponent(companyName.trim())}`);
-        setCompanyMatches(response.data || []);
+        setCompanyMatches(asArray(response.data));
       } catch {
         setCompanyMatches([]);
       } finally {

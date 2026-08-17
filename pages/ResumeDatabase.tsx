@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { api } from '../lib/api';
+import { api, asArray } from '../lib/api';
 import { Lock, FileText, Search, User, Sparkles, Loader2, MapPin, Phone, MessageSquare, Filter, RefreshCw } from 'lucide-react';
 import { openBase64InNewTab } from '../lib/fileViewer';
 import { CandidateProfileModal } from '../components/CandidateProfileModal';
@@ -29,7 +29,7 @@ export function ResumeDatabase() {
     setLoading(true);
     try {
       const res = await api.get('/candidates');
-      setCandidates(res.data || []);
+      setCandidates(asArray(res.data));
     } catch (err) {
       console.error(err);
     } finally {
