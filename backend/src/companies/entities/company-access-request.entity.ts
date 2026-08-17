@@ -27,7 +27,7 @@ export class CompanyAccessRequest {
   @Column({ type: 'enum', enum: CompanyAccessRequestStatus, default: CompanyAccessRequestStatus.PENDING })
   status: CompanyAccessRequestStatus;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   reviewedById: string | null;
 
   @Column({ type: 'text', nullable: true })
