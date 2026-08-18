@@ -103,6 +103,7 @@ export default function JobsPage() {
 
   // Filters state
   const [searchTerm, setSearchTerm] = useState("");
+  const [locationFilter, setLocationFilter] = useState("TODOS");
   const [workModelFilter, setWorkModelFilter] = useState<
     "TODOS" | "Presencial" | "Híbrido" | "Remoto"
   >("TODOS");
@@ -117,6 +118,14 @@ export default function JobsPage() {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const availableLocations = useMemo(() => {
+    const locs = new Set<string>();
+    jobs.forEach((job) => {
+      if (job.location) locs.add(job.location);
+    });
+    return Array.from(locs).sort();
+  }, [jobs]);
 
   useEffect(() => {
     const fetchJobs = async () => {
@@ -228,6 +237,11 @@ export default function JobsPage() {
       });
     }
 
+    // Filter by location
+    if (locationFilter !== "TODOS") {
+      result = result.filter((job) => job.location === locationFilter);
+    }
+
     // Filter by job type
     if (typeFilter !== "TODOS") {
       result = result.filter(
@@ -256,7 +270,7 @@ export default function JobsPage() {
   // Reset page to 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, workModelFilter, typeFilter, sortBy]);
+  }, [searchTerm, workModelFilter, typeFilter, sortBy, locationFilter]);
 
   const totalPages =
     Math.ceil(filteredAndSortedJobs.length / ITEMS_PER_PAGE) || 1;
@@ -325,6 +339,24 @@ export default function JobsPage() {
                   ),
                 )}
               </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-bold tracking-widest text-stone-500 uppercase">
+                Localização
+              </span>
+              <select
+                value={locationFilter}
+                onChange={(e) => setLocationFilter(e.target.value)}
+                className="bg-stone-100 border-none rounded-xl px-4 py-1.5 h-8 text-sm font-medium text-stone-700 focus:ring-2 focus:ring-terracotta-500 cursor-pointer"
+              >
+                <option value="TODOS">Todas</option>
+                {availableLocations.map((loc) => (
+                  <option key={loc} value={loc}>
+                    {loc}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="flex flex-col gap-2">
@@ -406,6 +438,7 @@ export default function JobsPage() {
                 setSearchTerm("");
                 setWorkModelFilter("TODOS");
                 setTypeFilter("TODOS");
+                setLocationFilter("TODOS");
               }}
               className="mt-6 text-terracotta-600 font-bold hover:text-terracotta-700"
             >

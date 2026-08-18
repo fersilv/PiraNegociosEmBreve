@@ -9,6 +9,7 @@ type ShareProps = {
   salary?: string;
   workModel?: string;
   acceptsPlatformApplications?: boolean;
+  hideEmbed?: boolean;
 };
 
 export function ShareJobButtons({ 
@@ -18,12 +19,13 @@ export function ShareJobButtons({
   location,
   salary,
   workModel,
-  acceptsPlatformApplications 
+  acceptsPlatformApplications,
+  hideEmbed = false
 }: ShareProps) {
   const [copied, setCopied] = useState(false);
   const [showEmbedModal, setShowEmbedModal] = useState(false);
   const [embedWidth, setEmbedWidth] = useState('100%');
-  const [embedHeight, setEmbedHeight] = useState('600px');
+  const [embedHeight, setEmbedHeight] = useState('300px');
 
   const handleCopy = () => {
     navigator.clipboard.writeText(url);
@@ -115,38 +117,50 @@ export function ShareJobButtons({
           <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
         </a>
 
-        <div className="flex items-center gap-2 border-l border-stone-200 pl-3 ml-1 sm:ml-2">
+        {!hideEmbed && (
+          <div className="flex items-center gap-2 border-l border-stone-200 pl-3 ml-1 sm:ml-2">
+            <button
+              onClick={handleCopy}
+              className="flex items-center justify-center w-10 h-10 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-full transition-colors shadow-sm shrink-0"
+              title={copied ? 'Copiado!' : 'Copiar Link'}
+            >
+              {copied ? <Check className="w-4 h-4 text-green-600" /> : <LinkIcon className="w-4 h-4" />}
+            </button>
+
+            <button
+              onClick={() => setShowEmbedModal(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-stone-800 hover:bg-stone-900 text-white rounded-full text-sm font-bold transition-colors shadow-sm shrink-0"
+            >
+              <Code className="w-4 h-4" />
+              <span className="hidden sm:inline">Incorporar</span>
+            </button>
+          </div>
+        )}
+        
+        {hideEmbed && (
           <button
             onClick={handleCopy}
-            className="flex items-center justify-center w-10 h-10 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-full transition-colors shadow-sm shrink-0"
+            className="flex items-center justify-center w-10 h-10 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-full transition-colors shadow-sm shrink-0 ml-auto"
             title={copied ? 'Copiado!' : 'Copiar Link'}
           >
             {copied ? <Check className="w-4 h-4 text-green-600" /> : <LinkIcon className="w-4 h-4" />}
           </button>
-
-          <button
-            onClick={() => setShowEmbedModal(true)}
-            className="flex items-center gap-2 px-3 py-2 bg-stone-800 hover:bg-stone-900 text-white rounded-full text-sm font-bold transition-colors shadow-sm shrink-0"
-          >
-            <Code className="w-4 h-4" />
-            <span className="hidden sm:inline">Incorporar</span>
-          </button>
-        </div>
+        )}
       </div>
 
-      {showEmbedModal && (
+      {!hideEmbed && showEmbedModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-fade-in-up">
-            <div className="px-6 py-4 border-b border-stone-100 flex justify-between items-center bg-stone-50">
-              <h3 className="font-serif font-bold text-xl text-stone-800 flex items-center gap-2">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col max-h-[90vh] overflow-hidden animate-fade-in-up">
+            <div className="px-4 py-4 sm:px-6 border-b border-stone-100 flex justify-between items-center bg-stone-50 shrink-0">
+              <h3 className="font-serif font-bold text-lg sm:text-xl text-stone-800 flex items-center gap-2">
                 <Code className="w-5 h-5 text-terracotta-600" /> Incorporar no seu site
               </h3>
-              <button onClick={() => setShowEmbedModal(false)} className="text-stone-400 hover:text-stone-600 p-1">
+              <button onClick={() => setShowEmbedModal(false)} className="text-stone-400 hover:text-stone-600 p-2 -mr-2">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
             
-            <div className="p-6">
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1">
               <p className="text-stone-600 text-sm mb-4">
                 Configure o tamanho do painel e copie o código HTML para exibir as <strong>últimas vagas do PiraNegócios</strong> dentro do seu site.
               </p>
@@ -199,12 +213,12 @@ export function ShareJobButtons({
               </div>
             </div>
             
-            <div className="px-6 py-4 bg-stone-50 border-t border-stone-100 flex justify-end">
+            <div className="px-4 py-4 sm:px-6 bg-stone-50 border-t border-stone-100 flex justify-end shrink-0">
               <button 
                 onClick={() => setShowEmbedModal(false)}
-                className="px-5 py-2 bg-terracotta-600 hover:bg-terracotta-700 text-white font-bold rounded-xl text-sm transition-colors shadow-sm"
+                className="w-full sm:w-auto px-5 py-2.5 bg-terracotta-600 hover:bg-terracotta-700 text-white font-bold rounded-xl text-sm transition-colors shadow-sm"
               >
-                Concluir
+                Concluir e Fechar
               </button>
             </div>
           </div>
