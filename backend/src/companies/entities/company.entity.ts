@@ -26,7 +26,7 @@ export class Company {
   name: string;
 
   // Public, human-readable company address: https://piranegocios.com.br/{slug}
-  @Column({ nullable: true, unique: true })
+  @Column({ type: 'varchar', nullable: true, unique: true })
   slug: string | null;
 
   @Column({ type: 'enum', enum: CompanyCategory, default: CompanyCategory.EMPLOYER })
