@@ -7,6 +7,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -104,8 +105,33 @@ export class ExternalApiAdminController {
       warning: 'A chave anterior foi revogada. Copie esta chave agora.',
     };
   }
-  @Get('requests') usage() {
-    return this.requests.find({ order: { createdAt: 'DESC' }, take: 100 });
+  @Get('clients/:id/requests')
+  async usage(
+    @Param('id') id: string,
+    @Query() query: { page?: string; pageSize?: string },
+  ) {
+    if (!(await this.clients.exists({ where: { id } })))
+      throw new NotFoundException('Chave não encontrada.');
+    const page = Math.max(1, Number.parseInt(query.page || '1', 10) || 1);
+    const pageSize = Math.min(
+      100,
+      Math.max(10, Number.parseInt(query.pageSize || '20', 10) || 20),
+    );
+    const [data, total] = await this.requests.findAndCount({
+      where: { clientId: id },
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+    return {
+      data,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      },
+    };
   }
   private newKey() {
     return `pn_v1_${randomBytes(32).toString('hex')}`;

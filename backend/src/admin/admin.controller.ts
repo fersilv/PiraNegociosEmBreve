@@ -517,6 +517,8 @@ export class AdminController {
       q?: string;
       status?: string;
       source?: string;
+      state?: string;
+      city?: string;
     },
   ) {
     const page = Math.max(1, Number.parseInt(query.page || '1', 10) || 1);
@@ -528,6 +530,8 @@ export class AdminController {
       .createQueryBuilder('job')
       .orderBy('job.createdAt', 'DESC')
       .addOrderBy('job.id', 'DESC');
+    const jobStateExpression = `COALESCE(NULLIF(UPPER(TRIM(job.state)), ''), UPPER(substring(job.location from '([A-Za-z]{2})\\s*$')))`;
+    const jobCityExpression = `COALESCE(NULLIF(TRIM(job.city), ''), NULLIF(TRIM(regexp_replace(job.location, '\\s*(,|-)\\s*[A-Za-z]{2}\\s*$', '')), ''))`;
     const q = String(query.q || '')
       .trim()
       .slice(0, 200)
@@ -555,6 +559,23 @@ export class AdminController {
       );
     if (query.source === 'COMPANY')
       builder.andWhere('job."isExternalListing" = false');
+    const state = String(query.state || '')
+      .trim()
+      .toUpperCase()
+      .slice(0, 2);
+    const city = String(query.city || '')
+      .trim()
+      .slice(0, 120);
+    if (state && !VALID_UFS.has(state))
+      throw new BadRequestException('Estado inválido.');
+    if (state)
+      builder.andWhere(`${jobStateExpression} = :adminJobState`, {
+        adminJobState: state,
+      });
+    if (city)
+      builder.andWhere(`LOWER(${jobCityExpression}) = LOWER(:adminJobCity)`, {
+        adminJobCity: city,
+      });
 
     const [data, total] = await builder
       .skip((page - 1) * pageSize)
@@ -568,6 +589,39 @@ export class AdminController {
         total,
         totalPages: Math.max(1, Math.ceil(total / pageSize)),
       },
+    };
+  }
+
+  @Get('jobs/filter-options')
+  async jobFilterOptions() {
+    const jobStateExpression = `COALESCE(NULLIF(UPPER(TRIM(job.state)), ''), UPPER(substring(job.location from '([A-Za-z]{2})\\s*$')))`;
+    const jobCityExpression = `COALESCE(NULLIF(TRIM(job.city), ''), NULLIF(TRIM(regexp_replace(job.location, '\\s*(,|-)\\s*[A-Za-z]{2}\\s*$', '')), ''))`;
+    const rows = await this.jobs
+      .createQueryBuilder('job')
+      .select(jobStateExpression, 'state')
+      .addSelect(jobCityExpression, 'city')
+      .addSelect('COUNT(*)', 'count')
+      .where(`${jobStateExpression} IS NOT NULL`)
+      .andWhere(`${jobCityExpression} IS NOT NULL`)
+      .groupBy(jobStateExpression)
+      .addGroupBy(jobCityExpression)
+      .orderBy(jobStateExpression, 'ASC')
+      .addOrderBy(jobCityExpression, 'ASC')
+      .getRawMany();
+    const cities = rows.map((row) => ({
+      state: String(row.state),
+      city: String(row.city),
+      count: Number(row.count),
+    }));
+    const stateCounts = new Map<string, number>();
+    for (const item of cities)
+      stateCounts.set(
+        item.state,
+        (stateCounts.get(item.state) || 0) + item.count,
+      );
+    return {
+      states: [...stateCounts].map(([state, count]) => ({ state, count })),
+      cities,
     };
   }
 

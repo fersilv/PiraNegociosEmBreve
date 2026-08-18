@@ -99,7 +99,7 @@ function initializeFirebaseAdmin() {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3001;
   const isBuiltServer = /[\\/]dist[\\/]server\.cjs$/i.test(
     process.argv[1] || "",
   );

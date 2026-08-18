@@ -108,6 +108,12 @@ export function AdminDashboard({
   const [jobPage, setJobPage] = useState(1);
   const [jobStatus, setJobStatus] = useState("PENDING");
   const [jobSource, setJobSource] = useState("ALL");
+  const [jobState, setJobState] = useState("");
+  const [jobCity, setJobCity] = useState("");
+  const [jobLocationOptions, setJobLocationOptions] = useState<{
+    states: Array<{ state: string; count: number }>;
+    cities: Array<{ state: string; city: string; count: number }>;
+  }>({ states: [], cities: [] });
   const [jobPagination, setJobPagination] = useState({
     page: 1,
     pageSize: 20,
@@ -175,6 +181,8 @@ export function AdminDashboard({
                 q: deferredSearch || undefined,
                 status: jobStatus === "ALL" ? undefined : jobStatus,
                 source: jobSource === "ALL" ? undefined : jobSource,
+                state: jobState || undefined,
+                city: jobCity || undefined,
               },
             }),
           );
@@ -208,7 +216,9 @@ export function AdminDashboard({
       deferredSearch,
       jobPage,
       jobPagination.pageSize,
+      jobCity,
       jobSource,
+      jobState,
       jobStatus,
       tab,
     ],
@@ -228,6 +238,18 @@ export function AdminDashboard({
     setSearch("");
     setTab(mode === "dashboard" ? "overview" : section);
   }, [mode, section]);
+  useEffect(() => {
+    if (tab !== "jobs") return;
+    api
+      .get("/admin/jobs/filter-options")
+      .then((response) =>
+        setJobLocationOptions({
+          states: asArray(response.data?.states),
+          cities: asArray(response.data?.cities),
+        }),
+      )
+      .catch(() => setError("Não foi possível carregar estados e cidades."));
+  }, [tab]);
 
   const submitCompany = async (event: FormEvent) => {
     event.preventDefault();
@@ -692,6 +714,45 @@ export function AdminDashboard({
                     <option value="EXTERNAL">Externas manuais</option>
                     <option value="COMPANY">Vinculadas a empresas</option>
                   </select>
+                  <select
+                    value={jobState}
+                    onChange={(event) => {
+                      setJobState(event.target.value);
+                      setJobCity("");
+                      setJobPage(1);
+                    }}
+                    className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-700"
+                    aria-label="Filtrar vagas por estado"
+                  >
+                    <option value="">Todos os estados</option>
+                    {jobLocationOptions.states.map((item) => (
+                      <option key={item.state} value={item.state}>
+                        {item.state} ({item.count})
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={jobCity}
+                    onChange={(event) => {
+                      setJobCity(event.target.value);
+                      setJobPage(1);
+                    }}
+                    className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-700"
+                    aria-label="Filtrar vagas por cidade"
+                  >
+                    <option value="">Todas as cidades</option>
+                    {jobLocationOptions.cities
+                      .filter((item) => !jobState || item.state === jobState)
+                      .map((item) => (
+                        <option
+                          key={`${item.state}-${item.city}`}
+                          value={item.city}
+                        >
+                          {item.city}
+                          {!jobState ? `/${item.state}` : ""} ({item.count})
+                        </option>
+                      ))}
+                  </select>
                   <span className="text-xs font-semibold text-stone-500">
                     {jobsLoading
                       ? "Atualizando…"
@@ -783,6 +844,31 @@ export function AdminDashboard({
                 )}
                 {tab === "advertising" && <AdvertisingPanel />}
               </div>
+              {tab === "jobs" && jobPagination.totalPages > 1 && (
+                <div className="flex items-center justify-between border-t border-stone-200 px-4 py-3">
+                  <button
+                    type="button"
+                    disabled={jobPage <= 1 || jobsLoading}
+                    onClick={() => setJobPage((page) => Math.max(1, page - 1))}
+                    className="rounded-lg border border-stone-200 px-3 py-2 text-sm font-bold text-stone-700 disabled:opacity-40"
+                  >
+                    Anterior
+                  </button>
+                  <span className="text-sm text-stone-600">
+                    Página {jobPagination.page} de {jobPagination.totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={
+                      jobPage >= jobPagination.totalPages || jobsLoading
+                    }
+                    onClick={() => setJobPage((page) => page + 1)}
+                    className="rounded-lg border border-stone-200 px-3 py-2 text-sm font-bold text-stone-700 disabled:opacity-40"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </>
@@ -1486,31 +1572,6 @@ export function AdminDashboard({
                   <p className="text-stone-500">Nenhuma sanção registrada.</p>
                 )}
               </div>
-              {tab === "jobs" && jobPagination.totalPages > 1 && (
-                <div className="flex items-center justify-between border-t border-stone-200 px-4 py-3">
-                  <button
-                    type="button"
-                    disabled={jobPage <= 1 || jobsLoading}
-                    onClick={() => setJobPage((page) => Math.max(1, page - 1))}
-                    className="rounded-lg border border-stone-200 px-3 py-2 text-sm font-bold text-stone-700 disabled:opacity-40"
-                  >
-                    Anterior
-                  </button>
-                  <span className="text-sm text-stone-600">
-                    Página {jobPagination.page} de {jobPagination.totalPages}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={
-                      jobPage >= jobPagination.totalPages || jobsLoading
-                    }
-                    onClick={() => setJobPage((page) => page + 1)}
-                    className="rounded-lg border border-stone-200 px-3 py-2 text-sm font-bold text-stone-700 disabled:opacity-40"
-                  >
-                    Próxima
-                  </button>
-                </div>
-              )}
             </section>
             <form
               onSubmit={issueSanction}
@@ -1656,17 +1717,21 @@ function MetricList({
 export function ApiV1Panel() {
   const [clients, setClients] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
+  const [selectedClient, setSelectedClient] = useState<any | null>(null);
+  const [requestsLoading, setRequestsLoading] = useState(false);
+  const [requestPagination, setRequestPagination] = useState({
+    page: 1,
+    pageSize: 20,
+    total: 0,
+    totalPages: 1,
+  });
   const [form, setForm] = useState({ name: "", sourceLabel: "" });
   const [newKey, setNewKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const load = async () => {
-    const [clientsResponse, requestsResponse] = await Promise.all([
-      api.get("/admin/api-v1/clients"),
-      api.get("/admin/api-v1/requests"),
-    ]);
+    const clientsResponse = await api.get("/admin/api-v1/clients");
     setClients(asArray(clientsResponse.data));
-    setRequests(asArray(requestsResponse.data));
   };
   useEffect(() => {
     load().catch(() =>
@@ -1709,6 +1774,27 @@ export function ApiV1Panel() {
     );
     setNewKey(response.data.apiKey);
     await load();
+  };
+  const loadClientRequests = async (client: any, page = 1) => {
+    setSelectedClient(client);
+    setRequestsLoading(true);
+    setError("");
+    try {
+      const response = await api.get(
+        `/admin/api-v1/clients/${client.id}/requests`,
+        { params: { page, pageSize: requestPagination.pageSize } },
+      );
+      setRequests(asArray(response.data?.data));
+      if (response.data?.pagination)
+        setRequestPagination(response.data.pagination);
+    } catch (requestError: any) {
+      setError(
+        requestError.response?.data?.message ||
+          "Não foi possível carregar a atividade desta chave.",
+      );
+    } finally {
+      setRequestsLoading(false);
+    }
   };
   const endpoint = `${window.location.origin}/api/v1/jobs`;
   const exampleBody = JSON.stringify(
@@ -1802,74 +1888,133 @@ export function ApiV1Panel() {
         <h3 className="font-bold text-stone-900">Integrações cadastradas</h3>
         <div className="mt-3 space-y-2">
           {clients.map((client) => (
-            <div
-              key={client.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-stone-50 p-3"
-            >
-              <div>
-                <strong>{client.name}</strong>
-                <p className="text-xs text-stone-500">
-                  Origem: {client.sourceLabel} · Prefixo: {client.keyPrefix}… ·{" "}
-                  {client.lastUsedAt
-                    ? `último uso ${new Date(client.lastUsedAt).toLocaleString("pt-BR")}`
-                    : "nunca utilizada"}
-                </p>
+            <div key={client.id} className="rounded-xl bg-stone-50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <strong>{client.name}</strong>
+                  <p className="text-xs text-stone-500">
+                    Origem: {client.sourceLabel} · Prefixo: {client.keyPrefix}…
+                    ·{" "}
+                    {client.lastUsedAt
+                      ? `último uso ${new Date(client.lastUsedAt).toLocaleString("pt-BR")}`
+                      : "nunca utilizada"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => {
+                      if (selectedClient?.id === client.id) {
+                        setSelectedClient(null);
+                        setRequests([]);
+                      } else loadClientRequests(client);
+                    }}
+                    className="rounded-lg bg-stone-900 px-3 py-2 text-xs font-bold text-white"
+                  >
+                    {selectedClient?.id === client.id
+                      ? "Fechar atividade"
+                      : "Ver atividade"}
+                  </button>
+                  <button
+                    onClick={() => rotate(client)}
+                    className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-stone-700"
+                  >
+                    Trocar chave
+                  </button>
+                  <button
+                    onClick={() => toggle(client)}
+                    className={`rounded-lg px-3 py-2 text-xs font-bold ${client.active ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}
+                  >
+                    {client.active ? "Revogar" : "Reativar"}
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => rotate(client)}
-                  className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-stone-700"
-                >
-                  Trocar chave
-                </button>
-                <button
-                  onClick={() => toggle(client)}
-                  className={`rounded-lg px-3 py-2 text-xs font-bold ${client.active ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}
-                >
-                  {client.active ? "Revogar" : "Reativar"}
-                </button>
-              </div>
+              {selectedClient?.id === client.id && (
+                <div className="mt-3 border-t border-stone-200 pt-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <strong className="text-sm text-stone-800">
+                      Requests desta chave
+                    </strong>
+                    <span className="text-xs text-stone-500">
+                      {requestsLoading
+                        ? "Carregando…"
+                        : `${requestPagination.total} request${requestPagination.total === 1 ? "" : "s"}`}
+                    </span>
+                  </div>
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="w-full min-w-[560px] text-left text-sm">
+                      <thead className="text-xs uppercase tracking-wide text-stone-500">
+                        <tr>
+                          <th className="py-2">Ação</th>
+                          <th className="py-2">Resultado</th>
+                          <th className="py-2">Vaga</th>
+                          <th className="py-2">Data</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {requests.map((request) => (
+                          <tr
+                            key={request.id}
+                            className="border-t border-stone-200"
+                          >
+                            <td className="py-2 font-semibold text-stone-800">
+                              {request.action}
+                            </td>
+                            <td className="py-2 text-stone-600">
+                              {request.result}
+                            </td>
+                            <td className="py-2 text-stone-500">
+                              {request.jobId || "—"}
+                            </td>
+                            <td className="py-2 text-stone-500">
+                              {new Date(request.createdAt).toLocaleString(
+                                "pt-BR",
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {!requestsLoading && !requests.length && (
+                      <p className="py-3 text-sm text-stone-500">
+                        Esta chave ainda não realizou requests.
+                      </p>
+                    )}
+                  </div>
+                  {requestPagination.totalPages > 1 && (
+                    <div className="mt-3 flex items-center justify-between border-t border-stone-200 pt-3">
+                      <button
+                        disabled={
+                          requestPagination.page <= 1 || requestsLoading
+                        }
+                        onClick={() =>
+                          loadClientRequests(client, requestPagination.page - 1)
+                        }
+                        className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-stone-700 disabled:opacity-40"
+                      >
+                        Anterior
+                      </button>
+                      <span className="text-xs text-stone-500">
+                        Página {requestPagination.page} de{" "}
+                        {requestPagination.totalPages}
+                      </span>
+                      <button
+                        disabled={
+                          requestPagination.page >=
+                            requestPagination.totalPages || requestsLoading
+                        }
+                        onClick={() =>
+                          loadClientRequests(client, requestPagination.page + 1)
+                        }
+                        className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-stone-700 disabled:opacity-40"
+                      >
+                        Próxima
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
-        </div>
-      </section>
-      <section className="rounded-2xl border border-stone-200 p-5">
-        <h3 className="font-bold text-stone-900">Atividade recente</h3>
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[620px] text-left text-sm">
-            <thead className="text-xs uppercase tracking-wide text-stone-500">
-              <tr>
-                <th className="py-2">Integração</th>
-                <th className="py-2">Ação</th>
-                <th className="py-2">Resultado</th>
-                <th className="py-2">Data</th>
-              </tr>
-            </thead>
-            <tbody>
-              {requests.slice(0, 20).map((request) => {
-                const client = clients.find(
-                  (item) => item.id === request.clientId,
-                );
-                return (
-                  <tr key={request.id} className="border-t border-stone-100">
-                    <td className="py-2 font-semibold text-stone-800">
-                      {client?.name || request.clientId}
-                    </td>
-                    <td className="py-2 text-stone-600">{request.action}</td>
-                    <td className="py-2 text-stone-600">{request.result}</td>
-                    <td className="py-2 text-stone-500">
-                      {new Date(request.createdAt).toLocaleString("pt-BR")}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {!requests.length && (
-            <p className="py-3 text-sm text-stone-500">
-              Nenhuma requisição registrada ainda.
-            </p>
-          )}
         </div>
       </section>
       <section className="space-y-4 rounded-2xl border border-stone-200 p-5">

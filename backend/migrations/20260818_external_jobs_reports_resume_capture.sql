@@ -25,6 +25,13 @@ CREATE TABLE IF NOT EXISTS company_talent_invites (id uuid PRIMARY KEY DEFAULT g
 -- Localização estruturada, canais externos e rastreabilidade da API v1.
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS city varchar NULL;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS state varchar(2) NULL;
+
+UPDATE jobs
+SET
+  city = COALESCE(city, NULLIF(trim(regexp_replace(location, '\s*(,|-)\s*[A-Za-z]{2}\s*$', '')), '')),
+  state = COALESCE(state, NULLIF(upper(substring(location from '([A-Za-z]{2})\s*$')), ''))
+WHERE location IS NOT NULL
+  AND (city IS NULL OR state IS NULL);
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS "applicationEmail" varchar(254) NULL;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS "applicationWhatsApp" varchar(24) NULL;
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS "externalFingerprint" varchar(64) NULL;
