@@ -11,6 +11,7 @@ import { VisitorEvent } from '../analytics/entities/visitor-event.entity';
 import { AccountAccess } from '../analytics/entities/account-access.entity';
 import { UserSanction } from './entities/user-sanction.entity';
 import { JobReport } from '../jobs/entities/job-report.entity';
+import { CompanySlugAlias } from '../companies/entities/company-slug-alias.entity';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { JobReport } from '../jobs/entities/job-report.entity';
       AccountAccess,
       UserSanction,
       JobReport,
+      CompanySlugAlias,
     ]),
   ],
   controllers: [AdminController],

@@ -65,3 +65,44 @@ CREATE TABLE IF NOT EXISTS external_api_requests (
 );
 CREATE INDEX IF NOT EXISTS external_api_requests_client_created_idx
   ON external_api_requests ("clientId", "createdAt" DESC);
+
+-- Localização estruturada e governança do endereço público das empresas.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS city varchar NULL;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS state varchar(2) NULL;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS "slugIsCustom" boolean NOT NULL DEFAULT false;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS "pendingSlug" varchar NULL;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS "slugChangeStatus" varchar(16) NOT NULL DEFAULT 'NONE';
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS "slugChangeRequestedAt" timestamptz NULL;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS "slugChangeRequestedById" varchar NULL;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS "slugChangeReviewedAt" timestamptz NULL;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS "slugChangeReviewedById" varchar NULL;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS "slugChangeReviewNote" text NULL;
+
+UPDATE companies
+SET
+  city = NULLIF(trim(regexp_replace("cityState", '\s*(,|-)\s*[A-Za-z]{2}\s*$', '')), ''),
+  state = NULLIF(upper(substring("cityState" from '([A-Za-z]{2})\s*$')), '')
+WHERE "cityState" IS NOT NULL
+  AND (city IS NULL OR state IS NULL);
+
+CREATE UNIQUE INDEX IF NOT EXISTS companies_pending_slug_unique_idx
+  ON companies ("pendingSlug")
+  WHERE "pendingSlug" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS companies_slug_change_status_idx
+  ON companies ("slugChangeStatus", "slugChangeRequestedAt" DESC);
+
+CREATE TABLE IF NOT EXISTS company_slug_aliases (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  "companyId" varchar NOT NULL,
+  slug varchar NOT NULL UNIQUE,
+  "replacedBySlug" varchar NOT NULL,
+  "expiresAt" timestamptz NOT NULL,
+  "rollbackAvailable" boolean NOT NULL DEFAULT true,
+  "rollbackUsed" boolean NOT NULL DEFAULT false,
+  "rolledBackAt" timestamptz NULL,
+  "createdById" varchar NULL,
+  "createdAt" timestamptz NOT NULL DEFAULT now(),
+  "updatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS company_slug_aliases_company_expiry_idx
+  ON company_slug_aliases ("companyId", "expiresAt" DESC);

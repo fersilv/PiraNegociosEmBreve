@@ -1,6 +1,17 @@
 const RESERVED_COMPANY_SLUGS = new Set([
-  'api', 'admin', 'dashboard', 'vagas', 'login', 'termos', 'uploads', 'assets',
-  'favicon.ico', 'robots.txt', 'sitemap.xml', 'manifest.webmanifest', 'sw.js',
+  'api',
+  'admin',
+  'dashboard',
+  'vagas',
+  'login',
+  'termos',
+  'uploads',
+  'assets',
+  'favicon.ico',
+  'robots.txt',
+  'sitemap.xml',
+  'manifest.webmanifest',
+  'sw.js',
 ]);
 
 /** Creates a stable, URL-safe identifier without relying on a client supplied value. */
@@ -18,7 +29,9 @@ export function slugify(value: string): string {
 export function validateCompanySlug(value: string): string {
   const slug = slugify(value);
   if (slug.length < 3 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
-    throw new Error('Escolha um endereço público entre 3 e 72 caracteres, usando letras, números e hífens.');
+    throw new Error(
+      'Escolha um endereço público entre 3 e 72 caracteres, usando letras, números e hífens.',
+    );
   }
   if (RESERVED_COMPANY_SLUGS.has(slug)) {
     throw new Error('Este endereço é reservado pelo sistema. Escolha outro.');

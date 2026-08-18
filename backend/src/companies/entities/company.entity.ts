@@ -35,6 +35,30 @@ export class Company {
   @Column({ type: 'varchar', nullable: true, unique: true })
   slug: string | null;
 
+  @Column({ default: false })
+  slugIsCustom: boolean;
+
+  @Column({ type: 'varchar', nullable: true })
+  pendingSlug: string | null;
+
+  @Column({ type: 'varchar', length: 16, default: 'NONE' })
+  slugChangeStatus: string;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  slugChangeRequestedAt: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  slugChangeRequestedById: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  slugChangeReviewedAt: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  slugChangeReviewedById: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  slugChangeReviewNote: string | null;
+
   @Column({
     type: 'enum',
     enum: CompanyCategory,
@@ -60,8 +84,14 @@ export class Company {
   @Column({ nullable: true })
   address: string;
 
-  @Column({ nullable: true })
-  cityState: string;
+  @Column({ type: 'varchar', nullable: true })
+  cityState: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  city: string | null;
+
+  @Column({ type: 'varchar', length: 2, nullable: true })
+  state: string | null;
 
   @Column({ nullable: true })
   phone: string;

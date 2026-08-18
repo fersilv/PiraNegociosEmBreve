@@ -84,11 +84,19 @@ export class CompaniesController {
     const user = await this.usersRepository.findOne({
       where: { id: req.user.uid },
     });
-    const companyId = user?.companyId;
-    const normalized = slug?.trim().toLowerCase();
-    if (!normalized) return { available: false };
-    const company = await this.companiesService.findBySlug(normalized);
-    return { available: !company || company.id === companyId };
+    const company = user?.companyId
+      ? await this.companiesService.findOne(user.companyId)
+      : null;
+    if (!company?.isVerified)
+      return {
+        available: false,
+        eligible: false,
+        message: 'A URL personalizada exige uma empresa verificada.',
+      };
+    return {
+      ...(await this.companiesService.isSlugAvailable(slug, company.id)),
+      eligible: true,
+    };
   }
 
   @Get('mine')
@@ -255,8 +263,13 @@ export class CompaniesController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.companiesService.findOne(id);
+  async findOne(@Param('id') id: string) {
+    const company = await this.companiesService.findOne(id);
+    if (!company) return null;
+    return {
+      ...company,
+      slugRollback: await this.companiesService.getSlugRollbackOption(company),
+    };
   }
 
   @Post()
@@ -419,7 +432,7 @@ export class CompaniesController {
     @Param('id') id: string,
     @Body() updateData: Partial<Company>,
   ) {
-    await this.assertManager(req.user.uid, id);
+    const company = await this.assertManager(req.user.uid, id);
     const user = await this.usersRepository.findOne({
       where: { id: req.user.uid },
     });
@@ -432,7 +445,40 @@ export class CompaniesController {
         'A verificação da empresa é concluída exclusivamente pela administração.',
       );
     }
-    return this.companiesService.update(req.user.uid, id, updateData, true);
+    const requestedSlug =
+      typeof updateData.slug === 'string' ? updateData.slug.trim() : '';
+    if (
+      requestedSlug &&
+      requestedSlug !== company.slug &&
+      company.verificationStatus !== 'VERIFIED'
+    )
+      throw new ForbiddenException(
+        'A URL personalizada está disponível somente para empresas verificadas.',
+      );
+    const safeUpdates = { ...updateData };
+    delete safeUpdates.slug;
+    let updated = await this.companiesService.update(
+      req.user.uid,
+      id,
+      safeUpdates,
+      true,
+    );
+    if (requestedSlug && requestedSlug !== updated.slug)
+      updated = await this.companiesService.requestSlugChange(
+        req.user.uid,
+        id,
+        requestedSlug,
+      );
+    return {
+      ...updated,
+      slugRollback: await this.companiesService.getSlugRollbackOption(updated),
+    };
+  }
+
+  @Post(':id/slug-rollback')
+  async rollbackSlug(@Req() req: any, @Param('id') id: string) {
+    await this.assertManager(req.user.uid, id);
+    return this.companiesService.rollbackSlugChange(req.user.uid, id);
   }
 
   @Get(':id/employees')

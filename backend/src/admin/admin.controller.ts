@@ -12,7 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, MoreThan, Repository } from 'typeorm';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { Application } from '../applications/entities/application.entity';
 import {
@@ -34,10 +34,11 @@ import {
   UserSanctionStatus,
 } from './entities/user-sanction.entity';
 import { slugify } from '../seo/seo.utils';
+import { validateCompanySlug } from '../seo/seo.utils';
+import { CompanySlugAlias } from '../companies/entities/company-slug-alias.entity';
 
 const COMPANY_FIELDS = [
   'name',
-  'slug',
   'category',
   'description',
   'documentType',
@@ -46,6 +47,8 @@ const COMPANY_FIELDS = [
   'website',
   'address',
   'cityState',
+  'city',
+  'state',
   'phone',
   'socialInstagram',
   'socialLinkedin',
@@ -133,6 +136,8 @@ export class AdminController {
     private readonly accountAccesses: Repository<AccountAccess>,
     @InjectRepository(UserSanction)
     private readonly sanctions: Repository<UserSanction>,
+    @InjectRepository(CompanySlugAlias)
+    private readonly companySlugAliases: Repository<CompanySlugAlias>,
   ) {}
 
   @Get('summary')
@@ -385,9 +390,14 @@ export class AdminController {
       data.verificationStatus === CompanyStatus.VERIFIED
         ? CompanyStatus.VERIFIED
         : CompanyStatus.DRAFT;
-    const slug = await this.nextCompanySlug(
-      typeof data.slug === 'string' ? data.slug : name,
-    );
+    const requestedSlug =
+      typeof data.slug === 'string' && data.slug.trim()
+        ? this.validatedCompanySlug(data.slug)
+        : '';
+    const slug = requestedSlug
+      ? await this.assertExactCompanySlugAvailable(requestedSlug)
+      : await this.nextCompanySlug(name);
+    const location = this.normalizeCompanyLocation(data);
     const company = this.companies.create({
       ...pick<Company>(data, COMPANY_FIELDS),
       name,
@@ -400,12 +410,15 @@ export class AdminController {
         ? (data.category as CompanyCategory)
         : CompanyCategory.EMPLOYER,
       slug,
+      slugIsCustom: Boolean(requestedSlug),
+      ...location,
     });
     return this.companies.save(company);
   }
 
   @Put('companies/:id')
   async updateCompany(
+    @Req() req: any,
     @Param('id') id: string,
     @Body() data: Record<string, unknown>,
   ) {
@@ -418,8 +431,29 @@ export class AdminController {
       typeof data.slug === 'string' &&
       data.slug.trim() &&
       data.slug !== company.slug
+    ) {
+      const slug = await this.assertExactCompanySlugAvailable(
+        this.validatedCompanySlug(data.slug),
+        company.id,
+      );
+      if (company.slug)
+        await this.activateCompanyAlias(
+          company,
+          company.slug,
+          slug,
+          req.user.uid,
+        );
+      company.slug = slug;
+      company.slugIsCustom = true;
+      company.pendingSlug = null;
+      company.slugChangeStatus = 'APPROVED';
+    }
+    if (
+      data.city !== undefined ||
+      data.state !== undefined ||
+      data.cityState !== undefined
     )
-      company.slug = await this.nextCompanySlug(data.slug, company.id);
+      Object.assign(company, this.normalizeCompanyLocation(data, company));
     if (
       Object.values(CompanyStatus).includes(
         data.verificationStatus as CompanyStatus,
@@ -429,6 +463,47 @@ export class AdminController {
       company.isVerified =
         company.verificationStatus === CompanyStatus.VERIFIED;
     }
+    return this.companies.save(company);
+  }
+
+  @Put('companies/:id/slug-request')
+  async reviewCompanySlugRequest(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() data: { action?: string; note?: string },
+  ) {
+    const company = await this.companies.findOne({ where: { id } });
+    if (!company?.pendingSlug || company.slugChangeStatus !== 'PENDING')
+      throw new BadRequestException(
+        'Esta empresa não possui alteração de URL pendente.',
+      );
+    if (!['approve', 'reject'].includes(data.action || ''))
+      throw new BadRequestException('Ação inválida.');
+    const pendingSlug = company.pendingSlug;
+    company.slugChangeReviewedAt = new Date();
+    company.slugChangeReviewedById = req.user.uid;
+    company.slugChangeReviewNote =
+      typeof data.note === 'string' ? data.note.trim().slice(0, 1000) : null;
+    if (data.action === 'reject') {
+      company.pendingSlug = null;
+      company.slugChangeStatus = 'REJECTED';
+      return this.companies.save(company);
+    }
+    const approvedSlug = await this.assertExactCompanySlugAvailable(
+      pendingSlug,
+      company.id,
+    );
+    if (company.slug)
+      await this.activateCompanyAlias(
+        company,
+        company.slug,
+        approvedSlug,
+        req.user.uid,
+      );
+    company.slug = approvedSlug;
+    company.slugIsCustom = true;
+    company.pendingSlug = null;
+    company.slugChangeStatus = 'APPROVED';
     return this.companies.save(company);
   }
 
@@ -625,11 +700,102 @@ export class AdminController {
     for (let suffix = 1; suffix < 10_000; suffix += 1) {
       const slug = suffix === 1 ? base : `${base}-${suffix}`;
       const existing = await this.companies.findOne({ where: { slug } });
-      if (!existing || existing.id === companyId) return slug;
+      const alias = await this.companySlugAliases.findOne({
+        where: { slug, expiresAt: MoreThan(new Date()) },
+      });
+      if ((!existing || existing.id === companyId) && !alias) return slug;
     }
     throw new BadRequestException(
       'Não foi possível reservar este endereço público.',
     );
+  }
+
+  private validatedCompanySlug(value: string) {
+    try {
+      return validateCompanySlug(value);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Endereço público inválido.',
+      );
+    }
+  }
+
+  private async assertExactCompanySlugAvailable(
+    slug: string,
+    companyId?: string,
+  ) {
+    const existing = await this.companies.findOne({
+      where: [{ slug }, { pendingSlug: slug }],
+    });
+    if (existing && existing.id !== companyId)
+      throw new BadRequestException(
+        'Este endereço público já está em uso ou aguardando aprovação.',
+      );
+    const alias = await this.companySlugAliases.findOne({
+      where: { slug, expiresAt: MoreThan(new Date()) },
+    });
+    if (alias && alias.companyId !== companyId)
+      throw new BadRequestException(
+        'Este endereço está reservado temporariamente por uma URL anterior.',
+      );
+    return slug;
+  }
+
+  private async activateCompanyAlias(
+    company: Company,
+    oldSlug: string,
+    newSlug: string,
+    actorId: string,
+  ) {
+    let alias = await this.companySlugAliases.findOne({
+      where: { slug: oldSlug },
+    });
+    alias =
+      alias ||
+      this.companySlugAliases.create({
+        companyId: company.id,
+        slug: oldSlug,
+        replacedBySlug: newSlug,
+        expiresAt: new Date(),
+        rollbackAvailable: true,
+        rollbackUsed: false,
+        rolledBackAt: null,
+        createdById: actorId,
+      });
+    alias.companyId = company.id;
+    alias.replacedBySlug = newSlug;
+    alias.expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+    alias.rollbackAvailable = true;
+    alias.rollbackUsed = false;
+    alias.rolledBackAt = null;
+    alias.createdById = actorId;
+    return this.companySlugAliases.save(alias);
+  }
+
+  private normalizeCompanyLocation(
+    data: Record<string, unknown>,
+    current?: Company,
+  ) {
+    const raw = typeof data.cityState === 'string' ? data.cityState.trim() : '';
+    const parts = raw.split(/\s*(?:,|-)\s*/);
+    const city =
+      (typeof data.city === 'string' ? data.city.trim() : '') ||
+      parts[0] ||
+      current?.city ||
+      '';
+    const state = (
+      (typeof data.state === 'string' ? data.state.trim() : '') ||
+      parts[1] ||
+      current?.state ||
+      ''
+    ).toUpperCase();
+    if (state && !VALID_UFS.has(state))
+      throw new BadRequestException('Selecione um estado brasileiro válido.');
+    return {
+      city: city || null,
+      state: state || null,
+      cityState: city && state ? `${city}, ${state}` : city || null,
+    };
   }
 
   private async nextJobSlug(value: string): Promise<string> {

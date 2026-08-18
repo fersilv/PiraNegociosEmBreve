@@ -35,7 +35,9 @@ export class TalentInvitesController {
       order: { createdAt: 'DESC' },
     });
     const jobs = invites.length
-      ? await this.jobs.findBy({ id: In(invites.map((invite) => invite.jobId)) })
+      ? await this.jobs.findBy({
+          id: In(invites.map((invite) => invite.jobId)),
+        })
       : [];
     return invites.map((invite) => ({
       ...invite,

@@ -7,11 +7,12 @@ import {
   Res,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThan, Repository } from 'typeorm';
 import type { Response } from 'express';
 import { Company, CompanyStatus } from '../companies/entities/company.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { isReservedCompanySlug, slugify } from './seo.utils';
+import { CompanySlugAlias } from '../companies/entities/company-slug-alias.entity';
 
 const siteUrl = () =>
   (process.env.PUBLIC_SITE_URL || 'https://piranegocios.com.br').replace(
@@ -24,21 +25,43 @@ export class PublicSeoController {
   constructor(
     @InjectRepository(Company) private readonly companies: Repository<Company>,
     @InjectRepository(Job) private readonly jobs: Repository<Job>,
+    @InjectRepository(CompanySlugAlias)
+    private readonly companySlugAliases: Repository<CompanySlugAlias>,
   ) {}
 
   @Get('public/slug-availability')
   async slugAvailability(@Query('slug') value?: string) {
     const slug = slugify(value || '');
     if (!slug || isReservedCompanySlug(slug)) return { slug, available: false };
-    const exists = await this.companies.exists({ where: { slug } });
-    return { slug, available: !exists };
+    const [exists, alias] = await Promise.all([
+      this.companies.exists({ where: [{ slug }, { pendingSlug: slug }] }),
+      this.companySlugAliases.exists({
+        where: { slug, expiresAt: MoreThan(new Date()) },
+      }),
+    ]);
+    return { slug, available: !exists && !alias };
   }
 
   @Get('public/companies/:slug')
   async company(@Param('slug') slug: string) {
-    const company = await this.companies.findOne({
+    let company = await this.companies.findOne({
       where: { slug, verificationStatus: CompanyStatus.VERIFIED },
     });
+    let resolvedFromAlias = false;
+    if (!company) {
+      const alias = await this.companySlugAliases.findOne({
+        where: { slug, expiresAt: MoreThan(new Date()) },
+      });
+      if (alias) {
+        company = await this.companies.findOne({
+          where: {
+            id: alias.companyId,
+            verificationStatus: CompanyStatus.VERIFIED,
+          },
+        });
+        resolvedFromAlias = Boolean(company);
+      }
+    }
     if (!company)
       throw new NotFoundException('Empresa pública não encontrada.');
     const jobs = await this.jobs
@@ -54,6 +77,7 @@ export class PublicSeoController {
     return {
       company: this.publicCompany(company),
       jobs: jobs.map((job) => this.publicJob(job, company)),
+      resolvedFromAlias,
     };
   }
 
@@ -134,6 +158,8 @@ export class PublicSeoController {
       website: company.website,
       address: company.address,
       cityState: company.cityState,
+      city: company.city,
+      state: company.state,
       phone: company.phone,
       logoURL: company.logoURL,
       socialInstagram: company.socialInstagram,

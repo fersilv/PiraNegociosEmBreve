@@ -26,9 +26,13 @@ type Company = {
   id: string;
   name: string;
   cityState?: string;
+  city?: string;
+  state?: string;
   phone?: string;
   category?: string;
   verificationStatus: string;
+  pendingSlug?: string | null;
+  slugChangeStatus?: string;
 };
 type Job = {
   id: string;
@@ -111,7 +115,7 @@ export function AdminDashboard({
   });
   const [companyForm, setCompanyForm] = useState({
     name: "",
-    cityState: "",
+    cityState: "Pirassununga, SP",
     phone: "",
     cnpj: "",
     category: "EMPLOYER",
@@ -193,7 +197,7 @@ export function AdminDashboard({
       setCompanyFormOpen(false);
       setCompanyForm({
         name: "",
-        cityState: "",
+        cityState: "Pirassununga, SP",
         phone: "",
         cnpj: "",
         category: "EMPLOYER",
@@ -352,6 +356,22 @@ export function AdminDashboard({
       );
     } finally {
       setSaving(false);
+    }
+  };
+  const reviewCompanySlug = async (action: "approve" | "reject") => {
+    if (!companyDetail) return;
+    try {
+      await api.put(
+        `/admin/companies/${companyDetail.company.id}/slug-request`,
+        { action },
+      );
+      await inspectCompany(companyDetail.company.id);
+      await load("companies");
+    } catch (requestError: any) {
+      setError(
+        requestError.response?.data?.message ||
+          "Não foi possível revisar a alteração da URL.",
+      );
     }
   };
   const saveUserDetail = async (event: FormEvent) => {
@@ -701,17 +721,12 @@ export function AdminDashboard({
               />
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Cidade / Estado">
-                <input
-                  value={companyForm.cityState}
-                  onChange={(event) =>
-                    setCompanyForm({
-                      ...companyForm,
-                      cityState: event.target.value,
-                    })
+              <Field label="Estado e cidade">
+                <CityStateSelector
+                  initialValue={companyForm.cityState}
+                  onLocationChange={(cityState) =>
+                    setCompanyForm({ ...companyForm, cityState })
                   }
-                  className="input"
-                  placeholder="Piracicaba - SP"
                 />
               </Field>
               <Field label="Telefone">
@@ -1085,6 +1100,37 @@ export function AdminDashboard({
                   className="input"
                 />
               </Field>
+              {companyDetail.company.slugChangeStatus === "PENDING" &&
+                companyDetail.company.pendingSlug && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    <p>
+                      URL solicitada:{" "}
+                      <strong>
+                        piranegocios.com.br/{companyDetail.company.pendingSlug}
+                      </strong>
+                    </p>
+                    <p className="mt-1 text-xs text-amber-700">
+                      A URL atual continua ativa. Ao aprovar, ela redirecionará
+                      para a nova durante 90 dias.
+                    </p>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => reviewCompanySlug("approve")}
+                        className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white"
+                      >
+                        Aprovar URL
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => reviewCompanySlug("reject")}
+                        className="rounded-lg bg-red-100 px-3 py-2 text-xs font-bold text-red-700"
+                      >
+                        Recusar
+                      </button>
+                    </div>
+                  </div>
+                )}
               <Field label="Descrição">
                 <textarea
                   value={companyDetail.company.description || ""}
@@ -1116,19 +1162,18 @@ export function AdminDashboard({
                     className="input"
                   />
                 </Field>
-                <Field label="Cidade/Estado">
-                  <input
-                    value={companyDetail.company.cityState || ""}
-                    onChange={(event) =>
+                <Field label="Estado e cidade">
+                  <CityStateSelector
+                    initialValue={companyDetail.company.cityState || ""}
+                    onLocationChange={(cityState) =>
                       setCompanyDetail({
                         ...companyDetail,
                         company: {
                           ...companyDetail.company,
-                          cityState: event.target.value,
+                          cityState,
                         },
                       })
                     }
-                    className="input"
                   />
                 </Field>
                 <Field label="Website">
@@ -2219,6 +2264,11 @@ function CompaniesTable({
             </td>
             <td className="px-5 py-4">
               <Status status={company.verificationStatus} />
+              {company.slugChangeStatus === "PENDING" && (
+                <span className="ml-2 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-800">
+                  URL pendente
+                </span>
+              )}
             </td>
             <td className="px-5 py-4 text-right">
               <div className="flex justify-end gap-2">

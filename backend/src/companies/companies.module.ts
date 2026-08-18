@@ -13,6 +13,7 @@ import { CompanyTalentInvite } from './entities/company-talent-invite.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { Application } from '../applications/entities/application.entity';
 import { TalentInvitesController } from './talent-invites.controller';
+import { CompanySlugAlias } from './entities/company-slug-alias.entity';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { TalentInvitesController } from './talent-invites.controller';
       CompanyTalentInvite,
       Job,
       Application,
+      CompanySlugAlias,
     ]),
   ],
   providers: [CompaniesService],
