@@ -6,7 +6,9 @@ import type { NextFunction, Request, Response } from 'express';
 const API_PREFIXES = ['/api', '/uploads', '/socket.io'];
 
 export function frontendDistPath() {
-  return process.env.FRONTEND_DIST || join(__dirname, '..', '..', 'dist');
+  // Quando compilado, este arquivo fica em backend/dist/src/spa-fallback.js
+  // Precisamos subir 3 níveis para chegar na raiz e então entrar em dist
+  return process.env.FRONTEND_DIST || join(__dirname, '..', '..', '..', 'dist');
 }
 
 function isApiOrAssetRequest(pathName: string) {
