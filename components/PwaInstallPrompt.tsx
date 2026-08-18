@@ -8,7 +8,22 @@ type DeferredInstallPrompt = Event & {
 
 export function PwaInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<DeferredInstallPrompt | null>(null);
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    const lastDismissed = localStorage.getItem('pwa_prompt_dismissed_at');
+    if (lastDismissed) {
+      const msSinceDismissed = Date.now() - parseInt(lastDismissed, 10);
+      const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+      if (msSinceDismissed < sevenDaysInMs) {
+        return true;
+      }
+    }
+    return false;
+  });
+
+  const handleDismiss = () => {
+    localStorage.setItem('pwa_prompt_dismissed_at', Date.now().toString());
+    setDismissed(true);
+  };
 
   useEffect(() => {
     const onBeforeInstall = (event: Event) => {
@@ -39,7 +54,7 @@ export function PwaInstallPrompt() {
         <p className="text-xs text-stone-500">Acesso rápido pela tela inicial, como um aplicativo.</p>
       </div>
       <button onClick={install} className="inline-flex items-center gap-1.5 rounded-xl bg-terracotta-600 px-3 py-2 text-xs font-bold text-white hover:bg-terracotta-700"><Download className="h-4 w-4" /> Instalar</button>
-      <button onClick={() => setDismissed(true)} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100" aria-label="Fechar"><X className="h-4 w-4" /></button>
+      <button onClick={handleDismiss} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100" aria-label="Fechar"><X className="h-4 w-4" /></button>
     </aside>
   );
 }
