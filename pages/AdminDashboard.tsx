@@ -52,6 +52,7 @@ type Job = {
   ingestionSourceName?: string | null;
   moderationStatus?: string;
   reportCount?: number;
+  views?: number;
 };
 type PlatformUser = {
   id: string;
