@@ -14,7 +14,7 @@ export class Job {
   @Column()
   ownerId: string; // References User.id
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   companyId: string | null; // Null somente em vagas externas criadas pela administração
 
   @Column()
@@ -48,7 +48,7 @@ export class Job {
   @Column({ default: false })
   isExternalListing: boolean;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   sourceName: string | null;
 
   @Column({ type: 'text', nullable: true })

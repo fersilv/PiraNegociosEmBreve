@@ -31,7 +31,7 @@ export class Application {
   @Column({ type: 'text', nullable: true })
   coverLetter: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   companyId: string | null;
 
   @Column({ nullable: true })
