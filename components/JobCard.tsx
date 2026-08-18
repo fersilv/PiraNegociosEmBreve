@@ -30,7 +30,7 @@ export function JobCard({ job, onClick, hasApplied = false }: JobCardProps) {
               <span className="bg-green-100 text-green-700 text-[10px] uppercase font-bold px-2 py-0.5 rounded shrink-0 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Inscrito</span>
             )}
             {job.acceptsPlatformApplications === false && (
-              <span className="bg-amber-100 text-amber-800 text-[10px] uppercase font-bold px-2 py-0.5 rounded shrink-0">Currículo externo</span>
+              <span className="bg-amber-100 text-amber-800 text-[10px] uppercase font-bold px-2 py-0.5 rounded shrink-0">Candidatura externa</span>
             )}
           </h4>
           <p className="text-terracotta-700 text-sm font-medium flex items-center gap-1.5">

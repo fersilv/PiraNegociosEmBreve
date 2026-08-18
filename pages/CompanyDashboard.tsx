@@ -23,6 +23,7 @@ export function CompanyDashboard() {
   const [type, setType] = useState('CLT');
   const [workModel, setWorkModel] = useState('Presencial');
   const [description, setDescription] = useState('');
+  const [requirements, setRequirements] = useState('');
   const [isConfidential, setIsConfidential] = useState(false);
   const [isTalentPool, setIsTalentPool] = useState(false);
   const [acceptsPlatformApplications, setAcceptsPlatformApplications] = useState(true);
@@ -115,6 +116,7 @@ export function CompanyDashboard() {
         type,
         workModel: workModel || 'Presencial',
         description,
+        requirements,
         isConfidential,
         isTalentPool,
         acceptsPlatformApplications,
@@ -136,6 +138,7 @@ export function CompanyDashboard() {
       setType('CLT');
       setWorkModel('Presencial');
       setDescription('');
+      setRequirements('');
       setIsConfidential(false);
       setIsTalentPool(false);
       setAcceptsPlatformApplications(true);
@@ -242,8 +245,12 @@ export function CompanyDashboard() {
             </div>
             
             <div>
-              <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Descrição completa *</label>
-              <textarea required value={description} onChange={(e) => setDescription(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 min-h-[120px]" />
+              <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Sobre a vaga / atividades *</label>
+              <textarea required value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descreva as responsabilidades, rotina, benefícios e o que torna esta oportunidade interessante." className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 min-h-[120px]" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Requisitos</label>
+              <textarea value={requirements} onChange={(e) => setRequirements(e.target.value)} placeholder="Ex.: experiência, escolaridade, conhecimentos técnicos, disponibilidade e habilidades desejadas." className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 min-h-[120px]" />
             </div>
 
             <div className="pt-2 space-y-3">

@@ -34,6 +34,8 @@ export function CompanyProfilePage() {
   // Company details state
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState('');
+  const [companySlug, setCompanySlug] = useState('');
+  const [slugAvailability, setSlugAvailability] = useState<'idle' | 'checking' | 'available' | 'unavailable'>('idle');
   const [companyDescription, setCompanyDescription] = useState('');
   const [companyLogo, setCompanyLogo] = useState('');
   const [companyDocumentFile, setCompanyDocumentFile] = useState('');
@@ -126,6 +128,7 @@ export function CompanyProfilePage() {
           if (compResp && compResp.data) {
             const compData = compResp.data;
             setCompanyName(compData.name || '');
+            setCompanySlug(compData.slug || '');
             setCompanyDescription(compData.description || '');
             setDocumentType(compData.documentType || 'CNPJ');
             setCompanyDocument(compData.cnpj || compData.cpf || '');
@@ -155,6 +158,23 @@ export function CompanyProfilePage() {
     initCompanyProfile();
   }, [user, profile]);
 
+  useEffect(() => {
+    if (!companySlug.trim()) {
+      setSlugAvailability('idle');
+      return;
+    }
+    const timeout = window.setTimeout(async () => {
+      setSlugAvailability('checking');
+      try {
+        const response = await api.get(`/public/slug-availability?slug=${encodeURIComponent(companySlug)}`);
+        setSlugAvailability(response.data?.available ? 'available' : 'unavailable');
+      } catch {
+        setSlugAvailability('unavailable');
+      }
+    }, 350);
+    return () => window.clearTimeout(timeout);
+  }, [companySlug]);
+
   const handleUpdateCompany = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!companyId) return;
@@ -162,6 +182,7 @@ export function CompanyProfilePage() {
     try {
       const companyUpdates: any = {
         name: companyName,
+        slug: companySlug,
         description: companyDescription,
         documentType: documentType,
         cnpj: documentType === 'CNPJ' ? companyDocument : '',
@@ -431,6 +452,28 @@ export function CompanyProfilePage() {
             </div>
 
             <div>
+              <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-2">Endereço público da empresa</label>
+              <div className="flex overflow-hidden rounded-xl border border-stone-200 focus-within:border-terracotta-500 bg-white">
+                <span className="shrink-0 px-3 py-3 text-sm text-stone-400 bg-stone-50 border-r border-stone-100">piranegocios.com.br/</span>
+                <input
+                  type="text"
+                  value={companySlug}
+                  onChange={(e) => setCompanySlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                  className="min-w-0 flex-1 px-3 py-3 outline-none"
+                  placeholder="sua-empresa"
+                  minLength={3}
+                  maxLength={72}
+                />
+              </div>
+              <p className={`mt-1.5 text-xs ${slugAvailability === 'available' ? 'text-green-700' : slugAvailability === 'unavailable' ? 'text-red-600' : 'text-stone-400'}`}>
+                {slugAvailability === 'checking' && 'Verificando disponibilidade…'}
+                {slugAvailability === 'available' && 'Endereço disponível. Ele será o link público da sua empresa.'}
+                {slugAvailability === 'unavailable' && 'Este endereço não está disponível ou é reservado.'}
+                {slugAvailability === 'idle' && 'Use letras, números e hífens. Você poderá divulgar este link.'}
+              </p>
+            </div>
+
+            <div>
               <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-2">Tipo de Documento</label>
               <div className="flex rounded-xl border border-stone-200 p-1 bg-stone-50">
                 <button
@@ -628,6 +671,7 @@ export function CompanyProfilePage() {
                 </div>
               ))}
             </div>
+
           )}
         </div>
       )}

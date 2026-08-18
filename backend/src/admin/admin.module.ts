@@ -7,9 +7,11 @@ import { Job } from '../jobs/entities/job.entity';
 import { User } from '../users/entities/user.entity';
 import { AdminController } from './admin.controller';
 import { AdminGuard } from './admin.guard';
+import { VisitorEvent } from '../analytics/entities/visitor-event.entity';
+import { AccountAccess } from '../analytics/entities/account-access.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Company, Job, Application, CompanyAccessRequest])],
+  imports: [TypeOrmModule.forFeature([User, Company, Job, Application, CompanyAccessRequest, VisitorEvent, AccountAccess])],
   controllers: [AdminController],
   providers: [AdminGuard],
 })

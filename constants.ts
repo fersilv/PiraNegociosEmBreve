@@ -5,9 +5,9 @@ export const LINKS = {
 
 export const TEXTS = {
   TITLE: "PiraNegócios",
-  SUBTITLE: "Em Breve",
-  DESCRIPTION: "O maior portal Multi-Serviços de Pirassununga e Região.",
-  MYSTERY_TAG: "Algo grande está chegando.",
+  SUBTITLE: "Vagas, empresas e serviços em Pirassununga",
+  DESCRIPTION: "Encontre oportunidades de trabalho, empresas e serviços locais em Pirassununga e região.",
+  MYSTERY_TAG: "A conexão que movimenta a cidade.",
   CTA_INSTAGRAM: "Siga no Instagram",
   CTA_WHATSAPP: "Canal VIP WhatsApp"
 };

@@ -14,8 +14,15 @@ export class Job {
   @Column()
   title: string;
 
+  // Stable canonical URL: https://piranegocios.com.br/vagas/{slug}
+  @Column({ nullable: true, unique: true })
+  slug: string | null;
+
   @Column({ type: 'text' })
   description: string;
+
+  @Column({ type: 'text', nullable: true })
+  requirements: string | null;
 
   @Column({ nullable: true })
   location: string;

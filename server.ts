@@ -9,6 +9,24 @@ import { getAuth } from 'firebase-admin/auth';
 
 type AuthenticatedRequest = express.Request & { firebaseUser?: { uid: string; email?: string } };
 
+const publicApiOrigin = (process.env.PUBLIC_API_ORIGIN || 'http://127.0.0.1:3888/api').replace(/\/$/, '');
+const publicSiteUrl = (process.env.PUBLIC_SITE_URL || 'https://piranegocios.com.br').replace(/\/$/, '');
+const publicRouteReserved = new Set(['api', 'dashboard', 'login', 'termos', 'vagas', 'uploads', 'assets', 'robots.txt', 'sitemap.xml', 'manifest.webmanifest', 'icon.svg', 'apple-touch-icon.svg']);
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '').replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character] || character));
+}
+
+function safeUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try { const parsed = new URL(value); return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : null; } catch { return null; }
+}
+
+function pageHtml({ title, description, canonical, body, structuredData }: { title: string; description: string; canonical: string; body: string; structuredData?: Record<string, unknown> }) {
+  const jsonLd = structuredData ? `<script type="application/ld+json">${JSON.stringify(structuredData).replace(/</g, '\\u003c')}</script>` : '';
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><meta name="description" content="${escapeHtml(description)}"><meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="${escapeHtml(canonical)}"><meta property="og:title" content="${escapeHtml(title)}"><meta property="og:description" content="${escapeHtml(description)}"><meta property="og:url" content="${escapeHtml(canonical)}"><meta property="og:site_name" content="PiraNegócios">${jsonLd}<style>body{margin:0;background:#fafaf9;color:#292524;font-family:Arial,sans-serif;line-height:1.6}.wrap{max-width:880px;margin:auto;padding:32px 20px}nav{background:#fff;border-bottom:1px solid #e7e5e4;padding:15px 0}nav .wrap{padding-top:0;padding-bottom:0;display:flex;justify-content:space-between;align-items:center}a{color:#a63f2d;text-decoration:none}a:hover{text-decoration:underline}.brand,h1,h2{font-family:Georgia,serif}.brand{font-size:22px;font-weight:700}.card{background:#fff;border:1px solid #e7e5e4;border-radius:20px;padding:32px;box-shadow:0 1px 4px #0000000a}.meta{display:flex;flex-wrap:wrap;gap:10px 20px;color:#57534e;margin:22px 0;padding:16px 0;border-top:1px solid #eee;border-bottom:1px solid #eee}.button{display:inline-block;background:#a63f2d;color:white;padding:13px 20px;border-radius:10px;font-weight:bold}.company{font-weight:bold;font-size:18px}.jobs{display:grid;gap:12px;margin-top:20px}.job{display:block;border:1px solid #e7e5e4;border-radius:14px;padding:18px;color:#292524}.job:hover{border-color:#cc5843;text-decoration:none}.muted{color:#78716c}.logo{width:72px;height:72px;object-fit:cover;border-radius:16px;background:#fdf6f5}.head{display:flex;gap:18px;align-items:center}@media(max-width:600px){.card{padding:22px}.wrap{padding:24px 16px}}</style></head><body><nav><div class="wrap"><a class="brand" href="/">PiraNegócios</a><a href="/vagas">Ver vagas</a></div></nav><main class="wrap">${body}</main></body></html>`;
+}
+
 function initializeFirebaseAdmin() {
   if (getApps().length > 0) return true;
   try {
@@ -337,6 +355,74 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
+    const getPublicData = async (pathName: string) => {
+      const response = await fetch(`${publicApiOrigin}${pathName}`, { headers: { accept: 'application/json' } });
+      if (!response.ok) return null;
+      return response.json() as Promise<any>;
+    };
+
+    app.get('/robots.txt', (_req, res) => {
+      res.type('text/plain').send(`User-agent: *\nAllow: /\nDisallow: /dashboard/\nDisallow: /login\nDisallow: /api/\nDisallow: /uploads/\n\nSitemap: ${publicSiteUrl}/sitemap.xml\n`);
+    });
+
+    app.get('/sitemap.xml', async (_req, res) => {
+      try {
+        const response = await fetch(`${publicApiOrigin}/seo/sitemap`, { headers: { accept: 'application/xml' } });
+        if (!response.ok) return res.status(502).type('text/plain').send('Sitemap temporarily unavailable');
+        return res.type('application/xml').send(await response.text());
+      } catch {
+        return res.status(502).type('text/plain').send('Sitemap temporarily unavailable');
+      }
+    });
+
+    app.get('/vagas/:slug', async (req, res) => {
+      const job = await getPublicData(`/public/jobs/${encodeURIComponent(req.params.slug)}`);
+      if (!job) return res.status(404).send(pageHtml({ title: 'Vaga não encontrada | PiraNegócios', description: 'Esta vaga não está mais disponível.', canonical: `${publicSiteUrl}/vagas/${encodeURIComponent(req.params.slug)}`, body: '<div class="card"><h1>Esta vaga não está mais disponível</h1><p class="muted">Veja outras oportunidades abertas na região.</p><a class="button" href="/vagas">Ver vagas</a></div>' }));
+      const canonical = `${publicSiteUrl}/vagas/${job.slug}`;
+      const companyName = job.company?.name || 'Empresa';
+      const description = `${job.title} em ${companyName}${job.location ? `, ${job.location}` : ''}. Veja os requisitos e candidate-se pelo PiraNegócios.`;
+      const jobPosting: Record<string, unknown> = {
+        '@context': 'https://schema.org/', '@type': 'JobPosting', title: job.title,
+        description: [job.description, job.requirements ? `Requisitos:\n${job.requirements}` : ''].filter(Boolean).join('\n').split(/\n+/).filter(Boolean).map(part => `<p>${escapeHtml(part)}</p>`).join(''),
+        identifier: { '@type': 'PropertyValue', name: 'PiraNegócios', value: job.id },
+        datePosted: new Date(job.createdAt).toISOString(), employmentType: job.type || undefined,
+        hiringOrganization: { '@type': 'Organization', name: companyName, sameAs: `${publicSiteUrl}/${job.company?.slug}`, ...(safeUrl(job.company?.logoURL) ? { logo: safeUrl(job.company.logoURL) } : {}) },
+      };
+      if (job.deadlineDate) jobPosting.validThrough = `${job.deadlineDate}T23:59:59-03:00`;
+      if (String(job.workModel || '').toLowerCase() === 'remoto') {
+        jobPosting.jobLocationType = 'TELECOMMUTE';
+        jobPosting.applicantLocationRequirements = { '@type': 'Country', name: 'BR' };
+      } else if (job.location) {
+        jobPosting.jobLocation = { '@type': 'Place', address: { '@type': 'PostalAddress', addressLocality: job.location, addressCountry: 'BR' } };
+      }
+      const logo = safeUrl(job.company?.logoURL);
+      const body = `<article class="card"><div class="head">${logo ? `<img class="logo" src="${escapeHtml(logo)}" alt="Logo ${escapeHtml(companyName)}">` : ''}<div><h1>${escapeHtml(job.title)}</h1><a class="company" href="/${encodeURIComponent(job.company?.slug || '')}">${escapeHtml(companyName)}</a></div></div><div class="meta">${job.location ? `<span>📍 ${escapeHtml(job.location)}</span>` : ''}${job.type ? `<span>💼 ${escapeHtml(job.type)}</span>` : ''}${job.workModel ? `<span>💻 ${escapeHtml(job.workModel)}</span>` : ''}<span>💰 ${escapeHtml(job.salary || 'Salário a combinar')}</span></div><h2>Sobre a vaga</h2><div>${String(job.description || '').split(/\n+/).filter(Boolean).map(part => `<p>${escapeHtml(part)}</p>`).join('')}</div>${job.requirements ? `<h2>Requisitos</h2><div>${String(job.requirements).split(/\n+/).filter(Boolean).map(part => `<p>${escapeHtml(part)}</p>`).join('')}</div>` : ''}<hr style="border:0;border-top:1px solid #eee;margin:28px 0"><h2>Como se candidatar</h2>${job.acceptsPlatformApplications === false ? `<p>${escapeHtml(job.externalApplicationInstructions || 'Entre em contato com a empresa para enviar seu currículo.')}</p>` : `<a class="button" href="/vagas?applyTo=${encodeURIComponent(job.id)}">Candidatar-se à vaga</a>`}</article>`;
+      return res.type('html').send(pageHtml({ title: `${job.title} em ${companyName} | Vagas em Pirassununga | PiraNegócios`, description, canonical, body, structuredData: jobPosting }));
+    });
+
+    app.get('/:companySlug', async (req, res, next) => {
+      const slug = req.params.companySlug.toLowerCase();
+      if (publicRouteReserved.has(slug)) return next();
+      const data = await getPublicData(`/public/companies/${encodeURIComponent(slug)}`);
+      if (!data?.company) {
+        return res.status(404).send(pageHtml({
+          title: 'Empresa não encontrada | PiraNegócios',
+          description: 'Este perfil não está disponível.',
+          canonical: `${publicSiteUrl}/${encodeURIComponent(slug)}`,
+          body: '<div class="card"><h1>Empresa não encontrada</h1><p class="muted">Este perfil não está disponível publicamente.</p><a class="button" href="/vagas">Explorar vagas</a></div>',
+        }));
+      }
+      const company = data.company;
+      const canonical = `${publicSiteUrl}/${company.slug}`;
+      const companyDescription = company.description || `Conheça ${company.name} e suas oportunidades no PiraNegócios.`;
+      const organization: Record<string, unknown> = { '@context': 'https://schema.org', '@type': 'Organization', name: company.name, url: canonical, ...(safeUrl(company.logoURL) ? { logo: safeUrl(company.logoURL) } : {}), ...(safeUrl(company.website) ? { sameAs: [safeUrl(company.website)] } : {}), ...(company.phone ? { telephone: company.phone } : {}) };
+      const logo = safeUrl(company.logoURL);
+      const website = safeUrl(company.website);
+      const jobs = (data.jobs || []).map((job: any) => `<a class="job" href="/vagas/${encodeURIComponent(job.slug)}"><strong>${escapeHtml(job.title)}</strong><div class="muted">${[job.location, job.type, job.salary].filter(Boolean).map(escapeHtml).join(' · ')}</div></a>`).join('') || '<p class="muted">Esta empresa não possui vagas abertas no momento.</p>';
+      const body = `<article class="card"><div class="head">${logo ? `<img class="logo" src="${escapeHtml(logo)}" alt="Logo ${escapeHtml(company.name)}">` : ''}<div><p class="muted">EMPRESA EM PIRASSUNUNGA E REGIÃO</p><h1>${escapeHtml(company.name)}</h1>${company.cityState ? `<p class="muted">📍 ${escapeHtml(company.cityState)}</p>` : ''}</div></div><hr style="border:0;border-top:1px solid #eee;margin:28px 0"><h2>Sobre a empresa</h2>${String(companyDescription).split(/\n+/).filter(Boolean).map(part => `<p>${escapeHtml(part)}</p>`).join('')}${website ? `<p><a href="${escapeHtml(website)}" rel="noopener noreferrer" target="_blank">Visitar site da empresa</a></p>` : ''}${company.phone ? `<p class="muted">☎ ${escapeHtml(company.phone)}</p>` : ''}</article><section><h2>Vagas em aberto</h2><div class="jobs">${jobs}</div></section>`;
+      return res.type('html').send(pageHtml({ title: `${company.name} | Empresas de Pirassununga | PiraNegócios`, description: `${company.name}${company.cityState ? ` em ${company.cityState}` : ', Pirassununga e região'}. ${companyDescription.slice(0, 130)}`, canonical, body, structuredData: organization }));
+    });
+
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));

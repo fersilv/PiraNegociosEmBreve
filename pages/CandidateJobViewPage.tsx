@@ -319,6 +319,8 @@ export function CandidateJobViewPage() {
           </div>
         </div>
 
+        {job.requirements && <div><h2 className="text-lg font-bold text-stone-900 mb-3">Requisitos</h2><div className="text-stone-700 leading-relaxed whitespace-pre-wrap text-sm md:text-base">{job.requirements}</div></div>}
+
         {application && (application.documentsRequested || ['DOCUMENTS_REQUESTED', 'DOCUMENTS_SUBMITTED', 'HIRED'].includes(application.status)) && (
           <ApplicationChat
             applicationId={application.id}

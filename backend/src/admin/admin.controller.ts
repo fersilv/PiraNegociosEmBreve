@@ -8,6 +8,9 @@ import { CompanyAccessRequest, CompanyAccessRequestStatus } from '../companies/e
 import { Job } from '../jobs/entities/job.entity';
 import { User, UserType } from '../users/entities/user.entity';
 import { AdminGuard } from './admin.guard';
+import { VisitorEvent } from '../analytics/entities/visitor-event.entity';
+import { AccountAccess } from '../analytics/entities/account-access.entity';
+import { slugify } from '../seo/seo.utils';
 
 const COMPANY_FIELDS = [
   'name', 'description', 'documentType', 'cnpj', 'cpf', 'website', 'address',
@@ -16,7 +19,7 @@ const COMPANY_FIELDS = [
 ] as const;
 
 const JOB_FIELDS = [
-  'title', 'description', 'location', 'type', 'workModel', 'salary', 'isConfidential',
+  'title', 'description', 'requirements', 'location', 'type', 'workModel', 'salary', 'isConfidential',
   'isTalentPool', 'active', 'deadlineDate', 'acceptsPlatformApplications', 'externalApplicationInstructions',
 ] as const;
 
@@ -35,17 +38,42 @@ export class AdminController {
     @InjectRepository(Job) private readonly jobs: Repository<Job>,
     @InjectRepository(Application) private readonly applications: Repository<Application>,
     @InjectRepository(CompanyAccessRequest) private readonly accessRequests: Repository<CompanyAccessRequest>,
+    @InjectRepository(VisitorEvent) private readonly visitorEvents: Repository<VisitorEvent>,
+    @InjectRepository(AccountAccess) private readonly accountAccesses: Repository<AccountAccess>,
   ) {}
 
   @Get('summary')
   async summary() {
+    const now = new Date();
+    const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const [companies, pendingCompanies, activeJobs, users] = await Promise.all([
       this.companies.count(),
       this.companies.count({ where: { verificationStatus: CompanyStatus.PENDING } }),
       this.jobs.count({ where: { active: true } }),
       this.users.count(),
     ]);
-    return { companies, pendingCompanies, activeJobs, users };
+    const [activeVisitors, analytics] = await Promise.all([
+      this.visitorEvents.createQueryBuilder('event').select('COUNT(DISTINCT event.visitorId)', 'count').where('event.createdAt >= :since', { since: fiveMinutesAgo }).getRawOne(),
+      this.analyticsSnapshot(thirtyDaysAgo),
+    ]);
+    return { companies, pendingCompanies, activeJobs, users, activeVisitors: Number(activeVisitors?.count || 0), ...analytics };
+  }
+
+  @Get('analytics')
+  async analytics() {
+    return this.analyticsSnapshot(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+  }
+
+  private async analyticsSnapshot(since: Date) {
+    const [totals, averageEngagement, sources, devices, security] = await Promise.all([
+      this.visitorEvents.createQueryBuilder('event').select('COUNT(*)', 'pageViews').addSelect('COUNT(DISTINCT event.visitorId)', 'uniqueVisitors').where('event.createdAt >= :since', { since }).getRawOne(),
+      this.visitorEvents.createQueryBuilder('event').select('AVG(event.durationSeconds)', 'seconds').where('event.createdAt >= :since AND event.eventType = :type', { since, type: 'ENGAGEMENT' }).getRawOne(),
+      this.visitorEvents.createQueryBuilder('event').select("COALESCE(event.utmSource, event.referrerOrigin, 'Direto')", 'source').addSelect('COUNT(*)', 'count').where('event.createdAt >= :since', { since }).groupBy("COALESCE(event.utmSource, event.referrerOrigin, 'Direto')").orderBy('count', 'DESC').limit(8).getRawMany(),
+      this.visitorEvents.createQueryBuilder('event').select("COALESCE(event.deviceType, 'unknown')", 'device').addSelect('COUNT(DISTINCT event.visitorId)', 'count').where('event.createdAt >= :since', { since }).groupBy("COALESCE(event.deviceType, 'unknown')").orderBy('count', 'DESC').getRawMany(),
+      this.accountAccesses.createQueryBuilder('access').select('COUNT(*)', 'accesses').addSelect('COUNT(*) FILTER (WHERE access.isNewDevice = true)', 'newDevices').where('access.createdAt >= :since', { since }).getRawOne(),
+    ]);
+    return { periodDays: 30, pageViews: Number(totals?.pageViews || 0), uniqueVisitors: Number(totals?.uniqueVisitors || 0), averageEngagementSeconds: Math.round(Number(averageEngagement?.seconds || 0)), sources: sources.map(row => ({ source: row.source, count: Number(row.count) })), devices: devices.map(row => ({ device: row.device, count: Number(row.count) })), accountAccesses: Number(security?.accesses || 0), newDevices: Number(security?.newDevices || 0) };
   }
 
   @Get('companies')
@@ -96,12 +124,14 @@ export class AdminController {
     const verificationStatus = data.verificationStatus === CompanyStatus.VERIFIED
       ? CompanyStatus.VERIFIED
       : CompanyStatus.DRAFT;
+    const slug = await this.nextCompanySlug(typeof data.slug === 'string' ? data.slug : name);
     const company = this.companies.create({
       ...pick<Company>(data, COMPANY_FIELDS),
       name,
       ownerId: req.user.uid,
       verificationStatus,
       isVerified: verificationStatus === CompanyStatus.VERIFIED,
+      slug,
     });
     return this.companies.save(company);
   }
@@ -112,6 +142,7 @@ export class AdminController {
     if (!company) throw new NotFoundException('Empresa não encontrada.');
     Object.assign(company, pick<Company>(data, COMPANY_FIELDS));
     if (typeof data.name === 'string' && data.name.trim()) company.name = data.name.trim();
+    if (typeof data.slug === 'string' && data.slug.trim() && data.slug !== company.slug) company.slug = await this.nextCompanySlug(data.slug, company.id);
     if (Object.values(CompanyStatus).includes(data.verificationStatus as CompanyStatus)) {
       company.verificationStatus = data.verificationStatus as CompanyStatus;
       company.isVerified = company.verificationStatus === CompanyStatus.VERIFIED;
@@ -137,6 +168,7 @@ export class AdminController {
     if (data.acceptsPlatformApplications === false && !(typeof data.externalApplicationInstructions === 'string' && data.externalApplicationInstructions.trim())) {
       throw new BadRequestException('Informe como o candidato deve enviar ou entregar o currículo.');
     }
+    const slug = await this.nextJobSlug(`${title}-${company.slug || company.name}`);
     const job = this.jobs.create({
       ...pick<Job>(data, JOB_FIELDS),
       title,
@@ -145,6 +177,7 @@ export class AdminController {
       companyName: company.name,
       ownerId: req.user.uid,
       active: data.active !== false,
+      slug,
     });
     return this.jobs.save(job);
   }
@@ -169,6 +202,25 @@ export class AdminController {
     }
     await this.jobs.remove(job);
     return { success: true };
+  }
+
+  private async nextCompanySlug(value: string, companyId?: string): Promise<string> {
+    const base = slugify(value) || 'empresa';
+    for (let suffix = 1; suffix < 10_000; suffix += 1) {
+      const slug = suffix === 1 ? base : `${base}-${suffix}`;
+      const existing = await this.companies.findOne({ where: { slug } });
+      if (!existing || existing.id === companyId) return slug;
+    }
+    throw new BadRequestException('Não foi possível reservar este endereço público.');
+  }
+
+  private async nextJobSlug(value: string): Promise<string> {
+    const base = slugify(value) || 'vaga';
+    for (let suffix = 1; suffix < 10_000; suffix += 1) {
+      const slug = suffix === 1 ? base : `${base}-${suffix}`;
+      if (!(await this.jobs.exists({ where: { slug } }))) return slug;
+    }
+    throw new BadRequestException('Não foi possível criar o endereço público da vaga.');
   }
 
   @Get('users')

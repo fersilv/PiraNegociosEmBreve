@@ -12,6 +12,8 @@ import { ApplicationsModule } from './applications/applications.module';
 import { CompaniesModule } from './companies/companies.module';
 import { ChatModule } from './chat/chat.module';
 import { AdminModule } from './admin/admin.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { SeoModule } from './seo/seo.module';
 
 @Module({
   imports: [
@@ -36,6 +38,8 @@ import { AdminModule } from './admin/admin.module';
     ApplicationsModule,
     CompaniesModule,
     ChatModule,
+    AnalyticsModule,
+    SeoModule,
     AdminModule,
   ],
   controllers: [AppController],

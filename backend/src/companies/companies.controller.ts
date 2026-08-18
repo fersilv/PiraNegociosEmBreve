@@ -42,6 +42,16 @@ export class CompaniesController {
     return this.companiesService.searchByName(term);
   }
 
+  @Get('slug-availability')
+  async slugAvailability(@Query('slug') slug: string, @Req() req: any) {
+    const user = await this.usersRepository.findOne({ where: { id: req.user.uid } });
+    const companyId = user?.companyId;
+    const normalized = slug?.trim().toLowerCase();
+    if (!normalized) return { available: false };
+    const company = await this.companiesService.findBySlug(normalized);
+    return { available: !company || company.id === companyId };
+  }
+
   @Get('mine')
   async findAllMyCompanies(@Req() req: any) {
     const user = await this.usersRepository.findOne({ where: { id: req.user.uid } });

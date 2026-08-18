@@ -4,6 +4,7 @@ import { UsersService } from './users.service';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 
 import { User, UserType } from './entities/user.entity';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 @Controller('users')
 @UseGuards(FirebaseAuthGuard)
@@ -11,6 +12,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly configService: ConfigService,
+    private readonly analytics: AnalyticsService,
   ) {}
 
   private isBootstrapAdmin(email?: string): boolean {
@@ -25,6 +27,7 @@ export class UsersController {
   @Get('me')
   async getProfile(@Req() req: any) {
     const user = req.user; // Vem do AuthGuard
+    void this.analytics.recordAccountAccess(user.uid, req.headers).catch(() => undefined);
     const existing = await this.usersService.findOneOrNull(user.uid);
 
     // The allowlist is also applied to an existing profile. This makes the
@@ -53,6 +56,14 @@ export class UsersController {
 
     if (updateData.type === UserType.ADMIN || updateData.isCompanyAdmin !== undefined || updateData.companyId !== undefined) {
       throw new BadRequestException('Campos de permissão e vínculo corporativo são gerenciados exclusivamente pelo servidor.');
+    }
+
+    // The identity provider is the only trusted source for a user's e-mail.
+    // Persist it when missing so ADMIN_EMAILS can safely bootstrap the platform owner.
+    if (typeof user.email === 'string' && user.email.trim()) {
+      sanitized.email = user.email.trim().toLowerCase();
+    } else if (!existing) {
+      throw new BadRequestException('Sua conta de autenticação precisa possuir um e-mail válido.');
     }
 
     if (this.isBootstrapAdmin(user.email)) {

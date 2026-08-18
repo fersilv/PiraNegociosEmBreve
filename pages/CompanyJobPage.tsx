@@ -29,7 +29,9 @@ export function CompanyJobPage() {
   const [editLocation, setEditLocation] = useState('');
   const [editSalary, setEditSalary] = useState('');
   const [editType, setEditType] = useState('CLT');
+  const [editWorkModel, setEditWorkModel] = useState('Presencial');
   const [editDescription, setEditDescription] = useState('');
+  const [editRequirements, setEditRequirements] = useState('');
   const [editIsConfidential, setEditIsConfidential] = useState(false);
   const [editIsTalentPool, setEditIsTalentPool] = useState(false);
   const [editAcceptsPlatformApplications, setEditAcceptsPlatformApplications] = useState(true);
@@ -60,7 +62,9 @@ export function CompanyJobPage() {
         setEditLocation(data.location || '');
         setEditSalary(data.salary || '');
         setEditType(data.type || 'CLT');
+        setEditWorkModel(data.workModel || 'Presencial');
         setEditDescription(data.description || '');
+        setEditRequirements(data.requirements || '');
         setEditIsConfidential(data.isConfidential || false);
         setEditIsTalentPool(data.isTalentPool || false);
         setEditAcceptsPlatformApplications(data.acceptsPlatformApplications !== false);
@@ -127,7 +131,9 @@ export function CompanyJobPage() {
         location: editLocation,
         salary: editSalary,
         type: editType,
+        workModel: editWorkModel,
         description: editDescription,
+        requirements: editRequirements,
         isConfidential: editIsConfidential,
         isTalentPool: editIsTalentPool,
         acceptsPlatformApplications: editAcceptsPlatformApplications,
@@ -303,11 +309,12 @@ export function CompanyJobPage() {
             </div>
             
             <div className="bg-stone-50 p-6 rounded-2xl">
-              <h3 className="font-bold text-lg mb-4">Descrição da Vaga</h3>
+              <h3 className="font-bold text-lg mb-4">Sobre a vaga</h3>
               <div className="prose prose-sm text-stone-600 max-w-none whitespace-pre-wrap">
                 {job.description}
               </div>
             </div>
+            {job.requirements && <div className="bg-stone-50 p-6 rounded-2xl"><h3 className="font-bold text-lg mb-4">Requisitos</h3><div className="prose prose-sm text-stone-600 max-w-none whitespace-pre-wrap">{job.requirements}</div></div>}
           </div>
         )}
 
@@ -336,9 +343,17 @@ export function CompanyJobPage() {
                   <option value="Temporário">Temporário</option>
                 </select>
               </div>
+              <div>
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Regime de Trabalho</label>
+                <select value={editWorkModel} onChange={(e) => setEditWorkModel(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white"><option value="Presencial">Presencial</option><option value="Híbrido">Híbrido</option><option value="Remoto">Remoto</option></select>
+              </div>
               <div className="md:col-span-2">
-                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Descrição *</label>
-                <textarea required value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={6} className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white" placeholder="Descreva as atividades, requisitos e benefícios da vaga..." />
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Sobre a vaga / atividades *</label>
+                <textarea required value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={6} className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white" placeholder="Descreva responsabilidades, atividades e benefícios da vaga..." />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Requisitos</label>
+                <textarea value={editRequirements} onChange={(e) => setEditRequirements(e.target.value)} rows={5} className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white" placeholder="Informe experiência, formação, habilidades e disponibilidade necessárias." />
               </div>
               <div className="md:col-span-2 flex flex-col gap-3">
                 <label className="flex items-center gap-3 cursor-pointer">

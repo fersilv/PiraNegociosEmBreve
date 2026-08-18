@@ -3,9 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Job } from './entities/job.entity';
 import { Company } from '../companies/entities/company.entity';
+import { slugify } from '../seo/seo.utils';
 
 const JOB_MUTABLE_FIELDS = [
-  'title', 'description', 'location', 'type', 'workModel', 'salary', 'isConfidential',
+  'title', 'description', 'requirements', 'location', 'type', 'workModel', 'salary', 'isConfidential',
   'isTalentPool', 'active', 'deadlineDate', 'acceptsPlatformApplications', 'externalApplicationInstructions',
 ] as const;
 
@@ -28,13 +29,15 @@ export class JobsService {
     return this.jobsRepository.findOne({ where: { id } });
   }
 
-  create(userId: string, company: Company, data: Partial<Job>): Promise<Job> {
+  async create(userId: string, company: Company, data: Partial<Job>): Promise<Job> {
+    const slug = await this.generateAvailableSlug(`${data.title || 'vaga'}-${company.slug || company.name}`);
     const job = this.jobsRepository.create({
       ...this.pickMutableFields(data),
       ownerId: userId,
       companyId: company.id,
       companyName: company.name,
       active: true,
+      slug,
     });
     return this.jobsRepository.save(job);
   }
@@ -62,5 +65,14 @@ export class JobsService {
       if (data[field] !== undefined) (sanitized as Record<string, unknown>)[field] = data[field];
     }
     return sanitized;
+  }
+
+  private async generateAvailableSlug(value: string): Promise<string> {
+    const base = slugify(value) || 'vaga';
+    for (let suffix = 1; suffix < 10_000; suffix += 1) {
+      const candidate = suffix === 1 ? base : `${base}-${suffix}`;
+      if (!(await this.jobsRepository.exists({ where: { slug: candidate } }))) return candidate;
+    }
+    throw new NotFoundException('Não foi possível criar um endereço público para a vaga.');
   }
 }

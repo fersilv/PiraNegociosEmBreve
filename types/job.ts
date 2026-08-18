@@ -1,5 +1,6 @@
 export interface Job {
   id: string;
+  slug?: string;
   title: string;
   companyName: string;
   location: string;
@@ -9,6 +10,7 @@ export interface Job {
   isSponsored?: boolean;
   postedAt: string;
   description: string;
+  requirements?: string;
   ownerId?: string;
   isConfidential?: boolean;
   isCompanyVerified?: boolean;

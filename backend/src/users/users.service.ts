@@ -6,8 +6,7 @@ import { CompanyInvitation } from './entities/company-invitation.entity';
 
 const SELF_MANAGED_FIELDS = [
   'displayName', 'photoURL', 'fullName', 'socialName', 'treatment', 'phone',
-  'bio', 'resumeURL', 'acceptedTerms', 'linkedinURL', 'companyName',
-  'companyDescription', 'companyLogo', 'additionalPhones', 'experiences',
+  'bio', 'resumeURL', 'acceptedTerms', 'linkedinURL', 'additionalPhones', 'experiences',
   'skills', 'courses', 'education', 'aiAnalysis', 'hasAiAnalyzed',
   'aiAnalysisCount', 'savedDocs',
 ] as const;
@@ -41,7 +40,6 @@ export class UsersService {
       }
     }
 
-    if (!existing && data.email) sanitized.email = data.email.trim().toLowerCase();
     if ((!existing || !existing.type) && data.type && [UserType.CANDIDATE, UserType.COMPANY].includes(data.type)) {
       sanitized.type = data.type;
     }

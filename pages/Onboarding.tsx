@@ -79,14 +79,11 @@ export function Onboarding() {
       }
 
       if (!profile?.phone) {
-        updates.name = name;
+        updates.displayName = name.trim();
+        updates.fullName = name.trim();
         updates.phone = phone;
         updates.socialName = socialName;
         updates.treatment = treatment;
-        
-        if (profile?.name && !profile?.displayName) {
-          updates.displayName = profile.name;
-        }
       }
 
       await api.post('/users/me', updates);

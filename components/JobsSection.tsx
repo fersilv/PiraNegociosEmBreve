@@ -141,7 +141,7 @@ export function JobsSection({ region }: { region: 'PIRASSUNUNGA' }) {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {sponsoredJobs.map(job => (
-                <JobCard key={job.id} job={job} hasApplied={myApplications.includes(job.id)} onClick={() => setSelectedJob(job)} />
+                <JobCard key={job.id} job={job} hasApplied={myApplications.includes(job.id)} onClick={() => job.slug ? navigate(`/vagas/${job.slug}`) : setSelectedJob(job)} />
               ))}
             </div>
           </div>
@@ -152,7 +152,7 @@ export function JobsSection({ region }: { region: 'PIRASSUNUNGA' }) {
           <h3 className="text-xs font-bold tracking-widest text-stone-500 uppercase mb-4 flex items-center gap-2">
             <Clock className="w-4 h-4" /> Últimas Vagas
           </h3>
-          <AnimatedLatestJobs jobs={regularJobs} appliedJobIds={myApplications} onSelect={setSelectedJob} />
+          <AnimatedLatestJobs jobs={regularJobs} appliedJobIds={myApplications} onSelect={(job) => job.slug ? navigate(`/vagas/${job.slug}`) : setSelectedJob(job)} />
         </div>
 
         {/* See more link */}

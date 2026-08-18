@@ -18,6 +18,10 @@ export class Company {
   @Column()
   name: string;
 
+  // Public, human-readable company address: https://piranegocios.com.br/{slug}
+  @Column({ nullable: true, unique: true })
+  slug: string | null;
+
   @Column({ type: 'text', nullable: true })
   description: string;
 

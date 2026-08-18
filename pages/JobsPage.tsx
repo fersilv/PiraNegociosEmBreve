@@ -286,7 +286,7 @@ export default function JobsPage() {
         ) : (
           <div className="space-y-4">
             {currentJobs.map(job => (
-              <JobCard key={job.id} job={job} hasApplied={myApplications.includes(job.id)} onClick={() => setSelectedJob(job)} />
+              <JobCard key={job.id} job={job} hasApplied={myApplications.includes(job.id)} onClick={() => job.slug ? navigate(`/vagas/${job.slug}`) : setSelectedJob(job)} />
             ))}
           </div>
         )}

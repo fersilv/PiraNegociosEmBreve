@@ -87,11 +87,18 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
           </div>
 
           <div>
-            <h3 className="font-semibold text-stone-900 mb-3">Descrição</h3>
+            <h3 className="font-semibold text-stone-900 mb-3">Sobre a vaga</h3>
             <p className="text-stone-600 whitespace-pre-line leading-relaxed">
               {job.description}
             </p>
           </div>
+
+          {job.requirements && (
+            <div>
+              <h3 className="font-semibold text-stone-900 mb-3">Requisitos</h3>
+              <p className="text-stone-600 whitespace-pre-line leading-relaxed">{job.requirements}</p>
+            </div>
+          )}
 
           <div className="pt-6 border-t border-stone-200/50 flex flex-col sm:flex-row gap-4">
             {job.acceptsPlatformApplications === false ? (
