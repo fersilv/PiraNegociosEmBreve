@@ -157,6 +157,8 @@ export class PublicSeoController {
       isTalentPool: job.isTalentPool,
       acceptsPlatformApplications: job.acceptsPlatformApplications,
       externalApplicationInstructions: job.externalApplicationInstructions,
+      applicationEmail: job.applicationEmail,
+      applicationWhatsApp: job.applicationWhatsApp,
       deadlineDate: job.deadlineDate,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,

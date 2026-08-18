@@ -133,9 +133,12 @@ export class JobsController {
   @UseGuards(FirebaseAuthGuard)
   async create(@Req() req: any, @Body() createJobDto: Partial<Job>) {
     if (
-      !createJobDto.companyId ||
-      !createJobDto.title?.trim() ||
-      !createJobDto.description?.trim()
+      typeof createJobDto.companyId !== 'string' ||
+      !createJobDto.companyId.trim() ||
+      typeof createJobDto.title !== 'string' ||
+      !createJobDto.title.trim() ||
+      typeof createJobDto.description !== 'string' ||
+      !createJobDto.description.trim()
     ) {
       throw new BadRequestException(
         'Empresa, título e descrição são obrigatórios.',
@@ -143,12 +146,13 @@ export class JobsController {
     }
     if (
       createJobDto.acceptsPlatformApplications === false &&
-      !createJobDto.externalApplicationInstructions?.trim()
+      !this.hasExternalApplicationChannel(createJobDto)
     ) {
       throw new BadRequestException(
-        'Informe como o candidato deve enviar ou entregar o currículo.',
+        'Informe ao menos WhatsApp, e-mail ou instruções para a candidatura externa.',
       );
     }
+    this.validateApplicationFields(createJobDto);
     const company = await this.assertCanManageCompany(
       req.user.uid,
       createJobDto.companyId,
@@ -176,14 +180,62 @@ export class JobsController {
       );
     if (
       updateJobDto.acceptsPlatformApplications === false &&
-      !updateJobDto.externalApplicationInstructions?.trim() &&
-      !job.externalApplicationInstructions?.trim()
+      !this.hasExternalApplicationChannel(updateJobDto, job)
     ) {
       throw new BadRequestException(
-        'Informe como o candidato deve enviar ou entregar o currículo.',
+        'Informe ao menos WhatsApp, e-mail ou instruções para a candidatura externa.',
       );
     }
+    this.validateApplicationFields(updateJobDto);
     return this.jobsService.update(req.user.uid, id, updateJobDto, true);
+  }
+
+  private hasExternalApplicationChannel(data: Partial<Job>, current?: Job) {
+    const instructions =
+      data.externalApplicationInstructions !== undefined
+        ? typeof data.externalApplicationInstructions === 'string'
+          ? data.externalApplicationInstructions.trim()
+          : ''
+        : current?.externalApplicationInstructions?.trim();
+    const email =
+      data.applicationEmail !== undefined
+        ? typeof data.applicationEmail === 'string'
+          ? data.applicationEmail.trim()
+          : ''
+        : current?.applicationEmail?.trim();
+    const whatsapp =
+      data.applicationWhatsApp !== undefined
+        ? typeof data.applicationWhatsApp === 'string'
+          ? data.applicationWhatsApp.trim()
+          : ''
+        : current?.applicationWhatsApp?.trim();
+    return Boolean(instructions || email || whatsapp);
+  }
+
+  private validateApplicationFields(data: Partial<Job>) {
+    if (
+      data.applicationEmail !== undefined &&
+      data.applicationEmail !== null &&
+      typeof data.applicationEmail !== 'string'
+    )
+      throw new BadRequestException('O e-mail de candidatura deve ser texto.');
+    const email = data.applicationEmail?.trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      throw new BadRequestException('Informe um e-mail de candidatura válido.');
+
+    if (
+      data.applicationWhatsApp !== undefined &&
+      data.applicationWhatsApp !== null &&
+      typeof data.applicationWhatsApp !== 'string'
+    )
+      throw new BadRequestException(
+        'O WhatsApp de candidatura deve ser texto.',
+      );
+    const whatsapp = data.applicationWhatsApp?.replace(/\D/g, '');
+    if (whatsapp && (whatsapp.length < 10 || whatsapp.length > 13))
+      throw new BadRequestException(
+        'Informe o WhatsApp com DDD e número, com DDI opcional.',
+      );
   }
 
   @Put(':id')

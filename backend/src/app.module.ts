@@ -15,6 +15,7 @@ import { AdminModule } from './admin/admin.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { SeoModule } from './seo/seo.module';
 import { AdvertisingModule } from './advertising/advertising.module';
+import { ExternalApiModule } from './external-api/external-api.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { AdvertisingModule } from './advertising/advertising.module';
     AnalyticsModule,
     SeoModule,
     AdvertisingModule,
+    ExternalApiModule,
     AdminModule,
   ],
   controllers: [AppController],

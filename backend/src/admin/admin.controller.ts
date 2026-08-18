@@ -59,6 +59,8 @@ const JOB_FIELDS = [
   'description',
   'requirements',
   'location',
+  'city',
+  'state',
   'type',
   'workModel',
   'salary',
@@ -68,9 +70,41 @@ const JOB_FIELDS = [
   'deadlineDate',
   'acceptsPlatformApplications',
   'externalApplicationInstructions',
+  'applicationEmail',
+  'applicationWhatsApp',
   'sourceName',
   'sourceUrl',
 ] as const;
+
+const VALID_UFS = new Set([
+  'AC',
+  'AL',
+  'AP',
+  'AM',
+  'BA',
+  'CE',
+  'DF',
+  'ES',
+  'GO',
+  'MA',
+  'MT',
+  'MS',
+  'MG',
+  'PA',
+  'PB',
+  'PR',
+  'PE',
+  'PI',
+  'RJ',
+  'RN',
+  'RS',
+  'RO',
+  'RR',
+  'SC',
+  'SP',
+  'SE',
+  'TO',
+]);
 
 function pick<T extends object>(
   data: Record<string, unknown>,
@@ -422,15 +456,14 @@ export class AdminController {
       throw new NotFoundException('Empresa não encontrada.');
     if (
       data.acceptsPlatformApplications === false &&
-      !(
-        typeof data.externalApplicationInstructions === 'string' &&
-        data.externalApplicationInstructions.trim()
-      )
+      !this.hasExternalApplicationChannel(data)
     ) {
       throw new BadRequestException(
-        'Informe como o candidato deve enviar ou entregar o currículo.',
+        'Informe ao menos WhatsApp, e-mail ou instruções para a candidatura externa.',
       );
     }
+    this.validateJobContactFields(data);
+    const normalizedLocation = this.normalizeJobLocation(data);
     const sourceName =
       typeof data.sourceName === 'string'
         ? data.sourceName.trim().slice(0, 160)
@@ -450,6 +483,7 @@ export class AdminController {
       ...pick<Job>(data, JOB_FIELDS),
       title,
       description,
+      ...normalizedLocation,
       companyId: company?.id || null,
       companyName:
         company?.name || sourceName || 'Oportunidade de fonte externa',
@@ -472,17 +506,102 @@ export class AdminController {
     if (!job) throw new NotFoundException('Vaga não encontrada.');
     if (
       data.acceptsPlatformApplications === false &&
-      !(
-        typeof data.externalApplicationInstructions === 'string' &&
-        data.externalApplicationInstructions.trim()
-      )
+      !this.hasExternalApplicationChannel(data, job)
     ) {
       throw new BadRequestException(
-        'Informe como o candidato deve enviar ou entregar o currículo.',
+        'Informe ao menos WhatsApp, e-mail ou instruções para a candidatura externa.',
       );
     }
+    this.validateJobContactFields(data);
     Object.assign(job, pick<Job>(data, JOB_FIELDS));
+    if (
+      data.location !== undefined ||
+      data.city !== undefined ||
+      data.state !== undefined
+    )
+      Object.assign(job, this.normalizeJobLocation(data));
+    if (data.active === true && job.moderationStatus === 'PENDING')
+      job.moderationStatus = 'APPROVED';
     return this.jobs.save(job);
+  }
+
+  private hasExternalApplicationChannel(
+    data: Record<string, unknown>,
+    current?: Job,
+  ) {
+    const instructions =
+      typeof data.externalApplicationInstructions === 'string'
+        ? data.externalApplicationInstructions.trim()
+        : current?.externalApplicationInstructions;
+    const email =
+      typeof data.applicationEmail === 'string'
+        ? data.applicationEmail.trim()
+        : current?.applicationEmail;
+    const whatsapp =
+      typeof data.applicationWhatsApp === 'string'
+        ? data.applicationWhatsApp.trim()
+        : current?.applicationWhatsApp;
+    return Boolean(instructions || email || whatsapp);
+  }
+
+  private validateJobContactFields(data: Record<string, unknown>) {
+    if (
+      data.applicationEmail !== undefined &&
+      data.applicationEmail !== null &&
+      typeof data.applicationEmail !== 'string'
+    )
+      throw new BadRequestException('O e-mail de candidatura deve ser texto.');
+    const email =
+      typeof data.applicationEmail === 'string'
+        ? data.applicationEmail.trim()
+        : '';
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      throw new BadRequestException('Informe um e-mail de candidatura válido.');
+
+    if (
+      data.applicationWhatsApp !== undefined &&
+      data.applicationWhatsApp !== null &&
+      typeof data.applicationWhatsApp !== 'string'
+    )
+      throw new BadRequestException(
+        'O WhatsApp de candidatura deve ser texto.',
+      );
+    const whatsapp =
+      typeof data.applicationWhatsApp === 'string'
+        ? data.applicationWhatsApp.replace(/\D/g, '')
+        : '';
+    if (whatsapp && (whatsapp.length < 10 || whatsapp.length > 13))
+      throw new BadRequestException(
+        'Informe o WhatsApp com DDD e número, com DDI opcional.',
+      );
+
+    if (
+      typeof data.sourceUrl === 'string' &&
+      data.sourceUrl.trim() &&
+      !/^https?:\/\//i.test(data.sourceUrl.trim())
+    )
+      throw new BadRequestException(
+        'A URL da fonte deve começar com http:// ou https://.',
+      );
+  }
+
+  private normalizeJobLocation(data: Record<string, unknown>) {
+    const explicitCity =
+      typeof data.city === 'string' ? data.city.trim().slice(0, 120) : '';
+    const explicitState =
+      typeof data.state === 'string'
+        ? data.state.trim().toUpperCase().slice(0, 2)
+        : '';
+    const rawLocation =
+      typeof data.location === 'string'
+        ? data.location.trim().slice(0, 180)
+        : '';
+    const parts = rawLocation.split(/\s*,\s*/);
+    const city = explicitCity || parts[0] || 'Pirassununga';
+    const state = explicitState || parts[1]?.toUpperCase() || 'SP';
+    if (!VALID_UFS.has(state))
+      throw new BadRequestException('Selecione um estado brasileiro válido.');
+    return { city, state, location: `${city}, ${state}` };
   }
 
   @Delete('jobs/:id')

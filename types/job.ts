@@ -4,6 +4,8 @@ export interface Job {
   title: string;
   companyName: string;
   location: string;
+  city?: string;
+  state?: string;
   salary?: string;
   type: string;
   workModel?: string;
@@ -23,4 +25,6 @@ export interface Job {
   active?: boolean;
   acceptsPlatformApplications?: boolean;
   externalApplicationInstructions?: string;
+  applicationEmail?: string;
+  applicationWhatsApp?: string;
 }

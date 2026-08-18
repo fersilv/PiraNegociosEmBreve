@@ -62,6 +62,8 @@ export function CompanyJobPage() {
     editExternalApplicationInstructions,
     setEditExternalApplicationInstructions,
   ] = useState("");
+  const [editApplicationEmail, setEditApplicationEmail] = useState("");
+  const [editApplicationWhatsApp, setEditApplicationWhatsApp] = useState("");
   const [savingJob, setSavingJob] = useState(false);
 
   useEffect(() => {
@@ -99,6 +101,8 @@ export function CompanyJobPage() {
         setEditExternalApplicationInstructions(
           data.externalApplicationInstructions || "",
         );
+        setEditApplicationEmail(data.applicationEmail || "");
+        setEditApplicationWhatsApp(data.applicationWhatsApp || "");
       } else {
         navigate("/dashboard");
       }
@@ -198,6 +202,12 @@ export function CompanyJobPage() {
         externalApplicationInstructions: editAcceptsPlatformApplications
           ? ""
           : editExternalApplicationInstructions,
+        applicationEmail: editAcceptsPlatformApplications
+          ? ""
+          : editApplicationEmail,
+        applicationWhatsApp: editAcceptsPlatformApplications
+          ? ""
+          : editApplicationWhatsApp,
       });
       alert("Vaga atualizada com sucesso!");
       fetchJobData();
@@ -562,16 +572,52 @@ export function CompanyJobPage() {
                   </span>
                 </label>
                 {!editAcceptsPlatformApplications && (
-                  <textarea
-                    required
-                    value={editExternalApplicationInstructions}
-                    onChange={(e) =>
-                      setEditExternalApplicationInstructions(e.target.value)
-                    }
-                    rows={3}
-                    className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white"
-                    placeholder="Informe e-mail, site, WhatsApp ou local para entrega do currículo."
-                  />
+                  <div className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-stone-500">
+                        WhatsApp para candidatura
+                      </label>
+                      <input
+                        value={editApplicationWhatsApp}
+                        onChange={(e) =>
+                          setEditApplicationWhatsApp(e.target.value)
+                        }
+                        className="input"
+                        placeholder="(19) 99999-9999"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-stone-500">
+                        E-mail para candidatura
+                      </label>
+                      <input
+                        type="email"
+                        value={editApplicationEmail}
+                        onChange={(e) =>
+                          setEditApplicationEmail(e.target.value)
+                        }
+                        className="input"
+                        placeholder="rh@empresa.com.br"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-stone-500">
+                        Outras instruções
+                      </label>
+                      <textarea
+                        value={editExternalApplicationInstructions}
+                        onChange={(e) =>
+                          setEditExternalApplicationInstructions(e.target.value)
+                        }
+                        rows={3}
+                        className="input"
+                        placeholder="Site ou local para entrega do currículo."
+                      />
+                    </div>
+                    <p className="text-xs text-amber-800 md:col-span-2">
+                      Informe ao menos WhatsApp, e-mail ou uma instrução.
+                    </p>
+                  </div>
                 )}
               </div>
             </div>

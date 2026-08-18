@@ -2,6 +2,7 @@ import React, { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, asArray } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
+import { CityStateSelector } from "../components/CityStateSelector";
 import {
   Briefcase,
   Building2,
@@ -12,11 +13,19 @@ import {
   Search,
   Shield,
   Users,
+  KeyRound,
+  Copy,
   X,
 } from "lucide-react";
 
 type Tab =
-  "overview" | "companies" | "jobs" | "users" | "access" | "advertising";
+  | "overview"
+  | "companies"
+  | "jobs"
+  | "users"
+  | "access"
+  | "advertising"
+  | "api";
 type AdminDashboardMode = "dashboard" | "moderation";
 type Company = {
   id: string;
@@ -35,6 +44,8 @@ type Job = {
   active: boolean;
   isExternalListing?: boolean;
   sourceName?: string | null;
+  ingestionSourceName?: string | null;
+  moderationStatus?: string;
   reportCount?: number;
 };
 type PlatformUser = {
@@ -115,14 +126,17 @@ export function AdminDashboard({
     sourceName: "",
     sourceUrl: "",
     title: "",
-    location: "",
+    location: "Pirassununga, SP",
     type: "CLT",
     workModel: "Presencial",
     salary: "",
+    deadlineDate: "",
     description: "",
     requirements: "",
     acceptsPlatformApplications: true,
     externalApplicationInstructions: "",
+    applicationEmail: "",
+    applicationWhatsApp: "",
   });
 
   const load = useCallback(
@@ -215,14 +229,17 @@ export function AdminDashboard({
         sourceName: "",
         sourceUrl: "",
         title: "",
-        location: "",
+        location: "Pirassununga, SP",
         type: "CLT",
         workModel: "Presencial",
         salary: "",
+        deadlineDate: "",
         description: "",
         requirements: "",
         acceptsPlatformApplications: true,
         externalApplicationInstructions: "",
+        applicationEmail: "",
+        applicationWhatsApp: "",
       });
       await load("jobs");
     } catch (requestError: any) {
@@ -449,6 +466,7 @@ export function AdminDashboard({
               ["users", "Usuários"],
               ["access", "Vínculos"],
               ["advertising", "Publicidade"],
+              ["api", "API v1"],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -553,7 +571,9 @@ export function AdminDashboard({
                           ? "Usuários"
                           : tab === "access"
                             ? "Solicitações de vínculo"
-                            : "Publicidade e AdSense"}
+                            : tab === "api"
+                              ? "API v1 de vagas externas"
+                              : "Publicidade e AdSense"}
                   </h2>
                   <p className="text-sm text-stone-500">
                     {tab === "companies"
@@ -564,10 +584,12 @@ export function AdminDashboard({
                           ? "Consulta de contas registradas na plataforma."
                           : tab === "access"
                             ? "Aprove ou recuse pedidos de acesso a empresas existentes."
-                            : "Gerencie contratos, posições comerciais e configuração do AdSense."}
+                            : tab === "api"
+                              ? "Gerencie integrações, origens e documentação técnica."
+                              : "Gerencie contratos, posições comerciais e configuração do AdSense."}
                   </p>
                 </div>
-                {tab !== "advertising" && (
+                {!["advertising", "api"].includes(tab) && (
                   <label className="relative block">
                     <Search className="absolute left-3 top-3 h-4 w-4 text-stone-400" />
                     <input
@@ -662,6 +684,7 @@ export function AdminDashboard({
                   </div>
                 )}
                 {tab === "advertising" && <AdvertisingPanel />}
+                {tab === "api" && <ApiV1Panel />}
               </div>
             </div>
           )}
@@ -832,13 +855,12 @@ export function AdminDashboard({
               />
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Localização">
-                <input
-                  value={jobForm.location}
-                  onChange={(event) =>
-                    setJobForm({ ...jobForm, location: event.target.value })
+              <Field label="Estado e cidade *">
+                <CityStateSelector
+                  initialValue={jobForm.location}
+                  onLocationChange={(location) =>
+                    setJobForm({ ...jobForm, location })
                   }
-                  className="input"
                 />
               </Field>
               <Field label="Contrato">
@@ -867,6 +889,26 @@ export function AdminDashboard({
                   <option value="Híbrido">Híbrido</option>
                   <option value="Remoto">Remoto</option>
                 </select>
+              </Field>
+              <Field label="Salário (opcional)">
+                <input
+                  value={jobForm.salary}
+                  onChange={(event) =>
+                    setJobForm({ ...jobForm, salary: event.target.value })
+                  }
+                  placeholder="Ex.: R$ 2.100,00 ou A combinar"
+                  className="input"
+                />
+              </Field>
+              <Field label="Prazo da vaga (opcional)">
+                <input
+                  type="date"
+                  value={jobForm.deadlineDate}
+                  onChange={(event) =>
+                    setJobForm({ ...jobForm, deadlineDate: event.target.value })
+                  }
+                  className="input"
+                />
               </Field>
             </div>
             <Field label="Sobre a vaga / atividades *">
@@ -911,20 +953,54 @@ export function AdminDashboard({
               </span>
             </label>
             {!jobForm.acceptsPlatformApplications && (
-              <Field label="Instruções para candidatura externa *">
-                <textarea
-                  required
-                  rows={3}
-                  value={jobForm.externalApplicationInstructions}
-                  onChange={(event) =>
-                    setJobForm({
-                      ...jobForm,
-                      externalApplicationInstructions: event.target.value,
-                    })
-                  }
-                  className="input"
-                />
-              </Field>
+              <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="WhatsApp para candidatura">
+                    <input
+                      value={jobForm.applicationWhatsApp}
+                      onChange={(event) =>
+                        setJobForm({
+                          ...jobForm,
+                          applicationWhatsApp: event.target.value,
+                        })
+                      }
+                      placeholder="(19) 99999-9999"
+                      className="input"
+                    />
+                  </Field>
+                  <Field label="E-mail para candidatura">
+                    <input
+                      type="email"
+                      value={jobForm.applicationEmail}
+                      onChange={(event) =>
+                        setJobForm({
+                          ...jobForm,
+                          applicationEmail: event.target.value,
+                        })
+                      }
+                      placeholder="rh@empresa.com.br"
+                      className="input"
+                    />
+                  </Field>
+                </div>
+                <Field label="Outras instruções (opcional)">
+                  <textarea
+                    rows={3}
+                    value={jobForm.externalApplicationInstructions}
+                    onChange={(event) =>
+                      setJobForm({
+                        ...jobForm,
+                        externalApplicationInstructions: event.target.value,
+                      })
+                    }
+                    className="input"
+                  />
+                </Field>
+                <p className="text-xs text-amber-800">
+                  Informe ao menos WhatsApp, e-mail ou uma instrução de
+                  candidatura.
+                </p>
+              </div>
             )}
             <Actions saving={saving} text="Publicar vaga" />
           </form>
@@ -1428,6 +1504,268 @@ function MetricList({
         )}
       </div>
     </section>
+  );
+}
+function ApiV1Panel() {
+  const [clients, setClients] = useState<any[]>([]);
+  const [requests, setRequests] = useState<any[]>([]);
+  const [form, setForm] = useState({ name: "", sourceLabel: "" });
+  const [newKey, setNewKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const load = async () => {
+    const [clientsResponse, requestsResponse] = await Promise.all([
+      api.get("/admin/api-v1/clients"),
+      api.get("/admin/api-v1/requests"),
+    ]);
+    setClients(asArray(clientsResponse.data));
+    setRequests(asArray(requestsResponse.data));
+  };
+  useEffect(() => {
+    load().catch(() =>
+      setError("Não foi possível carregar as integrações da API."),
+    );
+  }, []);
+  const createClient = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const response = await api.post("/admin/api-v1/clients", form);
+      setNewKey(response.data.apiKey);
+      setForm({ name: "", sourceLabel: "" });
+      await load();
+    } catch (requestError: any) {
+      setError(
+        requestError.response?.data?.message ||
+          "Não foi possível gerar a chave.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+  const toggle = async (client: any) => {
+    await api.put(`/admin/api-v1/clients/${client.id}`, {
+      active: !client.active,
+    });
+    await load();
+  };
+  const rotate = async (client: any) => {
+    if (
+      !window.confirm(
+        `Trocar a chave de ${client.name}? A anterior deixará de funcionar imediatamente.`,
+      )
+    )
+      return;
+    const response = await api.post(
+      `/admin/api-v1/clients/${client.id}/rotate`,
+    );
+    setNewKey(response.data.apiKey);
+    await load();
+  };
+  const endpoint = `${window.location.origin}/api/v1/jobs`;
+  const exampleBody = JSON.stringify(
+    {
+      title: "Repositor de mercadorias",
+      sourceName: "Avenida Hortifruti",
+      sourceUrl: "https://origem.example/vaga/123",
+      city: "Pirassununga",
+      state: "SP",
+      description: "Descrição e atividades da vaga",
+      requirements: "Experiência será um diferencial",
+      type: "CLT",
+      workModel: "Presencial",
+      salary: "R$ 2.100,00",
+      deadlineDate: "2026-09-30",
+      applicationWhatsApp: "5519999999999",
+      applicationEmail: "rh@example.com",
+      externalApplicationInstructions:
+        "Envie o currículo informando o título da vaga.",
+    },
+    null,
+    2,
+  );
+  return (
+    <div className="space-y-6 p-5">
+      {error && (
+        <p className="rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700">
+          {error}
+        </p>
+      )}
+      <section className="grid gap-5 lg:grid-cols-2">
+        <form
+          onSubmit={createClient}
+          className="space-y-3 rounded-2xl border border-stone-200 p-5"
+        >
+          <h3 className="flex items-center gap-2 font-bold text-stone-900">
+            <KeyRound className="h-5 w-5 text-terracotta-600" /> Nova chave de
+            integração
+          </h3>
+          <Field label="Nome interno">
+            <input
+              required
+              value={form.name}
+              onChange={(event) =>
+                setForm({ ...form, name: event.target.value })
+              }
+              placeholder="Agente IA — origem X"
+              className="input"
+            />
+          </Field>
+          <Field label="Origem padrão das vagas">
+            <input
+              required
+              value={form.sourceLabel}
+              onChange={(event) =>
+                setForm({ ...form, sourceLabel: event.target.value })
+              }
+              placeholder="Nome do site, grupo ou agente"
+              className="input"
+            />
+          </Field>
+          <Actions saving={saving} text="Gerar chave" />
+        </form>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          <h3 className="font-bold text-amber-950">Chave gerada</h3>
+          {newKey ? (
+            <>
+              <p className="mt-1 text-sm text-amber-800">
+                Copie agora. Por segurança, ela não será exibida novamente.
+              </p>
+              <code className="mt-3 block break-all rounded-xl bg-stone-950 p-3 text-xs text-emerald-300">
+                {newKey}
+              </code>
+              <button
+                onClick={() => navigator.clipboard.writeText(newKey)}
+                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-bold text-stone-700"
+              >
+                <Copy className="h-4 w-4" /> Copiar chave
+              </button>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-amber-800">
+              A chave completa só aparece imediatamente após criar ou
+              rotacionar.
+            </p>
+          )}
+        </div>
+      </section>
+      <section className="rounded-2xl border border-stone-200 p-5">
+        <h3 className="font-bold text-stone-900">Integrações cadastradas</h3>
+        <div className="mt-3 space-y-2">
+          {clients.map((client) => (
+            <div
+              key={client.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-stone-50 p-3"
+            >
+              <div>
+                <strong>{client.name}</strong>
+                <p className="text-xs text-stone-500">
+                  Origem: {client.sourceLabel} · Prefixo: {client.keyPrefix}… ·{" "}
+                  {client.lastUsedAt
+                    ? `último uso ${new Date(client.lastUsedAt).toLocaleString("pt-BR")}`
+                    : "nunca utilizada"}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => rotate(client)}
+                  className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-stone-700"
+                >
+                  Trocar chave
+                </button>
+                <button
+                  onClick={() => toggle(client)}
+                  className={`rounded-lg px-3 py-2 text-xs font-bold ${client.active ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}
+                >
+                  {client.active ? "Revogar" : "Reativar"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="rounded-2xl border border-stone-200 p-5">
+        <h3 className="font-bold text-stone-900">Atividade recente</h3>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[620px] text-left text-sm">
+            <thead className="text-xs uppercase tracking-wide text-stone-500">
+              <tr>
+                <th className="py-2">Integração</th>
+                <th className="py-2">Ação</th>
+                <th className="py-2">Resultado</th>
+                <th className="py-2">Data</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requests.slice(0, 20).map((request) => {
+                const client = clients.find(
+                  (item) => item.id === request.clientId,
+                );
+                return (
+                  <tr key={request.id} className="border-t border-stone-100">
+                    <td className="py-2 font-semibold text-stone-800">
+                      {client?.name || request.clientId}
+                    </td>
+                    <td className="py-2 text-stone-600">{request.action}</td>
+                    <td className="py-2 text-stone-600">{request.result}</td>
+                    <td className="py-2 text-stone-500">
+                      {new Date(request.createdAt).toLocaleString("pt-BR")}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {!requests.length && (
+            <p className="py-3 text-sm text-stone-500">
+              Nenhuma requisição registrada ainda.
+            </p>
+          )}
+        </div>
+      </section>
+      <section className="space-y-4 rounded-2xl border border-stone-200 p-5">
+        <h3 className="font-bold text-stone-900">Documentação rápida</h3>
+        <p className="text-sm text-stone-600">
+          Base: <code>{endpoint}</code>. Autentique com{" "}
+          <code>X-API-Key: SUA_CHAVE</code> ou{" "}
+          <code>Authorization: Bearer SUA_CHAVE</code>. Limite: 60
+          requisições/minuto por chave.
+        </p>
+        <p className="text-xs text-stone-500">
+          Obrigatórios: <code>title</code> e <code>description</code>. Cidade e
+          estado assumem Pirassununga/SP quando omitidos. A chave define a
+          origem padrão; nenhum endpoint da API publica uma vaga diretamente.
+        </p>
+        <div>
+          <strong className="text-sm">1. Verificar duplicidade</strong>
+          <pre className="mt-2 overflow-x-auto rounded-xl bg-stone-950 p-4 text-xs text-stone-200">
+            POST {endpoint}/check{"\n"}X-API-Key: SUA_CHAVE{"\n"}Content-Type:
+            application/json{"\n\n"}
+            {exampleBody}
+          </pre>
+        </div>
+        <div>
+          <strong className="text-sm">2. Cadastrar para moderação</strong>
+          <pre className="mt-2 overflow-x-auto rounded-xl bg-stone-950 p-4 text-xs text-stone-200">
+            POST {endpoint}
+            {"\n"}X-API-Key: SUA_CHAVE{"\n"}Content-Type: application/json
+            {"\n\n"}
+            {exampleBody}
+          </pre>
+          <p className="mt-2 text-xs text-stone-500">
+            A API repete a verificação automaticamente. Vagas novas entram
+            inativas com status PENDING; somente o admin publica.
+          </p>
+        </div>
+        <div>
+          <strong className="text-sm">3. Consultar vagas externas</strong>
+          <pre className="mt-2 overflow-x-auto rounded-xl bg-stone-950 p-4 text-xs text-stone-200">
+            GET {endpoint}?q=repositor&amp;limit=25{"\n"}X-API-Key: SUA_CHAVE
+          </pre>
+        </div>
+      </section>
+    </div>
   );
 }
 function AdvertisingPanel() {
@@ -1938,6 +2276,11 @@ function JobsTable({
                   <span className="block text-xs text-stone-500">
                     {job.sourceName || job.companyName}
                   </span>
+                  {job.ingestionSourceName && (
+                    <span className="block text-xs font-semibold text-blue-700">
+                      API: {job.ingestionSourceName}
+                    </span>
+                  )}
                 </>
               ) : (
                 job.companyName
@@ -1952,6 +2295,11 @@ function JobsTable({
               {(job.reportCount || 0) > 0 && (
                 <span className="ml-2 rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-800">
                   {job.reportCount} alerta{job.reportCount === 1 ? "" : "s"}
+                </span>
+              )}
+              {job.moderationStatus === "PENDING" && (
+                <span className="ml-2 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-800">
+                  Aguardando revisão
                 </span>
               )}
             </td>

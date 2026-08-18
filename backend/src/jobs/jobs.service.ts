@@ -14,6 +14,8 @@ const JOB_MUTABLE_FIELDS = [
   'description',
   'requirements',
   'location',
+  'city',
+  'state',
   'type',
   'workModel',
   'salary',
@@ -23,6 +25,8 @@ const JOB_MUTABLE_FIELDS = [
   'deadlineDate',
   'acceptsPlatformApplications',
   'externalApplicationInstructions',
+  'applicationEmail',
+  'applicationWhatsApp',
 ] as const;
 
 @Injectable()
@@ -81,6 +85,8 @@ export class JobsService {
       throw new ForbiddenException('Você só pode editar suas próprias vagas');
 
     Object.assign(job, this.pickMutableFields(data));
+    if (data.active === true && job.moderationStatus === 'PENDING')
+      job.moderationStatus = 'APPROVED';
     return this.jobsRepository.save(job);
   }
 

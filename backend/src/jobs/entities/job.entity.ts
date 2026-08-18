@@ -33,14 +33,20 @@ export class Job {
   @Column({ nullable: true })
   location: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  city: string | null;
+
+  @Column({ type: 'varchar', length: 2, nullable: true })
+  state: string | null;
+
   @Column({ nullable: true })
   type: string;
 
   @Column({ nullable: true })
   workModel: string;
 
-  @Column({ nullable: true })
-  salary: string;
+  @Column({ type: 'varchar', nullable: true })
+  salary: string | null;
 
   @Column({ nullable: true })
   companyName: string;
@@ -53,6 +59,18 @@ export class Job {
 
   @Column({ type: 'text', nullable: true })
   sourceUrl: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true, unique: true })
+  externalFingerprint: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  ingestionSourceId: string | null;
+
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  ingestionSourceName: string | null;
+
+  @Column({ type: 'varchar', length: 24, default: 'APPROVED' })
+  moderationStatus: string;
 
   @Column({ default: 0 })
   reportCount: number;
@@ -71,6 +89,12 @@ export class Job {
 
   @Column({ type: 'text', nullable: true })
   externalApplicationInstructions: string | null;
+
+  @Column({ type: 'varchar', length: 254, nullable: true })
+  applicationEmail: string | null;
+
+  @Column({ type: 'varchar', length: 24, nullable: true })
+  applicationWhatsApp: string | null;
 
   @Column({ type: 'date', nullable: true })
   deadlineDate: string | null;

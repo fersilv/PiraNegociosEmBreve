@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Job } from "../types/job";
 import { JobReportForm } from "./JobReportForm";
+import { ExternalApplicationActions } from "./ExternalApplicationActions";
 
 interface JobModalProps {
   job: Job;
@@ -116,10 +117,12 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
             {job.acceptsPlatformApplications === false ? (
               <div className="flex-1 rounded-xl bg-amber-50 border border-amber-200 px-5 py-3 text-sm text-amber-900">
                 <p className="font-bold">Candidatura externa</p>
-                <p className="mt-1 whitespace-pre-wrap">
-                  {job.externalApplicationInstructions ||
-                    "Consulte a empresa para saber como enviar o currículo."}
-                </p>
+                <ExternalApplicationActions
+                  title={job.title}
+                  instructions={job.externalApplicationInstructions}
+                  email={job.applicationEmail}
+                  whatsapp={job.applicationWhatsApp}
+                />
               </div>
             ) : hasApplied ? (
               <button

@@ -15,6 +15,7 @@ import { Navbar } from "../components/Navbar";
 import { SeoHead } from "../components/SeoHead";
 import { useAuth } from "../contexts/AuthContext";
 import { JobReportForm } from "../components/JobReportForm";
+import { ExternalApplicationActions } from "../components/ExternalApplicationActions";
 
 type PublicCompany = {
   name: string;
@@ -37,6 +38,8 @@ type PublicJob = {
   createdAt: string;
   acceptsPlatformApplications: boolean;
   externalApplicationInstructions?: string;
+  applicationEmail?: string;
+  applicationWhatsApp?: string;
   company: PublicCompany | null;
   isExternalListing?: boolean;
   sourceName?: string | null;
@@ -266,9 +269,13 @@ export default function PublicJobPage() {
                 Candidatar-se à vaga <ExternalLink className="w-4 h-4" />
               </button>
             ) : (
-              <div className="mt-4 rounded-xl bg-amber-50 border border-amber-100 p-4 text-amber-950 whitespace-pre-line">
-                {job.externalApplicationInstructions ||
-                  "Consulte a fonte original para enviar seu currículo."}
+              <div className="mt-4 rounded-xl bg-amber-50 border border-amber-100 p-4 text-amber-950">
+                <ExternalApplicationActions
+                  title={job.title}
+                  instructions={job.externalApplicationInstructions}
+                  email={job.applicationEmail}
+                  whatsapp={job.applicationWhatsApp}
+                />
               </div>
             )}
             {job.sourceUrl && (
