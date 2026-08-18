@@ -1,7 +1,16 @@
-import React from 'react';
-import { createPortal } from 'react-dom';
-import { MapPin, Briefcase, Laptop, DollarSign, Clock, X, CheckCircle2 } from 'lucide-react';
-import { Job } from '../types/job';
+import React from "react";
+import { createPortal } from "react-dom";
+import {
+  MapPin,
+  Briefcase,
+  Laptop,
+  DollarSign,
+  Clock,
+  X,
+  CheckCircle2,
+} from "lucide-react";
+import { Job } from "../types/job";
+import { JobReportForm } from "./JobReportForm";
 
 interface JobModalProps {
   job: Job;
@@ -13,7 +22,7 @@ interface JobModalProps {
 export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-      <div 
+      <div
         className="bg-offwhite w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
@@ -21,7 +30,7 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
           <span className="text-xs font-bold tracking-widest text-terracotta-600 uppercase">
             Detalhes da Vaga
           </span>
-          <button 
+          <button
             onClick={onClose}
             className="p-2 text-stone-400 hover:text-stone-800 hover:bg-stone-200/50 rounded-full transition-colors"
           >
@@ -30,19 +39,20 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
         </div>
 
         <div className="p-6 md:p-8 space-y-6">
-          
           <div>
             <h2 className="text-2xl md:text-3xl font-serif font-bold text-stone-900 mb-2 flex items-center gap-3">
               {job.title}
               {job.isTalentPool && (
-                <span className="bg-purple-100 text-purple-700 text-xs uppercase font-bold px-3 py-1 rounded-lg shrink-0">Banco de Talentos</span>
+                <span className="bg-purple-100 text-purple-700 text-xs uppercase font-bold px-3 py-1 rounded-lg shrink-0">
+                  Banco de Talentos
+                </span>
               )}
             </h2>
             <p className="text-terracotta-700 text-lg font-medium flex items-center gap-1.5">
-              {job.isConfidential ? 'Empresa Confidencial' : job.companyName}
+              {job.isConfidential ? "Empresa Confidencial" : job.companyName}
               {!job.isConfidential && job.isCompanyVerified && (
-                <span 
-                  className="inline-flex items-center justify-center bg-blue-50 border border-blue-200 text-blue-600 p-0.5 rounded-full cursor-help hover:bg-blue-100 transition-colors shrink-0" 
+                <span
+                  className="inline-flex items-center justify-center bg-blue-50 border border-blue-200 text-blue-600 p-0.5 rounded-full cursor-help hover:bg-blue-100 transition-colors shrink-0"
                   title="Esta empresa passou por verificação documental"
                 >
                   <CheckCircle2 className="w-4 h-4" />
@@ -68,7 +78,7 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
               <div className="bg-white p-2 rounded-lg shadow-sm">
                 <Laptop className="w-4 h-4 text-terracotta-500" />
               </div>
-              {job.workModel || 'Presencial'}
+              {job.workModel || "Presencial"}
             </div>
             {job.salary && (
               <div className="flex items-center gap-2 text-sm text-stone-600">
@@ -96,7 +106,9 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
           {job.requirements && (
             <div>
               <h3 className="font-semibold text-stone-900 mb-3">Requisitos</h3>
-              <p className="text-stone-600 whitespace-pre-line leading-relaxed">{job.requirements}</p>
+              <p className="text-stone-600 whitespace-pre-line leading-relaxed">
+                {job.requirements}
+              </p>
             </div>
           )}
 
@@ -104,10 +116,13 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
             {job.acceptsPlatformApplications === false ? (
               <div className="flex-1 rounded-xl bg-amber-50 border border-amber-200 px-5 py-3 text-sm text-amber-900">
                 <p className="font-bold">Candidatura externa</p>
-                <p className="mt-1 whitespace-pre-wrap">{job.externalApplicationInstructions || 'Consulte a empresa para saber como enviar o currículo.'}</p>
+                <p className="mt-1 whitespace-pre-wrap">
+                  {job.externalApplicationInstructions ||
+                    "Consulte a empresa para saber como enviar o currículo."}
+                </p>
               </div>
             ) : hasApplied ? (
-              <button 
+              <button
                 disabled
                 className="flex-1 bg-green-100 text-green-700 py-3 px-6 rounded-xl font-bold flex items-center justify-center gap-2 opacity-100 cursor-default"
               >
@@ -115,27 +130,27 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
                 Candidatura Enviada
               </button>
             ) : (
-              <button 
+              <button
                 onClick={onApply}
                 className="flex-1 bg-terracotta-600 hover:bg-terracotta-700 text-white py-3 px-6 rounded-xl font-medium transition-colors shadow-lg shadow-terracotta-600/20"
               >
-                {job.isTalentPool ? 'Enviar Currículo' : 'Candidatar-se à vaga'}
+                {job.isTalentPool ? "Enviar Currículo" : "Candidatar-se à vaga"}
               </button>
             )}
-            <button 
+            <button
               onClick={onClose}
               className="px-6 py-3 rounded-xl font-medium text-stone-600 hover:bg-stone-200/50 transition-colors"
             >
               Voltar
             </button>
           </div>
-
+          <JobReportForm jobId={job.id} />
         </div>
       </div>
-      
+
       {/* Click outside to close */}
       <div className="fixed inset-0 -z-10" onClick={onClose} />
     </div>,
-    document.body
+    document.body,
   );
 }

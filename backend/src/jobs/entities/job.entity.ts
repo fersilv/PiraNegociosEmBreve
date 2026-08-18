@@ -1,4 +1,10 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 @Entity('jobs')
 export class Job {
@@ -8,8 +14,8 @@ export class Job {
   @Column()
   ownerId: string; // References User.id
 
-  @Column()
-  companyId: string; // References Company.id
+  @Column({ nullable: true })
+  companyId: string | null; // Null somente em vagas externas criadas pela administração
 
   @Column()
   title: string;
@@ -38,6 +44,18 @@ export class Job {
 
   @Column({ nullable: true })
   companyName: string;
+
+  @Column({ default: false })
+  isExternalListing: boolean;
+
+  @Column({ nullable: true })
+  sourceName: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  sourceUrl: string | null;
+
+  @Column({ default: 0 })
+  reportCount: number;
 
   @Column({ default: false })
   isConfidential: boolean;

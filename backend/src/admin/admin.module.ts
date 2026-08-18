@@ -10,9 +10,22 @@ import { AdminGuard } from './admin.guard';
 import { VisitorEvent } from '../analytics/entities/visitor-event.entity';
 import { AccountAccess } from '../analytics/entities/account-access.entity';
 import { UserSanction } from './entities/user-sanction.entity';
+import { JobReport } from '../jobs/entities/job-report.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Company, Job, Application, CompanyAccessRequest, VisitorEvent, AccountAccess, UserSanction])],
+  imports: [
+    TypeOrmModule.forFeature([
+      User,
+      Company,
+      Job,
+      Application,
+      CompanyAccessRequest,
+      VisitorEvent,
+      AccountAccess,
+      UserSanction,
+      JobReport,
+    ]),
+  ],
   controllers: [AdminController],
   providers: [AdminGuard],
 })

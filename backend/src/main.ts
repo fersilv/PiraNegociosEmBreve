@@ -16,7 +16,10 @@ async function ensureDatabaseExists() {
 
   try {
     await client.connect();
-    const res = await client.query(`SELECT datname FROM pg_catalog.pg_database WHERE datname = $1`, [dbName]);
+    const res = await client.query(
+      `SELECT datname FROM pg_catalog.pg_database WHERE datname = $1`,
+      [dbName],
+    );
     if (res.rowCount === 0) {
       console.log(`Banco de dados "${dbName}" não encontrado. Criando...`);
       await client.query(`CREATE DATABASE "${dbName}"`);
@@ -35,15 +38,21 @@ async function bootstrap() {
   await ensureDatabaseExists();
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // O Nginx termina o HTTPS; assim req.protocol preserva https ao gerar URLs.
+  app.set('trust proxy', 1);
   // Public API contract. Nginx forwards /api/* unchanged to this service.
   app.setGlobalPrefix('api');
-  
+
   // Habilitar CORS para o frontend em React
   app.enableCors();
-  
+
   // Servir arquivos de upload estaticamente na rota /uploads
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
     prefix: '/uploads/',
+  });
+  // Mantém os arquivos acessíveis também por trás do proxy reverso /api.
+  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+    prefix: '/api/uploads/',
   });
 
   await app.listen(process.env.PORT ?? 3888);

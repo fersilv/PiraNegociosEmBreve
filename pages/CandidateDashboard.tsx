@@ -1,20 +1,30 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth, getGreetingName } from '../contexts/AuthContext';
-import { api, asArray } from '../lib/api';
-import { Briefcase, FileText, Sparkles, Loader2, ArrowRight, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
-import { openBase64InNewTab } from '../lib/fileViewer';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from "react";
+import { useAuth, getGreetingName } from "../contexts/AuthContext";
+import { api, asArray } from "../lib/api";
+import {
+  Briefcase,
+  FileText,
+  Sparkles,
+  Loader2,
+  ArrowRight,
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+} from "lucide-react";
+import { openBase64InNewTab } from "../lib/fileViewer";
+import { Link } from "react-router-dom";
 
 export function CandidateDashboard() {
   const { user, profile } = useAuth();
   const [myApplications, setMyApplications] = useState<any[]>([]);
   const [jobsMap, setJobsMap] = useState<Record<string, any>>({});
-  
+  const [talentInvites, setTalentInvites] = useState<any[]>([]);
+
   const [loadingApps, setLoadingApps] = useState(true);
-  
+
   const [matching, setMatching] = useState(false);
   const [matchResults, setMatchResults] = useState<any[] | null>(null);
-  const [matchError, setMatchError] = useState('');
+  const [matchError, setMatchError] = useState("");
 
   useEffect(() => {
     if (!user) return;
@@ -25,33 +35,45 @@ export function CandidateDashboard() {
     setLoadingApps(true);
     try {
       await fetchJobsMap();
-      const res = await api.get('/applications/me');
+      const res = await api.get("/applications/me");
       setMyApplications(asArray(res.data));
+      setTalentInvites(asArray((await api.get("/talent-invites/me")).data));
     } catch (err) {
-      console.error('Error fetching applications:', err);
+      console.error("Error fetching applications:", err);
     } finally {
       setLoadingApps(false);
     }
   };
+  const respondToInvite = async (
+    id: string,
+    decision: "accept" | "decline",
+  ) => {
+    await api.post(`/talent-invites/${id}/${decision}`);
+    fetchDashboardData();
+  };
 
   const handleWithdraw = async (appId: string) => {
-    if (confirm('Tem certeza que deseja desistir desta candidatura? Isso não pode ser desfeito.')) {
+    if (
+      confirm(
+        "Tem certeza que deseja desistir desta candidatura? Isso não pode ser desfeito.",
+      )
+    ) {
       try {
         await api.delete(`/applications/${appId}`);
-        alert('Candidatura cancelada com sucesso.');
+        alert("Candidatura cancelada com sucesso.");
         fetchDashboardData();
       } catch (e) {
         console.error(e);
-        alert('Erro ao cancelar candidatura.');
+        alert("Erro ao cancelar candidatura.");
       }
     }
   };
 
   const fetchJobsMap = async () => {
     try {
-      const res = await api.get('/jobs');
+      const res = await api.get("/jobs");
       const map: Record<string, any> = {};
-      asArray<any>(res.data).forEach(job => {
+      asArray<any>(res.data).forEach((job) => {
         map[job.id] = job;
       });
       setJobsMap(map);
@@ -63,29 +85,37 @@ export function CandidateDashboard() {
   const handleMatchAI = async () => {
     if (!user) return;
     setMatching(true);
-    setMatchError('');
+    setMatchError("");
     try {
       const activeJobs = Object.values(jobsMap);
       if (activeJobs.length === 0) {
-        setMatchError('Nenhuma vaga disponível no momento para analisar.');
+        setMatchError("Nenhuma vaga disponível no momento para analisar.");
         return;
       }
 
-      const response = await fetch('/api/gemini/job-match', {
-        method: 'POST',
+      const response = await fetch("/api/gemini/job-match", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${await user.getIdToken()}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${await user.getIdToken()}`,
         },
-        body: JSON.stringify({ profile, jobs: activeJobs, applications: myApplications }),
+        body: JSON.stringify({
+          profile,
+          jobs: activeJobs,
+          applications: myApplications,
+        }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Não foi possível gerar recomendações.');
+      if (!response.ok)
+        throw new Error(data.error || "Não foi possível gerar recomendações.");
       setMatchResults(data.matches);
-
     } catch (err: any) {
       console.error(err);
-      setMatchError(err.response?.data?.error || err.message || 'Erro ao processar as recomendações.');
+      setMatchError(
+        err.response?.data?.error ||
+          err.message ||
+          "Erro ao processar as recomendações.",
+      );
     } finally {
       setMatching(false);
     }
@@ -94,36 +124,106 @@ export function CandidateDashboard() {
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       <div>
-        <h1 className="text-3xl font-serif font-bold text-stone-900">Meu Painel</h1>
-        <p className="text-stone-500 mt-1">Bem-vindo, {getGreetingName(profile)}</p>
+        <h1 className="text-3xl font-serif font-bold text-stone-900">
+          Meu Painel
+        </h1>
+        <p className="text-stone-500 mt-1">
+          Bem-vindo, {getGreetingName(profile)}
+        </p>
       </div>
 
-      {/* PENDING DOCUMENTATION URGENT BANNER */}
-      {myApplications.some(a => a.documentsRequested || a.status === 'Em Contratação' || a.status === 'Aguardando Exame Médico' || (a.status && (a.status.toLowerCase().includes('contrat') || a.status.toLowerCase().includes('documento') || a.status.toLowerCase().includes('exame') || a.status.toLowerCase().includes('admiss')))) && (
-        <div className="bg-gradient-to-r from-blue-900 via-stone-900 to-blue-950 text-white p-6 md:p-8 rounded-3xl shadow-lg border border-blue-800 space-y-4 animate-in fade-in">
-          {myApplications.filter(a => a.documentsRequested || a.status === 'Em Contratação' || a.status === 'Aguardando Exame Médico' || (a.status && (a.status.toLowerCase().includes('contrat') || a.status.toLowerCase().includes('documento') || a.status.toLowerCase().includes('exame') || a.status.toLowerCase().includes('admiss')))).map(app => (
-            <div key={app.id} className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-blue-800/50 last:border-0 pb-4 last:pb-0">
-              <div className="space-y-1">
-                <span className="bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider inline-flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-amber-300" /> Ação Necessária: Envio de Documentos
-                </span>
-                <h2 className="text-xl md:text-2xl font-serif font-bold text-white mt-1">
-                  {app.jobTitle}
-                </h2>
-                <p className="text-stone-300 text-sm">
-                  A empresa <strong className="text-white">{app.companyName}</strong> iniciou seu processo de admissão e aguarda seus documentos.
-                </p>
-              </div>
-
-              <Link
-                to={`/dashboard/admissao/${app.id}`}
-                className="bg-amber-400 hover:bg-amber-300 text-stone-900 font-bold px-6 py-3.5 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm shrink-0"
+      {talentInvites.length > 0 && (
+        <section className="rounded-3xl border border-terracotta-200 bg-terracotta-50 p-6">
+          <h2 className="font-serif text-xl font-bold text-terracotta-950">
+            Convites para processos seletivos
+          </h2>
+          <div className="mt-4 space-y-3">
+            {talentInvites.map((invite) => (
+              <div
+                key={invite.id}
+                className="flex flex-col gap-3 rounded-xl bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
               >
-                Enviar Documentos de Admissão
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          ))}
+                <div>
+                  <strong>{invite.job?.title || "Vaga"}</strong>
+                  <p className="text-sm text-stone-600">
+                    {invite.job?.companyName || "Empresa"} convidou você para
+                    participar deste processo.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => respondToInvite(invite.id, "accept")}
+                    className="rounded-lg bg-terracotta-600 px-3 py-2 text-xs font-bold text-white"
+                  >
+                    Tenho interesse
+                  </button>
+                  <button
+                    onClick={() => respondToInvite(invite.id, "decline")}
+                    className="rounded-lg bg-stone-100 px-3 py-2 text-xs font-bold text-stone-700"
+                  >
+                    Recusar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* PENDING DOCUMENTATION URGENT BANNER */}
+      {myApplications.some(
+        (a) =>
+          a.documentsRequested ||
+          a.status === "Em Contratação" ||
+          a.status === "Aguardando Exame Médico" ||
+          (a.status &&
+            (a.status.toLowerCase().includes("contrat") ||
+              a.status.toLowerCase().includes("documento") ||
+              a.status.toLowerCase().includes("exame") ||
+              a.status.toLowerCase().includes("admiss"))),
+      ) && (
+        <div className="bg-gradient-to-r from-blue-900 via-stone-900 to-blue-950 text-white p-6 md:p-8 rounded-3xl shadow-lg border border-blue-800 space-y-4 animate-in fade-in">
+          {myApplications
+            .filter(
+              (a) =>
+                a.documentsRequested ||
+                a.status === "Em Contratação" ||
+                a.status === "Aguardando Exame Médico" ||
+                (a.status &&
+                  (a.status.toLowerCase().includes("contrat") ||
+                    a.status.toLowerCase().includes("documento") ||
+                    a.status.toLowerCase().includes("exame") ||
+                    a.status.toLowerCase().includes("admiss"))),
+            )
+            .map((app) => (
+              <div
+                key={app.id}
+                className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-blue-800/50 last:border-0 pb-4 last:pb-0"
+              >
+                <div className="space-y-1">
+                  <span className="bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider inline-flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-amber-300" /> Ação
+                    Necessária: Envio de Documentos
+                  </span>
+                  <h2 className="text-xl md:text-2xl font-serif font-bold text-white mt-1">
+                    {app.jobTitle}
+                  </h2>
+                  <p className="text-stone-300 text-sm">
+                    A empresa{" "}
+                    <strong className="text-white">{app.companyName}</strong>{" "}
+                    iniciou seu processo de admissão e aguarda seus documentos.
+                  </p>
+                </div>
+
+                <Link
+                  to={`/dashboard/admissao/${app.id}`}
+                  className="bg-amber-400 hover:bg-amber-300 text-stone-900 font-bold px-6 py-3.5 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm shrink-0"
+                >
+                  Enviar Documentos de Admissão
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+            ))}
         </div>
       )}
 
@@ -135,16 +235,23 @@ export function CandidateDashboard() {
             </div>
             <div>
               <h2 className="font-bold text-lg">Meu Currículo</h2>
-              <p className="text-sm text-stone-500">Mantenha seu currículo atualizado</p>
+              <p className="text-sm text-stone-500">
+                Mantenha seu currículo atualizado
+              </p>
             </div>
           </div>
-          <button 
+          <button
             type="button"
             onClick={() => {
               if (profile?.resumeURL) {
-                openBase64InNewTab(profile.resumeURL, `Meu_Currículo_${profile.socialName || profile.name || ''}`);
+                openBase64InNewTab(
+                  profile.resumeURL,
+                  `Meu_Currículo_${profile.socialName || profile.name || ""}`,
+                );
               } else {
-                alert('Você ainda não fez o upload de seu currículo no seu perfil.');
+                alert(
+                  "Você ainda não fez o upload de seu currículo no seu perfil.",
+                );
               }
             }}
             className="w-full bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-xs cursor-pointer transition-all"
@@ -153,7 +260,7 @@ export function CandidateDashboard() {
             Visualizar PDF do Meu Currículo
           </button>
         </div>
-        
+
         <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-sm">
           <div className="flex items-center gap-4 mb-4">
             <div className="bg-green-100 p-3 rounded-full text-green-600">
@@ -179,7 +286,9 @@ export function CandidateDashboard() {
         ) : myApplications.length === 0 ? (
           <div className="bg-stone-100/50 border border-stone-200 border-dashed rounded-3xl p-12 text-center">
             <Briefcase className="w-12 h-12 text-stone-300 mx-auto mb-4" />
-            <p className="text-stone-500">Você ainda não se candidatou a nenhuma vaga.</p>
+            <p className="text-stone-500">
+              Você ainda não se candidatou a nenhuma vaga.
+            </p>
           </div>
         ) : (
           <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-xs">
@@ -187,42 +296,85 @@ export function CandidateDashboard() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-stone-200 bg-stone-50/80">
-                    <th className="px-5 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider">Vaga / Empresa</th>
-                    <th className="px-5 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider">Data de Inscrição</th>
-                    <th className="px-5 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider">Status</th>
-                    <th className="px-5 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider text-right">Ações</th>
+                    <th className="px-5 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider">
+                      Vaga / Empresa
+                    </th>
+                    <th className="px-5 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider">
+                      Data de Inscrição
+                    </th>
+                    <th className="px-5 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-5 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider text-right">
+                      Ações
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100">
-                  {myApplications.map(app => {
-                    const statusText = app.status === 'Recusado' ? 'Não Classificado' : (app.status || 'Enviado');
-                    const canWithdraw = statusText !== 'Não Classificado' && statusText !== 'Desistiu' && statusText !== 'Aprovado';
-                    
-                    const isDocStage = app.documentsRequested || app.status === 'Em Contratação' || app.status === 'Aguardando Exame Médico' || (app.status && (app.status.toLowerCase().includes('contrat') || app.status.toLowerCase().includes('documento') || app.status.toLowerCase().includes('exame') || app.status.toLowerCase().includes('admiss')));
+                  {myApplications.map((app) => {
+                    const statusText =
+                      app.status === "Recusado"
+                        ? "Não Classificado"
+                        : app.status || "Enviado";
+                    const canWithdraw =
+                      statusText !== "Não Classificado" &&
+                      statusText !== "Desistiu" &&
+                      statusText !== "Aprovado";
+
+                    const isDocStage =
+                      app.documentsRequested ||
+                      app.status === "Em Contratação" ||
+                      app.status === "Aguardando Exame Médico" ||
+                      (app.status &&
+                        (app.status.toLowerCase().includes("contrat") ||
+                          app.status.toLowerCase().includes("documento") ||
+                          app.status.toLowerCase().includes("exame") ||
+                          app.status.toLowerCase().includes("admiss")));
                     const docs = app.onboardingDocs || {};
-                    const uploadedDocCount = Object.values(docs).filter((d: any) => d.url).length;
-                    const hasRejectedDoc = Object.values(docs).some((d: any) => d.status === 'rejected');
+                    const uploadedDocCount = Object.values(docs).filter(
+                      (d: any) => d.url,
+                    ).length;
+                    const hasRejectedDoc = Object.values(docs).some(
+                      (d: any) => d.status === "rejected",
+                    );
                     const isSubmitted = app.submittedForReview === true;
 
                     return (
-                      <tr key={app.id} className="hover:bg-stone-50/80 transition-colors">
+                      <tr
+                        key={app.id}
+                        className="hover:bg-stone-50/80 transition-colors"
+                      >
                         <td className="px-5 py-4">
-                          <div className="font-bold text-stone-900">{app.jobTitle}</div>
-                          <div className="text-xs text-stone-500">{app.companyName}</div>
+                          <div className="font-bold text-stone-900">
+                            {app.jobTitle}
+                          </div>
+                          <div className="text-xs text-stone-500">
+                            {app.companyName}
+                          </div>
                         </td>
                         <td className="px-5 py-4 text-xs text-stone-600 font-medium">
-                          {app.appliedAt ? new Date(app.appliedAt).toLocaleDateString() : '-'}
+                          {app.appliedAt
+                            ? new Date(app.appliedAt).toLocaleDateString()
+                            : "-"}
                         </td>
                         <td className="px-5 py-4">
                           <div className="space-y-1">
-                            <span className={`px-3 py-1 rounded-full text-xs font-bold inline-block ${
-                              statusText === 'Aprovado' ? 'bg-green-100 text-green-800' :
-                              statusText === 'Em Contratação' ? 'bg-blue-100 text-blue-800' :
-                              statusText === 'Aguardando Exame Médico' ? 'bg-purple-100 text-purple-800' :
-                              statusText === 'Não Classificado' ? 'bg-stone-200 text-stone-600' :
-                              statusText === 'Entrevista' || statusText === 'Entrevista Agendada' ? 'bg-amber-100 text-amber-800' :
-                              'bg-stone-100 text-stone-700'
-                            }`}>
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-bold inline-block ${
+                                statusText === "Aprovado"
+                                  ? "bg-green-100 text-green-800"
+                                  : statusText === "Em Contratação"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : statusText === "Aguardando Exame Médico"
+                                      ? "bg-purple-100 text-purple-800"
+                                      : statusText === "Não Classificado"
+                                        ? "bg-stone-200 text-stone-600"
+                                        : statusText === "Entrevista" ||
+                                            statusText === "Entrevista Agendada"
+                                          ? "bg-amber-100 text-amber-800"
+                                          : "bg-stone-100 text-stone-700"
+                              }`}
+                            >
                               {statusText}
                             </span>
 
@@ -230,15 +382,18 @@ export function CandidateDashboard() {
                               <div className="text-[11px] font-semibold flex items-center gap-1.5 mt-1">
                                 {hasRejectedDoc ? (
                                   <span className="text-red-600 flex items-center gap-1 bg-red-50 px-2 py-0.5 rounded">
-                                    <AlertTriangle className="w-3 h-3" /> Reenvio Solicitado
+                                    <AlertTriangle className="w-3 h-3" />{" "}
+                                    Reenvio Solicitado
                                   </span>
                                 ) : isSubmitted ? (
                                   <span className="text-blue-700 flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded">
-                                    <Clock className="w-3 h-3" /> Doc. Em Análise ({uploadedDocCount} anexados)
+                                    <Clock className="w-3 h-3" /> Doc. Em
+                                    Análise ({uploadedDocCount} anexados)
                                   </span>
                                 ) : (
                                   <span className="text-amber-800 flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded">
-                                    <FileText className="w-3 h-3" /> Em Preenchimento ({uploadedDocCount} anexados)
+                                    <FileText className="w-3 h-3" /> Em
+                                    Preenchimento ({uploadedDocCount} anexados)
                                   </span>
                                 )}
                               </div>
@@ -248,15 +403,17 @@ export function CandidateDashboard() {
                         <td className="px-5 py-4">
                           <div className="flex items-center justify-end gap-2">
                             {isDocStage && (
-                              <Link 
-                                to={`/dashboard/admissao/${app.id}`} 
+                              <Link
+                                to={`/dashboard/admissao/${app.id}`}
                                 className="bg-terracotta-600 text-white hover:bg-terracotta-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors animate-pulse flex items-center gap-1"
                               >
-                                {isSubmitted && !hasRejectedDoc ? 'Ver Documentos' : 'Enviar Documentos'}
+                                {isSubmitted && !hasRejectedDoc
+                                  ? "Ver Documentos"
+                                  : "Enviar Documentos"}
                               </Link>
                             )}
-                            <Link 
-                              to={`/dashboard/vaga-detalhes/${app.jobId}`} 
+                            <Link
+                              to={`/dashboard/vaga-detalhes/${app.jobId}`}
                               className="bg-stone-100 hover:bg-stone-200 text-stone-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
                             >
                               Ver Vaga
@@ -289,7 +446,8 @@ export function CandidateDashboard() {
               Recomendações Inteligentes
             </h2>
             <p className="text-stone-600 mt-1">
-              Nossa Inteligência Artificial analisa seu currículo e sugere as melhores vagas para o seu perfil.
+              Nossa Inteligência Artificial analisa seu currículo e sugere as
+              melhores vagas para o seu perfil.
             </p>
           </div>
           <button
@@ -322,23 +480,30 @@ export function CandidateDashboard() {
             {matchResults.slice(0, 5).map((match, idx) => {
               const job = jobsMap[match.jobId];
               if (!job) return null;
-              
+
               return (
-                <div key={`${match.jobId}-${idx}`} className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm flex flex-col md:flex-row gap-6">
+                <div
+                  key={`${match.jobId}-${idx}`}
+                  className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm flex flex-col md:flex-row gap-6"
+                >
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full">
                         {match.score}% Match
                       </span>
-                      <h3 className="font-bold text-lg text-stone-900 line-clamp-1">{job.title}</h3>
+                      <h3 className="font-bold text-lg text-stone-900 line-clamp-1">
+                        {job.title}
+                      </h3>
                     </div>
-                    <p className="text-terracotta-700 text-sm font-medium mb-3">{job.companyName}</p>
+                    <p className="text-terracotta-700 text-sm font-medium mb-3">
+                      {job.companyName}
+                    </p>
                     <p className="text-stone-600 text-sm leading-relaxed">
                       {match.reason}
                     </p>
                   </div>
                   <div className="flex items-center justify-end md:items-center shrink-0">
-                    <Link 
+                    <Link
                       to={`/?applyTo=${job.id}`}
                       className="group flex items-center gap-2 text-terracotta-600 font-bold hover:text-terracotta-800 transition-colors"
                     >

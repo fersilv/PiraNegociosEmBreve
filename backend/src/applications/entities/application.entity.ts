@@ -32,7 +32,7 @@ export class Application {
   coverLetter: string;
 
   @Column({ nullable: true })
-  companyId: string;
+  companyId: string | null;
 
   @Column({ nullable: true })
   companyName: string;

@@ -12,6 +12,11 @@ export interface Job {
   description: string;
   requirements?: string;
   ownerId?: string;
+  companyId?: string | null;
+  isExternalListing?: boolean;
+  sourceName?: string | null;
+  sourceUrl?: string | null;
+  reportCount?: number;
   isConfidential?: boolean;
   isCompanyVerified?: boolean;
   isTalentPool?: boolean;

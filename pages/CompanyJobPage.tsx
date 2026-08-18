@@ -1,13 +1,33 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { api, asArray } from '../lib/api';
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Loader2, ArrowLeft, Users, Filter, User, FileText, CheckCircle, CheckCircle2, XCircle, Clock, Eye, Briefcase, MapPin, Building2, Search, Edit, Phone, Laptop, AlertTriangle } from 'lucide-react';
-import { sendNotificationToUser } from '../lib/notifications';
-import { openBase64InNewTab } from '../lib/fileViewer';
-import { CandidateProfileModal } from '../components/CandidateProfileModal';
-import { ApplicationManagerModal } from '../components/ApplicationManagerModal';
-import { CityStateSelector } from '../components/CityStateSelector';
+import React, { useState, useEffect } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import { api, asArray } from "../lib/api";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import {
+  Loader2,
+  ArrowLeft,
+  Users,
+  Filter,
+  User,
+  FileText,
+  CheckCircle,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Eye,
+  Briefcase,
+  MapPin,
+  Building2,
+  Search,
+  Edit,
+  Phone,
+  Laptop,
+  AlertTriangle,
+} from "lucide-react";
+import { sendNotificationToUser } from "../lib/notifications";
+import { openBase64InNewTab } from "../lib/fileViewer";
+import { CandidateProfileModal } from "../components/CandidateProfileModal";
+import { ApplicationManagerModal } from "../components/ApplicationManagerModal";
+import { CityStateSelector } from "../components/CityStateSelector";
 
 export function CompanyJobPage() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -18,24 +38,30 @@ export function CompanyJobPage() {
   const [job, setJob] = useState<any | null>(null);
   const [applications, setApplications] = useState<any[]>([]);
   const [loadingApps, setLoadingApps] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'active' | 'rejected' | 'edit'>('overview');
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "active" | "rejected" | "edit"
+  >("overview");
 
   const [selectedCandidate, setSelectedCandidate] = useState<any | null>(null);
   const [isCandidateModalOpen, setIsCandidateModalOpen] = useState(false);
   const [managingApp, setManagingApp] = useState<any | null>(null);
 
   // Edit form state
-  const [editTitle, setEditTitle] = useState('');
-  const [editLocation, setEditLocation] = useState('');
-  const [editSalary, setEditSalary] = useState('');
-  const [editType, setEditType] = useState('CLT');
-  const [editWorkModel, setEditWorkModel] = useState('Presencial');
-  const [editDescription, setEditDescription] = useState('');
-  const [editRequirements, setEditRequirements] = useState('');
+  const [editTitle, setEditTitle] = useState("");
+  const [editLocation, setEditLocation] = useState("");
+  const [editSalary, setEditSalary] = useState("");
+  const [editType, setEditType] = useState("CLT");
+  const [editWorkModel, setEditWorkModel] = useState("Presencial");
+  const [editDescription, setEditDescription] = useState("");
+  const [editRequirements, setEditRequirements] = useState("");
   const [editIsConfidential, setEditIsConfidential] = useState(false);
   const [editIsTalentPool, setEditIsTalentPool] = useState(false);
-  const [editAcceptsPlatformApplications, setEditAcceptsPlatformApplications] = useState(true);
-  const [editExternalApplicationInstructions, setEditExternalApplicationInstructions] = useState('');
+  const [editAcceptsPlatformApplications, setEditAcceptsPlatformApplications] =
+    useState(true);
+  const [
+    editExternalApplicationInstructions,
+    setEditExternalApplicationInstructions,
+  ] = useState("");
   const [savingJob, setSavingJob] = useState(false);
 
   useEffect(() => {
@@ -51,30 +77,34 @@ export function CompanyJobPage() {
       const response = await api.get(`/jobs/${jobId}`);
       if (response.data) {
         const data = response.data;
-        if (profile?.type !== 'ADMIN' && data.ownerId !== user?.uid) {
-          navigate('/dashboard'); // Not the owner
+        if (profile?.type !== "ADMIN" && data.ownerId !== user?.uid) {
+          navigate("/dashboard"); // Not the owner
           return;
         }
         setJob({ id: data.id, ...data });
-        
+
         // Init edit form
-        setEditTitle(data.title || '');
-        setEditLocation(data.location || '');
-        setEditSalary(data.salary || '');
-        setEditType(data.type || 'CLT');
-        setEditWorkModel(data.workModel || 'Presencial');
-        setEditDescription(data.description || '');
-        setEditRequirements(data.requirements || '');
+        setEditTitle(data.title || "");
+        setEditLocation(data.location || "");
+        setEditSalary(data.salary || "");
+        setEditType(data.type || "CLT");
+        setEditWorkModel(data.workModel || "Presencial");
+        setEditDescription(data.description || "");
+        setEditRequirements(data.requirements || "");
         setEditIsConfidential(data.isConfidential || false);
         setEditIsTalentPool(data.isTalentPool || false);
-        setEditAcceptsPlatformApplications(data.acceptsPlatformApplications !== false);
-        setEditExternalApplicationInstructions(data.externalApplicationInstructions || '');
+        setEditAcceptsPlatformApplications(
+          data.acceptsPlatformApplications !== false,
+        );
+        setEditExternalApplicationInstructions(
+          data.externalApplicationInstructions || "",
+        );
       } else {
-        navigate('/dashboard');
+        navigate("/dashboard");
       }
     } catch (error) {
       console.error(error);
-      navigate('/dashboard');
+      navigate("/dashboard");
     } finally {
       setLoading(false);
     }
@@ -102,22 +132,50 @@ export function CompanyJobPage() {
     }
   };
 
-  const handleUpdateStatus = async (appId: string, candidateId: string, newStatus: string) => {
+  const handleUpdateStatus = async (
+    appId: string,
+    candidateId: string,
+    newStatus: string,
+  ) => {
     try {
       await api.put(`/applications/${appId}/status`, { status: newStatus });
 
+      if (
+        (newStatus === "Não Classificado" || newStatus === "Recusado") &&
+        profile?.companyId &&
+        jobId &&
+        window.confirm(
+          "Salvar este candidato no Banco de Talentos para futuras vagas?",
+        )
+      ) {
+        try {
+          await api.post(`/companies/${profile.companyId}/talent-records`, {
+            candidateId,
+            jobIds: [jobId],
+          });
+        } catch {
+          alert(
+            "A candidatura foi atualizada, mas o candidato não está disponível no banco de talentos.",
+          );
+        }
+      }
+
       sendNotificationToUser(
         candidateId,
-        'Atualização na sua candidatura',
+        "Atualização na sua candidatura",
         `Sua candidatura para a vaga "${job?.title}" foi atualizada para o status: ${newStatus}.`,
-        'status_update',
-        { jobId: job?.id, jobTitle: job?.title, companyName: job?.companyName || 'Empresa' }
+        "status_update",
+        {
+          jobId: job?.id,
+          jobTitle: job?.title,
+          companyName: job?.companyName || "Empresa",
+        },
       );
 
       fetchApplications();
     } catch (err) {
       console.error(err);
-      alert('Erro ao atualizar status');
+      alert("Erro ao atualizar status");
     }
   };
 
@@ -137,14 +195,16 @@ export function CompanyJobPage() {
         isConfidential: editIsConfidential,
         isTalentPool: editIsTalentPool,
         acceptsPlatformApplications: editAcceptsPlatformApplications,
-        externalApplicationInstructions: editAcceptsPlatformApplications ? '' : editExternalApplicationInstructions,
+        externalApplicationInstructions: editAcceptsPlatformApplications
+          ? ""
+          : editExternalApplicationInstructions,
       });
-      alert('Vaga atualizada com sucesso!');
+      alert("Vaga atualizada com sucesso!");
       fetchJobData();
-      setActiveTab('overview');
+      setActiveTab("overview");
     } catch (error) {
       console.error(error);
-      alert('Erro ao salvar vaga.');
+      alert("Erro ao salvar vaga.");
     } finally {
       setSavingJob(false);
     }
@@ -156,9 +216,14 @@ export function CompanyJobPage() {
 
     if (newActiveState) {
       // Re-opening job
-      const changeDeadline = confirm('Deseja atualizar a data limite para recebimento de novas candidaturas?');
+      const changeDeadline = confirm(
+        "Deseja atualizar a data limite para recebimento de novas candidaturas?",
+      );
       if (changeDeadline) {
-        const inputDate = prompt('Informe a nova data limite (Formato: AAAA-MM-DD):', new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0]);
+        const inputDate = prompt(
+          "Informe a nova data limite (Formato: AAAA-MM-DD):",
+          new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
+        );
         if (inputDate) {
           newDeadline = inputDate;
         }
@@ -171,26 +236,32 @@ export function CompanyJobPage() {
         deadlineDate: newDeadline || null,
       });
       fetchJobData();
-      alert(newActiveState ? 'Vaga reaberta com sucesso!' : 'Processo de contratação encerrado.');
+      alert(
+        newActiveState
+          ? "Vaga reaberta com sucesso!"
+          : "Processo de contratação encerrado.",
+      );
     } catch (e) {
       console.error(e);
-      alert('Erro ao atualizar status da vaga.');
+      alert("Erro ao atualizar status da vaga.");
     }
   };
 
   const handleDeleteJob = async () => {
     if (applications.length > 0) {
-      alert('Não é possível excluir esta vaga pois ela possui candidatos vinculados. Você pode apenas encerrar a contratação.');
+      alert(
+        "Não é possível excluir esta vaga pois ela possui candidatos vinculados. Você pode apenas encerrar a contratação.",
+      );
       return;
     }
-    if (confirm('Tem certeza que deseja excluir esta vaga permanentemente?')) {
+    if (confirm("Tem certeza que deseja excluir esta vaga permanentemente?")) {
       try {
         await api.delete(`/jobs/${jobId}`);
-        alert('Vaga excluída com sucesso.');
-        navigate('/dashboard');
+        alert("Vaga excluída com sucesso.");
+        navigate("/dashboard");
       } catch (e) {
         console.error(e);
-        alert('Erro ao excluir vaga.');
+        alert("Erro ao excluir vaga.");
       }
     }
   };
@@ -205,8 +276,12 @@ export function CompanyJobPage() {
 
   if (!job) return null;
 
-  const activeApps = applications.filter(app => app.status !== 'Não Classificado' && app.status !== 'Recusado');
-  const rejectedApps = applications.filter(app => app.status === 'Não Classificado' || app.status === 'Recusado');
+  const activeApps = applications.filter(
+    (app) => app.status !== "Não Classificado" && app.status !== "Recusado",
+  );
+  const rejectedApps = applications.filter(
+    (app) => app.status === "Não Classificado" || app.status === "Recusado",
+  );
 
   const isJobActive = job.active !== false;
 
@@ -214,22 +289,36 @@ export function CompanyJobPage() {
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
         <div className="flex items-center gap-4">
-          <Link to="/dashboard" className="w-10 h-10 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-full flex items-center justify-center transition-colors">
+          <Link
+            to="/dashboard"
+            className="w-10 h-10 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-full flex items-center justify-center transition-colors"
+          >
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
             <h1 className="text-2xl font-serif font-bold text-stone-900 flex items-center gap-2">
               {job.title}
               {job.isTalentPool && (
-                <span className="bg-purple-100 text-purple-700 text-[10px] uppercase font-bold px-2 py-0.5 rounded">Banco de Talentos</span>
+                <span className="bg-purple-100 text-purple-700 text-[10px] uppercase font-bold px-2 py-0.5 rounded">
+                  Banco de Talentos
+                </span>
               )}
             </h1>
             <p className="text-stone-500 text-sm flex items-center gap-4 mt-1">
-              <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> {job.location}</span>
-              <span className="flex items-center gap-1"><Briefcase className="w-3.5 h-3.5" /> {job.type}</span>
-              <span className="flex items-center gap-1"><Laptop className="w-3.5 h-3.5" /> {job.workModel || 'Presencial'}</span>
-              <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${isJobActive ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
-                {isJobActive ? 'Captação Ativa' : 'Contratação Encerrada'}
+              <span className="flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5" /> {job.location}
+              </span>
+              <span className="flex items-center gap-1">
+                <Briefcase className="w-3.5 h-3.5" /> {job.type}
+              </span>
+              <span className="flex items-center gap-1">
+                <Laptop className="w-3.5 h-3.5" />{" "}
+                {job.workModel || "Presencial"}
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-xs font-bold ${isJobActive ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}
+              >
+                {isJobActive ? "Captação Ativa" : "Contratação Encerrada"}
               </span>
             </p>
           </div>
@@ -240,18 +329,22 @@ export function CompanyJobPage() {
           <button
             onClick={handleToggleJobActive}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
-              isJobActive 
-                ? 'bg-amber-100 hover:bg-amber-200 text-amber-800'
-                : 'bg-green-600 hover:bg-green-700 text-white'
+              isJobActive
+                ? "bg-amber-100 hover:bg-amber-200 text-amber-800"
+                : "bg-green-600 hover:bg-green-700 text-white"
             }`}
           >
-            {isJobActive ? 'Fechar Contratação' : 'Reabrir Processo Seletivo'}
+            {isJobActive ? "Fechar Contratação" : "Reabrir Processo Seletivo"}
           </button>
 
           <button
             onClick={handleDeleteJob}
             disabled={applications.length > 0}
-            title={applications.length > 0 ? "Não é possível excluir vaga com candidatos" : "Excluir vaga"}
+            title={
+              applications.length > 0
+                ? "Não é possível excluir vaga com candidatos"
+                : "Excluir vaga"
+            }
             className="bg-red-50 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed text-red-600 px-4 py-2 rounded-xl text-xs font-bold transition-colors"
           >
             Excluir Vaga
@@ -261,18 +354,26 @@ export function CompanyJobPage() {
 
       <div className="flex overflow-x-auto gap-2 pb-2 hide-scrollbar">
         {[
-          { id: 'overview', label: 'Visão Geral', icon: Eye },
-          { id: 'active', label: `Candidatos Ativos (${activeApps.length})`, icon: Users },
-          { id: 'rejected', label: `Excluídos (${rejectedApps.length})`, icon: XCircle },
-          { id: 'edit', label: 'Editar Vaga', icon: Edit }
-        ].map(tab => (
+          { id: "overview", label: "Visão Geral", icon: Eye },
+          {
+            id: "active",
+            label: `Candidatos Ativos (${activeApps.length})`,
+            icon: Users,
+          },
+          {
+            id: "rejected",
+            label: `Excluídos (${rejectedApps.length})`,
+            icon: XCircle,
+          },
+          { id: "edit", label: "Editar Vaga", icon: Edit },
+        ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
             className={`px-4 py-2.5 rounded-xl font-bold text-sm whitespace-nowrap transition-all flex items-center gap-2 ${
-              activeTab === tab.id 
-                ? 'bg-terracotta-600 text-white shadow-sm' 
-                : 'bg-white text-stone-600 hover:bg-stone-50 border border-stone-200'
+              activeTab === tab.id
+                ? "bg-terracotta-600 text-white shadow-sm"
+                : "bg-white text-stone-600 hover:bg-stone-50 border border-stone-200"
             }`}
           >
             <tab.icon className="w-4 h-4" />
@@ -282,7 +383,7 @@ export function CompanyJobPage() {
       </div>
 
       <div className="bg-white border border-stone-200 rounded-3xl p-6 md:p-8 min-h-[400px]">
-        {activeTab === 'overview' && (
+        {activeTab === "overview" && (
           <div className="space-y-8 animate-in fade-in">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-stone-50 rounded-2xl p-6 border border-stone-100">
@@ -290,52 +391,94 @@ export function CompanyJobPage() {
                   <Users className="w-5 h-5" />
                   Total de Candidatos
                 </div>
-                <div className="text-4xl font-serif font-bold text-stone-900">{applications.length}</div>
+                <div className="text-4xl font-serif font-bold text-stone-900">
+                  {applications.length}
+                </div>
               </div>
               <div className="bg-green-50 rounded-2xl p-6 border border-green-100">
                 <div className="text-green-700 mb-2 flex items-center gap-2 font-medium">
                   <CheckCircle className="w-5 h-5" />
                   Em Processo
                 </div>
-                <div className="text-4xl font-serif font-bold text-green-900">{activeApps.length}</div>
+                <div className="text-4xl font-serif font-bold text-green-900">
+                  {activeApps.length}
+                </div>
               </div>
               <div className="bg-red-50 rounded-2xl p-6 border border-red-100">
                 <div className="text-red-700 mb-2 flex items-center gap-2 font-medium">
                   <XCircle className="w-5 h-5" />
                   Recusados
                 </div>
-                <div className="text-4xl font-serif font-bold text-red-900">{rejectedApps.length}</div>
+                <div className="text-4xl font-serif font-bold text-red-900">
+                  {rejectedApps.length}
+                </div>
               </div>
             </div>
-            
+
             <div className="bg-stone-50 p-6 rounded-2xl">
               <h3 className="font-bold text-lg mb-4">Sobre a vaga</h3>
               <div className="prose prose-sm text-stone-600 max-w-none whitespace-pre-wrap">
                 {job.description}
               </div>
             </div>
-            {job.requirements && <div className="bg-stone-50 p-6 rounded-2xl"><h3 className="font-bold text-lg mb-4">Requisitos</h3><div className="prose prose-sm text-stone-600 max-w-none whitespace-pre-wrap">{job.requirements}</div></div>}
+            {job.requirements && (
+              <div className="bg-stone-50 p-6 rounded-2xl">
+                <h3 className="font-bold text-lg mb-4">Requisitos</h3>
+                <div className="prose prose-sm text-stone-600 max-w-none whitespace-pre-wrap">
+                  {job.requirements}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {activeTab === 'edit' && (
-          <form onSubmit={handleSaveJob} className="space-y-6 animate-in fade-in max-w-3xl">
+        {activeTab === "edit" && (
+          <form
+            onSubmit={handleSaveJob}
+            className="space-y-6 animate-in fade-in max-w-3xl"
+          >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="md:col-span-2">
-                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Título da Vaga *</label>
-                <input required value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white" placeholder="Ex: Desenvolvedor Front-end" />
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">
+                  Título da Vaga *
+                </label>
+                <input
+                  required
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white"
+                  placeholder="Ex: Desenvolvedor Front-end"
+                />
               </div>
               <div>
-                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Localização *</label>
-                <CityStateSelector onLocationChange={setEditLocation} initialValue={editLocation} />
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">
+                  Localização *
+                </label>
+                <CityStateSelector
+                  onLocationChange={setEditLocation}
+                  initialValue={editLocation}
+                />
               </div>
               <div>
-                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Salário</label>
-                <input value={editSalary} onChange={(e) => setEditSalary(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white" placeholder="Ex: R$ 2.000 ou A combinar" />
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">
+                  Salário
+                </label>
+                <input
+                  value={editSalary}
+                  onChange={(e) => setEditSalary(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white"
+                  placeholder="Ex: R$ 2.000 ou A combinar"
+                />
               </div>
               <div>
-                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Tipo de Contrato</label>
-                <select value={editType} onChange={(e) => setEditType(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white">
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">
+                  Tipo de Contrato
+                </label>
+                <select
+                  value={editType}
+                  onChange={(e) => setEditType(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white"
+                >
                   <option value="CLT">CLT</option>
                   <option value="PJ">PJ</option>
                   <option value="Estágio">Estágio</option>
@@ -344,80 +487,168 @@ export function CompanyJobPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Regime de Trabalho</label>
-                <select value={editWorkModel} onChange={(e) => setEditWorkModel(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white"><option value="Presencial">Presencial</option><option value="Híbrido">Híbrido</option><option value="Remoto">Remoto</option></select>
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">
+                  Regime de Trabalho
+                </label>
+                <select
+                  value={editWorkModel}
+                  onChange={(e) => setEditWorkModel(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white"
+                >
+                  <option value="Presencial">Presencial</option>
+                  <option value="Híbrido">Híbrido</option>
+                  <option value="Remoto">Remoto</option>
+                </select>
               </div>
               <div className="md:col-span-2">
-                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Sobre a vaga / atividades *</label>
-                <textarea required value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={6} className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white" placeholder="Descreva responsabilidades, atividades e benefícios da vaga..." />
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">
+                  Sobre a vaga / atividades *
+                </label>
+                <textarea
+                  required
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  rows={6}
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white"
+                  placeholder="Descreva responsabilidades, atividades e benefícios da vaga..."
+                />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Requisitos</label>
-                <textarea value={editRequirements} onChange={(e) => setEditRequirements(e.target.value)} rows={5} className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white" placeholder="Informe experiência, formação, habilidades e disponibilidade necessárias." />
+                <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">
+                  Requisitos
+                </label>
+                <textarea
+                  value={editRequirements}
+                  onChange={(e) => setEditRequirements(e.target.value)}
+                  rows={5}
+                  className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white"
+                  placeholder="Informe experiência, formação, habilidades e disponibilidade necessárias."
+                />
               </div>
               <div className="md:col-span-2 flex flex-col gap-3">
                 <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={editIsConfidential} onChange={(e) => setEditIsConfidential(e.target.checked)} className="w-5 h-5 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500" />
-                  <span className="text-sm font-medium text-stone-700">Vaga Confidencial (Ocultar nome da empresa)</span>
+                  <input
+                    type="checkbox"
+                    checked={editIsConfidential}
+                    onChange={(e) => setEditIsConfidential(e.target.checked)}
+                    className="w-5 h-5 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500"
+                  />
+                  <span className="text-sm font-medium text-stone-700">
+                    Vaga Confidencial (Ocultar nome da empresa)
+                  </span>
                 </label>
                 <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={editIsTalentPool} onChange={(e) => setEditIsTalentPool(e.target.checked)} className="w-5 h-5 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500" />
-                  <span className="text-sm font-medium text-stone-700">Banco de Talentos (Sem vaga específica no momento)</span>
+                  <input
+                    type="checkbox"
+                    checked={editIsTalentPool}
+                    onChange={(e) => setEditIsTalentPool(e.target.checked)}
+                    className="w-5 h-5 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500"
+                  />
+                  <span className="text-sm font-medium text-stone-700">
+                    Banco de Talentos (Sem vaga específica no momento)
+                  </span>
                 </label>
                 <label className="flex items-start gap-3 cursor-pointer rounded-xl border border-stone-200 p-3 bg-stone-50">
-                  <input type="checkbox" checked={editAcceptsPlatformApplications} onChange={(e) => setEditAcceptsPlatformApplications(e.target.checked)} className="w-5 h-5 mt-0.5 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500" />
-                  <span className="text-sm font-medium text-stone-700">Receber candidaturas pela plataforma</span>
+                  <input
+                    type="checkbox"
+                    checked={editAcceptsPlatformApplications}
+                    onChange={(e) =>
+                      setEditAcceptsPlatformApplications(e.target.checked)
+                    }
+                    className="w-5 h-5 mt-0.5 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500"
+                  />
+                  <span className="text-sm font-medium text-stone-700">
+                    Receber candidaturas pela plataforma
+                  </span>
                 </label>
                 {!editAcceptsPlatformApplications && (
-                  <textarea required value={editExternalApplicationInstructions} onChange={(e) => setEditExternalApplicationInstructions(e.target.value)} rows={3} className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white" placeholder="Informe e-mail, site, WhatsApp ou local para entrega do currículo." />
+                  <textarea
+                    required
+                    value={editExternalApplicationInstructions}
+                    onChange={(e) =>
+                      setEditExternalApplicationInstructions(e.target.value)
+                    }
+                    rows={3}
+                    className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 bg-white"
+                    placeholder="Informe e-mail, site, WhatsApp ou local para entrega do currículo."
+                  />
                 )}
               </div>
             </div>
             <div className="pt-4 border-t border-stone-100 flex justify-end">
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 disabled={savingJob}
                 className="bg-terracotta-600 hover:bg-terracotta-700 disabled:opacity-50 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center transition-all shadow-md"
               >
-                {savingJob ? 'Salvando...' : 'Salvar Alterações'}
+                {savingJob ? "Salvando..." : "Salvar Alterações"}
               </button>
             </div>
           </form>
         )}
 
         {/* Candidatos Ativos Table */}
-        {activeTab === 'active' && (
+        {activeTab === "active" && (
           <div className="animate-in fade-in">
             {loadingApps ? (
-              <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-terracotta-500" /></div>
+              <div className="flex justify-center p-12">
+                <Loader2 className="w-8 h-8 animate-spin text-terracotta-500" />
+              </div>
             ) : activeApps.length === 0 ? (
               <div className="text-center py-16">
                 <div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Search className="w-6 h-6 text-stone-400" />
                 </div>
-                <h3 className="text-lg font-bold text-stone-800">Nenhum candidato em processo</h3>
-                <p className="text-stone-500 mt-1">Os candidatos que se aplicarem aparecerão aqui.</p>
+                <h3 className="text-lg font-bold text-stone-800">
+                  Nenhum candidato em processo
+                </h3>
+                <p className="text-stone-500 mt-1">
+                  Os candidatos que se aplicarem aparecerão aqui.
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-stone-200">
-                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider">Candidato</th>
-                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider">Data de Inscrição</th>
-                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider">Status da Triagem</th>
-                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider text-right">Ações</th>
+                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider">
+                        Candidato
+                      </th>
+                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider">
+                        Data de Inscrição
+                      </th>
+                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider">
+                        Status da Triagem
+                      </th>
+                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider text-right">
+                        Ações
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
-                    {activeApps.map(app => (
-                      <tr key={app.id} className="hover:bg-stone-50 transition-colors">
+                    {activeApps.map((app) => (
+                      <tr
+                        key={app.id}
+                        className="hover:bg-stone-50 transition-colors"
+                      >
                         <td className="px-4 py-4">
-                          <div className="font-bold text-stone-900">{app.candidateName}</div>
-                          {app.candidateProfile?.email && <div className="text-xs text-stone-500">{app.candidateProfile.email}</div>}
+                          <div className="font-bold text-stone-900">
+                            {app.candidateName}
+                          </div>
+                          {app.candidateProfile?.email && (
+                            <div className="text-xs text-stone-500">
+                              {app.candidateProfile.email}
+                            </div>
+                          )}
                           {app.candidateProfile?.phone && (
-                            <a href={`https://wa.me/${app.candidateProfile.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="text-xs text-green-600 hover:text-green-700 flex items-center gap-1 mt-1 font-medium">
-                               <Phone className="w-3 h-3" /> {app.candidateProfile.phone}
+                            <a
+                              href={`https://wa.me/${app.candidateProfile.phone.replace(/\D/g, "")}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs text-green-600 hover:text-green-700 flex items-center gap-1 mt-1 font-medium"
+                            >
+                              <Phone className="w-3 h-3" />{" "}
+                              {app.candidateProfile.phone}
                             </a>
                           )}
                         </td>
@@ -426,20 +657,31 @@ export function CompanyJobPage() {
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex flex-col gap-1 items-start">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
-                              app.status === 'Aprovado' ? 'bg-green-50 text-green-700 border-green-200' :
-                              app.status === 'Recusado' ? 'bg-red-50 text-red-700 border-red-200' :
-                              app.status === 'Em Contratação' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                              app.status === 'Aguardando Exame Médico' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                              'bg-stone-100 text-stone-700 border-stone-200'
-                            }`}>
-                              {app.status || 'Enviado'}
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                                app.status === "Aprovado"
+                                  ? "bg-green-50 text-green-700 border-green-200"
+                                  : app.status === "Recusado"
+                                    ? "bg-red-50 text-red-700 border-red-200"
+                                    : app.status === "Em Contratação"
+                                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                                      : app.status === "Aguardando Exame Médico"
+                                        ? "bg-purple-50 text-purple-700 border-purple-200"
+                                        : "bg-stone-100 text-stone-700 border-stone-200"
+                              }`}
+                            >
+                              {app.status || "Enviado"}
                             </span>
-                            
-                            {app.priority && app.priority !== 'Normal' && (
-                              <span className={`text-[10px] font-bold uppercase ${
-                                app.priority === 'Alta' || app.priority === 'Urgente' ? 'text-red-600' : 'text-amber-600'
-                              }`}>
+
+                            {app.priority && app.priority !== "Normal" && (
+                              <span
+                                className={`text-[10px] font-bold uppercase ${
+                                  app.priority === "Alta" ||
+                                  app.priority === "Urgente"
+                                    ? "text-red-600"
+                                    : "text-amber-600"
+                                }`}
+                              >
                                 Prioridade: {app.priority}
                               </span>
                             )}
@@ -448,12 +690,32 @@ export function CompanyJobPage() {
                             {(() => {
                               const docs = app.onboardingDocs || {};
                               const docValues: any[] = Object.values(docs);
-                              const uploadedCount = docValues.filter(d => d.url).length;
-                              const approvedCount = docValues.filter(d => d.status === 'approved').length;
-                              const rejectedCount = docValues.filter(d => d.status === 'rejected').length;
-                              const isDocStage = app.documentsRequested || app.status === 'Em Contratação' || app.status === 'Aguardando Exame Médico' || (app.status && (app.status.toLowerCase().includes('contrat') || app.status.toLowerCase().includes('exame') || app.status.toLowerCase().includes('documento')));
+                              const uploadedCount = docValues.filter(
+                                (d) => d.url,
+                              ).length;
+                              const approvedCount = docValues.filter(
+                                (d) => d.status === "approved",
+                              ).length;
+                              const rejectedCount = docValues.filter(
+                                (d) => d.status === "rejected",
+                              ).length;
+                              const isDocStage =
+                                app.documentsRequested ||
+                                app.status === "Em Contratação" ||
+                                app.status === "Aguardando Exame Médico" ||
+                                (app.status &&
+                                  (app.status
+                                    .toLowerCase()
+                                    .includes("contrat") ||
+                                    app.status
+                                      .toLowerCase()
+                                      .includes("exame") ||
+                                    app.status
+                                      .toLowerCase()
+                                      .includes("documento")));
 
-                              if (!isDocStage && uploadedCount === 0) return null;
+                              if (!isDocStage && uploadedCount === 0)
+                                return null;
 
                               if (rejectedCount > 0) {
                                 return (
@@ -464,7 +726,11 @@ export function CompanyJobPage() {
                                 );
                               }
 
-                              if (approvedCount > 0 && approvedCount >= uploadedCount && uploadedCount > 0) {
+                              if (
+                                approvedCount > 0 &&
+                                approvedCount >= uploadedCount &&
+                                uploadedCount > 0
+                              ) {
                                 return (
                                   <span className="inline-flex items-center gap-1 text-[10px] font-bold text-green-800 bg-green-50 border border-green-200 px-2 py-0.5 rounded-md mt-1">
                                     <CheckCircle2 className="w-3 h-3 text-green-600 shrink-0" />
@@ -515,7 +781,12 @@ export function CompanyJobPage() {
                           )}
                           {app.resumeURL && (
                             <button
-                              onClick={() => openBase64InNewTab(app.resumeURL, `Currículo_${app.candidateName}`)}
+                              onClick={() =>
+                                openBase64InNewTab(
+                                  app.resumeURL,
+                                  `Currículo_${app.candidateName}`,
+                                )
+                              }
                               className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center transition-colors"
                               title="Ver Currículo (PDF)"
                             >
@@ -539,40 +810,65 @@ export function CompanyJobPage() {
         )}
 
         {/* Candidatos Rejeitados Table */}
-        {activeTab === 'rejected' && (
+        {activeTab === "rejected" && (
           <div className="animate-in fade-in">
             {loadingApps ? (
-              <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-terracotta-500" /></div>
+              <div className="flex justify-center p-12">
+                <Loader2 className="w-8 h-8 animate-spin text-terracotta-500" />
+              </div>
             ) : rejectedApps.length === 0 ? (
               <div className="text-center py-16">
                 <div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <CheckCircle className="w-6 h-6 text-stone-400" />
                 </div>
-                <h3 className="text-lg font-bold text-stone-800">Nenhum candidato excluído</h3>
+                <h3 className="text-lg font-bold text-stone-800">
+                  Nenhum candidato excluído
+                </h3>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-stone-200">
-                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider">Candidato</th>
-                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider">Data de Inscrição</th>
-                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider text-right">Ações</th>
+                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider">
+                        Candidato
+                      </th>
+                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider">
+                        Data de Inscrição
+                      </th>
+                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider text-right">
+                        Ações
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
-                    {rejectedApps.map(app => (
-                      <tr key={app.id} className="hover:bg-red-50/30 transition-colors">
+                    {rejectedApps.map((app) => (
+                      <tr
+                        key={app.id}
+                        className="hover:bg-red-50/30 transition-colors"
+                      >
                         <td className="px-4 py-4 opacity-75">
-                          <div className="font-bold text-stone-900">{app.candidateName}</div>
-                          {app.candidateProfile?.email && <div className="text-xs text-stone-500">{app.candidateProfile.email}</div>}
+                          <div className="font-bold text-stone-900">
+                            {app.candidateName}
+                          </div>
+                          {app.candidateProfile?.email && (
+                            <div className="text-xs text-stone-500">
+                              {app.candidateProfile.email}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-4 text-sm text-stone-500">
                           {new Date(app.appliedAt).toLocaleDateString()}
                         </td>
                         <td className="px-4 py-4 flex justify-end gap-2">
                           <button
-                            onClick={() => handleUpdateStatus(app.id, app.candidateId, 'Enviado')}
+                            onClick={() =>
+                              handleUpdateStatus(
+                                app.id,
+                                app.candidateId,
+                                "Enviado",
+                              )
+                            }
                             className="px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold flex items-center gap-1.5 transition-colors"
                           >
                             <ArrowLeft className="w-3.5 h-3.5" /> Recuperar
@@ -596,14 +892,14 @@ export function CompanyJobPage() {
           setIsCandidateModalOpen(false);
         }}
       />
-      
+
       {managingApp && (
-        <ApplicationManagerModal 
-          application={managingApp} 
-          onClose={() => setManagingApp(null)} 
+        <ApplicationManagerModal
+          application={managingApp}
+          onClose={() => setManagingApp(null)}
           onUpdated={() => {
-             fetchApplications();
-          }} 
+            fetchApplications();
+          }}
         />
       )}
     </div>

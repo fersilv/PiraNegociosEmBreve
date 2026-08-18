@@ -1,4 +1,11 @@
-import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 export enum CompanyAccessRequestStatus {
   PENDING = 'PENDING',
@@ -24,7 +31,11 @@ export class CompanyAccessRequest {
   @Column()
   requesterEmail: string;
 
-  @Column({ type: 'enum', enum: CompanyAccessRequestStatus, default: CompanyAccessRequestStatus.PENDING })
+  @Column({
+    type: 'enum',
+    enum: CompanyAccessRequestStatus,
+    default: CompanyAccessRequestStatus.PENDING,
+  })
   status: CompanyAccessRequestStatus;
 
   @Column({ type: 'varchar', nullable: true })

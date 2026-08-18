@@ -130,7 +130,7 @@ export class ChatService {
     const ids = new Set<string>([application.candidateId]);
     if (job) {
       ids.add(job.ownerId);
-      const companyAdmins = await this.users.find({ where: { companyId: job.companyId, isCompanyAdmin: true } });
+      const companyAdmins = job.companyId ? await this.users.find({ where: { companyId: job.companyId, isCompanyAdmin: true } }) : [];
       companyAdmins.forEach(user => ids.add(user.id));
     }
     ids.delete(senderId);

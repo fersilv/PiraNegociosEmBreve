@@ -50,7 +50,7 @@ export function Dashboard() {
         <Route path="onboarding" element={<Onboarding />} />
         
         <Route path="/" element={
-          profile?.type === 'ADMIN' ? <AdminDashboard /> :
+          profile?.type === 'ADMIN' ? <AdminDashboard mode="dashboard" /> :
           profile?.type === 'COMPANY' ? <CompanyDashboard /> : 
           profile?.type === 'CANDIDATE' ? <CandidateDashboard /> : 
           <Navigate to="/dashboard/onboarding" />
@@ -65,7 +65,7 @@ export function Dashboard() {
         } />
         
         <Route path="admin" element={
-          profile?.type === 'ADMIN' ? <AdminDashboard /> : <Navigate to="/dashboard" />
+          profile?.type === 'ADMIN' ? <AdminDashboard mode="moderation" /> : <Navigate to="/dashboard" />
         } />
         
         <Route path="curriculos" element={

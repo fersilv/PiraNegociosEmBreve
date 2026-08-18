@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from '../lib/firebase';
-import { api } from '../lib/api';
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { onAuthStateChanged, User } from "firebase/auth";
+import { auth } from "../lib/firebase";
+import { api } from "../lib/api";
 
 export interface ProfessionalExperience {
   company: string;
@@ -26,7 +26,7 @@ export interface AcademicEducation {
   startYear: string;
   endYear: string;
   current: boolean;
-  status?: 'CONCLUIDO' | 'EM_ANDAMENTO' | 'TRANCADO' | 'INTERROMPIDO';
+  status?: "CONCLUIDO" | "EM_ANDAMENTO" | "TRANCADO" | "INTERROMPIDO";
 }
 
 export interface ResumeAIAnalysis {
@@ -43,7 +43,7 @@ export interface UserProfile {
   treatment: string;
   phone: string;
   email: string;
-  type: 'COMPANY' | 'CANDIDATE' | 'ADMIN';
+  type: "COMPANY" | "CANDIDATE" | "ADMIN";
   companyId?: string;
   isCompanyAdmin?: boolean;
   companyName?: string;
@@ -52,6 +52,7 @@ export interface UserProfile {
   photoURL?: string;
   bio?: string;
   resumeURL?: string;
+  isOpenToWork?: boolean;
   isVerified?: boolean;
   acceptedTerms?: boolean;
   linkedinURL?: string;
@@ -68,15 +69,18 @@ export interface UserProfile {
 }
 
 export function getFirstName(fullName: string | undefined | null): string {
-  if (!fullName) return '';
+  if (!fullName) return "";
   return fullName.trim().split(/\s+/)[0];
 }
 
-export function getGreetingName(profile: UserProfile | undefined | null): string {
-  if (!profile) return 'Usuário';
-  const nameToUse = profile.socialName && profile.socialName.trim() !== ''
-    ? profile.socialName
-    : (profile.displayName || profile.fullName || profile.name || '');
+export function getGreetingName(
+  profile: UserProfile | undefined | null,
+): string {
+  if (!profile) return "Usuário";
+  const nameToUse =
+    profile.socialName && profile.socialName.trim() !== ""
+      ? profile.socialName
+      : profile.displayName || profile.fullName || profile.name || "";
   return getFirstName(nameToUse);
 }
 
@@ -104,9 +108,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchProfile = async (currentUser: User) => {
     try {
       // Pequeno delay para garantir que o token JWT do Firebase foi injetado pelo interceptor do Axios
-      const response = await api.get('/users/me');
+      const response = await api.get("/users/me");
       const data = response.data as UserProfile;
-      
+
       setProfile(data);
     } catch (error) {
       console.error("Erro ao buscar perfil da API:", error);

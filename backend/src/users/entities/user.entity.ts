@@ -1,4 +1,10 @@
-import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 export enum UserType {
   ADMIN = 'ADMIN',
@@ -43,6 +49,9 @@ export class User {
 
   @Column({ nullable: true })
   phone: string;
+
+  @Column({ default: false })
+  isOpenToWork: boolean;
 
   @Column({ type: 'text', nullable: true })
   bio: string;

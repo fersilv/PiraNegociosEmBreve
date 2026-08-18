@@ -1,13 +1,32 @@
-import { BadRequestException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Company } from './entities/company.entity';
 import { slugify, validateCompanySlug } from '../seo/seo.utils';
 
 const COMPANY_MUTABLE_FIELDS = [
-  'name', 'category', 'description', 'documentType', 'cnpj', 'cpf', 'website', 'address',
-  'cityState', 'phone', 'verificationStatus', 'socialInstagram', 'socialLinkedin',
-  'socialFacebook', 'logoURL', 'documentURL', 'slug',
+  'name',
+  'category',
+  'description',
+  'documentType',
+  'cnpj',
+  'cpf',
+  'website',
+  'address',
+  'cityState',
+  'phone',
+  'verificationStatus',
+  'socialInstagram',
+  'socialLinkedin',
+  'socialFacebook',
+  'logoURL',
+  'documentURL',
+  'slug',
 ] as const;
 
 @Injectable()
@@ -50,22 +69,38 @@ export class CompaniesService {
   }
 
   async create(ownerId: string, data: Partial<Company>): Promise<Company> {
-    const requestedSlug = typeof data.slug === 'string' && data.slug.trim() ? validateCompanySlug(data.slug) : null;
+    const requestedSlug =
+      typeof data.slug === 'string' && data.slug.trim()
+        ? validateCompanySlug(data.slug)
+        : null;
     const slug = requestedSlug
       ? await this.assertSlugAvailable(requestedSlug)
       : await this.generateAvailableSlug(data.name || 'empresa');
-    const company = this.companiesRepository.create({ ...this.pickMutableFields(data), ownerId, slug });
+    const company = this.companiesRepository.create({
+      ...this.pickMutableFields(data),
+      ownerId,
+      slug,
+    });
     return this.companiesRepository.save(company);
   }
 
-  async update(ownerId: string, id: string, data: Partial<Company>, alreadyAuthorized = false): Promise<Company> {
+  async update(
+    ownerId: string,
+    id: string,
+    data: Partial<Company>,
+    alreadyAuthorized = false,
+  ): Promise<Company> {
     const company = await this.findOne(id);
     if (!company) throw new NotFoundException('Empresa não encontrada');
-    if (!alreadyAuthorized && company.ownerId !== ownerId) throw new ForbiddenException('Você só pode editar a sua própria empresa');
+    if (!alreadyAuthorized && company.ownerId !== ownerId)
+      throw new ForbiddenException('Você só pode editar a sua própria empresa');
 
     const updates = this.pickMutableFields(data);
     if (typeof updates.slug === 'string' && updates.slug !== company.slug) {
-      updates.slug = await this.assertSlugAvailable(validateCompanySlug(updates.slug), company.id);
+      updates.slug = await this.assertSlugAvailable(
+        validateCompanySlug(updates.slug),
+        company.id,
+      );
     }
     Object.assign(company, updates);
     return this.companiesRepository.save(company);
@@ -74,14 +109,23 @@ export class CompaniesService {
   private pickMutableFields(data: Partial<Company>): Partial<Company> {
     const sanitized: Partial<Company> = {};
     for (const field of COMPANY_MUTABLE_FIELDS) {
-      if (data[field] !== undefined) (sanitized as Record<string, unknown>)[field] = data[field];
+      if (data[field] !== undefined)
+        (sanitized as Record<string, unknown>)[field] = data[field];
     }
     return sanitized;
   }
 
-  private async assertSlugAvailable(slug: string, companyId?: string): Promise<string> {
-    const existing = await this.companiesRepository.findOne({ where: { slug } });
-    if (existing && existing.id !== companyId) throw new BadRequestException('Este endereço público já está em uso. Escolha outro.');
+  private async assertSlugAvailable(
+    slug: string,
+    companyId?: string,
+  ): Promise<string> {
+    const existing = await this.companiesRepository.findOne({
+      where: { slug },
+    });
+    if (existing && existing.id !== companyId)
+      throw new BadRequestException(
+        'Este endereço público já está em uso. Escolha outro.',
+      );
     return slug;
   }
 
@@ -89,8 +133,13 @@ export class CompaniesService {
     const base = slugify(value) || 'empresa';
     for (let suffix = 1; suffix < 10_000; suffix += 1) {
       const candidate = suffix === 1 ? base : `${base}-${suffix}`;
-      if (!(await this.companiesRepository.exists({ where: { slug: candidate } }))) return candidate;
+      if (
+        !(await this.companiesRepository.exists({ where: { slug: candidate } }))
+      )
+        return candidate;
     }
-    throw new BadRequestException('Não foi possível criar um endereço público. Tente outro nome.');
+    throw new BadRequestException(
+      'Não foi possível criar um endereço público. Tente outro nome.',
+    );
   }
 }

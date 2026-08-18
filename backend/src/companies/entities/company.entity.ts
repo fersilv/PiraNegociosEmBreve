@@ -1,4 +1,10 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 export enum CompanyStatus {
   DRAFT = 'DRAFT',
@@ -29,7 +35,11 @@ export class Company {
   @Column({ type: 'varchar', nullable: true, unique: true })
   slug: string | null;
 
-  @Column({ type: 'enum', enum: CompanyCategory, default: CompanyCategory.EMPLOYER })
+  @Column({
+    type: 'enum',
+    enum: CompanyCategory,
+    default: CompanyCategory.EMPLOYER,
+  })
   category: CompanyCategory;
 
   @Column({ type: 'text', nullable: true })

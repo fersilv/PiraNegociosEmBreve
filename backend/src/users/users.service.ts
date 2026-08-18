@@ -5,10 +5,26 @@ import { User, UserType } from './entities/user.entity';
 import { CompanyInvitation } from './entities/company-invitation.entity';
 
 const SELF_MANAGED_FIELDS = [
-  'displayName', 'photoURL', 'fullName', 'socialName', 'treatment', 'phone',
-  'bio', 'resumeURL', 'acceptedTerms', 'linkedinURL', 'additionalPhones', 'experiences',
-  'skills', 'courses', 'education', 'aiAnalysis', 'hasAiAnalyzed',
-  'aiAnalysisCount', 'savedDocs',
+  'displayName',
+  'photoURL',
+  'fullName',
+  'socialName',
+  'treatment',
+  'phone',
+  'bio',
+  'resumeURL',
+  'acceptedTerms',
+  'linkedinURL',
+  'additionalPhones',
+  'experiences',
+  'skills',
+  'courses',
+  'education',
+  'aiAnalysis',
+  'hasAiAnalyzed',
+  'aiAnalysisCount',
+  'savedDocs',
+  'isOpenToWork',
 ] as const;
 
 @Injectable()
@@ -32,7 +48,10 @@ export class UsersService {
     return this.usersRepository.findOne({ where: { id } });
   }
 
-  sanitizeSelfUpdate(data: Partial<User>, existing: User | null): Partial<User> {
+  sanitizeSelfUpdate(
+    data: Partial<User>,
+    existing: User | null,
+  ): Partial<User> {
     const sanitized: Partial<User> = {};
     for (const field of SELF_MANAGED_FIELDS) {
       if (data[field] !== undefined) {
@@ -40,7 +59,11 @@ export class UsersService {
       }
     }
 
-    if ((!existing || !existing.type) && data.type && [UserType.CANDIDATE, UserType.COMPANY].includes(data.type)) {
+    if (
+      (!existing || !existing.type) &&
+      data.type &&
+      [UserType.CANDIDATE, UserType.COMPANY].includes(data.type)
+    ) {
       sanitized.type = data.type;
     }
     return sanitized;
@@ -48,12 +71,12 @@ export class UsersService {
 
   async createOrUpdate(id: string, data: Partial<User>): Promise<User> {
     const existingUser = await this.usersRepository.findOne({ where: { id } });
-    
+
     if (existingUser) {
       Object.assign(existingUser, data);
       return this.usersRepository.save(existingUser);
     }
-    
+
     const email = data.email?.trim().toLowerCase();
     const invitation = email
       ? await this.invitationsRepository.findOne({ where: { email } })
@@ -62,14 +85,16 @@ export class UsersService {
       id,
       ...data,
       email,
-      ...(invitation ? {
-        type: UserType.COMPANY,
-        companyId: invitation.companyId,
-        isCompanyAdmin: invitation.isCompanyAdmin,
-        status: 'ACTIVE',
-        displayName: data.displayName || invitation.name,
-        fullName: data.fullName || invitation.name,
-      } : {}),
+      ...(invitation
+        ? {
+            type: UserType.COMPANY,
+            companyId: invitation.companyId,
+            isCompanyAdmin: invitation.isCompanyAdmin,
+            status: 'ACTIVE',
+            displayName: data.displayName || invitation.name,
+            fullName: data.fullName || invitation.name,
+          }
+        : {}),
     });
     const saved = await this.usersRepository.save(newUser);
     if (invitation) await this.invitationsRepository.remove(invitation);
