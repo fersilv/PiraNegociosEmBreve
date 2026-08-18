@@ -240,7 +240,15 @@ export default function PublicJobPage() {
               {job.salary || "Salário a combinar"}
             </span>
           </div>
-          <ShareJobButtons title={job.title} url={canonical} />
+          <ShareJobButtons 
+            title={job.title} 
+            url={canonical} 
+            companyName={job.company?.name || job.sourceName || "Empresa Confidencial"}
+            location={job.location}
+            salary={job.salary}
+            workModel={job.workModel}
+            acceptsPlatformApplications={job.acceptsPlatformApplications}
+          />
           <section className="mt-8">
             <h2 className="font-serif text-2xl font-bold text-stone-900 mb-4">
               Sobre a vaga
