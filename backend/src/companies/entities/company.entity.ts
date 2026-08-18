@@ -7,6 +7,13 @@ export enum CompanyStatus {
   REJECTED = 'REJECTED',
 }
 
+export enum CompanyCategory {
+  EMPLOYER = 'EMPLOYER',
+  SERVICE_PROVIDER = 'SERVICE_PROVIDER',
+  RETAILER = 'RETAILER',
+  OTHER = 'OTHER',
+}
+
 @Entity('companies')
 export class Company {
   @PrimaryGeneratedColumn('uuid')
@@ -21,6 +28,9 @@ export class Company {
   // Public, human-readable company address: https://piranegocios.com.br/{slug}
   @Column({ nullable: true, unique: true })
   slug: string | null;
+
+  @Column({ type: 'enum', enum: CompanyCategory, default: CompanyCategory.EMPLOYER })
+  category: CompanyCategory;
 
   @Column({ type: 'text', nullable: true })
   description: string;

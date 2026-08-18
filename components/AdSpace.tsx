@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Megaphone, Globe, Cpu } from 'lucide-react';
 import { api, asArray } from '../lib/api';
+import { getPrivacyConsent, PRIVACY_CONSENT_EVENT } from '../lib/privacyConsent';
 
 interface AdSpaceProps {
   variant?: 'leaderboard' | 'rectangle' | 'sidebar';
@@ -11,6 +12,13 @@ export function AdSpace({ variant = 'leaderboard', className = '' }: AdSpaceProp
   const [ad, setAd] = useState<any>(null);
   const [config, setConfig] = useState<any>(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
+  const [advertisingAllowed, setAdvertisingAllowed] = useState(() => getPrivacyConsent()?.advertising === true);
+
+  useEffect(() => {
+    const syncConsent = () => setAdvertisingAllowed(getPrivacyConsent()?.advertising === true);
+    window.addEventListener(PRIVACY_CONSENT_EVENT, syncConsent);
+    return () => window.removeEventListener(PRIVACY_CONSENT_EVENT, syncConsent);
+  }, []);
 
   useEffect(() => {
     const fetchAdAndConfig = async () => {
@@ -23,6 +31,10 @@ export function AdSpace({ variant = 'leaderboard', className = '' }: AdSpaceProp
 
           // If Google Ads is enabled, load Google Adsense script dynamically
           if (configData.googleAdsEnabled && configData.googleAdsClient) {
+            // Ads are always eligible to render. Without advertising consent, the
+            // request is explicitly contextual/non-personalized (npa=1).
+            const adsQueue = ((window as any).adsbygoogle = (window as any).adsbygoogle || []);
+            adsQueue.requestNonPersonalizedAds = advertisingAllowed ? 0 : 1;
             const scriptId = 'google-adsense-script';
             if (!document.getElementById(scriptId)) {
               const script = document.createElement('script');
@@ -48,17 +60,19 @@ export function AdSpace({ variant = 'leaderboard', className = '' }: AdSpaceProp
       }
     };
     fetchAdAndConfig();
-  }, [variant]);
+  }, [variant, advertisingAllowed]);
 
   useEffect(() => {
     if (config?.googleAdsEnabled) {
       try {
-        ((window as any).adsbygoogle = (window as any).adsbygoogle || []).push({});
+        const adsQueue = ((window as any).adsbygoogle = (window as any).adsbygoogle || []);
+        adsQueue.requestNonPersonalizedAds = advertisingAllowed ? 0 : 1;
+        adsQueue.push({});
       } catch (e) {
         // Silent catch for initial push before script is fully parsed
       }
     }
-  }, [config, variant]);
+  }, [config, variant, advertisingAllowed]);
 
   const variantClasses = {
     leaderboard: "w-full h-[90px] md:h-[120px]",

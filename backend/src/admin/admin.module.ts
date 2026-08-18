@@ -9,9 +9,10 @@ import { AdminController } from './admin.controller';
 import { AdminGuard } from './admin.guard';
 import { VisitorEvent } from '../analytics/entities/visitor-event.entity';
 import { AccountAccess } from '../analytics/entities/account-access.entity';
+import { UserSanction } from './entities/user-sanction.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Company, Job, Application, CompanyAccessRequest, VisitorEvent, AccountAccess])],
+  imports: [TypeOrmModule.forFeature([User, Company, Job, Application, CompanyAccessRequest, VisitorEvent, AccountAccess, UserSanction])],
   controllers: [AdminController],
   providers: [AdminGuard],
 })

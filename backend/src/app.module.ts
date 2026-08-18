@@ -14,6 +14,7 @@ import { ChatModule } from './chat/chat.module';
 import { AdminModule } from './admin/admin.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { SeoModule } from './seo/seo.module';
+import { AdvertisingModule } from './advertising/advertising.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { SeoModule } from './seo/seo.module';
     ChatModule,
     AnalyticsModule,
     SeoModule,
+    AdvertisingModule,
     AdminModule,
   ],
   controllers: [AppController],

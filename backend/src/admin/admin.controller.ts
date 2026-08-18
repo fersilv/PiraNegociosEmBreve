@@ -3,17 +3,18 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { Application } from '../applications/entities/application.entity';
-import { Company, CompanyStatus } from '../companies/entities/company.entity';
+import { Company, CompanyCategory, CompanyStatus } from '../companies/entities/company.entity';
 import { CompanyAccessRequest, CompanyAccessRequestStatus } from '../companies/entities/company-access-request.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { User, UserType } from '../users/entities/user.entity';
 import { AdminGuard } from './admin.guard';
 import { VisitorEvent } from '../analytics/entities/visitor-event.entity';
 import { AccountAccess } from '../analytics/entities/account-access.entity';
+import { UserSanction, UserSanctionStatus } from './entities/user-sanction.entity';
 import { slugify } from '../seo/seo.utils';
 
 const COMPANY_FIELDS = [
-  'name', 'description', 'documentType', 'cnpj', 'cpf', 'website', 'address',
+  'name', 'slug', 'category', 'description', 'documentType', 'cnpj', 'cpf', 'website', 'address',
   'cityState', 'phone', 'socialInstagram', 'socialLinkedin', 'socialFacebook',
   'logoURL', 'documentURL',
 ] as const;
@@ -40,6 +41,7 @@ export class AdminController {
     @InjectRepository(CompanyAccessRequest) private readonly accessRequests: Repository<CompanyAccessRequest>,
     @InjectRepository(VisitorEvent) private readonly visitorEvents: Repository<VisitorEvent>,
     @InjectRepository(AccountAccess) private readonly accountAccesses: Repository<AccountAccess>,
+    @InjectRepository(UserSanction) private readonly sanctions: Repository<UserSanction>,
   ) {}
 
   @Get('summary')
@@ -66,19 +68,32 @@ export class AdminController {
   }
 
   private async analyticsSnapshot(since: Date) {
-    const [totals, averageEngagement, sources, devices, security] = await Promise.all([
+    const [totals, averageEngagement, sources, devices, pages, security] = await Promise.all([
       this.visitorEvents.createQueryBuilder('event').select('COUNT(*)', 'pageViews').addSelect('COUNT(DISTINCT event.visitorId)', 'uniqueVisitors').where('event.createdAt >= :since', { since }).getRawOne(),
       this.visitorEvents.createQueryBuilder('event').select('AVG(event.durationSeconds)', 'seconds').where('event.createdAt >= :since AND event.eventType = :type', { since, type: 'ENGAGEMENT' }).getRawOne(),
       this.visitorEvents.createQueryBuilder('event').select("COALESCE(event.utmSource, event.referrerOrigin, 'Direto')", 'source').addSelect('COUNT(*)', 'count').where('event.createdAt >= :since', { since }).groupBy("COALESCE(event.utmSource, event.referrerOrigin, 'Direto')").orderBy('count', 'DESC').limit(8).getRawMany(),
       this.visitorEvents.createQueryBuilder('event').select("COALESCE(event.deviceType, 'unknown')", 'device').addSelect('COUNT(DISTINCT event.visitorId)', 'count').where('event.createdAt >= :since', { since }).groupBy("COALESCE(event.deviceType, 'unknown')").orderBy('count', 'DESC').getRawMany(),
+      this.visitorEvents.createQueryBuilder('event').select('event.path', 'path').addSelect('COUNT(*)', 'count').where('event.createdAt >= :since AND event.eventType = :type', { since, type: 'PAGE_VIEW' }).groupBy('event.path').orderBy('count', 'DESC').limit(8).getRawMany(),
       this.accountAccesses.createQueryBuilder('access').select('COUNT(*)', 'accesses').addSelect('COUNT(*) FILTER (WHERE access.isNewDevice = true)', 'newDevices').where('access.createdAt >= :since', { since }).getRawOne(),
     ]);
-    return { periodDays: 30, pageViews: Number(totals?.pageViews || 0), uniqueVisitors: Number(totals?.uniqueVisitors || 0), averageEngagementSeconds: Math.round(Number(averageEngagement?.seconds || 0)), sources: sources.map(row => ({ source: row.source, count: Number(row.count) })), devices: devices.map(row => ({ device: row.device, count: Number(row.count) })), accountAccesses: Number(security?.accesses || 0), newDevices: Number(security?.newDevices || 0) };
+    return { periodDays: 30, pageViews: Number(totals?.pageViews || 0), uniqueVisitors: Number(totals?.uniqueVisitors || 0), averageEngagementSeconds: Math.round(Number(averageEngagement?.seconds || 0)), sources: sources.map(row => ({ source: row.source, count: Number(row.count) })), devices: devices.map(row => ({ device: row.device, count: Number(row.count) })), topPages: pages.map(row => ({ path: row.path, count: Number(row.count) })), accountAccesses: Number(security?.accesses || 0), newDevices: Number(security?.newDevices || 0) };
   }
 
   @Get('companies')
   listCompanies() {
     return this.companies.find({ order: { createdAt: 'DESC' } });
+  }
+
+  @Get('companies/:id')
+  async companyDetails(@Param('id') id: string) {
+    const company = await this.companies.findOne({ where: { id } });
+    if (!company) throw new NotFoundException('Empresa não encontrada.');
+    const [employees, jobs, applications] = await Promise.all([
+      this.users.find({ where: { companyId: id }, select: { id: true, email: true, displayName: true, fullName: true, socialName: true, phone: true, photoURL: true, isCompanyAdmin: true, status: true, createdAt: true } }),
+      this.jobs.find({ where: { companyId: id }, order: { createdAt: 'DESC' } }),
+      this.applications.find({ where: { companyId: id }, order: { createdAt: 'DESC' } }),
+    ]);
+    return { company, employees, jobs, applications };
   }
 
   @Get('company-access-requests')
@@ -131,6 +146,7 @@ export class AdminController {
       ownerId: req.user.uid,
       verificationStatus,
       isVerified: verificationStatus === CompanyStatus.VERIFIED,
+      category: Object.values(CompanyCategory).includes(data.category as CompanyCategory) ? data.category as CompanyCategory : CompanyCategory.EMPLOYER,
       slug,
     });
     return this.companies.save(company);
@@ -229,6 +245,49 @@ export class AdminController {
       order: { createdAt: 'DESC' },
       select: { id: true, email: true, displayName: true, fullName: true, type: true, companyId: true, isVerified: true, createdAt: true },
     });
+  }
+
+  @Get('users/:id')
+  async userDetails(@Param('id') id: string) {
+    const user = await this.users.findOne({ where: { id } });
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+    const [sanctions, accesses] = await Promise.all([
+      this.sanctions.find({ where: { userId: id }, order: { createdAt: 'DESC' } }),
+      this.accountAccesses.find({ where: { userId: id }, order: { createdAt: 'DESC' }, take: 30 }),
+    ]);
+    const ipHashes = [...new Set(accesses.map(access => access.ipHash).filter((value): value is string => Boolean(value)))];
+    const sharedIpUsers = ipHashes.length ? await this.accountAccesses.createQueryBuilder('access').select('access.ipHash', 'ipHash').addSelect('COUNT(DISTINCT access.userId)', 'userCount').where('access.ipHash IN (:...ipHashes)', { ipHashes }).groupBy('access.ipHash').getRawMany() : [];
+    return { user, sanctions, accesses, sharedIpUsers: sharedIpUsers.map(row => ({ ipHash: row.ipHash, userCount: Number(row.userCount) })) };
+  }
+
+  @Post('users/:id/sanctions')
+  async sanctionUser(@Req() req: any, @Param('id') id: string, @Body() data: { type?: string; reason?: string; expiresAt?: string | null }) {
+    const user = await this.users.findOne({ where: { id } });
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+    const type = typeof data.type === 'string' ? data.type.trim().slice(0, 40) : '';
+    const reason = typeof data.reason === 'string' ? data.reason.trim().slice(0, 3000) : '';
+    if (!type || !reason) throw new BadRequestException('Tipo e motivo da sanção são obrigatórios.');
+    const expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
+    if (expiresAt && Number.isNaN(expiresAt.getTime())) throw new BadRequestException('Data de expiração inválida.');
+    const sanction = this.sanctions.create({ userId: id, createdById: req.user.uid, type, reason, expiresAt, status: UserSanctionStatus.ACTIVE });
+    return this.sanctions.save(sanction);
+  }
+
+  @Put('users/:id')
+  async moderateUser(@Param('id') id: string, @Body() data: { status?: string; isVerified?: boolean; fullName?: string; displayName?: string; socialName?: string; phone?: string; bio?: string; type?: UserType; companyId?: string | null; isCompanyAdmin?: boolean }) {
+    const user = await this.users.findOne({ where: { id } });
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+    if (typeof data.status === 'string' && ['ACTIVE', 'SUSPENDED', 'BLOCKED'].includes(data.status)) user.status = data.status;
+    if (typeof data.isVerified === 'boolean') user.isVerified = data.isVerified;
+    if (typeof data.fullName === 'string') user.fullName = data.fullName.trim().slice(0, 160);
+    if (typeof data.displayName === 'string') user.displayName = data.displayName.trim().slice(0, 160);
+    if (typeof data.socialName === 'string') user.socialName = data.socialName.trim().slice(0, 160);
+    if (typeof data.phone === 'string') user.phone = data.phone.trim().slice(0, 40);
+    if (typeof data.bio === 'string') user.bio = data.bio.trim().slice(0, 5000);
+    if (data.type && Object.values(UserType).includes(data.type)) user.type = data.type;
+    if (data.companyId === null || typeof data.companyId === 'string') user.companyId = data.companyId;
+    if (typeof data.isCompanyAdmin === 'boolean') user.isCompanyAdmin = data.isCompanyAdmin;
+    return this.users.save(user);
   }
 
   @Put('users/:id/promote')

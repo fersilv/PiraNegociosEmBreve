@@ -5,7 +5,7 @@ import { Company } from './entities/company.entity';
 import { slugify, validateCompanySlug } from '../seo/seo.utils';
 
 const COMPANY_MUTABLE_FIELDS = [
-  'name', 'description', 'documentType', 'cnpj', 'cpf', 'website', 'address',
+  'name', 'category', 'description', 'documentType', 'cnpj', 'cpf', 'website', 'address',
   'cityState', 'phone', 'verificationStatus', 'socialInstagram', 'socialLinkedin',
   'socialFacebook', 'logoURL', 'documentURL', 'slug',
 ] as const;
