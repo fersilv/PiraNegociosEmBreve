@@ -26,7 +26,7 @@ export function CookieConsent() {
   };
 
   if (!open) {
-    return <button type="button" onClick={() => { setCustomizing(true); setOpen(true); }} className="fixed bottom-4 left-4 z-[90] rounded-full border border-stone-200 bg-white p-3 text-stone-600 shadow-lg hover:text-terracotta-700" aria-label="Preferências de privacidade"><Settings2 className="h-5 w-5" /></button>;
+    return null;
   }
 
   return <section className="fixed inset-x-3 bottom-3 z-[100] mx-auto max-w-3xl rounded-2xl border border-stone-200 bg-white p-5 shadow-2xl sm:bottom-5 sm:p-6" aria-label="Preferências de privacidade" role="dialog" aria-modal="true">
