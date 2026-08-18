@@ -34,6 +34,9 @@ describe('UsersController authorization boundary', () => {
     (usersService.createOrUpdate as jest.Mock).mockResolvedValue({ id: 'candidate-1', displayName: 'Ana' });
 
     await expect(controller.updateProfile(request, { displayName: 'Ana' })).resolves.toEqual({ id: 'candidate-1', displayName: 'Ana' });
-    expect(usersService.createOrUpdate).toHaveBeenCalledWith('candidate-1', { displayName: 'Ana' });
+    expect(usersService.createOrUpdate).toHaveBeenCalledWith('candidate-1', {
+      displayName: 'Ana',
+      email: 'candidate@example.com',
+    });
   });
 });
