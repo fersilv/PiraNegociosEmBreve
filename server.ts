@@ -47,6 +47,13 @@ function escapeHtml(value: unknown): string {
   );
 }
 
+const CRAWLER_UA =
+  /googlebot|bingbot|yandex|baiduspider|twitterbot|facebookexternalhit|linkedinbot|slackbot|whatsapp|telegrambot|applebot|duckduckbot|semrush|ahrefs/i;
+
+function isCrawler(req: express.Request) {
+  return CRAWLER_UA.test(req.get("user-agent") || "");
+}
+
 function safeUrl(value: unknown): string | null {
   if (typeof value !== "string") return null;
   try {
@@ -99,7 +106,10 @@ function initializeFirebaseAdmin() {
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3001;
+  // A porta 3000 está sendo usada pelo processo "email-backend" há 42 dias.
+  // Como o email-backend também é em NestJS, ele retorna o JSON "Cannot GET /vagas".
+  // Vamos rodar o PiraNegociosWeb na porta 3002 para evitar conflito.
+  const PORT = Number(process.env.PORT) || 3002;
   const isBuiltServer = /[\\/]dist[\\/]server\.cjs$/i.test(
     process.argv[1] || "",
   );
@@ -488,7 +498,23 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = (() => {
+      const nested = path.join(process.cwd(), "dist");
+      if (path.join(nested, "index.html")) {
+        try {
+          readFileSync(path.join(nested, "index.html"));
+          return nested;
+        } catch {
+          /* cwd may already be dist when PM2 starts dist/server.cjs from that folder */
+        }
+      }
+      return process.cwd();
+    })();
+    const spaIndex = path.join(distPath, "index.html");
+    const sendSpa = (_req: express.Request, res: express.Response) => {
+      res.setHeader("Cache-Control", "no-cache");
+      res.sendFile(spaIndex);
+    };
     const getPublicData = async (pathName: string) => {
       const response = await fetch(`${publicApiOrigin}${pathName}`, {
         headers: { accept: "application/json" },
@@ -526,11 +552,10 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
 
     // A listagem é uma rota da SPA. Mantê-la explícita evita "Cannot GET"
     // quando a build é iniciada sem NODE_ENV=production pelo PM2.
-    app.get(["/vagas", "/vagas/"], (_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    app.get(["/vagas", "/vagas/"], sendSpa);
 
     app.get("/vagas/:slug", async (req, res) => {
+      if (!isCrawler(req)) return sendSpa(req, res);
       const job = await getPublicData(
         `/public/jobs/${encodeURIComponent(req.params.slug)}`,
       );
@@ -624,6 +649,7 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
     app.get("/:companySlug", async (req, res, next) => {
       const slug = req.params.companySlug.toLowerCase();
       if (publicRouteReserved.has(slug)) return next();
+      if (!isCrawler(req)) return sendSpa(req, res);
       const data = await getPublicData(
         `/public/companies/${encodeURIComponent(slug)}`,
       );
@@ -689,9 +715,7 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
     app.use(express.static(distPath));
     // Catch-all para rotas da SPA (dashboard, páginas institucionais, etc.)
     // app.use() é compatível com Express 5 (RegExp em app.get() não é suportado).
-    app.use((_req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    app.use(sendSpa);
   }
 
   app.listen(PORT, "0.0.0.0", () => {

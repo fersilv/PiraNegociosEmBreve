@@ -3,6 +3,7 @@ import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { Client } from 'pg';
+import { attachSpaFallback } from './spa-fallback';
 
 async function ensureDatabaseExists() {
   const dbName = process.env.DB_NAME || 'piranegocios';
@@ -54,6 +55,9 @@ async function bootstrap() {
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
     prefix: '/api/uploads/',
   });
+
+  // Last: if Nginx sends /vagas or /:empresa here, return the SPA instead of JSON 404.
+  attachSpaFallback(app);
 
   await app.listen(process.env.PORT ?? 3888);
 }
