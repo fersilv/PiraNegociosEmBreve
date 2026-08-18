@@ -27,10 +27,12 @@ function RouteLoader() {
 }
 
 export default function App() {
+  const isEmbed = window.location.pathname.startsWith('/embed');
+
   return (
     <AuthProvider>
-      <PwaInstallPrompt />
-      <CookieConsent />
+      {!isEmbed && <PwaInstallPrompt />}
+      {!isEmbed && <CookieConsent />}
       <BrowserRouter>
         <AnalyticsTracker />
         <Suspense fallback={<RouteLoader />}>
