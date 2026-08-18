@@ -54,7 +54,7 @@ export class JobsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!this.activeViewers.has(jobId)) {
       this.activeViewers.set(jobId, new Set());
     }
-    this.activeViewers.get(jobId).add(client.id);
+    this.activeViewers.get(jobId)!.add(client.id);
 
     let currentViews = 0;
     try {
@@ -64,7 +64,7 @@ export class JobsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       
       const job = await this.jobRepository.findOne({
         where: { id: jobId },
-        select: ['views'],
+        select: { views: true },
       });
       
       if (job) {
@@ -86,7 +86,7 @@ export class JobsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     client.leave(jobId);
 
     if (this.activeViewers.has(jobId)) {
-      this.activeViewers.get(jobId).delete(client.id);
+      this.activeViewers.get(jobId)!.delete(client.id);
       this.emitStatsUpdate(jobId);
     }
   }
@@ -100,7 +100,7 @@ export class JobsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       try {
         const job = await this.jobRepository.findOne({
           where: { id: jobId },
-          select: ['views'],
+          select: { views: true },
         });
         views = job?.views || 0;
       } catch (e) {
