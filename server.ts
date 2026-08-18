@@ -687,9 +687,9 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
     });
 
     app.use(express.static(distPath));
-    // RegExp é compatível com o path-to-regexp usado pelo Express 5 e cobre
-    // dashboard, páginas institucionais e rotas públicas acessadas diretamente.
-    app.get(/.*/, (_req, res) => {
+    // Catch-all para rotas da SPA (dashboard, páginas institucionais, etc.)
+    // app.use() é compatível com Express 5 (RegExp em app.get() não é suportado).
+    app.use((_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
