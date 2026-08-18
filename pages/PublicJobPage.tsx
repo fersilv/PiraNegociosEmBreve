@@ -9,7 +9,9 @@ import {
   Laptop,
   Loader2,
   MapPin,
+  Eye,
 } from "lucide-react";
+import { io, Socket } from "socket.io-client";
 import { api } from "../lib/api";
 import { Navbar } from "../components/Navbar";
 import { SeoHead } from "../components/SeoHead";
@@ -56,6 +58,8 @@ export default function PublicJobPage() {
   const [job, setJob] = useState<PublicJob | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [views, setViews] = useState(0);
+  const [activeViewers, setActiveViewers] = useState(0);
 
   useEffect(() => {
     if (!slug) return;
@@ -65,6 +69,39 @@ export default function PublicJobPage() {
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
   }, [slug]);
+
+  useEffect(() => {
+    if (!job) return;
+
+    // Fallback para api URL caso front e back estejam em portas separadas no dev
+    const socketUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : window.location.origin;
+    
+    const socket: Socket = io(socketUrl, {
+      path: "/socket.io",
+      transports: ["websocket", "polling"],
+    });
+
+    const viewedKey = `viewed_job_${job.id}`;
+    const alreadyViewed = localStorage.getItem(viewedKey);
+    const incrementView = !alreadyViewed;
+
+    socket.on("connect", () => {
+      socket.emit("join-job", { jobId: job.id, incrementView });
+      if (incrementView) {
+        localStorage.setItem(viewedKey, "true");
+      }
+    });
+
+    socket.on("job-stats-updated", (data: { views: number; activeViewers: number }) => {
+      setViews(data.views);
+      setActiveViewers(data.activeViewers);
+    });
+
+    return () => {
+      socket.emit("leave-job", { jobId: job.id });
+      socket.disconnect();
+    };
+  }, [job]);
 
   const canonical = `${siteUrl}/vagas/${job?.slug || slug || ""}`;
   const structuredData = useMemo(() => {
@@ -207,14 +244,31 @@ export default function PublicJobPage() {
                 )}
               </div>
             </div>
-            {job.deadlineDate && (
-              <span className="text-xs font-bold bg-amber-50 text-amber-800 px-3 py-2 rounded-lg h-fit">
-                Inscrições até{" "}
-                {new Date(`${job.deadlineDate}T12:00:00`).toLocaleDateString(
-                  "pt-BR",
+            
+            <div className="flex flex-col items-end gap-2 shrink-0">
+              <div className="flex items-center gap-2">
+                {activeViewers > 0 && (
+                  <span className="text-[11px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded-md flex items-center gap-1.5 border border-red-100" title={`${activeViewers} pessoas vendo agora`}>
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
+                    {activeViewers}
+                  </span>
                 )}
-              </span>
-            )}
+                {views > 0 && (
+                  <span className="text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded-md flex items-center gap-1.5 border border-stone-200" title={`${views} visualizações totais`}>
+                    <Eye className="w-3 h-3" />
+                    {views}
+                  </span>
+                )}
+              </div>
+              
+              {job.deadlineDate && (
+                <span className="text-xs font-bold bg-amber-50 text-amber-800 px-3 py-1.5 rounded-lg border border-amber-100">
+                  Até {new Date(`${job.deadlineDate}T12:00:00`).toLocaleDateString(
+                    "pt-BR",
+                  )}
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex flex-wrap gap-x-6 gap-y-3 mt-8 py-5 border-y border-stone-100 text-sm text-stone-600">
             {job.location && (

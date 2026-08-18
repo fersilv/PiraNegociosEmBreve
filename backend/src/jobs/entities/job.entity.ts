@@ -102,6 +102,9 @@ export class Job {
   @Column({ default: true })
   active: boolean;
 
+  @Column({ default: 0 })
+  views: number;
+
   @CreateDateColumn()
   createdAt: Date;
 
