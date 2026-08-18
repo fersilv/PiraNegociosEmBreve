@@ -8,6 +8,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -508,8 +509,66 @@ export class AdminController {
   }
 
   @Get('jobs')
-  listJobs() {
-    return this.jobs.find({ order: { createdAt: 'DESC' } });
+  async listJobs(
+    @Query()
+    query: {
+      page?: string;
+      pageSize?: string;
+      q?: string;
+      status?: string;
+      source?: string;
+    },
+  ) {
+    const page = Math.max(1, Number.parseInt(query.page || '1', 10) || 1);
+    const pageSize = Math.min(
+      100,
+      Math.max(10, Number.parseInt(query.pageSize || '20', 10) || 20),
+    );
+    const builder = this.jobs
+      .createQueryBuilder('job')
+      .orderBy('job.createdAt', 'DESC')
+      .addOrderBy('job.id', 'DESC');
+    const q = String(query.q || '')
+      .trim()
+      .slice(0, 200)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+    const tokens = q.split(/\s+/).filter(Boolean).slice(0, 10);
+    const searchable = `translate(lower(concat_ws(' ', job.title, job."companyName", job."sourceName", job.location, job.city, job.state)), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc')`;
+    tokens.forEach((token, index) =>
+      builder.andWhere(`${searchable} LIKE :adminJobToken${index}`, {
+        [`adminJobToken${index}`]: `%${token}%`,
+      }),
+    );
+    if (query.status === 'PENDING')
+      builder.andWhere('job."moderationStatus" = :pending', {
+        pending: 'PENDING',
+      });
+    if (query.status === 'ACTIVE') builder.andWhere('job.active = true');
+    if (query.status === 'INACTIVE') builder.andWhere('job.active = false');
+    if (query.source === 'API')
+      builder.andWhere('job."ingestionSourceId" IS NOT NULL');
+    if (query.source === 'EXTERNAL')
+      builder.andWhere(
+        'job."isExternalListing" = true AND job."ingestionSourceId" IS NULL',
+      );
+    if (query.source === 'COMPANY')
+      builder.andWhere('job."isExternalListing" = false');
+
+    const [data, total] = await builder
+      .skip((page - 1) * pageSize)
+      .take(pageSize)
+      .getManyAndCount();
+    return {
+      data,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      },
+    };
   }
 
   @Post('jobs')

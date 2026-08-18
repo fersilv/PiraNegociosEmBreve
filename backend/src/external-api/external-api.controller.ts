@@ -2,7 +2,9 @@ import {
   Body,
   Controller,
   Get,
+  Patch,
   Post,
+  Param,
   Query,
   Req,
   UseGuards,
@@ -26,5 +28,12 @@ export class ExternalApiController {
   }
   @Post() create(@Req() req: any, @Body() input: ExternalJobInput) {
     return this.jobs.create(input, req.apiClient);
+  }
+  @Patch(':id') update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() input: ExternalJobInput,
+  ) {
+    return this.jobs.update(id, input, req.apiClient);
   }
 }

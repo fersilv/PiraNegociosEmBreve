@@ -1,6 +1,6 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ExternalApiClient } from './entities/external-api-client.entity';
-import { ExternalJobsService } from './external-jobs.service';
+import { ExternalJobInput, ExternalJobsService } from './external-jobs.service';
 
 describe('ExternalJobsService', () => {
   const client = {
@@ -179,5 +179,72 @@ describe('ExternalJobsService', () => {
         moderationStatus: 'PENDING',
       }),
     );
+  });
+
+  it('edita o conteúdo sem permitir alteração de status', async () => {
+    const { service, jobs } = setup();
+    const current = {
+      id: 'job-api',
+      ownerId: `api:${client.id}`,
+      ingestionSourceId: client.id,
+      ingestionSourceName: client.name,
+      isExternalListing: true,
+      title: 'Repositor',
+      description: 'Descrição original da oportunidade',
+      sourceName: 'Grupo de vagas',
+      sourceUrl: null,
+      city: 'Pirassununga',
+      state: 'SP',
+      type: 'CLT',
+      workModel: 'Presencial',
+      salary: null,
+      requirements: null,
+      applicationEmail: null,
+      applicationWhatsApp: null,
+      externalApplicationInstructions: null,
+      deadlineDate: null,
+      active: false,
+      moderationStatus: 'PENDING',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    jobs.findOne.mockResolvedValueOnce(current).mockResolvedValueOnce(current);
+    jobs.save.mockImplementation(async (value) => value);
+
+    const result = await service.update(
+      current.id,
+      { title: 'Repositor de loja', salary: 'R$ 2.500' },
+      client,
+    );
+
+    expect(result.updated).toBe(true);
+    expect(result.job).toEqual(
+      expect.objectContaining({
+        title: 'Repositor de loja',
+        salary: 'R$ 2.500',
+        active: false,
+        moderationStatus: 'PENDING',
+      }),
+    );
+    await expect(
+      service.update(current.id, { active: true } as ExternalJobInput, client),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('não permite que uma chave edite vaga criada por outra origem', async () => {
+    const { service, jobs } = setup();
+    jobs.findOne.mockResolvedValue({
+      id: 'job-other',
+      ownerId: 'api:other-client',
+      ingestionSourceId: 'other-client',
+      isExternalListing: true,
+    });
+    await expect(
+      service.update(
+        'job-other',
+        { title: 'Tentativa', description: 'Descrição válida da vaga' },
+        client,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

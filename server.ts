@@ -100,6 +100,10 @@ function initializeFirebaseAdmin() {
 async function startServer() {
   const app = express();
   const PORT = 3000;
+  const isBuiltServer = /[\\/]dist[\\/]server\.cjs$/i.test(
+    process.argv[1] || "",
+  );
+  const isProduction = process.env.NODE_ENV === "production" || isBuiltServer;
 
   // Configure body parsing for base64 resumes and images
   app.use(express.json({ limit: "16mb" }));
@@ -141,12 +145,10 @@ async function startServer() {
         (time) => now - time < 60 * 60 * 1000,
       );
       if (recent.length >= maximumPerHour) {
-        return res
-          .status(429)
-          .json({
-            error:
-              "Limite temporário de análises atingido. Tente novamente mais tarde.",
-          });
+        return res.status(429).json({
+          error:
+            "Limite temporário de análises atingido. Tente novamente mais tarde.",
+        });
       }
       recent.push(now);
       aiRequests.set(uid, recent);
@@ -360,12 +362,10 @@ Certifique-se de que todas as datas e nomes próprios estejam capitalizados de f
         return res.json(parsedResume);
       } catch (err: any) {
         console.error("AI Resume parsing error:", err);
-        return res
-          .status(500)
-          .json({
-            error:
-              "Não foi possível analisar o currículo agora. Tente novamente.",
-          });
+        return res.status(500).json({
+          error:
+            "Não foi possível analisar o currículo agora. Tente novamente.",
+        });
       }
     },
   );
@@ -385,11 +385,9 @@ Certifique-se de que todas as datas e nomes próprios estejam capitalizados de f
           jobs.length === 0 ||
           jobs.length > 100
         ) {
-          return res
-            .status(400)
-            .json({
-              error: "Perfil do candidato e lista de vagas são obrigatórios.",
-            });
+          return res.status(400).json({
+            error: "Perfil do candidato e lista de vagas são obrigatórios.",
+          });
         }
 
         if (!process.env.GEMINI_API_KEY) {
@@ -475,18 +473,15 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
         return res.json(parsedMatch);
       } catch (err: any) {
         console.error("AI Job Match error:", err);
-        return res
-          .status(500)
-          .json({
-            error:
-              "Não foi possível gerar recomendações agora. Tente novamente.",
-          });
+        return res.status(500).json({
+          error: "Não foi possível gerar recomendações agora. Tente novamente.",
+        });
       }
     },
   );
 
   // Serve static assets or run Vite middleware
-  if (process.env.NODE_ENV !== "production") {
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -529,21 +524,25 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
       }
     });
 
+    // A listagem é uma rota da SPA. Mantê-la explícita evita "Cannot GET"
+    // quando a build é iniciada sem NODE_ENV=production pelo PM2.
+    app.get(["/vagas", "/vagas/"], (_req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+
     app.get("/vagas/:slug", async (req, res) => {
       const job = await getPublicData(
         `/public/jobs/${encodeURIComponent(req.params.slug)}`,
       );
       if (!job)
-        return res
-          .status(404)
-          .send(
-            pageHtml({
-              title: "Vaga não encontrada | PiraNegócios",
-              description: "Esta vaga não está mais disponível.",
-              canonical: `${publicSiteUrl}/vagas/${encodeURIComponent(req.params.slug)}`,
-              body: '<div class="card"><h1>Esta vaga não está mais disponível</h1><p class="muted">Veja outras oportunidades abertas na região.</p><a class="button" href="/vagas">Ver vagas</a></div>',
-            }),
-          );
+        return res.status(404).send(
+          pageHtml({
+            title: "Vaga não encontrada | PiraNegócios",
+            description: "Esta vaga não está mais disponível.",
+            canonical: `${publicSiteUrl}/vagas/${encodeURIComponent(req.params.slug)}`,
+            body: '<div class="card"><h1>Esta vaga não está mais disponível</h1><p class="muted">Veja outras oportunidades abertas na região.</p><a class="button" href="/vagas">Ver vagas</a></div>',
+          }),
+        );
       const canonical = `${publicSiteUrl}/vagas/${job.slug}`;
       const companyName = job.company?.name || "Empresa";
       const description = `${job.title} em ${companyName}${job.location ? `, ${job.location}` : ""}. Veja os requisitos e candidate-se pelo PiraNegócios.`;
@@ -611,17 +610,15 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
               .join("")}</div>`
           : ""
       }<hr style="border:0;border-top:1px solid #eee;margin:28px 0"><h2>Como se candidatar</h2>${job.acceptsPlatformApplications === false ? `<p>${escapeHtml(job.externalApplicationInstructions || "Entre em contato com a empresa para enviar seu currículo.")}</p>` : `<a class="button" href="/vagas?applyTo=${encodeURIComponent(job.id)}">Candidatar-se à vaga</a>`}</article>`;
-      return res
-        .type("html")
-        .send(
-          pageHtml({
-            title: `${job.title} em ${companyName} | Vagas em Pirassununga | PiraNegócios`,
-            description,
-            canonical,
-            body,
-            structuredData: jobPosting,
-          }),
-        );
+      return res.type("html").send(
+        pageHtml({
+          title: `${job.title} em ${companyName} | Vagas em Pirassununga | PiraNegócios`,
+          description,
+          canonical,
+          body,
+          structuredData: jobPosting,
+        }),
+      );
     });
 
     app.get("/:companySlug", async (req, res, next) => {
@@ -678,21 +675,21 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
         .join(
           "",
         )}${website ? `<p><a href="${escapeHtml(website)}" rel="noopener noreferrer" target="_blank">Visitar site da empresa</a></p>` : ""}${company.phone ? `<p class="muted">☎ ${escapeHtml(company.phone)}</p>` : ""}</article><section><h2>Vagas em aberto</h2><div class="jobs">${jobs}</div></section>`;
-      return res
-        .type("html")
-        .send(
-          pageHtml({
-            title: `${company.name} | Empresas de Pirassununga | PiraNegócios`,
-            description: `${company.name}${company.cityState ? ` em ${company.cityState}` : ", Pirassununga e região"}. ${companyDescription.slice(0, 130)}`,
-            canonical,
-            body,
-            structuredData: organization,
-          }),
-        );
+      return res.type("html").send(
+        pageHtml({
+          title: `${company.name} | Empresas de Pirassununga | PiraNegócios`,
+          description: `${company.name}${company.cityState ? ` em ${company.cityState}` : ", Pirassununga e região"}. ${companyDescription.slice(0, 130)}`,
+          canonical,
+          body,
+          structuredData: organization,
+        }),
+      );
     });
 
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    // RegExp é compatível com o path-to-regexp usado pelo Express 5 e cobre
+    // dashboard, páginas institucionais e rotas públicas acessadas diretamente.
+    app.get(/.*/, (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

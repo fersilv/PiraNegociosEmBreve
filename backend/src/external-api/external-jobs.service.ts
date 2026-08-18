@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { FindOptionsWhere, QueryFailedError, Repository } from 'typeorm';
@@ -242,6 +247,101 @@ export class ExternalJobsService {
         );
         return concurrentMatch;
       }
+      throw error;
+    }
+  }
+
+  async update(id: string, input: ExternalJobInput, client: ExternalApiClient) {
+    if (!input || typeof input !== 'object' || Array.isArray(input))
+      throw new BadRequestException(
+        'O corpo da requisição deve ser um objeto JSON.',
+      );
+    for (const field of ['status', 'active', 'moderationStatus']) {
+      if (Object.prototype.hasOwnProperty.call(input, field))
+        throw new BadRequestException(
+          `O campo ${field} não pode ser alterado pela API.`,
+        );
+    }
+
+    const job = await this.jobs.findOne({ where: { id } });
+    if (
+      !job ||
+      !job.isExternalListing ||
+      job.ingestionSourceId !== client.id ||
+      job.ownerId !== `api:${client.id}`
+    ) {
+      throw new NotFoundException(
+        'Vaga não encontrada entre os cadastros desta chave de API.',
+      );
+    }
+
+    const merged: ExternalJobInput = {
+      title: input.title !== undefined ? input.title : job.title,
+      description:
+        input.description !== undefined ? input.description : job.description,
+      requirements:
+        input.requirements !== undefined
+          ? input.requirements
+          : job.requirements,
+      sourceName:
+        input.sourceName !== undefined ? input.sourceName : job.sourceName,
+      sourceUrl:
+        input.sourceUrl !== undefined ? input.sourceUrl : job.sourceUrl,
+      city: input.city !== undefined ? input.city : job.city,
+      state: input.state !== undefined ? input.state : job.state,
+      type: input.type !== undefined ? input.type : job.type,
+      workModel:
+        input.workModel !== undefined ? input.workModel : job.workModel,
+      salary: input.salary !== undefined ? input.salary : job.salary,
+      applicationEmail:
+        input.applicationEmail !== undefined
+          ? input.applicationEmail
+          : job.applicationEmail,
+      applicationWhatsApp:
+        input.applicationWhatsApp !== undefined
+          ? input.applicationWhatsApp
+          : job.applicationWhatsApp,
+      externalApplicationInstructions:
+        input.externalApplicationInstructions !== undefined
+          ? input.externalApplicationInstructions
+          : job.externalApplicationInstructions,
+      deadlineDate:
+        input.deadlineDate !== undefined
+          ? input.deadlineDate
+          : job.deadlineDate,
+    };
+    const data = this.sanitize(merged, client);
+    const fingerprint = createHash('sha256')
+      .update(
+        `${this.normalize(data.title)}|${this.normalize(data.sourceName)}|${this.normalize(data.city)}|${data.state}`,
+      )
+      .digest('hex');
+    const duplicateWhere: FindOptionsWhere<Job>[] = [
+      { externalFingerprint: fingerprint },
+    ];
+    if (data.sourceUrl) duplicateWhere.push({ sourceUrl: data.sourceUrl });
+    const duplicate = await this.jobs.findOne({ where: duplicateWhere });
+    if (duplicate && duplicate.id !== job.id)
+      throw new ConflictException(
+        'A alteração deixaria esta vaga duplicada de outra já cadastrada.',
+      );
+
+    Object.assign(job, data, {
+      companyName: data.sourceName,
+      externalFingerprint: fingerprint,
+    });
+    try {
+      const updated = await this.jobs.save(job);
+      await this.log(client.id, 'UPDATE', job.id, 'UPDATED', null);
+      return { updated: true, job: this.publicResult(updated) };
+    } catch (error) {
+      if (
+        error instanceof QueryFailedError &&
+        (error.driverError as { code?: string })?.code === '23505'
+      )
+        throw new ConflictException(
+          'A alteração deixaria esta vaga duplicada de outra já cadastrada.',
+        );
       throw error;
     }
   }

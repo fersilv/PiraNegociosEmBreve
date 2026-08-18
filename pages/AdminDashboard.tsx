@@ -1,4 +1,10 @@
-import React, { FormEvent, useCallback, useEffect, useState } from "react";
+import React, {
+  FormEvent,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useState,
+} from "react";
 import { Link } from "react-router-dom";
 import { api, asArray } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
@@ -98,12 +104,23 @@ export function AdminDashboard({
   const [summary, setSummary] = useState<Summary | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [jobPage, setJobPage] = useState(1);
+  const [jobStatus, setJobStatus] = useState("PENDING");
+  const [jobSource, setJobSource] = useState("ALL");
+  const [jobPagination, setJobPagination] = useState({
+    page: 1,
+    pageSize: 20,
+    total: 0,
+    totalPages: 1,
+  });
   const [users, setUsers] = useState<PlatformUser[]>([]);
   const [accessRequests, setAccessRequests] = useState<AccessRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [companyFormOpen, setCompanyFormOpen] = useState(false);
   const [jobFormOpen, setJobFormOpen] = useState(false);
   const [companyDetail, setCompanyDetail] = useState<any | null>(null);
@@ -142,13 +159,25 @@ export function AdminDashboard({
 
   const load = useCallback(
     async (currentTab = tab) => {
-      setLoading(true);
+      if (currentTab === "jobs") setJobsLoading(true);
+      else setLoading(true);
       setError("");
       try {
         const requests: Promise<any>[] = [api.get("/admin/summary")];
         if (currentTab === "companies")
           requests.push(api.get("/admin/companies"));
-        if (currentTab === "jobs") requests.push(api.get("/admin/jobs"));
+        if (currentTab === "jobs")
+          requests.push(
+            api.get("/admin/jobs", {
+              params: {
+                page: jobPage,
+                pageSize: jobPagination.pageSize,
+                q: deferredSearch || undefined,
+                status: jobStatus === "ALL" ? undefined : jobStatus,
+                source: jobSource === "ALL" ? undefined : jobSource,
+              },
+            }),
+          );
         if (currentTab === "users") requests.push(api.get("/admin/users"));
         if (currentTab === "access")
           requests.push(api.get("/admin/company-access-requests"));
@@ -157,7 +186,11 @@ export function AdminDashboard({
         let index = 1;
         if (currentTab === "companies")
           setCompanies(asArray(responses[index++].data));
-        if (currentTab === "jobs") setJobs(asArray(responses[index++].data));
+        if (currentTab === "jobs") {
+          const payload = responses[index++].data;
+          setJobs(asArray<Job>(payload?.data));
+          if (payload?.pagination) setJobPagination(payload.pagination);
+        }
         if (currentTab === "users") setUsers(asArray(responses[index++].data));
         if (currentTab === "access")
           setAccessRequests(asArray(responses[index++].data));
@@ -168,9 +201,17 @@ export function AdminDashboard({
         );
       } finally {
         setLoading(false);
+        setJobsLoading(false);
       }
     },
-    [tab],
+    [
+      deferredSearch,
+      jobPage,
+      jobPagination.pageSize,
+      jobSource,
+      jobStatus,
+      tab,
+    ],
   );
 
   useEffect(() => {
@@ -264,7 +305,12 @@ export function AdminDashboard({
   };
   const toggleJob = async (job: Job) => {
     try {
-      await api.put(`/admin/jobs/${job.id}`, { active: !job.active });
+      const response = await api.put(`/admin/jobs/${job.id}`, {
+        active: !job.active,
+      });
+      setJobs((current) =>
+        current.map((item) => (item.id === job.id ? response.data : item)),
+      );
       await load("jobs");
     } catch (requestError: any) {
       setError(
@@ -278,7 +324,8 @@ export function AdminDashboard({
       return;
     try {
       await api.delete(`/admin/jobs/${job.id}`);
-      await load("jobs");
+      if (jobs.length === 1 && jobPage > 1) setJobPage(jobPage - 1);
+      else await load("jobs");
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
@@ -407,11 +454,7 @@ export function AdminDashboard({
       .toLowerCase()
       .includes(normalizedSearch),
   );
-  const filteredJobs = jobs.filter((job) =>
-    `${job.title} ${job.companyName} ${job.location || ""}`
-      .toLowerCase()
-      .includes(normalizedSearch),
-  );
+  const filteredJobs = jobs;
   const filteredUsers = users.filter((user) =>
     `${user.fullName || ""} ${user.displayName || ""} ${user.email || ""}`
       .toLowerCase()
@@ -609,13 +652,53 @@ export function AdminDashboard({
                     <Search className="absolute left-3 top-3 h-4 w-4 text-stone-400" />
                     <input
                       value={search}
-                      onChange={(event) => setSearch(event.target.value)}
+                      onChange={(event) => {
+                        setSearch(event.target.value);
+                        if (tab === "jobs") setJobPage(1);
+                      }}
                       placeholder="Buscar..."
                       className="rounded-xl border border-stone-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-terracotta-500"
                     />
                   </label>
                 )}
               </div>
+              {tab === "jobs" && (
+                <div className="flex flex-wrap items-center gap-3 border-b border-stone-200 bg-stone-50 px-4 py-3">
+                  <select
+                    value={jobStatus}
+                    onChange={(event) => {
+                      setJobStatus(event.target.value);
+                      setJobPage(1);
+                    }}
+                    className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-700"
+                    aria-label="Filtrar vagas por status"
+                  >
+                    <option value="PENDING">Aguardando aprovação</option>
+                    <option value="ACTIVE">Ativas</option>
+                    <option value="INACTIVE">Inativas</option>
+                    <option value="ALL">Todos os status</option>
+                  </select>
+                  <select
+                    value={jobSource}
+                    onChange={(event) => {
+                      setJobSource(event.target.value);
+                      setJobPage(1);
+                    }}
+                    className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm font-semibold text-stone-700"
+                    aria-label="Filtrar vagas por origem"
+                  >
+                    <option value="ALL">Todas as origens</option>
+                    <option value="API">Criadas pela API</option>
+                    <option value="EXTERNAL">Externas manuais</option>
+                    <option value="COMPANY">Vinculadas a empresas</option>
+                  </select>
+                  <span className="text-xs font-semibold text-stone-500">
+                    {jobsLoading
+                      ? "Atualizando…"
+                      : `${jobPagination.total} vaga${jobPagination.total === 1 ? "" : "s"}`}
+                  </span>
+                </div>
+              )}
               <div className="overflow-x-auto">
                 {tab === "companies" && (
                   <CompaniesTable
@@ -1403,6 +1486,31 @@ export function AdminDashboard({
                   <p className="text-stone-500">Nenhuma sanção registrada.</p>
                 )}
               </div>
+              {tab === "jobs" && jobPagination.totalPages > 1 && (
+                <div className="flex items-center justify-between border-t border-stone-200 px-4 py-3">
+                  <button
+                    type="button"
+                    disabled={jobPage <= 1 || jobsLoading}
+                    onClick={() => setJobPage((page) => Math.max(1, page - 1))}
+                    className="rounded-lg border border-stone-200 px-3 py-2 text-sm font-bold text-stone-700 disabled:opacity-40"
+                  >
+                    Anterior
+                  </button>
+                  <span className="text-sm text-stone-600">
+                    Página {jobPagination.page} de {jobPagination.totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={
+                      jobPage >= jobPagination.totalPages || jobsLoading
+                    }
+                    onClick={() => setJobPage((page) => page + 1)}
+                    className="rounded-lg border border-stone-200 px-3 py-2 text-sm font-bold text-stone-700 disabled:opacity-40"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              )}
             </section>
             <form
               onSubmit={issueSanction}
@@ -1828,6 +1936,20 @@ export function ApiV1Panel() {
           <p className="mt-2 text-xs text-stone-500">
             Para a próxima página, repita exatamente os mesmos filtros e envie o
             cursor retornado. O cursor é assinado e não pode ser alterado.
+          </p>
+        </div>
+        <div>
+          <strong className="text-sm">4. Editar uma vaga da API</strong>
+          <pre className="mt-2 overflow-x-auto rounded-xl bg-stone-950 p-4 text-xs text-stone-200">
+            PATCH {endpoint}/ID_DA_VAGA{"\n"}X-API-Key: SUA_CHAVE{"\n"}
+            Content-Type: application/json{"\n\n"}
+            {`{"title":"Novo título","salary":"R$ 2.500"}`}
+          </pre>
+          <p className="mt-2 text-xs text-stone-500">
+            A chave só pode editar vagas que ela própria cadastrou. Todos os
+            campos de conteúdo podem ser atualizados; <code>status</code>,{" "}
+            <code>active</code> e <code>moderationStatus</code> são exclusivos
+            da moderação administrativa.
           </p>
         </div>
       </section>
