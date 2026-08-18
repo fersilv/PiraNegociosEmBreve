@@ -191,13 +191,15 @@ export default function PublicJobPage() {
       </>
     );
 
-  const organizationName =
-    job.company?.name || job.sourceName || "Fonte externa";
-  const description = `${job.title} em ${organizationName}${job.location ? `, ${job.location}` : ""}. Veja os requisitos e candidate-se pelo PiraNegócios.`;
+  const organizationName = job.company?.name || job.sourceName;
+  const isConfidential = job.isConfidential === true;
+  const companyText = organizationName && !isConfidential ? ` em ${organizationName}` : "";
+  const description = `${job.title}${companyText}${job.location ? `, ${job.location}` : ""}. Veja os requisitos e candidate-se pelo PiraNegócios.`;
+  
   return (
     <div className="min-h-screen bg-stone-50">
       <SeoHead
-        title={`${job.title} em ${organizationName} | Vagas em Pirassununga | PiraNegócios`}
+        title={`${job.title}${companyText} | Vagas em Pirassununga | PiraNegócios`}
         description={description}
         canonical={canonical}
         structuredData={structuredData}

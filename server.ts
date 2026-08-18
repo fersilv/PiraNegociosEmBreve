@@ -569,8 +569,12 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
           }),
         );
       const canonical = `${publicSiteUrl}/vagas/${job.slug}`;
-      const companyName = job.company?.name || "Empresa";
-      const description = `${job.title} em ${companyName}${job.location ? `, ${job.location}` : ""}. Veja os requisitos e candidate-se pelo PiraNegócios.`;
+      const companyName = job.company?.name || job.sourceName;
+      const isConfidential = job.isConfidential === true;
+      const companyText = companyName && !isConfidential ? ` em ${companyName}` : "";
+      const description = `${job.title}${companyText}${job.location ? `, ${job.location}` : ""}. Veja os requisitos e candidate-se pelo PiraNegócios.`;
+      const structuredDataOrgName = isConfidential ? "Empresa Confidencial" : (companyName || "Empresa");
+      
       const jobPosting: Record<string, unknown> = {
         "@context": "https://schema.org/",
         "@type": "JobPosting",
@@ -594,10 +598,10 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
         employmentType: job.type || undefined,
         hiringOrganization: {
           "@type": "Organization",
-          name: companyName,
-          sameAs: `${publicSiteUrl}/${job.company?.slug}`,
-          ...(safeUrl(job.company?.logoURL)
-            ? { logo: safeUrl(job.company.logoURL) }
+          name: structuredDataOrgName,
+          ...(job.company?.slug && !isConfidential ? { sameAs: `${publicSiteUrl}/${job.company.slug}` } : {}),
+          ...((safeUrl(job.company?.logoURL) && !isConfidential)
+            ? { logo: safeUrl(job.company!.logoURL) }
             : {}),
         },
       };
@@ -637,7 +641,7 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
       }<hr style="border:0;border-top:1px solid #eee;margin:28px 0"><h2>Como se candidatar</h2>${job.acceptsPlatformApplications === false ? `<p>${escapeHtml(job.externalApplicationInstructions || "Entre em contato com a empresa para enviar seu currículo.")}</p>` : `<a class="button" href="/vagas?applyTo=${encodeURIComponent(job.id)}">Candidatar-se à vaga</a>`}</article>`;
       return res.type("html").send(
         pageHtml({
-          title: `${job.title} em ${companyName} | Vagas em Pirassununga | PiraNegócios`,
+          title: `${job.title}${companyText} | Vagas em Pirassununga | PiraNegócios`,
           description,
           canonical,
           body,
