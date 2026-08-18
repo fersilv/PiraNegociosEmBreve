@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { createHash } from 'crypto';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { FindOptionsWhere, QueryFailedError, Repository } from 'typeorm';
 import { Job } from '../jobs/entities/job.entity';
 import { slugify } from '../seo/seo.utils';
@@ -22,6 +22,7 @@ export type ExternalJobInput = {
   applicationWhatsApp?: unknown;
   externalApplicationInstructions?: unknown;
   deadlineDate?: unknown;
+  allowSimilarDuplicate?: unknown;
 };
 
 type SanitizedExternalJob = {
@@ -40,6 +41,30 @@ type SanitizedExternalJob = {
   applicationWhatsApp: string | null;
   externalApplicationInstructions: string | null;
   deadlineDate: string | null;
+};
+
+export type JobCatalogQuery = {
+  q?: string;
+  limit?: string;
+  cursor?: string;
+  active?: string;
+  external?: string;
+  city?: string;
+  state?: string;
+  type?: string;
+  workModel?: string;
+  companyId?: string;
+};
+
+type CatalogFilters = {
+  q: string;
+  active: boolean | null;
+  external: boolean | null;
+  city: string;
+  state: string;
+  type: string;
+  workModel: string;
+  companyId: string;
 };
 
 @Injectable()
@@ -107,6 +132,7 @@ export class ExternalJobsService {
     if (exact) {
       return {
         duplicate: true,
+        matchType: 'EXACT' as const,
         confidence: 1,
         job: this.publicResult(exact),
         fingerprint,
@@ -137,6 +163,7 @@ export class ExternalJobsService {
     if (best && best.score >= 0.82) {
       return {
         duplicate: true,
+        matchType: 'SIMILAR' as const,
         confidence: Number(best.score.toFixed(2)),
         job: this.publicResult(best.job),
         fingerprint,
@@ -145,6 +172,7 @@ export class ExternalJobsService {
     }
     return {
       duplicate: false,
+      matchType: null,
       confidence: best ? Number(best.score.toFixed(2)) : 0,
       closestJob: best ? this.publicResult(best.job) : null,
       fingerprint,
@@ -154,7 +182,18 @@ export class ExternalJobsService {
 
   async create(input: ExternalJobInput, client: ExternalApiClient) {
     const match = await this.findDuplicate(input, client);
-    if (match.duplicate) {
+    if (
+      input.allowSimilarDuplicate !== undefined &&
+      typeof input.allowSimilarDuplicate !== 'boolean'
+    )
+      throw new BadRequestException(
+        'allowSimilarDuplicate deve ser true ou false.',
+      );
+    const overriddenSimilarMatch =
+      match.duplicate &&
+      match.matchType === 'SIMILAR' &&
+      input.allowSimilarDuplicate === true;
+    if (match.duplicate && !overriddenSimilarMatch) {
       await this.log(client.id, 'CREATE', match.job?.id || null, 'DUPLICATE', {
         confidence: match.confidence,
       });
@@ -185,6 +224,7 @@ export class ExternalJobsService {
         duplicate: false,
         created: true,
         moderationStatus: job.moderationStatus,
+        similarMatchOverridden: overriddenSimilarMatch,
         job: this.publicResult(job),
       };
     } catch (error) {
@@ -206,26 +246,99 @@ export class ExternalJobsService {
     }
   }
 
-  async list(query: string, limit: number, client: ExternalApiClient) {
-    const safeLimit = Number.isFinite(limit)
-      ? Math.min(Math.max(Math.trunc(limit), 1), 100)
-      : 25;
-    const jobs = await this.jobs.find({
-      where: { isExternalListing: true },
-      order: { createdAt: 'DESC' },
-      take: safeLimit,
+  async list(query: JobCatalogQuery, client: ExternalApiClient) {
+    const requestedLimit = Number(query.limit || 50);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 100)
+      : 50;
+    const filters = this.catalogFilters(query);
+    const filterHash = createHash('sha256')
+      .update(JSON.stringify(filters))
+      .digest('hex');
+    const cursor = query.cursor
+      ? this.decodeCursor(query.cursor, filterHash, client)
+      : null;
+
+    const builder = this.jobs
+      .createQueryBuilder('job')
+      .orderBy('job.createdAt', 'DESC')
+      .addOrderBy('job.id', 'DESC')
+      .take(limit + 1);
+
+    if (cursor) {
+      builder.andWhere(
+        '(job."createdAt" < :cursorCreatedAt OR (job."createdAt" = :cursorCreatedAt AND job.id < :cursorId))',
+        { cursorCreatedAt: cursor.createdAt, cursorId: cursor.id },
+      );
+    }
+    if (filters.active !== null)
+      builder.andWhere('job.active = :active', { active: filters.active });
+    if (filters.external !== null)
+      builder.andWhere('job."isExternalListing" = :external', {
+        external: filters.external,
+      });
+    if (filters.city)
+      builder.andWhere('LOWER(job.city) = LOWER(:city)', {
+        city: filters.city,
+      });
+    if (filters.state)
+      builder.andWhere('UPPER(job.state) = :state', { state: filters.state });
+    if (filters.type)
+      builder.andWhere('LOWER(job.type) = LOWER(:type)', {
+        type: filters.type,
+      });
+    if (filters.workModel)
+      builder.andWhere('LOWER(job."workModel") = LOWER(:workModel)', {
+        workModel: filters.workModel,
+      });
+    if (filters.companyId)
+      builder.andWhere('job."companyId" = :companyId', {
+        companyId: filters.companyId,
+      });
+
+    const searchTokens = this.normalize(filters.q)
+      .split(' ')
+      .filter((token) => token.length > 1)
+      .slice(0, 12);
+    const searchable = `translate(lower(concat_ws(' ',
+      job.title,
+      job."companyName",
+      job."sourceName",
+      job.description,
+      job.requirements,
+      job.location,
+      job.city,
+      job.state,
+      job.type,
+      job."workModel",
+      job.salary
+    )), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc')`;
+    searchTokens.forEach((token, index) => {
+      builder.andWhere(`${searchable} LIKE :searchToken${index}`, {
+        [`searchToken${index}`]: `%${token}%`,
+      });
     });
-    await this.log(client.id, 'LIST', null, 'OK', { query });
-    const term = this.normalize(query);
-    return jobs
-      .filter(
-        (job) =>
-          !term ||
-          this.normalize(
-            `${job.title} ${job.sourceName || ''} ${job.location || ''}`,
-          ).includes(term),
-      )
-      .map((job) => this.publicResult(job));
+
+    const rows = await builder.getMany();
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    const last = page.at(-1);
+    const nextCursor =
+      hasMore && last
+        ? this.encodeCursor(last.createdAt, last.id, filterHash, client)
+        : null;
+
+    await this.log(client.id, 'LIST', null, 'OK', {
+      filters,
+      count: page.length,
+      hasMore,
+      cursorUsed: Boolean(query.cursor),
+    });
+    return {
+      data: page.map((job) => this.catalogResult(job)),
+      pagination: { limit, count: page.length, hasMore, nextCursor },
+      filters,
+    };
   }
 
   private sanitize(
@@ -372,20 +485,164 @@ export class ExternalJobsService {
     return intersection / (a.size + b.size - intersection);
   }
 
-  private publicResult(job: Job) {
+  private catalogFilters(query: JobCatalogQuery): CatalogFilters {
+    const state = this.queryText(query.state, 'state', 2).toUpperCase();
+    if (state && !this.validStates.has(state))
+      throw new BadRequestException('state deve ser uma UF brasileira válida.');
+    return {
+      q: this.queryText(query.q, 'q', 300),
+      active: this.queryBoolean(query.active, 'active'),
+      external: this.queryBoolean(query.external, 'external'),
+      city: this.queryText(query.city, 'city', 120),
+      state,
+      type: this.queryText(query.type, 'type', 40),
+      workModel: this.queryText(query.workModel, 'workModel', 40),
+      companyId: this.queryText(query.companyId, 'companyId', 100),
+    };
+  }
+
+  private queryText(value: unknown, field: string, maxLength: number) {
+    if (value === undefined || value === null || value === '') return '';
+    if (typeof value !== 'string')
+      throw new BadRequestException(
+        `${field} deve ser informado uma única vez.`,
+      );
+    return value.trim().slice(0, maxLength);
+  }
+
+  private queryBoolean(value: unknown, field: string): boolean | null {
+    if (value === undefined || value === null || value === '') return null;
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    throw new BadRequestException(`${field} deve ser true ou false.`);
+  }
+
+  private encodeCursor(
+    createdAt: Date,
+    id: string,
+    filterHash: string,
+    client: ExternalApiClient,
+  ) {
+    const payload = {
+      version: 1,
+      createdAt: createdAt.toISOString(),
+      id,
+      filterHash,
+    };
+    const signature = this.cursorSignature(payload, client);
+    return Buffer.from(JSON.stringify({ ...payload, signature })).toString(
+      'base64url',
+    );
+  }
+
+  private decodeCursor(
+    token: string,
+    filterHash: string,
+    client: ExternalApiClient,
+  ) {
+    try {
+      if (typeof token !== 'string' || token.length > 1_024)
+        throw new Error('invalid cursor');
+      const payload = JSON.parse(
+        Buffer.from(token, 'base64url').toString(),
+      ) as {
+        version?: unknown;
+        createdAt?: unknown;
+        id?: unknown;
+        filterHash?: unknown;
+        signature?: unknown;
+      };
+      if (
+        payload.version !== 1 ||
+        typeof payload.createdAt !== 'string' ||
+        typeof payload.id !== 'string' ||
+        typeof payload.filterHash !== 'string' ||
+        typeof payload.signature !== 'string' ||
+        payload.filterHash !== filterHash ||
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(
+          payload.createdAt,
+        ) ||
+        !/^[0-9a-f-]{36}$/i.test(payload.id)
+      )
+        throw new Error('invalid cursor');
+      const expected = this.cursorSignature(
+        {
+          version: payload.version,
+          createdAt: payload.createdAt,
+          id: payload.id,
+          filterHash: payload.filterHash,
+        },
+        client,
+      );
+      const suppliedBuffer = Buffer.from(payload.signature);
+      const expectedBuffer = Buffer.from(expected);
+      if (
+        suppliedBuffer.length !== expectedBuffer.length ||
+        !timingSafeEqual(suppliedBuffer, expectedBuffer)
+      )
+        throw new Error('invalid cursor');
+      return { createdAt: new Date(payload.createdAt), id: payload.id };
+    } catch {
+      throw new BadRequestException(
+        'Cursor inválido, expirado ou incompatível com os filtros atuais.',
+      );
+    }
+  }
+
+  private cursorSignature(
+    payload: {
+      version: number;
+      createdAt: string;
+      id: string;
+      filterHash: string;
+    },
+    client: ExternalApiClient,
+  ) {
+    return createHmac('sha256', client.keyHash)
+      .update(
+        `${payload.version}|${payload.createdAt}|${payload.id}|${payload.filterHash}`,
+      )
+      .digest('base64url');
+  }
+
+  private catalogResult(job: Job) {
     return {
       id: job.id,
+      slug: job.slug,
       title: job.title,
+      description: job.description,
+      requirements: job.requirements,
+      companyId: job.companyId,
+      companyName: job.companyName,
+      isExternalListing: job.isExternalListing,
       sourceName: job.sourceName,
       sourceUrl: job.sourceUrl,
       city: job.city,
       state: job.state,
       location: job.location,
+      type: job.type,
+      workModel: job.workModel,
+      salary: job.salary,
+      deadlineDate: job.deadlineDate,
+      acceptsPlatformApplications: job.acceptsPlatformApplications,
+      externalApplicationInstructions: job.externalApplicationInstructions,
+      applicationEmail: job.applicationEmail,
+      applicationWhatsApp: job.applicationWhatsApp,
+      isConfidential: job.isConfidential,
+      isTalentPool: job.isTalentPool,
+      isSponsored: job.isSponsored,
       active: job.active,
       moderationStatus: job.moderationStatus,
+      reportCount: job.reportCount,
+      ingestionSourceId: job.ingestionSourceId,
       ingestionSourceName: job.ingestionSourceName,
       createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
     };
+  }
+
+  private publicResult(job: Job) {
+    return this.catalogResult(job);
   }
 
   private log(

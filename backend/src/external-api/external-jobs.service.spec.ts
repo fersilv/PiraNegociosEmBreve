@@ -7,6 +7,7 @@ describe('ExternalJobsService', () => {
     id: 'client-1',
     name: 'Agente de teste',
     sourceLabel: 'Grupo de vagas',
+    keyHash: 'a'.repeat(64),
   } as ExternalApiClient;
 
   function setup() {
@@ -16,6 +17,7 @@ describe('ExternalJobsService', () => {
       exists: jest.fn(),
       create: jest.fn((value) => value),
       save: jest.fn(),
+      createQueryBuilder: jest.fn(),
     };
     const requests = {
       create: jest.fn((value) => value),
@@ -74,6 +76,69 @@ describe('ExternalJobsService', () => {
     expect(result.duplicate).toBe(true);
     expect(result.job?.id).toBe('job-1');
     expect(result.confidence).toBe(1);
+    expect(result.matchType).toBe('SIMILAR');
+  });
+
+  it('lista todas as vagas com paginação por cursor, sem restringir às externas', async () => {
+    const { service, jobs } = setup();
+    const first = {
+      id: '11111111-1111-4111-8111-111111111111',
+      title: 'Vaga de empresa',
+      isExternalListing: false,
+      createdAt: new Date('2026-08-18T12:00:00.000Z'),
+      updatedAt: new Date('2026-08-18T12:00:00.000Z'),
+    };
+    const second = {
+      id: '22222222-2222-4222-8222-222222222222',
+      title: 'Vaga externa',
+      isExternalListing: true,
+      createdAt: new Date('2026-08-18T11:00:00.000Z'),
+      updatedAt: new Date('2026-08-18T11:00:00.000Z'),
+    };
+    const builder = {
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([first, second]),
+    };
+    jobs.createQueryBuilder.mockReturnValue(builder);
+
+    const result = await service.list({ limit: '1' }, client);
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toEqual(
+      expect.objectContaining({
+        title: 'Vaga de empresa',
+        isExternalListing: false,
+      }),
+    );
+    expect(result.pagination.hasMore).toBe(true);
+    expect(result.pagination.nextCursor).toEqual(expect.any(String));
+    expect(builder.andWhere).not.toHaveBeenCalledWith(
+      expect.stringContaining('isExternalListing'),
+      expect.anything(),
+    );
+
+    const nextBuilder = {
+      orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([second]),
+    };
+    jobs.createQueryBuilder.mockReturnValue(nextBuilder);
+    const nextPage = await service.list(
+      { limit: '1', cursor: result.pagination.nextCursor || '' },
+      client,
+    );
+    expect(nextBuilder.andWhere).toHaveBeenCalledWith(
+      expect.stringContaining('cursorCreatedAt'),
+      expect.objectContaining({ cursorId: first.id }),
+    );
+    expect(nextPage.data[0]).toEqual(
+      expect.objectContaining({ title: 'Vaga externa' }),
+    );
   });
 
   it('cadastra a vaga inativa, pendente e vinculada à origem da chave', async () => {

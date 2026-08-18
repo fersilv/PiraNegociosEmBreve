@@ -1581,6 +1581,7 @@ function ApiV1Panel() {
       applicationEmail: "rh@example.com",
       externalApplicationInstructions:
         "Envie o currículo informando o título da vaga.",
+      allowSimilarDuplicate: false,
     },
     null,
     2,
@@ -1735,7 +1736,9 @@ function ApiV1Panel() {
         <p className="text-xs text-stone-500">
           Obrigatórios: <code>title</code> e <code>description</code>. Cidade e
           estado assumem Pirassununga/SP quando omitidos. A chave define a
-          origem padrão; nenhum endpoint da API publica uma vaga diretamente.
+          origem padrão; nenhum endpoint da API publica uma vaga diretamente. A
+          consulta retorna todas as vagas cadastradas, inclusive vagas de
+          empresas, externas, inativas e pendentes.
         </p>
         <div>
           <strong className="text-sm">1. Verificar duplicidade</strong>
@@ -1755,14 +1758,38 @@ function ApiV1Panel() {
           </pre>
           <p className="mt-2 text-xs text-stone-500">
             A API repete a verificação automaticamente. Vagas novas entram
-            inativas com status PENDING; somente o admin publica.
+            inativas com status PENDING; somente o admin publica. Se a IA
+            confirmar que uma correspondência apenas aproximada não é duplicata,
+            envie <code>allowSimilarDuplicate: true</code>. Uma duplicidade
+            exata nunca é ignorada.
           </p>
         </div>
         <div>
-          <strong className="text-sm">3. Consultar vagas externas</strong>
+          <strong className="text-sm">
+            3. Pesquisar o catálogo completo de vagas
+          </strong>
           <pre className="mt-2 overflow-x-auto rounded-xl bg-stone-950 p-4 text-xs text-stone-200">
-            GET {endpoint}?q=repositor&amp;limit=25{"\n"}X-API-Key: SUA_CHAVE
+            GET {endpoint}
+            ?q=auxiliar+producao&amp;city=Pirassununga&amp;limit=50{"\n"}
+            X-API-Key: SUA_CHAVE
           </pre>
+          <p className="mt-2 text-xs text-stone-500">
+            A pesquisa ignora acentos e a ordem das palavras e consulta título,
+            empresa, fonte, descrição, requisitos, localização, contrato, regime
+            e salário. Filtros: <code>active</code>, <code>external</code>,{" "}
+            <code>city</code>, <code>state</code>, <code>type</code>,{" "}
+            <code>workModel</code> e <code>companyId</code>. A resposta contém{" "}
+            <code>data</code> e <code>pagination.nextCursor</code>.
+          </p>
+          <pre className="mt-2 overflow-x-auto rounded-xl bg-stone-950 p-4 text-xs text-stone-200">
+            GET {endpoint}
+            ?q=auxiliar+producao&amp;city=Pirassununga&amp;limit=50&amp;cursor=NEXT_CURSOR
+            {"\n"}X-API-Key: SUA_CHAVE
+          </pre>
+          <p className="mt-2 text-xs text-stone-500">
+            Para a próxima página, repita exatamente os mesmos filtros e envie o
+            cursor retornado. O cursor é assinado e não pode ser alterado.
+          </p>
         </div>
       </section>
     </div>
