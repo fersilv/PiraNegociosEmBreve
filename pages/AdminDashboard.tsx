@@ -19,14 +19,9 @@ import {
 } from "lucide-react";
 
 type Tab =
-  | "overview"
-  | "companies"
-  | "jobs"
-  | "users"
-  | "access"
-  | "advertising"
-  | "api";
+  "overview" | "companies" | "jobs" | "users" | "access" | "advertising";
 type AdminDashboardMode = "dashboard" | "moderation";
+type AdminSection = Exclude<Tab, "overview">;
 type Company = {
   id: string;
   name: string;
@@ -87,12 +82,14 @@ const statusStyle: Record<string, string> = {
 
 export function AdminDashboard({
   mode = "dashboard",
+  section = "companies",
 }: {
   mode?: AdminDashboardMode;
+  section?: AdminSection;
 }) {
   const { profile } = useAuth();
   const [tab, setTab] = useState<Tab>(
-    mode === "dashboard" ? "overview" : "companies",
+    mode === "dashboard" ? "overview" : section,
   );
   const [summary, setSummary] = useState<Summary | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -184,12 +181,8 @@ export function AdminDashboard({
   }, [load, mode, tab]);
   useEffect(() => {
     setSearch("");
-    setTab(mode === "dashboard" ? "overview" : "companies");
-  }, [mode]);
-  const switchTab = (nextTab: Tab) => {
-    setSearch("");
-    setTab(nextTab);
-  };
+    setTab(mode === "dashboard" ? "overview" : section);
+  }, [mode, section]);
 
   const submitCompany = async (event: FormEvent) => {
     event.preventDefault();
@@ -404,6 +397,33 @@ export function AdminDashboard({
       .toLowerCase()
       .includes(normalizedSearch),
   );
+  const sectionMeta: Record<
+    AdminSection,
+    { title: string; description: string }
+  > = {
+    companies: {
+      title: "Empresas",
+      description: "Cadastre, edite e verifique empresas da plataforma.",
+    },
+    jobs: {
+      title: "Vagas",
+      description: "Publique, revise e acompanhe todas as vagas cadastradas.",
+    },
+    users: {
+      title: "Usuários",
+      description: "Consulte contas, dados, acessos e histórico de sanções.",
+    },
+    access: {
+      title: "Vínculos",
+      description: "Aprove ou recuse solicitações de acesso às empresas.",
+    },
+    advertising: {
+      title: "Publicidade",
+      description: "Gerencie anunciantes, campanhas, espaços e AdSense.",
+    },
+  };
+  const currentSection =
+    mode === "moderation" ? sectionMeta[tab as AdminSection] : null;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -412,73 +432,52 @@ export function AdminDashboard({
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-terracotta-600">
             {mode === "dashboard"
               ? "Inteligência da plataforma"
-              : "Operação da plataforma"}
+              : "Administração da plataforma"}
           </p>
           <h1 className="mt-1 flex items-center gap-3 text-3xl font-serif font-bold text-stone-900">
             <Shield className="text-terracotta-600" />{" "}
-            {mode === "dashboard" ? "Dashboard" : "Moderação"}
+            {mode === "dashboard" ? "Dashboard" : currentSection?.title}
           </h1>
           <p className="mt-1 text-stone-500">
             {mode === "dashboard"
               ? "Acompanhe audiência, navegação e sinais de segurança em tempo real."
-              : "Gerencie empresas, vagas, usuários, vínculos e publicidade."}
+              : currentSection?.description}
           </p>
         </div>
         {mode === "dashboard" ? (
           <Link
-            to="/dashboard/admin"
+            to="/dashboard/admin/vagas"
             className="inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-stone-800"
           >
-            Abrir moderação <ChevronRight className="h-4 w-4" />
+            Gerenciar vagas <ChevronRight className="h-4 w-4" />
           </Link>
         ) : (
           <div className="flex gap-2">
-            <button
-              onClick={() => setCompanyFormOpen(true)}
-              className="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-bold text-stone-700 hover:bg-stone-50"
-            >
-              <Building2 className="h-4 w-4" /> Nova empresa
-            </button>
-            <button
-              onClick={() => {
-                setJobForm((prev) => ({
-                  ...prev,
-                  companyId: prev.companyId || companies[0]?.id || "",
-                }));
-                setJobFormOpen(true);
-              }}
-              className="inline-flex items-center gap-2 rounded-xl bg-terracotta-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-terracotta-700"
-            >
-              <Plus className="h-4 w-4" /> Publicar vaga
-            </button>
+            {tab === "companies" && (
+              <button
+                onClick={() => setCompanyFormOpen(true)}
+                className="inline-flex items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 py-2.5 text-sm font-bold text-stone-700 hover:bg-stone-50"
+              >
+                <Building2 className="h-4 w-4" /> Nova empresa
+              </button>
+            )}
+            {tab === "jobs" && (
+              <button
+                onClick={() => {
+                  setJobForm((prev) => ({
+                    ...prev,
+                    companyId: prev.companyId || companies[0]?.id || "",
+                  }));
+                  setJobFormOpen(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-xl bg-terracotta-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-terracotta-700"
+              >
+                <Plus className="h-4 w-4" /> Publicar vaga
+              </button>
+            )}
           </div>
         )}
       </header>
-      {mode === "moderation" && (
-        <nav
-          className="flex gap-1 overflow-x-auto rounded-2xl border border-stone-200 bg-white p-1.5"
-          aria-label="Seções administrativas"
-        >
-          {(
-            [
-              ["companies", "Empresas"],
-              ["jobs", "Vagas"],
-              ["users", "Usuários"],
-              ["access", "Vínculos"],
-              ["advertising", "Publicidade"],
-              ["api", "API v1"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => switchTab(id)}
-              className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${tab === id ? "bg-stone-900 text-white" : "text-stone-500 hover:bg-stone-100 hover:text-stone-800"}`}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-      )}
       {error && (
         <div
           role="alert"
@@ -571,9 +570,7 @@ export function AdminDashboard({
                           ? "Usuários"
                           : tab === "access"
                             ? "Solicitações de vínculo"
-                            : tab === "api"
-                              ? "API v1 de vagas externas"
-                              : "Publicidade e AdSense"}
+                            : "Publicidade e AdSense"}
                   </h2>
                   <p className="text-sm text-stone-500">
                     {tab === "companies"
@@ -584,12 +581,10 @@ export function AdminDashboard({
                           ? "Consulta de contas registradas na plataforma."
                           : tab === "access"
                             ? "Aprove ou recuse pedidos de acesso a empresas existentes."
-                            : tab === "api"
-                              ? "Gerencie integrações, origens e documentação técnica."
-                              : "Gerencie contratos, posições comerciais e configuração do AdSense."}
+                            : "Gerencie contratos, posições comerciais e configuração do AdSense."}
                   </p>
                 </div>
-                {!["advertising", "api"].includes(tab) && (
+                {tab !== "advertising" && (
                   <label className="relative block">
                     <Search className="absolute left-3 top-3 h-4 w-4 text-stone-400" />
                     <input
@@ -684,7 +679,6 @@ export function AdminDashboard({
                   </div>
                 )}
                 {tab === "advertising" && <AdvertisingPanel />}
-                {tab === "api" && <ApiV1Panel />}
               </div>
             </div>
           )}
@@ -1506,7 +1500,7 @@ function MetricList({
     </section>
   );
 }
-function ApiV1Panel() {
+export function ApiV1Panel() {
   const [clients, setClients] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
   const [form, setForm] = useState({ name: "", sourceLabel: "" });
