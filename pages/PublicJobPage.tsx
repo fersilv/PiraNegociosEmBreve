@@ -16,6 +16,7 @@ import { SeoHead } from "../components/SeoHead";
 import { useAuth } from "../contexts/AuthContext";
 import { JobReportForm } from "../components/JobReportForm";
 import { ExternalApplicationActions } from "../components/ExternalApplicationActions";
+import { ShareJobButtons } from "../components/ShareJobButtons";
 
 type PublicCompany = {
   name: string;
@@ -239,6 +240,7 @@ export default function PublicJobPage() {
               {job.salary || "Salário a combinar"}
             </span>
           </div>
+          <ShareJobButtons title={job.title} url={canonical} />
           <section className="mt-8">
             <h2 className="font-serif text-2xl font-bold text-stone-900 mb-4">
               Sobre a vaga

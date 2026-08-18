@@ -16,6 +16,7 @@ const Terms = lazy(() => import("./pages/Terms"));
 const JobsPage = lazy(() => import("./pages/JobsPage"));
 const PublicJobPage = lazy(() => import("./pages/PublicJobPage"));
 const PublicCompanyPage = lazy(() => import("./pages/PublicCompanyPage"));
+const EmbedJobsWidget = lazy(() => import("./pages/EmbedJobsWidget"));
 
 function RouteLoader() {
   return (
@@ -38,6 +39,7 @@ export default function App() {
             <Route path="/termos" element={<Terms />} />
             <Route path="/vagas" element={<JobsPage />} />
             <Route path="/vagas/:slug" element={<PublicJobPage />} />
+            <Route path="/embed/vagas" element={<EmbedJobsWidget />} />
             <Route path="/login" element={<Login />} />
             <Route path="/dashboard/*" element={<Dashboard />} />
             <Route path="/:companySlug" element={<PublicCompanyPage />} />
