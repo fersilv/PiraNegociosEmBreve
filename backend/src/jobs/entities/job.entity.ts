@@ -110,4 +110,10 @@ export class Job {
 
   @UpdateDateColumn()
   updatedAt: Date;
+
+  @Column({ default: false })
+  isFlagged: boolean;
+
+  @Column({ type: 'text', nullable: true })
+  flagObservation: string | null;
 }

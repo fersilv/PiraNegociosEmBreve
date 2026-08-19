@@ -554,6 +554,24 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
     // quando a build é iniciada sem NODE_ENV=production pelo PM2.
     app.get(["/vagas", "/vagas/"], sendSpa);
 
+    function getRelativeTimeStringServer(dateString: string) {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffInSec = Math.round((date.getTime() - now.getTime()) / 1000);
+      const rtf = new Intl.RelativeTimeFormat('pt-BR', { numeric: 'auto' });
+      if (Math.abs(diffInSec) < 60) return rtf.format(diffInSec, 'second');
+      const diffInMin = Math.round(diffInSec / 60);
+      if (Math.abs(diffInMin) < 60) return rtf.format(diffInMin, 'minute');
+      const diffInHour = Math.round(diffInMin / 60);
+      if (Math.abs(diffInHour) < 24) return rtf.format(diffInHour, 'hour');
+      const diffInDay = Math.round(diffInHour / 24);
+      if (Math.abs(diffInDay) < 30) return rtf.format(diffInDay, 'day');
+      const diffInMonth = Math.round(diffInDay / 30);
+      if (Math.abs(diffInMonth) < 12) return rtf.format(diffInMonth, 'month');
+      const diffInYear = Math.round(diffInDay / 365);
+      return rtf.format(diffInYear, 'year');
+    }
+
     app.get("/vagas/:slug", async (req, res) => {
       if (!isCrawler(req)) return sendSpa(req, res);
       const job = await getPublicData(
@@ -624,7 +642,9 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
         };
       }
       const logo = safeUrl(job.company?.logoURL);
-      const body = `<article class="card"><div class="head">${logo ? `<img class="logo" src="${escapeHtml(logo)}" alt="Logo ${escapeHtml(companyName)}">` : ""}<div><h1>${escapeHtml(job.title)}</h1><a class="company" href="/${encodeURIComponent(job.company?.slug || "")}">${escapeHtml(companyName)}</a></div></div><div class="meta">${job.location ? `<span>📍 ${escapeHtml(job.location)}</span>` : ""}${job.type ? `<span>💼 ${escapeHtml(job.type)}</span>` : ""}${job.workModel ? `<span>💻 ${escapeHtml(job.workModel)}</span>` : ""}<span>💰 ${escapeHtml(job.salary || "Salário a combinar")}</span></div><h2>Sobre a vaga</h2><div>${String(
+      const isTalentPoolHtml = job.isTalentPool ? `<span style="background:#f3e8ff;color:#7e22ce;font-size:10px;text-transform:uppercase;font-weight:bold;padding:2px 8px;border-radius:4px;margin-left:8px;vertical-align:middle;">Banco de Talentos</span>` : "";
+      const updatedAtHtml = job.updatedAt ? `<p class="muted" style="font-size:12px;margin-top:-10px;">Atualizado ${getRelativeTimeStringServer(job.updatedAt)}</p>` : "";
+      const body = `<article class="card"><div class="head">${logo ? `<img class="logo" src="${escapeHtml(logo)}" alt="Logo ${escapeHtml(companyName)}">` : ""}<div><h1>${escapeHtml(job.title)}${isTalentPoolHtml}</h1><a class="company" href="/${encodeURIComponent(job.company?.slug || "")}">${escapeHtml(companyName)}</a></div></div>${updatedAtHtml}<div class="meta">${job.location ? `<span>📍 ${escapeHtml(job.location)}</span>` : ""}${job.type ? `<span>💼 ${escapeHtml(job.type)}</span>` : ""}${job.workModel ? `<span>💻 ${escapeHtml(job.workModel)}</span>` : ""}<span>💰 ${escapeHtml(job.salary || "Salário a combinar")}</span></div><h2>Sobre a vaga</h2><div>${String(
         job.description || "",
       )
         .split(/\n+/)

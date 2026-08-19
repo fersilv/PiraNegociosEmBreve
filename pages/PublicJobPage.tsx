@@ -47,6 +47,8 @@ type PublicJob = {
   isExternalListing?: boolean;
   sourceName?: string | null;
   sourceUrl?: string | null;
+  isTalentPool?: boolean;
+  updatedAt?: string;
 };
 
 const siteUrl = window.location.origin;
@@ -230,6 +232,9 @@ export default function PublicJobPage() {
               <div>
                 <h1 className="font-serif text-3xl md:text-4xl font-bold text-stone-900">
                   {job.title}
+                  {job.isTalentPool && (
+                    <span className="ml-3 align-middle bg-purple-100 text-purple-700 text-xs uppercase font-bold px-2 py-1 rounded shrink-0">Banco de Talentos</span>
+                  )}
                 </h1>
                 {job.company?.slug ? (
                   <Link
@@ -379,10 +384,17 @@ export default function PublicJobPage() {
             <JobReportForm jobId={job.id} />
           </section>
         </article>
-        <p className="mt-7 text-xs text-stone-400 flex items-center gap-2">
-          <CalendarDays className="w-3.5 h-3.5" />
-          Publicada em {new Date(job.createdAt).toLocaleDateString("pt-BR")}
-        </p>
+        <div className="mt-7 flex items-center justify-between">
+          <p className="text-xs text-stone-400 flex items-center gap-2">
+            <CalendarDays className="w-3.5 h-3.5" />
+            Publicada em {new Date(job.createdAt).toLocaleDateString("pt-BR")}
+          </p>
+          {job.updatedAt && (
+            <p className="text-xs text-stone-400 font-medium">
+              Atualizada em {new Date(job.updatedAt).toLocaleDateString("pt-BR")} às {new Date(job.updatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+            </p>
+          )}
+        </div>
       </main>
     </div>
   );

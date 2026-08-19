@@ -10,6 +10,26 @@ interface JobCardProps {
   hasApplied?: boolean;
 }
 
+export function getRelativeTimeString(dateString: string) {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInSec = Math.round((date.getTime() - now.getTime()) / 1000);
+  
+  const rtf = new Intl.RelativeTimeFormat('pt-BR', { numeric: 'auto' });
+  
+  if (Math.abs(diffInSec) < 60) return rtf.format(diffInSec, 'second');
+  const diffInMin = Math.round(diffInSec / 60);
+  if (Math.abs(diffInMin) < 60) return rtf.format(diffInMin, 'minute');
+  const diffInHour = Math.round(diffInMin / 60);
+  if (Math.abs(diffInHour) < 24) return rtf.format(diffInHour, 'hour');
+  const diffInDay = Math.round(diffInHour / 24);
+  if (Math.abs(diffInDay) < 30) return rtf.format(diffInDay, 'day');
+  const diffInMonth = Math.round(diffInDay / 30);
+  if (Math.abs(diffInMonth) < 12) return rtf.format(diffInMonth, 'month');
+  const diffInYear = Math.round(diffInDay / 365);
+  return rtf.format(diffInYear, 'year');
+}
+
 export function JobCard({ job, onClick, hasApplied = false }: JobCardProps) {
   return (
     <div 
@@ -74,6 +94,11 @@ export function JobCard({ job, onClick, hasApplied = false }: JobCardProps) {
             <span className="flex items-center gap-1.5 text-xs text-stone-500">
               <DollarSign className="w-3.5 h-3.5" />
               {job.salary}
+            </span>
+          )}
+          {job.updatedAt && (
+            <span className="text-[10px] text-stone-400 font-medium ml-1">
+              Atualizado {getRelativeTimeString(job.updatedAt)}
             </span>
           )}
         </div>

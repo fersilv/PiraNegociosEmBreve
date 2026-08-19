@@ -28,6 +28,9 @@ export type ExternalJobInput = {
   externalApplicationInstructions?: unknown;
   deadlineDate?: unknown;
   allowSimilarDuplicate?: unknown;
+  isTalentPool?: unknown;
+  isFlagged?: unknown;
+  flagObservation?: unknown;
 };
 
 type SanitizedExternalJob = {
@@ -46,6 +49,9 @@ type SanitizedExternalJob = {
   applicationWhatsApp: string | null;
   externalApplicationInstructions: string | null;
   deadlineDate: string | null;
+  isTalentPool: boolean;
+  isFlagged: boolean;
+  flagObservation: string | null;
 };
 
 export type JobCatalogQuery = {
@@ -264,14 +270,9 @@ export class ExternalJobsService {
     }
 
     const job = await this.jobs.findOne({ where: { id } });
-    if (
-      !job ||
-      !job.isExternalListing ||
-      job.ingestionSourceId !== client.id ||
-      job.ownerId !== `api:${client.id}`
-    ) {
+    if (!job || !job.isExternalListing) {
       throw new NotFoundException(
-        'Vaga não encontrada entre os cadastros desta chave de API.',
+        'Vaga não encontrada ou não é um cadastro externo.',
       );
     }
 
@@ -309,6 +310,14 @@ export class ExternalJobsService {
         input.deadlineDate !== undefined
           ? input.deadlineDate
           : job.deadlineDate,
+      isTalentPool:
+        input.isTalentPool !== undefined ? input.isTalentPool : job.isTalentPool,
+      isFlagged:
+        input.isFlagged !== undefined ? input.isFlagged : job.isFlagged,
+      flagObservation:
+        input.flagObservation !== undefined
+          ? input.flagObservation
+          : job.flagObservation,
     };
     const data = this.sanitize(merged, client);
     const fingerprint = createHash('sha256')
@@ -535,7 +544,18 @@ export class ExternalJobsService {
         5_000,
       ),
       deadlineDate,
+      isTalentPool: this.optionalBoolean(input.isTalentPool, 'isTalentPool') || false,
+      isFlagged: this.optionalBoolean(input.isFlagged, 'isFlagged') || false,
+      flagObservation: this.optionalText(input.flagObservation, 'flagObservation', 1000),
     };
+  }
+
+  private optionalBoolean(value: unknown, field: string): boolean | null {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value === 'boolean') return value;
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    throw new BadRequestException(`${field} deve ser um valor booleano.`);
   }
 
   private requiredText(value: unknown, field: string, maxLength: number) {
@@ -736,6 +756,8 @@ export class ExternalJobsService {
       reportCount: job.reportCount,
       ingestionSourceId: job.ingestionSourceId,
       ingestionSourceName: job.ingestionSourceName,
+      isFlagged: job.isFlagged,
+      flagObservation: job.flagObservation,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
     };

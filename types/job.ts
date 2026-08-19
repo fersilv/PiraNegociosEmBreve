@@ -28,4 +28,5 @@ export interface Job {
   applicationEmail?: string;
   applicationWhatsApp?: string;
   views?: number;
+  updatedAt?: string;
 }

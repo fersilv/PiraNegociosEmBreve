@@ -53,6 +53,9 @@ type Job = {
   moderationStatus?: string;
   reportCount?: number;
   views?: number;
+  isFlagged?: boolean;
+  flagObservation?: string;
+  updatedAt?: string;
 };
 type PlatformUser = {
   id: string;
@@ -2644,6 +2647,11 @@ function JobsTable({
               ) : (
                 job.companyName
               )}
+              {job.updatedAt && (
+                <span className="mt-1 block text-xs text-stone-400">
+                  Atualizado em {new Date(job.updatedAt).toLocaleDateString("pt-BR")} às {new Date(job.updatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
             </td>
             <td className="px-5 py-4">
               <span
@@ -2660,6 +2668,11 @@ function JobsTable({
                 <span className="ml-2 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-800">
                   Aguardando revisão
                 </span>
+              )}
+              {job.isFlagged && (
+                <div className="mt-2 text-xs font-medium text-amber-700 bg-amber-50 p-2 rounded border border-amber-200">
+                  <strong>Sinalizada pela IA:</strong> {job.flagObservation || "Nenhuma observação informada"}
+                </div>
               )}
             </td>
             <td className="px-5 py-4 text-stone-600 font-medium text-sm">
