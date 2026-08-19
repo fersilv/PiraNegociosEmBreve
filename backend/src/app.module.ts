@@ -17,6 +17,8 @@ import { SeoModule } from './seo/seo.module';
 import { AdvertisingModule } from './advertising/advertising.module';
 import { ExternalApiModule } from './external-api/external-api.module';
 
+import { AiModule } from './ai/ai.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -43,6 +45,7 @@ import { ExternalApiModule } from './external-api/external-api.module';
     AnalyticsModule,
     SeoModule,
     AdvertisingModule,
+    AiModule,
     ExternalApiModule,
     AdminModule,
   ],

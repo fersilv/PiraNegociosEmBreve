@@ -121,55 +121,96 @@ export function ModernTemplate({ profile, color = "#0284c7", showPhoto, address 
               </section>
             )}
 
-            {/* Experience */}
-            {profile.experiences && profile.experiences.length > 0 && (
-              <section>
-                <SectionTitle color={color}>Experiência Profissional</SectionTitle>
-                <div className="space-y-5">
-                  {profile.experiences.map((exp, idx) => (
-                    <div key={idx} className="relative pl-5 border-l-2 break-inside-avoid" style={{ borderColor: `${color}30` }}>
-                      <div className="absolute w-2.5 h-2.5 rounded-full -left-[6px] top-1" style={{ backgroundColor: color }} />
-                      <div className="flex justify-between items-baseline mb-0.5 flex-wrap gap-x-4">
-                        <h3 className="font-bold text-stone-900">{exp.role}</h3>
-                        <span className="text-xs text-stone-500 font-semibold whitespace-nowrap">
-                          {exp.startDate} – {exp.current ? "Atual" : exp.endDate}
-                        </span>
-                      </div>
-                      <div className="text-sm font-semibold mb-1.5" style={{ color }}>{exp.company}</div>
-                      {exp.description && (
-                        <p className="text-sm text-stone-600 leading-relaxed">{exp.description}</p>
-                      )}
-                      {exp.skills && exp.skills.length > 0 && (
-                        <div className="mt-1.5 text-xs text-stone-500">
-                          {exp.skills.join(" · ")}
+            {/* Sections Content */}
+            {(isFirstJob ? [
+              { key: 'education', content: profile.education && profile.education.length > 0 && (
+                <section>
+                  <SectionTitle color={color}>Formação Acadêmica</SectionTitle>
+                  <div className="space-y-4">
+                    {profile.education.map((edu, idx) => (
+                      <div key={idx} className="relative pl-5 border-l-2 break-inside-avoid" style={{ borderColor: `${color}30` }}>
+                        <div className="absolute w-2.5 h-2.5 rounded-full -left-[6px] top-1" style={{ backgroundColor: color }} />
+                        <h3 className="font-bold text-stone-900">
+                          {edu.degree}{edu.fieldOfStudy ? ` em ${edu.fieldOfStudy}` : ""}
+                        </h3>
+                        <div className="text-sm font-semibold" style={{ color }}>{edu.institution}</div>
+                        <div className="text-xs text-stone-500 font-semibold mt-0.5">
+                          {edu.startYear} – {edu.current ? "Atual" : edu.endYear}
                         </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Education */}
-            {profile.education && profile.education.length > 0 && (
-              <section>
-                <SectionTitle color={color}>Formação Acadêmica</SectionTitle>
-                <div className="space-y-4">
-                  {profile.education.map((edu, idx) => (
-                    <div key={idx} className="relative pl-5 border-l-2 break-inside-avoid" style={{ borderColor: `${color}30` }}>
-                      <div className="absolute w-2.5 h-2.5 rounded-full -left-[6px] top-1" style={{ backgroundColor: color }} />
-                      <h3 className="font-bold text-stone-900">
-                        {edu.degree}{edu.fieldOfStudy ? ` em ${edu.fieldOfStudy}` : ""}
-                      </h3>
-                      <div className="text-sm font-semibold" style={{ color }}>{edu.institution}</div>
-                      <div className="text-xs text-stone-500 font-semibold mt-0.5">
-                        {edu.startYear} – {edu.current ? "Atual" : edu.endYear}
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
+                    ))}
+                  </div>
+                </section>
+              )},
+              { key: 'experience', content: profile.experiences && profile.experiences.length > 0 && (
+                <section>
+                  <SectionTitle color={color}>Experiência Profissional</SectionTitle>
+                  <div className="space-y-5">
+                    {profile.experiences.map((exp, idx) => (
+                      <div key={idx} className="relative pl-5 border-l-2 break-inside-avoid" style={{ borderColor: `${color}30` }}>
+                        <div className="absolute w-2.5 h-2.5 rounded-full -left-[6px] top-1" style={{ backgroundColor: color }} />
+                        <div className="flex justify-between items-baseline mb-0.5 flex-wrap gap-x-4">
+                          <h3 className="font-bold text-stone-900">{exp.role}</h3>
+                          <span className="text-xs text-stone-500 font-semibold whitespace-nowrap">
+                            {exp.startDate} – {exp.current ? "Atual" : exp.endDate}
+                          </span>
+                        </div>
+                        <div className="text-sm font-semibold mb-1.5" style={{ color }}>{exp.company}</div>
+                        {exp.description && (
+                          <p className="text-sm text-stone-600 leading-relaxed">{exp.description}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+            ] : [
+              { key: 'experience', content: profile.experiences && profile.experiences.length > 0 && (
+                <section>
+                  <SectionTitle color={color}>Experiência Profissional</SectionTitle>
+                  <div className="space-y-5">
+                    {profile.experiences.map((exp, idx) => (
+                      <div key={idx} className="relative pl-5 border-l-2 break-inside-avoid" style={{ borderColor: `${color}30` }}>
+                        <div className="absolute w-2.5 h-2.5 rounded-full -left-[6px] top-1" style={{ backgroundColor: color }} />
+                        <div className="flex justify-between items-baseline mb-0.5 flex-wrap gap-x-4">
+                          <h3 className="font-bold text-stone-900">{exp.role}</h3>
+                          <span className="text-xs text-stone-500 font-semibold whitespace-nowrap">
+                            {exp.startDate} – {exp.current ? "Atual" : exp.endDate}
+                          </span>
+                        </div>
+                        <div className="text-sm font-semibold mb-1.5" style={{ color }}>{exp.company}</div>
+                        {exp.description && (
+                          <p className="text-sm text-stone-600 leading-relaxed">{exp.description}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )},
+              { key: 'education', content: profile.education && profile.education.length > 0 && (
+                <section>
+                  <SectionTitle color={color}>Formação Acadêmica</SectionTitle>
+                  <div className="space-y-4">
+                    {profile.education.map((edu, idx) => (
+                      <div key={idx} className="relative pl-5 border-l-2 break-inside-avoid" style={{ borderColor: `${color}30` }}>
+                        <div className="absolute w-2.5 h-2.5 rounded-full -left-[6px] top-1" style={{ backgroundColor: color }} />
+                        <h3 className="font-bold text-stone-900">
+                          {edu.degree}{edu.fieldOfStudy ? ` em ${edu.fieldOfStudy}` : ""}
+                        </h3>
+                        <div className="text-sm font-semibold" style={{ color }}>{edu.institution}</div>
+                        <div className="text-xs text-stone-500 font-semibold mt-0.5">
+                          {edu.startYear} – {edu.current ? "Atual" : edu.endYear}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+            ]).map(section => (
+              <React.Fragment key={section.key}>
+                {section.content}
+              </React.Fragment>
+            ))}
           </main>
         </div>
       </div>

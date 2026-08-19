@@ -45,6 +45,7 @@ export interface UserProfile {
   displayName?: string;
   fullName?: string;
   socialName?: string;
+  birthDate?: string | Date;
   treatment: string;
   phone: string;
   email: string;

@@ -12,6 +12,10 @@ import { AccountAccess } from '../analytics/entities/account-access.entity';
 import { UserSanction } from './entities/user-sanction.entity';
 import { JobReport } from '../jobs/entities/job-report.entity';
 import { CompanySlugAlias } from '../companies/entities/company-slug-alias.entity';
+import { Setting } from './entities/setting.entity';
+
+import { SettingsService } from './settings.service';
+import { SettingsController } from './settings.controller';
 
 @Module({
   imports: [
@@ -26,9 +30,11 @@ import { CompanySlugAlias } from '../companies/entities/company-slug-alias.entit
       UserSanction,
       JobReport,
       CompanySlugAlias,
+      Setting,
     ]),
   ],
-  controllers: [AdminController],
-  providers: [AdminGuard],
+  controllers: [AdminController, SettingsController],
+  providers: [AdminGuard, SettingsService],
+  exports: [SettingsService],
 })
 export class AdminModule {}

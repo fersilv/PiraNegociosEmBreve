@@ -41,6 +41,9 @@ export class User {
   @Column({ nullable: true })
   fullName: string;
 
+  @Column({ type: 'date', nullable: true })
+  birthDate: Date | null;
+
   @Column({ nullable: true })
   socialName: string;
 

@@ -7,13 +7,17 @@ import { CompanyInvitation } from './entities/company-invitation.entity';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { Company } from '../companies/entities/company.entity';
 import { CandidatesController } from './candidates.controller';
+import { Institution } from './entities/institution.entity';
+
+import { InstitutionsController } from './institutions.controller';
+import { InstitutionsService } from './institutions.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, CompanyInvitation, Company]),
+    TypeOrmModule.forFeature([User, CompanyInvitation, Company, Institution]),
     AnalyticsModule,
   ],
-  controllers: [UsersController, CandidatesController],
-  providers: [UsersService],
+  controllers: [UsersController, CandidatesController, InstitutionsController],
+  providers: [UsersService, InstitutionsService],
 })
 export class UsersModule {}

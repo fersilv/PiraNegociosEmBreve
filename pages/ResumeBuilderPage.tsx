@@ -11,6 +11,9 @@ import { ClassicTemplate } from "../components/resume-templates/ClassicTemplate"
 import { ModernTemplate } from "../components/resume-templates/ModernTemplate";
 import { MinimalistTemplate } from "../components/resume-templates/MinimalistTemplate";
 import { CreativeTemplate } from "../components/resume-templates/CreativeTemplate";
+import { CityStateSelector } from "../components/CityStateSelector";
+import { FileUpload } from "../components/FileUpload";
+import { SearchSelect } from "../components/SearchSelect";
 
 const TEMPLATES = [
   { id: "modern", name: "Moderno" },
@@ -54,6 +57,8 @@ export function ResumeBuilderPage() {
 
   // Wizard form state
   const [formName, setFormName] = useState("");
+  const [formSocialName, setFormSocialName] = useState("");
+  const [formBirthDate, setFormBirthDate] = useState("");
   const [formPhone, setFormPhone] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formAddress, setFormAddress] = useState("");
@@ -79,11 +84,23 @@ export function ResumeBuilderPage() {
   // Initialize form from profile
   useEffect(() => {
     if (profile) {
-      setFormName(profile.socialName || profile.fullName || profile.name || "");
+      setFormName(profile.fullName || profile.name || "");
+      setFormSocialName(profile.socialName || "");
+      
+      let initialBirthDate = "";
+      if (profile.birthDate) {
+        if (profile.birthDate instanceof Date) {
+          initialBirthDate = profile.birthDate.toISOString().split("T")[0];
+        } else if (typeof profile.birthDate === "string") {
+          initialBirthDate = profile.birthDate.split("T")[0];
+        }
+      }
+      setFormBirthDate(initialBirthDate);
+
       setFormPhone(profile.phone || "");
       setFormEmail(profile.email || "");
       setFormAddress(profile.address || "");
-      setFormPhoto(profile.resumePhotoURL || profile.photoURL || "");
+      setFormPhoto(profile.resumePhotoURL || "");
       setFormBio(profile.bio || "");
       setFormSalary(profile.salaryExpectation || "");
       setFormExperiences(profile.experiences || []);
@@ -121,6 +138,8 @@ export function ResumeBuilderPage() {
     try {
       await api.patch("/users/me", {
         fullName: formName,
+        socialName: formSocialName,
+        birthDate: formBirthDate || null,
         phone: formPhone,
         address: formAddress,
         resumePhotoURL: formPhoto || undefined,
@@ -155,12 +174,12 @@ export function ResumeBuilderPage() {
   // Steps definition (dynamic based on isFirstJob)
   const STEPS = [
     { id: "personal", label: "Dados Pessoais", icon: <User className="w-4 h-4" /> },
-    { id: "about", label: "Sobre Você", icon: <FileText className="w-4 h-4" /> },
     ...(isFirstJob ? [] : [{ id: "experience", label: "Experiência", icon: <Briefcase className="w-4 h-4" /> }]),
     { id: "education", label: "Formação", icon: <GraduationCap className="w-4 h-4" /> },
     { id: "skills", label: "Habilidades", icon: <Sparkles className="w-4 h-4" /> },
     { id: "courses", label: "Cursos", icon: <BookOpen className="w-4 h-4" /> },
     { id: "languages", label: "Idiomas", icon: <Globe className="w-4 h-4" /> },
+    { id: "about", label: "Sobre Você", icon: <FileText className="w-4 h-4" /> },
   ];
 
   const currentStepIndex = step; // 0-indexed
@@ -171,7 +190,9 @@ export function ResumeBuilderPage() {
   const previewProfile: UserProfile = {
     ...profile,
     fullName: formName,
+    socialName: formSocialName,
     name: formName,
+    birthDate: formBirthDate,
     phone: formPhone,
     email: formEmail,
     address: formAddress,
@@ -187,7 +208,7 @@ export function ResumeBuilderPage() {
   };
 
   const renderTemplate = () => {
-    const props = { profile: previewProfile, color, showPhoto };
+    const props = { profile: previewProfile, color, showPhoto, isFirstJob };
     switch (template) {
       case "classic":     return <ClassicTemplate {...props} />;
       case "minimalist":  return <MinimalistTemplate {...props} />;
@@ -206,7 +227,7 @@ export function ResumeBuilderPage() {
       const reader = new FileReader();
       reader.onload = async () => {
         const base64 = reader.result as string;
-        const resp = await fetch("/api/gemini/analyze-resume", {
+        const resp = await fetch("/api/ai/analyze-resume", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${await (await import("../lib/firebase")).auth.currentUser?.getIdToken()}` },
           body: JSON.stringify({ base64File: base64, mimeType: file.type }),
@@ -363,21 +384,45 @@ export function ResumeBuilderPage() {
       case "personal":
         return (
           <div className="space-y-5">
-            <FormField label="Nome Completo *" value={formName} onChange={setFormName} placeholder="Maria Silva dos Santos" />
-            <FormField label="Telefone / WhatsApp *" value={formPhone} onChange={setFormPhone} placeholder="(19) 99999-9999" />
-            <FormField label="E-mail" value={formEmail} onChange={setFormEmail} placeholder="seu@email.com" disabled />
-            <FormField label="Cidade / Estado" value={formAddress} onChange={setFormAddress} placeholder="Ex: Pirassununga, SP" />
-            <div>
-              <label className="block text-sm font-semibold text-stone-700 mb-1">Foto para o Currículo (Opcional)</label>
-              <p className="text-xs text-stone-500 mb-2">Ela pode ser diferente da foto do seu perfil.</p>
-              {formPhoto && (
-                <div className="flex items-center gap-4 mb-3">
-                  <img src={formPhoto} alt="Foto" className="w-16 h-16 rounded-xl object-cover border border-stone-200" />
-                  <button onClick={() => setFormPhoto("")} className="text-xs text-red-500 hover:text-red-700 font-medium">Remover</button>
-                </div>
-              )}
-              <p className="text-xs text-stone-400">A foto usada será a mesma do seu perfil. Para alterá-la, vá em "Meus Dados Pessoais".</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField label="Nome Completo (Registro) *" value={formName} onChange={setFormName} placeholder="Maria Silva dos Santos" />
+              <FormField label="Nome Social (Opcional)" value={formSocialName} onChange={setFormSocialName} placeholder="Como prefere ser chamado" />
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField label="Telefone / WhatsApp *" value={formPhone} onChange={setFormPhone} placeholder="(19) 99999-9999" />
+              <FormField label="Data de Nascimento" value={formBirthDate} onChange={setFormBirthDate} placeholder="DD/MM/AAAA" type="date" />
+            </div>
+            <FormField label="E-mail" value={formEmail} onChange={setFormEmail} placeholder="seu@email.com" disabled />
+            
+            <div>
+              <label className="block text-sm font-semibold text-stone-700 mb-1">Cidade / Estado</label>
+              <CityStateSelector initialValue={formAddress} onLocationChange={setFormAddress} />
+            </div>
+
+            <div className="pt-2">
+              <label className="block text-sm font-semibold text-stone-700 mb-1">Foto para o Currículo (Opcional)</label>
+              <p className="text-xs text-stone-500 mb-3">Ela pode ser diferente da foto do seu perfil.</p>
+              
+              <div className="flex items-start gap-4">
+                <div className="flex-1 max-w-sm">
+                  <FileUpload 
+                    label="" 
+                    accept="image/*" 
+                    value={formPhoto} 
+                    onChange={(b64) => setFormPhoto(b64)} 
+                    type="avatar" 
+                    placeholder="Clique para subir uma foto profissional"
+                  />
+                </div>
+                {!formPhoto && profile?.photoURL && (
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="text-xs font-semibold text-stone-400">Sua foto atual</span>
+                    <img src={profile.photoURL} alt="Perfil" className="w-16 h-16 rounded-2xl object-cover grayscale opacity-50" />
+                  </div>
+                )}
+              </div>
+            </div>
+            
             <FormField label="Pretensão Salarial (Opcional)" value={formSalary} onChange={setFormSalary} placeholder="Ex: R$ 2.500,00 a R$ 3.000,00" />
           </div>
         );
@@ -589,6 +634,28 @@ function ExperienceForm({ onAdd }: { onAdd: (exp: ProfessionalExperience) => voi
   const [start, setStart] = useState(""); const [end, setEnd] = useState(""); const [current, setCurrent] = useState(false);
   const [desc, setDesc] = useState("");
 
+  const [companyOptions, setCompanyOptions] = useState<{value: string; label: string}[]>([]);
+
+  useEffect(() => {
+    if (open) {
+      // Pré-carregar algumas ou nada
+    }
+  }, [open]);
+
+  const handleCompanySearch = async (term: string) => {
+    if (!term || term.length < 2) {
+      setCompanyOptions([]);
+      return;
+    }
+    try {
+      const { api } = await import("../lib/api");
+      const res = await api.get(`/companies/search?q=${encodeURIComponent(term)}`);
+      setCompanyOptions(res.data.map((c: any) => ({ value: c.name, label: c.name })));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   if (!open) return (
     <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2">
       <Plus className="w-4 h-4" /> Adicionar Experiência
@@ -605,7 +672,19 @@ function ExperienceForm({ onAdd }: { onAdd: (exp: ProfessionalExperience) => voi
     <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <FormField label="Cargo *" value={role} onChange={setRole} placeholder="Vendedor" />
-        <FormField label="Empresa *" value={company} onChange={setCompany} placeholder="Loja ABC" />
+        <div className="z-20">
+          <label className="block text-sm font-semibold text-stone-700 mb-1">Empresa *</label>
+          <SearchSelect
+            value={company}
+            onChange={setCompany}
+            placeholder="Loja ABC"
+            options={companyOptions}
+            onSearch={handleCompanySearch}
+            allowCustom={true}
+            customLabel="Adicionar empresa:"
+            className="w-full"
+          />
+        </div>
         <FormField label="Início" value={start} onChange={setStart} placeholder="03/2020" />
         <div>
           <FormField label="Término" value={end} onChange={setEnd} placeholder="12/2023" disabled={current} />
@@ -640,16 +719,57 @@ function EducationForm({ onAdd }: { onAdd: (edu: AcademicEducation) => void }) {
     </button>
   );
 
-  const handleAdd = () => {
+  const [instOptions, setInstOptions] = useState<{value: string; label: string}[]>([]);
+
+  const handleInstSearch = async (term: string) => {
+    if (!term || term.length < 2) {
+      setInstOptions([]);
+      return;
+    }
+    try {
+      const { api } = await import("../lib/api");
+      const res = await api.get(`/users/institutions/search?q=${encodeURIComponent(term)}`);
+      setInstOptions(res.data.map((i: any) => ({ value: i.name, label: i.name })));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleAdd = async () => {
     if (!institution.trim() || !degree.trim()) return;
+    
+    // Attempt to save new institution in backend silently (if doesn't exist)
+    try {
+      const { api } = await import("../lib/api");
+      await api.post(`/users/institutions`, { name: institution });
+    } catch (e) { /* ignore */ }
+
     onAdd({ institution, degree, fieldOfStudy: field, startYear: start, endYear: current ? "Atual" : end, current });
     setInstitution(""); setDegree(""); setField(""); setStart(""); setEnd(""); setCurrent(false); setOpen(false);
   };
 
+  if (!open) return (
+    <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2">
+      <Plus className="w-4 h-4" /> Adicionar Formação
+    </button>
+  );
+
   return (
     <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <FormField label="Instituição *" value={institution} onChange={setInstitution} placeholder="Universidade X" />
+        <div className="z-10">
+          <label className="block text-sm font-semibold text-stone-700 mb-1">Instituição *</label>
+          <SearchSelect
+            value={institution}
+            onChange={setInstitution}
+            placeholder="Universidade X"
+            options={instOptions}
+            onSearch={handleInstSearch}
+            allowCustom={true}
+            customLabel="Adicionar nova instituição:"
+            className="w-full"
+          />
+        </div>
         <FormField label="Grau *" value={degree} onChange={setDegree} placeholder="Graduação / Técnico / Ensino Médio" />
         <FormField label="Área de Estudo" value={field} onChange={setField} placeholder="Administração" />
         <FormField label="Ano de Início" value={start} onChange={setStart} placeholder="2018" />

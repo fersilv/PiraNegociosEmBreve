@@ -6,6 +6,7 @@ export interface TemplateProps {
   color?: string;
   showPhoto?: boolean;
   address?: string; // Optional field added per user request
+  isFirstJob?: boolean;
 }
 
 export function TemplateWrapper({

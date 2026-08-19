@@ -51,7 +51,6 @@ export class CompaniesController {
     private talentInvites: Repository<CompanyTalentInvite>,
     @InjectRepository(Job) private jobs: Repository<Job>,
   ) {}
-
   private async assertManager(uid: string, companyId: string) {
     const [company, user] = await Promise.all([
       this.companiesService.findOne(companyId),
