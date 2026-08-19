@@ -2211,7 +2211,7 @@ function AdvertisingPanel() {
     await load();
   };
   return (
-    <div className="grid gap-6 p-5 lg:grid-cols-12">
+    <div className="grid gap-6 p-5">
       <form
         onSubmit={create}
         className="space-y-3 rounded-2xl border border-stone-200 p-5"
