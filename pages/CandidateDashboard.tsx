@@ -240,25 +240,35 @@ export function CandidateDashboard() {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              if (profile?.resumeURL) {
-                openBase64InNewTab(
-                  profile.resumeURL,
-                  `Meu_Currículo_${profile.socialName || profile.name || ""}`,
-                );
-              } else {
-                alert(
-                  "Você ainda não fez o upload de seu currículo no seu perfil.",
-                );
-              }
-            }}
-            className="w-full bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-xs cursor-pointer transition-all"
-          >
-            <FileText className="w-4 h-4 text-terracotta-400" />
-            Visualizar PDF do Meu Currículo
-          </button>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (profile?.resumeURL) {
+                  openBase64InNewTab(
+                    profile.resumeURL,
+                    `Meu_Currículo_${profile.socialName || profile.name || ""}`,
+                  );
+                } else {
+                  alert(
+                    "Você ainda não fez o upload de seu currículo no seu perfil.",
+                  );
+                }
+              }}
+              className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200 text-xs font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-sm cursor-pointer transition-all"
+            >
+              <FileText className="w-4 h-4 text-stone-500" />
+              Visualizar Anexo Original
+            </button>
+
+            <Link
+              to="/dashboard/curriculo/gerador"
+              className="flex-1 bg-terracotta-600 hover:bg-terracotta-700 text-white text-xs font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all"
+            >
+              <FileText className="w-4 h-4 text-white" />
+              Gerador de PDF 
+            </Link>
+          </div>
         </div>
 
         <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-sm">

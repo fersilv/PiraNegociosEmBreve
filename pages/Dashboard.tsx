@@ -13,6 +13,7 @@ import { CompanyJobPage } from "./CompanyJobPage";
 import { CompanyHiringConfig } from "./CompanyHiringConfig";
 import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
 import { CandidateJobViewPage } from "./CandidateJobViewPage";
+import { ResumeBuilderPage } from "./ResumeBuilderPage";
 
 export function Dashboard() {
   const { user, profile, loading } = useAuth();
@@ -58,6 +59,12 @@ export function Dashboard() {
     if (!location.pathname.includes("/perfil")) {
       return <Navigate to="/dashboard/perfil" replace />;
     }
+  }
+
+  // Full-screen pages that should NOT have the dashboard layout
+  if (location.pathname.includes("/curriculo/gerador")) {
+    if (profile?.type !== "CANDIDATE") return <Navigate to="/dashboard" replace />;
+    return <ResumeBuilderPage />;
   }
 
   return (

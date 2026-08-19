@@ -354,11 +354,11 @@ export default function PublicJobPage() {
                   <p className="text-terracotta-800 text-sm mt-1.5 leading-relaxed">
                     {job.acceptsPlatformApplications
                       ? "Crie seu currículo online no PiraNegócios gratuitamente e candidate-se com apenas um clique a esta e muitas outras vagas."
-                      : "Cadastre seu currículo no PiraNegócios gratuitamente e seja encontrado por dezenas de empresas de Pirassununga buscando talentos."}
+                      : `Cadastre seu currículo no PiraNegócios gratuitamente e seja encontrado por dezenas de empresas de ${job.location ? job.location.split("-")[0].split(",")[0].trim() : "Pirassununga e região"} buscando talentos.`}
                   </p>
                 </div>
                 <Link
-                  to={`/cadastro?returnTo=${encodeURIComponent(`/vagas/${job.slug || job.id}`)}`}
+                  to={`/login?returnTo=${encodeURIComponent(`/vagas/${job.slug || job.id}`)}`}
                   className="w-full sm:w-auto shrink-0 bg-white border-2 border-terracotta-200 text-terracotta-700 font-bold px-6 py-3 rounded-xl text-sm text-center hover:bg-terracotta-50 hover:border-terracotta-300 transition-all shadow-sm"
                 >
                   Criar Currículo Grátis
