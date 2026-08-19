@@ -44,6 +44,8 @@ server {
     root /home/deploy/piranegocios/dist;
     index index.html;
 
+    client_max_body_size 50M;
+
     location = /sitemap.xml {
         proxy_pass http://127.0.0.1:3888/api/seo/sitemap;
         proxy_set_header Host $host;

@@ -656,7 +656,7 @@ export function AdminDashboard({
                           ? "Usuários"
                           : tab === "access"
                             ? "Solicitações de vínculo"
-                            : "Publicidade e AdSense"}
+                            : "Publicidade"}
                   </h2>
                   <p className="text-sm text-stone-500">
                     {tab === "companies"
@@ -667,7 +667,7 @@ export function AdminDashboard({
                           ? "Consulta de contas registradas na plataforma."
                           : tab === "access"
                             ? "Aprove ou recuse pedidos de acesso a empresas existentes."
-                            : "Gerencie contratos, posições comerciais e configuração do AdSense."}
+                            : "Gerencie contratos e posições comerciais."}
                   </p>
                 </div>
                 {tab !== "advertising" && (
@@ -2212,57 +2212,6 @@ function AdvertisingPanel() {
   };
   return (
     <div className="grid gap-6 p-5 lg:grid-cols-2">
-      <form
-        onSubmit={saveConfig}
-        className="space-y-3 rounded-2xl border border-stone-200 p-5"
-      >
-        <h3 className="font-bold text-stone-900">Espaços Google AdSense</h3>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={Boolean(config.googleAdsEnabled)}
-            onChange={(event) =>
-              setConfig({ ...config, googleAdsEnabled: event.target.checked })
-            }
-          />{" "}
-          Ativar AdSense
-        </label>
-        <Field label="Client ID">
-          <input
-            value={config.googleAdsClient || ""}
-            onChange={(event) =>
-              setConfig({ ...config, googleAdsClient: event.target.value })
-            }
-            placeholder="ca-pub-..."
-            className="input"
-          />
-        </Field>
-        <Field label="Slot leaderboard">
-          <input
-            value={config.googleAdsSlotLeaderboard || ""}
-            onChange={(event) =>
-              setConfig({
-                ...config,
-                googleAdsSlotLeaderboard: event.target.value,
-              })
-            }
-            className="input"
-          />
-        </Field>
-        <Field label="Slot rectangle">
-          <input
-            value={config.googleAdsSlotRectangle || ""}
-            onChange={(event) =>
-              setConfig({
-                ...config,
-                googleAdsSlotRectangle: event.target.value,
-              })
-            }
-            className="input"
-          />
-        </Field>
-        <Actions saving={saving} text="Salvar AdSense" />
-      </form>
       <form
         onSubmit={create}
         className="space-y-3 rounded-2xl border border-stone-200 p-5"
