@@ -35,6 +35,11 @@ export interface ResumeAIAnalysis {
   parsedAt?: string;
 }
 
+export interface Language {
+  name: string;
+  level: string;
+}
+
 export interface UserProfile {
   name?: string;
   displayName?: string;
@@ -66,6 +71,10 @@ export interface UserProfile {
   aiAnalysis?: ResumeAIAnalysis;
   hasAiAnalyzed?: boolean;
   savedDocs?: Record<string, string>;
+  languages?: Language[];
+  salaryExpectation?: string;
+  address?: string;
+  resumePhotoURL?: string;
 }
 
 export function getFirstName(fullName: string | undefined | null): string {

@@ -107,6 +107,18 @@ export class User {
   @Column({ type: 'jsonb', nullable: true })
   savedDocs: Record<string, string> | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  languages: { name: string; level: string }[] | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  salaryExpectation: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  address: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  resumePhotoURL: string | null;
+
   @Column({ type: 'varchar', nullable: true })
   fcmToken: string | null;
 

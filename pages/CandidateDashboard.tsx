@@ -228,48 +228,72 @@ export function CandidateDashboard() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-sm">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="bg-terracotta-100 p-3 rounded-full text-terracotta-600">
-              <FileText className="w-6 h-6" />
-            </div>
-            <div>
-              <h2 className="font-bold text-lg">Meu Currículo</h2>
-              <p className="text-sm text-stone-500">
-                Mantenha seu currículo atualizado
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                if (profile?.resumeURL) {
-                  openBase64InNewTab(
-                    profile.resumeURL,
-                    `Meu_Currículo_${profile.socialName || profile.name || ""}`,
-                  );
-                } else {
-                  alert(
-                    "Você ainda não fez o upload de seu currículo no seu perfil.",
-                  );
-                }
-              }}
-              className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200 text-xs font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-sm cursor-pointer transition-all"
-            >
-              <FileText className="w-4 h-4 text-stone-500" />
-              Visualizar Anexo Original
-            </button>
+        {(() => {
+          const hasResumeData = !!(profile?.bio || (profile?.experiences && profile.experiences.length > 0) || (profile?.skills && profile.skills.length > 0));
+          const hasUploadedResume = !!profile?.resumeURL;
 
-            <Link
-              to="/dashboard/curriculo/gerador"
-              className="flex-1 bg-terracotta-600 hover:bg-terracotta-700 text-white text-xs font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all"
-            >
-              <FileText className="w-4 h-4 text-white" />
-              Gerador de PDF 
-            </Link>
-          </div>
-        </div>
+          return (
+            <div className={`p-6 rounded-3xl border shadow-sm ${!hasResumeData && !hasUploadedResume ? "bg-gradient-to-br from-terracotta-50 to-amber-50 border-terracotta-200 ring-2 ring-terracotta-200/50" : "bg-white border-stone-200"}`}>
+              <div className="flex items-center gap-4 mb-4">
+                <div className={`p-3 rounded-full ${!hasResumeData && !hasUploadedResume ? "bg-terracotta-200 text-terracotta-700" : "bg-terracotta-100 text-terracotta-600"}`}>
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-bold text-lg">Meu Currículo</h2>
+                    {!hasResumeData && !hasUploadedResume && (
+                      <span className="bg-terracotta-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                        Comece aqui!
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-stone-500">
+                    {!hasResumeData && !hasUploadedResume
+                      ? "Crie seu currículo profissional gratuitamente!"
+                      : "Mantenha seu currículo atualizado"}
+                  </p>
+                </div>
+              </div>
+
+              {!hasResumeData && !hasUploadedResume ? (
+                <Link
+                  to="/dashboard/curriculo/gerador"
+                  className="w-full bg-terracotta-600 hover:bg-terracotta-700 text-white text-sm font-bold py-4 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all"
+                >
+                  <Sparkles className="w-5 h-5" />
+                  Criar Meu Currículo
+                </Link>
+              ) : (
+                <div className="flex flex-col sm:flex-row gap-3">
+                  {hasUploadedResume && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (profile?.resumeURL) {
+                          openBase64InNewTab(
+                            profile.resumeURL,
+                            `Meu_Currículo_${profile.socialName || profile.name || ""}`,
+                          );
+                        }
+                      }}
+                      className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200 text-xs font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-sm cursor-pointer transition-all"
+                    >
+                      <FileText className="w-4 h-4 text-stone-500" />
+                      Visualizar Original
+                    </button>
+                  )}
+                  <Link
+                    to="/dashboard/curriculo/gerador"
+                    className="flex-1 bg-terracotta-600 hover:bg-terracotta-700 text-white text-xs font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all"
+                  >
+                    <FileText className="w-4 h-4 text-white" />
+                    Gerador de PDF
+                  </Link>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-sm">
           <div className="flex items-center gap-4 mb-4">

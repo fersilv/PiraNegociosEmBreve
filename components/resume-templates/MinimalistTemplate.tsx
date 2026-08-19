@@ -3,11 +3,13 @@ import { TemplateProps, TemplateWrapper } from "./TemplateWrapper";
 
 export function MinimalistTemplate({ profile, color = "#1c1917", showPhoto, address }: TemplateProps) {
   const nameToUse = profile.socialName || profile.displayName || profile.fullName || profile.name || "Seu Nome";
+  const displayAddress = address || profile.address;
+  const photoUrl = profile.resumePhotoURL || profile.photoURL;
 
   const contactItems = [];
   if (profile.email) contactItems.push(profile.email);
   if (profile.phone) contactItems.push(profile.phone);
-  if (address) contactItems.push(address);
+  if (displayAddress) contactItems.push(displayAddress);
   if (profile.linkedinURL) contactItems.push(profile.linkedinURL.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, ''));
 
   return (
@@ -18,8 +20,8 @@ export function MinimalistTemplate({ profile, color = "#1c1917", showPhoto, addr
         <header className="mb-10 flex flex-col items-start">
           <div className="flex w-full items-center justify-between mb-4">
             <h1 className="text-4xl tracking-tighter uppercase font-medium" style={{ color }}>{nameToUse}</h1>
-            {showPhoto && profile.photoURL && (
-              <img src={profile.photoURL} alt="Foto de perfil" className="w-20 h-20 rounded-lg object-cover grayscale opacity-90" />
+            {showPhoto && photoUrl && (
+              <img src={photoUrl} alt="Foto de perfil" className="w-20 h-20 rounded-lg object-cover grayscale opacity-90" />
             )}
           </div>
           <div className="text-sm tracking-wide text-stone-500 uppercase">
@@ -101,6 +103,30 @@ export function MinimalistTemplate({ profile, color = "#1c1917", showPhoto, addr
                   </li>
                 ))}
               </ul>
+            </section>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-12 mt-8 break-inside-avoid">
+          {/* Languages */}
+          {profile.languages && profile.languages.length > 0 && (
+            <section>
+              <h2 className="text-xs uppercase tracking-widest text-stone-400 mb-4 font-semibold">Idiomas</h2>
+              <ul className="text-sm space-y-2 list-none p-0">
+                {profile.languages.map((lang, idx) => (
+                  <li key={idx}>
+                    <span className="font-medium text-stone-900">{lang.name}</span> <span className="text-stone-500">— {lang.level}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {/* Salary */}
+          {profile.salaryExpectation && (
+            <section>
+              <h2 className="text-xs uppercase tracking-widest text-stone-400 mb-4 font-semibold">Pretensão Salarial</h2>
+              <p className="text-sm text-stone-700">{profile.salaryExpectation}</p>
             </section>
           )}
         </div>

@@ -14,7 +14,8 @@ describe('UsersController authorization boundary', () => {
     createOrUpdate: jest.fn(),
   } as unknown as UsersService;
   const configService = { get: jest.fn(() => '') } as unknown as ConfigService;
-  const controller = new UsersController(usersService, configService);
+  const analyticsService = { recordAccountAccess: jest.fn() } as unknown as any;
+  const controller = new UsersController(usersService, configService, analyticsService);
   const request = { user: { uid: 'candidate-1', email: 'candidate@example.com' } };
 
   beforeEach(() => jest.clearAllMocks());

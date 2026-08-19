@@ -4,6 +4,8 @@ import { Mail, Phone, MapPin, Linkedin, LayoutDashboard } from "lucide-react";
 
 export function CreativeTemplate({ profile, color = "#f97316", showPhoto, address }: TemplateProps) {
   const nameToUse = profile.socialName || profile.displayName || profile.fullName || profile.name || "Seu Nome";
+  const displayAddress = address || profile.address;
+  const photoUrl = profile.resumePhotoURL || profile.photoURL;
 
   // Split name for creative styling (first name bold, rest thin)
   const nameParts = nameToUse.split(" ");
@@ -20,8 +22,8 @@ export function CreativeTemplate({ profile, color = "#f97316", showPhoto, addres
           <div className="absolute top-0 right-0 w-64 h-64 rounded-bl-[100px] opacity-20 -mr-10 -mt-10" style={{ backgroundColor: color }}></div>
           
           <div className="relative z-10 flex items-center gap-8">
-            {showPhoto && profile.photoURL && (
-              <img src={profile.photoURL} alt="Foto de perfil" className="w-32 h-32 rounded-3xl object-cover shadow-lg transform -rotate-3 border-4 border-white" />
+            {showPhoto && photoUrl && (
+              <img src={photoUrl} alt="Foto de perfil" className="w-32 h-32 rounded-3xl object-cover shadow-lg transform -rotate-3 border-4 border-white" />
             )}
             <div>
               <h1 className="text-5xl tracking-tight mb-2">
@@ -123,10 +125,10 @@ export function CreativeTemplate({ profile, color = "#f97316", showPhoto, addres
                     <span>{profile.phone}</span>
                   </li>
                 )}
-                {address && (
+                {displayAddress && (
                   <li className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full flex items-center justify-center bg-stone-100" style={{ color }}><MapPin className="w-4 h-4" /></div>
-                    <span>{address}</span>
+                    <span>{displayAddress}</span>
                   </li>
                 )}
                 {profile.linkedinURL && (
@@ -164,6 +166,31 @@ export function CreativeTemplate({ profile, color = "#f97316", showPhoto, addres
                     </li>
                   ))}
                 </ul>
+              </section>
+            )}
+
+            {/* Languages */}
+            {profile.languages && profile.languages.length > 0 && (
+              <section>
+                <h2 className="text-lg font-bold text-stone-900 mb-4 border-b-2 pb-2 inline-block" style={{ borderColor: color }}>Idiomas</h2>
+                <ul className="space-y-3">
+                  {profile.languages.map((lang, idx) => (
+                    <li key={idx} className="break-inside-avoid flex justify-between items-baseline">
+                      <span className="font-bold text-sm text-stone-900">{lang.name}</span>
+                      <span className="text-xs font-semibold px-2 py-1 rounded bg-stone-100 text-stone-600">{lang.level}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {/* Salary Expectation */}
+            {profile.salaryExpectation && (
+              <section>
+                <h2 className="text-lg font-bold text-stone-900 mb-4 border-b-2 pb-2 inline-block" style={{ borderColor: color }}>Pretensão</h2>
+                <div className="text-sm font-semibold text-stone-700 bg-stone-50 p-3 rounded-xl border border-stone-100">
+                  {profile.salaryExpectation}
+                </div>
               </section>
             )}
           </div>

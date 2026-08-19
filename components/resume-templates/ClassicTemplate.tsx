@@ -4,6 +4,8 @@ import { Mail, Phone, MapPin, Linkedin } from "lucide-react";
 
 export function ClassicTemplate({ profile, color = "#292524", showPhoto, address }: TemplateProps) {
   const nameToUse = profile.socialName || profile.displayName || profile.fullName || profile.name || "Seu Nome";
+  const displayAddress = address || profile.address;
+  const photoUrl = profile.resumePhotoURL || profile.photoURL;
 
   return (
     <TemplateWrapper>
@@ -11,8 +13,8 @@ export function ClassicTemplate({ profile, color = "#292524", showPhoto, address
         
         {/* Header */}
         <header className="flex flex-col items-center text-center mb-8 border-b-2 pb-6" style={{ borderColor: color }}>
-          {showPhoto && profile.photoURL && (
-            <img src={profile.photoURL} alt="Foto de perfil" className="w-24 h-24 rounded-full object-cover mb-4 border border-stone-200" />
+          {showPhoto && photoUrl && (
+            <img src={photoUrl} alt="Foto de perfil" className="w-24 h-24 rounded-full object-cover mb-4 border border-stone-200" />
           )}
           <h1 className="text-3xl font-bold uppercase tracking-wider mb-2" style={{ color }}>{nameToUse}</h1>
           <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm text-stone-600">
@@ -22,8 +24,8 @@ export function ClassicTemplate({ profile, color = "#292524", showPhoto, address
             {profile.phone && (
               <span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" /> {profile.phone}</span>
             )}
-            {address && (
-              <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> {address}</span>
+            {displayAddress && (
+              <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> {displayAddress}</span>
             )}
             {profile.linkedinURL && (
               <span className="flex items-center gap-1.5"><Linkedin className="w-3.5 h-3.5" /> {profile.linkedinURL.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, '')}</span>
@@ -106,6 +108,18 @@ export function ClassicTemplate({ profile, color = "#292524", showPhoto, address
             </section>
           )}
         </div>
+
+        {/* Idiomas */}
+        {profile.languages && profile.languages.length > 0 && (
+          <section className="mt-8 break-inside-avoid">
+            <h2 className="text-lg font-bold uppercase tracking-wider mb-3 pb-1 border-b" style={{ borderColor: color, color }}>Idiomas</h2>
+            <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-sm">
+              {profile.languages.map((lang, idx) => (
+                <span key={idx}><strong>{lang.name}</strong> — {lang.level}</span>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </TemplateWrapper>
   );
