@@ -2,7 +2,7 @@ import React from "react";
 import { TemplateProps, TemplateWrapper } from "./TemplateWrapper";
 import { Mail, Phone, MapPin, Linkedin, Globe } from "lucide-react";
 
-export function ModernTemplate({ profile, color = "#0284c7", showPhoto, address }: TemplateProps) {
+export function ModernTemplate({ profile, color = "#0284c7", showPhoto, address, isFirstJob }: TemplateProps) {
   const nameToUse = profile.socialName || profile.displayName || profile.fullName || profile.name || "Seu Nome";
   const displayAddress = address || profile.address;
   const photoUrl = profile.resumePhotoURL || profile.photoURL;
