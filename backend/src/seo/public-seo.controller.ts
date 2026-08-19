@@ -115,7 +115,7 @@ export class PublicSeoController {
       }),
       this.jobs
         .createQueryBuilder('job')
-        .leftJoin(Company, 'company', 'company.id = job.companyId')
+        .leftJoin(Company, 'company', 'company.id::varchar = job.companyId')
         .where('job.active = true')
         .andWhere('job.isConfidential = false')
         .andWhere('job.slug IS NOT NULL')
