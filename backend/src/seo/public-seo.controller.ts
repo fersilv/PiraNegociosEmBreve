@@ -136,16 +136,19 @@ export class PublicSeoController {
         .filter((company) => company.slug)
         .map((company) => ({
           loc: `${siteUrl()}/${company.slug}`,
-          lastmod: company.updatedAt,
+          lastmod: company.updatedAt || new Date(),
         })),
       ...jobs
         .filter((job) => job.slug)
         .map((job) => ({
           loc: `${siteUrl()}/vagas/${job.slug}`,
-          lastmod: job.updatedAt,
+          lastmod: job.updatedAt || new Date(),
         })),
     ];
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((url) => `  <url><loc>${this.escapeXml(url.loc)}</loc><lastmod>${url.lastmod.toISOString().slice(0, 10)}</lastmod></url>`).join('\n')}\n</urlset>`;
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((url) => {
+      const d = url.lastmod instanceof Date && !isNaN(url.lastmod.getTime()) ? url.lastmod : new Date();
+      return `  <url><loc>${this.escapeXml(url.loc)}</loc><lastmod>${d.toISOString().slice(0, 10)}</lastmod></url>`;
+    }).join('\n')}\n</urlset>`;
     response.type('application/xml').send(xml);
   }
 
