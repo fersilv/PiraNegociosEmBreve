@@ -1,16 +1,11 @@
 import { Controller, Post, Body, UseGuards, Req, BadRequestException } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
-import { AnalyticsService } from '../analytics/analytics.service';
-import { UsersService } from '../users/users.service';
-
 @Controller('ai')
 @UseGuards(FirebaseAuthGuard)
 export class AiController {
   constructor(
     private readonly aiService: AiService,
-    private readonly analyticsService: AnalyticsService,
-    private readonly usersService: UsersService,
   ) {}
 
   @Post('analyze-resume')
