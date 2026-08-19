@@ -2036,6 +2036,25 @@ export function ApiV1Panel() {
           consulta retorna todas as vagas cadastradas, inclusive vagas de
           empresas, externas, inativas e pendentes.
         </p>
+
+        <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-4">
+          <strong className="text-sm text-amber-900 flex items-center gap-2">
+            <span className="text-lg">✨</span> O que há de novo para IA?
+          </strong>
+          <p className="mt-2 text-xs text-amber-800">
+            A API externa agora permite que você sinalize problemas em vagas e defina status de banco de talentos!
+            No payload (POST ou PATCH), você pode incluir:
+          </p>
+          <ul className="mt-2 ml-4 list-disc text-xs text-amber-800 space-y-1">
+            <li><code>isTalentPool</code> (boolean): Envie <code>true</code> para vagas que são "Banco de Talentos".</li>
+            <li><code>isFlagged</code> (boolean): Envie <code>true</code> caso a vaga pareça expirada, irregular ou com erro.</li>
+            <li><code>flagObservation</code> (string): Preencha com o motivo do alerta para que possamos avaliar.</li>
+          </ul>
+          <p className="mt-2 text-xs text-amber-800 font-medium">
+            Qualquer vaga com <code>isExternalListing = true</code> pode ser atualizada via PATCH usando a sua chave de API, independentemente de quem cadastrou originalmente.
+          </p>
+        </div>
+
         <div>
           <strong className="text-sm">1. Verificar duplicidade</strong>
           <pre className="mt-2 overflow-x-auto rounded-xl bg-stone-950 p-4 text-xs text-stone-200">
@@ -2095,7 +2114,7 @@ export function ApiV1Panel() {
             {`{"title":"Novo título","salary":"R$ 2.500"}`}
           </pre>
           <p className="mt-2 text-xs text-stone-500">
-            A chave só pode editar vagas que ela própria cadastrou. Todos os
+            A chave tem permissão para editar QUALQUER vaga que seja catalogada como externa (<code>isExternalListing = true</code>). Todos os
             campos de conteúdo podem ser atualizados; <code>status</code>,{" "}
             <code>active</code> e <code>moderationStatus</code> são exclusivos
             da moderação administrativa.
