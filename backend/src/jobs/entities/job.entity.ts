@@ -64,6 +64,18 @@ export class Job {
   externalFingerprint: string | null;
 
   @Column({ type: 'varchar', nullable: true })
+  sourceExternalId: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  sourcePublishedAt: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastVerifiedAt: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastSeenAt: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
   ingestionSourceId: string | null;
 
   @Column({ type: 'varchar', length: 120, nullable: true })
@@ -116,4 +128,13 @@ export class Job {
 
   @Column({ type: 'text', nullable: true })
   flagObservation: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  flagReason: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  flaggedAt: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  flaggedBy: string | null;
 }

@@ -55,6 +55,7 @@ type Job = {
   views?: number;
   isFlagged?: boolean;
   flagObservation?: string;
+  lastVerifiedAt?: string;
   updatedAt?: string;
 };
 type PlatformUser = {
@@ -2039,17 +2040,22 @@ export function ApiV1Panel() {
 
         <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-4">
           <strong className="text-sm text-amber-900 flex items-center gap-2">
-            <span className="text-lg">✨</span> O que há de novo para IA?
+            <span className="text-lg">✨</span> O que há de novo na API Externa 2.0 para IA?
           </strong>
           <p className="mt-2 text-xs text-amber-800">
-            A API externa agora permite que você sinalize problemas em vagas e defina status de banco de talentos!
+            A API externa agora permite identificar empresas explicitamente, adicionar IDs únicos e verificar vagas contínuas.
             No payload (POST ou PATCH), você pode incluir:
           </p>
           <ul className="mt-2 ml-4 list-disc text-xs text-amber-800 space-y-1">
+            <li><code>companyName</code> (string): Para separar o nome da empresa do portal que originou a vaga.</li>
+            <li><code>sourceExternalId</code> (string): Código único da vaga na fonte original (Ex: ID da Gupy ou MTE).</li>
+            <li><code>sourcePublishedAt</code>, <code>lastVerifiedAt</code> (string ISO-8601): Data de publicação original e última verificação.</li>
             <li><code>isTalentPool</code> (boolean): Envie <code>true</code> para vagas que são "Banco de Talentos".</li>
-            <li><code>isFlagged</code> (boolean): Envie <code>true</code> caso a vaga pareça expirada, irregular ou com erro.</li>
-            <li><code>flagObservation</code> (string): Preencha com o motivo do alerta para que possamos avaliar.</li>
+            <li><code>isFlagged</code>, <code>flagReason</code>, <code>flagObservation</code>: Sinalize vagas expiradas ou problemáticas.</li>
           </ul>
+          <p className="mt-2 text-xs text-amber-800 font-medium">
+            Novo endpoint <code>POST {endpoint}/:id/verification</code>: Use-o com {"{ status: 'AVAILABLE' }"} para atualizar a data de verificação sem precisar enviar o payload inteiro.
+          </p>
           <p className="mt-2 text-xs text-amber-800 font-medium">
             Qualquer vaga com <code>isExternalListing = true</code> pode ser atualizada via PATCH usando a sua chave de API, independentemente de quem cadastrou originalmente.
           </p>
@@ -2669,6 +2675,12 @@ function JobsTable({
               {job.updatedAt && (
                 <span className="mt-1 block text-xs text-stone-400">
                   Atualizado em {new Date(job.updatedAt).toLocaleDateString("pt-BR")} às {new Date(job.updatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
+              {job.lastVerifiedAt && (
+                <span className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                  Verificado há {Math.floor((Date.now() - new Date(job.lastVerifiedAt).getTime()) / (1000 * 60 * 60 * 24))} dias
                 </span>
               )}
             </td>

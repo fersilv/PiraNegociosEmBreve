@@ -31,6 +31,14 @@ export type ExternalJobInput = {
   isTalentPool?: unknown;
   isFlagged?: unknown;
   flagObservation?: unknown;
+  companyName?: unknown;
+  sourceExternalId?: unknown;
+  sourcePublishedAt?: unknown;
+  lastVerifiedAt?: unknown;
+  lastSeenAt?: unknown;
+  flagReason?: unknown;
+  flaggedAt?: unknown;
+  flaggedBy?: unknown;
 };
 
 type SanitizedExternalJob = {
@@ -52,6 +60,14 @@ type SanitizedExternalJob = {
   isTalentPool: boolean;
   isFlagged: boolean;
   flagObservation: string | null;
+  companyName: string;
+  sourceExternalId: string | null;
+  sourcePublishedAt: Date | null;
+  lastVerifiedAt: Date | null;
+  lastSeenAt: Date | null;
+  flagReason: string | null;
+  flaggedAt: Date | null;
+  flaggedBy: string | null;
 };
 
 export type JobCatalogQuery = {
@@ -135,52 +151,90 @@ export class ExternalJobsService {
         `${this.normalize(data.title)}|${this.normalize(data.sourceName)}|${this.normalize(data.city)}|${data.state}`,
       )
       .digest('hex');
-    const exactWhere: FindOptionsWhere<Job>[] = [
-      { externalFingerprint: fingerprint },
-    ];
-    if (data.sourceUrl) exactWhere.push({ sourceUrl: data.sourceUrl });
-    const exact = await this.jobs.findOne({ where: exactWhere });
-    if (exact) {
-      return {
-        duplicate: true,
-        matchType: 'EXACT' as const,
-        confidence: 1,
-        job: this.publicResult(exact),
-        fingerprint,
-        data,
-      };
+
+    const exactWhere: FindOptionsWhere<Job>[] = [];
+    if (data.sourceExternalId) {
+      exactWhere.push({ sourceExternalId: data.sourceExternalId, ingestionSourceId: client.id });
+    }
+    if (data.sourceUrl) {
+      exactWhere.push({ sourceUrl: data.sourceUrl });
+    }
+
+    if (exactWhere.length > 0) {
+      const exact = await this.jobs.findOne({ where: exactWhere });
+      if (exact) {
+        return {
+          duplicate: true,
+          matchType: 'EXACT' as const,
+          confidence: 1,
+          job: this.publicResult(exact),
+          fingerprint,
+          data,
+          signals: {
+            sameSourceExternalId: data.sourceExternalId && exact.sourceExternalId === data.sourceExternalId,
+            sameSourceUrl: data.sourceUrl && exact.sourceUrl === data.sourceUrl,
+          }
+        };
+      }
     }
 
     const recent = await this.jobs.find({
       order: { createdAt: 'DESC' },
       take: 500,
     });
-    let best: { job: Job; score: number } | null = null;
+    let best: { job: Job; score: number, signals: any } | null = null;
     for (const job of recent) {
       const titleScore = this.similarity(data.title, job.title);
-      const sourceScore = this.similarity(
-        data.sourceName,
-        job.sourceName || job.companyName,
+      const companyScore = this.similarity(
+        data.companyName,
+        job.companyName || job.sourceName,
       );
-      const samePlace =
-        this.normalize(data.city) ===
-          this.normalize(job.city || job.location) &&
-        data.state === (job.state || 'SP');
-      const score =
-        titleScore * 0.65 + sourceScore * 0.2 + (samePlace ? 0.15 : 0);
-      if (!best || score > best.score) best = { job, score };
+      const sameCity = this.normalize(data.city) === this.normalize(job.city || job.location);
+      const sameState = data.state === (job.state || 'SP');
+      
+      const score = titleScore * 0.5 + companyScore * 0.35 + (sameCity && sameState ? 0.15 : 0);
+      
+      if (!best || score > best.score) {
+        best = {
+          job, 
+          score,
+          signals: {
+            sameTitle: titleScore > 0.8,
+            sameCompany: companyScore > 0.8,
+            sameCity,
+            sameSourceExternalId: false,
+            sameSourceUrl: false,
+            titleSimilarity: Number(titleScore.toFixed(2)),
+            companySimilarity: Number(companyScore.toFixed(2)),
+          }
+        };
+      }
     }
 
-    if (best && best.score >= 0.82) {
+    if (best && best.score >= 0.85) {
       return {
         duplicate: true,
-        matchType: 'SIMILAR' as const,
+        matchType: 'LIKELY' as const,
         confidence: Number(best.score.toFixed(2)),
         job: this.publicResult(best.job),
         fingerprint,
         data,
+        signals: best.signals,
       };
     }
+    
+    if (best && best.score >= 0.65) {
+      return {
+        duplicate: false,
+        matchType: 'SIMILAR' as const,
+        confidence: Number(best.score.toFixed(2)),
+        closestJob: this.publicResult(best.job),
+        fingerprint,
+        data,
+        signals: best.signals,
+      };
+    }
+
     return {
       duplicate: false,
       matchType: null,
@@ -188,6 +242,7 @@ export class ExternalJobsService {
       closestJob: best ? this.publicResult(best.job) : null,
       fingerprint,
       data,
+      signals: best ? best.signals : null,
     };
   }
 
@@ -202,10 +257,10 @@ export class ExternalJobsService {
       );
     const overriddenSimilarMatch =
       match.duplicate &&
-      match.matchType === 'SIMILAR' &&
+      (match.matchType === 'SIMILAR' || match.matchType === 'LIKELY') &&
       input.allowSimilarDuplicate === true;
     if (match.duplicate && !overriddenSimilarMatch) {
-      await this.log(client.id, 'CREATE', match.job?.id || null, 'DUPLICATE', {
+      await this.log(client.id, 'CREATE', (match as any).job?.id || null, 'DUPLICATE', {
         confidence: match.confidence,
       });
       return match;
@@ -318,6 +373,22 @@ export class ExternalJobsService {
         input.flagObservation !== undefined
           ? input.flagObservation
           : job.flagObservation,
+      companyName:
+        input.companyName !== undefined ? input.companyName : job.companyName,
+      sourceExternalId:
+        input.sourceExternalId !== undefined ? input.sourceExternalId : job.sourceExternalId,
+      sourcePublishedAt:
+        input.sourcePublishedAt !== undefined ? input.sourcePublishedAt : job.sourcePublishedAt,
+      lastVerifiedAt:
+        input.lastVerifiedAt !== undefined ? input.lastVerifiedAt : job.lastVerifiedAt,
+      lastSeenAt:
+        input.lastSeenAt !== undefined ? input.lastSeenAt : job.lastSeenAt,
+      flagReason:
+        input.flagReason !== undefined ? input.flagReason : job.flagReason,
+      flaggedAt:
+        input.flaggedAt !== undefined ? input.flaggedAt : job.flaggedAt,
+      flaggedBy:
+        input.flaggedBy !== undefined ? input.flaggedBy : job.flaggedBy,
     };
     const data = this.sanitize(merged, client);
     const fingerprint = createHash('sha256')
@@ -353,6 +424,51 @@ export class ExternalJobsService {
         );
       throw error;
     }
+  }
+
+  async verify(id: string, input: any, client: ExternalApiClient) {
+    if (!input || typeof input !== 'object' || Array.isArray(input))
+      throw new BadRequestException('O corpo da requisição deve ser um objeto JSON.');
+
+    const job = await this.jobs.findOne({ where: { id } });
+    if (!job || !job.isExternalListing) {
+      throw new NotFoundException('Vaga não encontrada ou não é um cadastro externo.');
+    }
+
+    const validStatuses = ['AVAILABLE', 'NOT_FOUND', 'CLOSED', 'EXPIRED', 'UNCERTAIN'];
+    if (!validStatuses.includes(input.status)) {
+      throw new BadRequestException(`status deve ser um dos seguintes: ${validStatuses.join(', ')}`);
+    }
+
+    job.lastVerifiedAt = new Date();
+    job.lastSeenAt = new Date();
+
+    if (input.status === 'AVAILABLE') {
+      if (job.isFlagged) {
+        job.isFlagged = false;
+        job.flagReason = null;
+        job.flagObservation = null;
+      }
+      job.active = true;
+    } else if (input.status === 'CLOSED' || input.status === 'EXPIRED') {
+      job.active = false;
+      job.isFlagged = true;
+      job.flagReason = input.status;
+      job.flagObservation = input.observation || `Vaga marcada como ${input.status} via verificação.`;
+      job.flaggedAt = new Date();
+      job.flaggedBy = client.name;
+    } else {
+      // NOT_FOUND or UNCERTAIN
+      job.isFlagged = true;
+      job.flagReason = input.status;
+      job.flagObservation = input.observation || `Vaga sinalizada como ${input.status} via verificação.`;
+      job.flaggedAt = new Date();
+      job.flaggedBy = client.name;
+    }
+
+    const updated = await this.jobs.save(job);
+    await this.log(client.id, 'VERIFY', job.id, input.status, null);
+    return { verified: true, job: this.publicResult(updated) };
   }
 
   async list(query: JobCatalogQuery, client: ExternalApiClient) {
@@ -475,11 +591,16 @@ export class ExternalJobsService {
     const sourceName =
       this.optionalText(input.sourceName, 'sourceName', 160) ||
       client.sourceLabel;
+    
+    const companyName = this.optionalText(input.companyName, 'companyName', 160) || sourceName;
+
     const sourceUrl = this.optionalText(input.sourceUrl, 'sourceUrl', 2_000);
     if (sourceUrl && !/^https?:\/\//i.test(sourceUrl))
       throw new BadRequestException(
         'sourceUrl deve começar com http:// ou https://.',
       );
+
+    const sourceExternalId = this.optionalText(input.sourceExternalId, 'sourceExternalId', 120);
 
     const applicationEmail =
       this.optionalText(
@@ -534,7 +655,7 @@ export class ExternalJobsService {
       ),
       type: this.optionalText(input.type, 'type', 40) || 'Não informado',
       workModel:
-        this.optionalText(input.workModel, 'workModel', 40) || 'Presencial',
+        this.optionalText(input.workModel, 'workModel', 40) || 'Não informado',
       salary: this.optionalText(input.salary, 'salary', 80),
       applicationEmail,
       applicationWhatsApp,
@@ -547,6 +668,14 @@ export class ExternalJobsService {
       isTalentPool: this.optionalBoolean(input.isTalentPool, 'isTalentPool') || false,
       isFlagged: this.optionalBoolean(input.isFlagged, 'isFlagged') || false,
       flagObservation: this.optionalText(input.flagObservation, 'flagObservation', 1000),
+      companyName,
+      sourceExternalId,
+      sourcePublishedAt: this.optionalDate(input.sourcePublishedAt, 'sourcePublishedAt'),
+      lastVerifiedAt: this.optionalDate(input.lastVerifiedAt, 'lastVerifiedAt'),
+      lastSeenAt: this.optionalDate(input.lastSeenAt, 'lastSeenAt'),
+      flagReason: this.optionalText(input.flagReason, 'flagReason', 120),
+      flaggedAt: this.optionalDate(input.flaggedAt, 'flaggedAt'),
+      flaggedBy: this.optionalText(input.flaggedBy, 'flaggedBy', 120),
     };
   }
 
@@ -556,6 +685,16 @@ export class ExternalJobsService {
     if (value === 'true') return true;
     if (value === 'false') return false;
     throw new BadRequestException(`${field} deve ser um valor booleano.`);
+  }
+
+  private optionalDate(value: unknown, field: string): Date | null {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value !== 'string')
+      throw new BadRequestException(`${field} deve ser uma string de data (ISO-8601).`);
+    const date = new Date(value);
+    if (isNaN(date.getTime()))
+      throw new BadRequestException(`${field} deve ser uma data válida.`);
+    return date;
   }
 
   private requiredText(value: unknown, field: string, maxLength: number) {
@@ -758,6 +897,13 @@ export class ExternalJobsService {
       ingestionSourceName: job.ingestionSourceName,
       isFlagged: job.isFlagged,
       flagObservation: job.flagObservation,
+      flagReason: job.flagReason,
+      flaggedAt: job.flaggedAt,
+      flaggedBy: job.flaggedBy,
+      sourceExternalId: job.sourceExternalId,
+      sourcePublishedAt: job.sourcePublishedAt,
+      lastVerifiedAt: job.lastVerifiedAt,
+      lastSeenAt: job.lastSeenAt,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
     };

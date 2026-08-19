@@ -23,6 +23,11 @@ export interface Job {
   isCompanyVerified?: boolean;
   isTalentPool?: boolean;
   active?: boolean;
+  isFlagged?: boolean;
+  flagObservation?: string | null;
+  flagReason?: string | null;
+  lastVerifiedAt?: string | null;
+  sourcePublishedAt?: string | null;
   acceptsPlatformApplications?: boolean;
   externalApplicationInstructions?: string;
   applicationEmail?: string;

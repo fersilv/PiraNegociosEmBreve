@@ -9,7 +9,7 @@ Este documento descreve as capacidades da API Externa (`v1/jobs`) do Pira Negóc
 
 ## 🛠️ O que você (IA) pode fazer?
 
-Você tem total autonomia para **catalogar novas vagas externas**, **atualizar dados** e, o mais importante, **Sinalizar (Flag)** vagas antigas ou irregulares para revisão humana. Você **PODE** atualizar qualquer vaga externa no sistema, mesmo aquelas cadastradas por outras chaves de API, usando o método `PATCH /v1/jobs/:id`.
+Você tem total autonomia para **catalogar novas vagas externas**, **atualizar dados**, verificar o status (se continuam ativas) e **Sinalizar (Flag)** vagas antigas ou irregulares para revisão humana. Você **PODE** atualizar qualquer vaga externa no sistema, mesmo aquelas cadastradas por outras chaves de API, usando o método `PATCH /v1/jobs/:id` ou verificá-las via `POST /v1/jobs/:id/verification`.
 
 ---
 
@@ -17,43 +17,65 @@ Você tem total autonomia para **catalogar novas vagas externas**, **atualizar d
 
 ### 1. Checar Duplicidade
 **`POST /v1/jobs/check`**
-Antes de cadastrar uma vaga nova, envie o título e os detalhes para saber se ela já existe (busca semântica).
-- **Body:** Mesmo payload de criação (ver abaixo).
+Antes de cadastrar uma vaga nova, envie os detalhes para saber se ela já existe. O motor avaliará por `sourceExternalId` (EXACT) ou fará busca semântica (LIKELY/SIMILAR).
+O retorno de `check` traz um objeto `signals` indicando os parâmetros de semelhança.
 
 ### 2. Cadastrar Vaga
 **`POST /v1/jobs`**
 Insere uma nova vaga no painel.
 
-### 3. Atualizar Vaga / Sinalizar Vaga
+### 3. Atualizar Vaga Externa
 **`PATCH /v1/jobs/:id`**
-Atualiza dados de uma vaga externa. **Use esta rota para fazer o gerenciamento (limpeza) de vagas.**
+Atualiza dados (ex: salário, descrição, flag) de uma vaga externa sem modificar os outros. 
+
+### 4. Verificar Atividade da Vaga (Novo!)
+**`POST /v1/jobs/:id/verification`**
+Use para relatar o monitoramento diário da vaga.
+- **Body:** `{ "status": "AVAILABLE" | "CLOSED" | "EXPIRED" | "NOT_FOUND" | "UNCERTAIN", "observation": "String opcional" }`
+- **Ação:** Isso alimentará o `lastVerifiedAt` da vaga. Se for mandado `AVAILABLE`, as flags de erro antigas da vaga serão limpas automaticamente. Se for mandado `CLOSED` ou `EXPIRED`, a vaga será desativada e sinalizada automaticamente.
 
 ---
 
-## 📦 Payload Suportado (Formato JSON)
+## 📦 Payload Suportado (POST/PATCH)
 
-Tanto o `POST` quanto o `PATCH` suportam os mesmos campos. Todos os campos são opcionais, exceto `title` e `description` na criação.
+Todos os campos são opcionais no `PATCH`. No `POST`, `title` e `description` são obrigatórios.
 
 ```json
 {
   "title": "Desenvolvedor Backend Pleno",
   "description": "Texto longo descritivo da vaga e rotina...",
   "requirements": "Node.js, TypeScript, etc.",
-  "location": "São Paulo, SP",
+  
+  // Nomes Desacoplados (Obrigatório para melhor inteligência)
+  "companyName": "Empresa XPTO",
+  "sourceName": "PAT Limeira - Prefeitura",
+  
+  // Identificadores (Fortemente recomendados)
+  "sourceExternalId": "9198385", 
+  "sourceUrl": "https://pat.limeira.sp.gov.br/...",
+  
+  "city": "São Paulo",
+  "state": "SP",
+  
+  // Deixe em branco se não houver certeza para que caia em "Não informado"
   "type": "Tempo Integral",
   "workModel": "Híbrido",
+  
   "salary": "R$ 5.000,00",
-  "sourceName": "LinkedIn",
-  "sourceUrl": "https://linkedin.com/jobs/...",
   "deadlineDate": "2026-12-31",
   "applicationEmail": "vagas@empresa.com",
   "applicationWhatsApp": "11999999999",
   "externalApplicationInstructions": "Envie seu CV com o assunto XPTO.",
   
-  // 🔥 CAMPOS ESPECIAIS DE GERENCIAMENTO (IA)
+  // Datas Reais
+  "sourcePublishedAt": "2026-08-14T00:00:00-03:00",
+  "lastVerifiedAt": "2026-08-19T10:00:00-03:00",
+  
+  // 🔥 CAMPOS DE GERENCIAMENTO (IA)
   "isTalentPool": false,
   "isFlagged": true,
-  "flagObservation": "A vaga não está mais disponível no site de origem. Recomendo desativar."
+  "flagReason": "SOURCE_NOT_FOUND",
+  "flagObservation": "A vaga não está mais disponível no site de origem."
 }
 ```
 
@@ -61,13 +83,7 @@ Tanto o `POST` quanto o `PATCH` suportam os mesmos campos. Todos os campos são 
 
 ## 🚨 Regras de Moderação e Sinalização para a IA
 
-Como Agente, é seu papel manter a base de dados de vagas limpa. Se durante a sua varredura rotineira você identificar problemas em vagas do sistema (ex: erro no link original, vaga expirada, texto suspeito), você **NÃO DEVE** ignorar.
-
-**Procedimento de Sinalização:**
-1. Faça um `PATCH /v1/jobs/<id-da-vaga>`.
-2. Envie `"isFlagged": true`.
-3. Preencha `"flagObservation"` com o motivo exato pelo qual você está alertando o sistema. (Ex: *"Link fonte retorna 404"* ou *"Vaga expirada há mais de 3 meses"*).
-4. O Administrador humano visualizará seu alerta no Dashboard e tomará a decisão de apagar ou desativar a vaga.
-
-**Identificação de Banco de Talentos:**
-Se a vaga rastreada for especificamente um "Banco de Talentos" (sem contratação imediata, apenas captação de currículos), você DEVE enviar `"isTalentPool": true`. O frontend exibirá uma tag visual amigável avisando os candidatos.
+1. **Separação de Empresa vs Portal:** Sempre separe `companyName` do `sourceName`. Ex: Se a fonte for Indeed, `sourceName="Indeed"` e `companyName="Nome da Empresa que contratou"`.
+2. **IDs únicos:** Sempre envie `sourceExternalId` se houver um código de vaga na origem (ex: código MTE).
+3. **Verificação (Routine):** Sempre que fizer a varredura, envie a constatação no endpoint `/verification` para manter a data de `lastVerifiedAt` atualizada e exibir no frontend "Verificado há 2 dias".
+4. **Banco de Talentos:** Se for apenas para captação, envie `"isTalentPool": true`.

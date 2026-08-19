@@ -36,4 +36,12 @@ export class ExternalApiController {
   ) {
     return this.jobs.update(id, input, req.apiClient);
   }
+
+  @Post(':id/verification') verify(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() input: any,
+  ) {
+    return this.jobs.verify(id, input, req.apiClient);
+  }
 }
