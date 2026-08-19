@@ -206,7 +206,7 @@ export function AdminDashboard({
       } catch (requestError: any) {
         setError(
           requestError.response?.data?.message ||
-            "Não foi possível carregar os dados administrativos.",
+          "Não foi possível carregar os dados administrativos.",
         );
       } finally {
         setLoading(false);
@@ -271,7 +271,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-          "Não foi possível criar a empresa.",
+        "Não foi possível criar a empresa.",
       );
     } finally {
       setSaving(false);
@@ -306,7 +306,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-          "Não foi possível publicar a vaga.",
+        "Não foi possível publicar a vaga.",
       );
     } finally {
       setSaving(false);
@@ -322,7 +322,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-          "Não foi possível atualizar a empresa.",
+        "Não foi possível atualizar a empresa.",
       );
     }
   };
@@ -338,7 +338,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-          "Não foi possível atualizar a vaga.",
+        "Não foi possível atualizar a vaga.",
       );
     }
   };
@@ -352,7 +352,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-          "Não foi possível excluir a vaga.",
+        "Não foi possível excluir a vaga.",
       );
     }
   };
@@ -370,7 +370,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-          "Não foi possível processar a solicitação.",
+        "Não foi possível processar a solicitação.",
       );
     }
   };
@@ -402,7 +402,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-          "Não foi possível registrar a sanção.",
+        "Não foi possível registrar a sanção.",
       );
     } finally {
       setSaving(false);
@@ -422,7 +422,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-          "Não foi possível salvar a empresa.",
+        "Não foi possível salvar a empresa.",
       );
     } finally {
       setSaving(false);
@@ -440,7 +440,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-          "Não foi possível revisar a alteração da URL.",
+        "Não foi possível revisar a alteração da URL.",
       );
     }
   };
@@ -458,7 +458,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-          "Não foi possível salvar o usuário.",
+        "Não foi possível salvar o usuário.",
       );
     } finally {
       setSaving(false);
@@ -1634,8 +1634,8 @@ export function AdminDashboard({
                     </small>
                   </div>
                 )) || (
-                  <p className="text-stone-500">Sem acessos registrados.</p>
-                )}
+                    <p className="text-stone-500">Sem acessos registrados.</p>
+                  )}
               </div>
             </section>
           </div>
@@ -1751,7 +1751,7 @@ export function ApiV1Panel() {
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-          "Não foi possível gerar a chave.",
+        "Não foi possível gerar a chave.",
       );
     } finally {
       setSaving(false);
@@ -1791,7 +1791,7 @@ export function ApiV1Panel() {
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-          "Não foi possível carregar a atividade desta chave.",
+        "Não foi possível carregar a atividade desta chave.",
       );
     } finally {
       setRequestsLoading(false);
@@ -2001,7 +2001,7 @@ export function ApiV1Panel() {
                       <button
                         disabled={
                           requestPagination.page >=
-                            requestPagination.totalPages || requestsLoading
+                          requestPagination.totalPages || requestsLoading
                         }
                         onClick={() =>
                           loadClientRequests(client, requestPagination.page + 1)
@@ -2181,7 +2181,7 @@ function AdvertisingPanel() {
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-          "Não foi possível criar o anúncio.",
+        "Não foi possível criar o anúncio.",
       );
     } finally {
       setSaving(false);
@@ -2211,7 +2211,7 @@ function AdvertisingPanel() {
     await load();
   };
   return (
-    <div className="grid gap-6 p-5 lg:grid-cols-2">
+    <div className="grid gap-6 p-5 lg:grid-cols-12">
       <form
         onSubmit={create}
         className="space-y-3 rounded-2xl border border-stone-200 p-5"
@@ -2267,18 +2267,18 @@ function AdvertisingPanel() {
               <option value="">Selecione...</option>
               {form.ownerType === "company"
                 ? companies.map((company) => (
-                    <option value={company.id} key={company.id}>
-                      {company.name}
-                    </option>
-                  ))
+                  <option value={company.id} key={company.id}>
+                    {company.name}
+                  </option>
+                ))
                 : users.map((user) => (
-                    <option value={user.id} key={user.id}>
-                      {user.fullName ||
-                        user.displayName ||
-                        user.email ||
-                        user.id}
-                    </option>
-                  ))}
+                  <option value={user.id} key={user.id}>
+                    {user.fullName ||
+                      user.displayName ||
+                      user.email ||
+                      user.id}
+                  </option>
+                ))}
             </select>
           </Field>
         </div>
@@ -2396,14 +2396,14 @@ function AdvertisingPanel() {
                   Responsável:{" "}
                   {ad.companyId
                     ? companies.find((company) => company.id === ad.companyId)
-                        ?.name || "Empresa removida"
+                      ?.name || "Empresa removida"
                     : users.find((user) => user.id === ad.contractedByUserId)
-                        ?.fullName ||
-                      users.find((user) => user.id === ad.contractedByUserId)
-                        ?.displayName ||
-                      users.find((user) => user.id === ad.contractedByUserId)
-                        ?.email ||
-                      "Usuário removido"}
+                      ?.fullName ||
+                    users.find((user) => user.id === ad.contractedByUserId)
+                      ?.displayName ||
+                    users.find((user) => user.id === ad.contractedByUserId)
+                      ?.email ||
+                    "Usuário removido"}
                 </p>
               </div>
               <button
