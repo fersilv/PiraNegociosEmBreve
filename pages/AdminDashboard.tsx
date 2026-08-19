@@ -2106,6 +2106,7 @@ function AdvertisingPanel() {
   const [ads, setAds] = useState<any[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [users, setUsers] = useState<PlatformUser[]>([]);
+  const [editingAdId, setEditingAdId] = useState<string | null>(null);
   const [config, setConfig] = useState<any>({
     googleAdsEnabled: false,
     googleAdsClient: "",
@@ -2153,18 +2154,24 @@ function AdvertisingPanel() {
       setSaving(false);
     }
   };
-  const create = async (event: FormEvent) => {
+  const saveAd = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
     try {
-      await api.post("/admin/ads", {
+      const payload = {
         ...form,
         companyId: form.ownerType === "company" ? form.ownerId : null,
         contractedByUserId: form.ownerType === "user" ? form.ownerId : null,
         price: form.price || null,
         startsAt: form.startsAt || null,
         endsAt: form.endsAt || null,
-      });
+      };
+      if (editingAdId) {
+        await api.put(`/admin/ads/${editingAdId}`, payload);
+      } else {
+        await api.post("/admin/ads", payload);
+      }
+      setEditingAdId(null);
       setForm({
         title: "",
         type: "leaderboard",
@@ -2181,11 +2188,44 @@ function AdvertisingPanel() {
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-        "Não foi possível criar o anúncio.",
+        "Não foi possível salvar o anúncio.",
       );
     } finally {
       setSaving(false);
     }
+  };
+
+  const editAd = (ad: any) => {
+    setEditingAdId(ad.id);
+    setForm({
+      title: ad.title || "",
+      type: ad.type || "leaderboard",
+      imageURL: ad.imageURL || "",
+      link: ad.link || "",
+      price: ad.price || "",
+      billingPeriod: ad.billingPeriod || "MONTHLY",
+      startsAt: ad.startsAt ? String(ad.startsAt).split("T")[0] : "",
+      endsAt: ad.endsAt ? String(ad.endsAt).split("T")[0] : "",
+      ownerType: ad.companyId ? "company" : "user",
+      ownerId: ad.companyId || ad.contractedByUserId || "",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const cancelEdit = () => {
+    setEditingAdId(null);
+    setForm({
+      title: "",
+      type: "leaderboard",
+      imageURL: "",
+      link: "",
+      price: "",
+      billingPeriod: "MONTHLY",
+      startsAt: "",
+      endsAt: "",
+      ownerType: "company",
+      ownerId: "",
+    });
   };
   const uploadImage = async (file?: File) => {
     if (!file) return;
@@ -2213,10 +2253,12 @@ function AdvertisingPanel() {
   return (
     <div className="grid gap-6 p-5">
       <form
-        onSubmit={create}
+        onSubmit={saveAd}
         className="space-y-3 rounded-2xl border border-stone-200 p-5"
       >
-        <h3 className="font-bold text-stone-900">Novo anúncio contratado</h3>
+        <h3 className="font-bold text-stone-900">
+          {editingAdId ? "Editar anúncio contratado" : "Novo anúncio contratado"}
+        </h3>
         {error && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
@@ -2374,7 +2416,25 @@ function AdvertisingPanel() {
             className="input"
           />
         </Field>
-        <Actions saving={saving || uploading} text="Criar anúncio" />
+        <div className="flex justify-end gap-2 border-t border-stone-100 pt-4 mt-2">
+          {editingAdId && (
+            <button
+              type="button"
+              onClick={cancelEdit}
+              disabled={saving || uploading}
+              className="rounded-xl bg-stone-100 px-5 py-2.5 text-sm font-bold text-stone-700 hover:bg-stone-200 disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+          )}
+          <button
+            type="submit"
+            disabled={saving || uploading}
+            className="inline-flex items-center gap-2 rounded-xl bg-terracotta-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-terracotta-700 disabled:opacity-60"
+          >
+            {editingAdId ? "Salvar alterações" : "Criar anúncio"}
+          </button>
+        </div>
       </form>
       <section className="lg:col-span-2">
         <h3 className="font-bold text-stone-900">Anúncios cadastrados</h3>
@@ -2406,12 +2466,22 @@ function AdvertisingPanel() {
                     "Usuário removido"}
                 </p>
               </div>
-              <button
-                onClick={() => toggle(ad)}
-                className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-stone-700"
-              >
-                {ad.active ? "Desativar" : "Ativar"}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => editAd(ad)}
+                  className="rounded-lg bg-stone-200 px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-300"
+                >
+                  Editar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggle(ad)}
+                  className="rounded-lg bg-white border border-stone-200 px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-50"
+                >
+                  {ad.active ? "Desativar" : "Ativar"}
+                </button>
+              </div>
             </div>
           ))}
           {!ads.length && (
