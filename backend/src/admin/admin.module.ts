@@ -16,6 +16,7 @@ import { Setting } from './entities/setting.entity';
 
 import { SettingsService } from './settings.service';
 import { SettingsController } from './settings.controller';
+import { AdminAiController } from './admin-ai.controller';
 
 @Module({
   imports: [
@@ -33,7 +34,7 @@ import { SettingsController } from './settings.controller';
       Setting,
     ]),
   ],
-  controllers: [AdminController, SettingsController],
+  controllers: [AdminController, SettingsController, AdminAiController],
   providers: [AdminGuard, SettingsService],
   exports: [SettingsService],
 })

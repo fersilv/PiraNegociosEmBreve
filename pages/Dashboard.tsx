@@ -6,6 +6,7 @@ import { DashboardLayout } from "../components/DashboardLayout";
 import { CompanyDashboard } from "./CompanyDashboard";
 import { CandidateDashboard } from "./CandidateDashboard";
 import { AdminDashboard, ApiV1Panel } from "./AdminDashboard";
+import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
 import { ResumeDatabase } from "./ResumeDatabase";
 import { ProfilePage } from "./ProfilePage";
 import { CompanyProfilePage } from "./CompanyProfilePage";
@@ -190,6 +191,19 @@ export function Dashboard() {
                 <section className="rounded-2xl border border-stone-200 bg-white shadow-sm">
                   <ApiV1Panel />
                 </section>
+              </div>
+            ) : (
+              <Navigate to="/dashboard" />
+            )
+          }
+        />
+
+        <Route
+          path="admin/ai"
+          element={
+            profile?.type === "ADMIN" ? (
+              <div className="mx-auto max-w-7xl space-y-6">
+                <AiIntegrationsPanel />
               </div>
             ) : (
               <Navigate to="/dashboard" />

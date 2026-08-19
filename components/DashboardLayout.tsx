@@ -12,6 +12,7 @@ import {
   Link2,
   Megaphone,
   KeyRound,
+  Cpu,
 } from "lucide-react";
 import { auth } from "../lib/firebase";
 import { useAuth, getGreetingName } from "../contexts/AuthContext";
@@ -118,6 +119,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   to="/dashboard/admin/api"
                   icon={<KeyRound className="w-5 h-5" />}
                   label="API v1"
+                />
+                <NavItem
+                  to="/dashboard/admin/ai"
+                  icon={<Cpu className="w-5 h-5" />}
+                  label="Inteligência Artificial"
                 />
                 <NavItem
                   to="/dashboard/perfil"
@@ -267,6 +273,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   to="/dashboard/admin/api"
                   icon={<KeyRound className="w-5 h-5" />}
                   label="API"
+                />
+                <MobileNavItem
+                  to="/dashboard/admin/ai"
+                  icon={<Cpu className="w-5 h-5" />}
+                  label="IA"
                 />
                 <MobileNavItem
                   to="/dashboard/perfil"
