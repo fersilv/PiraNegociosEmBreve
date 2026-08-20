@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth, getGreetingName } from '../contexts/AuthContext';
 import { api, asArray } from '../lib/api';
-import { Plus, Briefcase, FileText, CheckCircle, BellRing, AlertTriangle, ArrowRight, EyeOff, User, Loader2, Clock } from 'lucide-react';
+import { Plus, Briefcase, FileText, CheckCircle, BellRing, AlertTriangle, ArrowRight, EyeOff, User, Loader2, Clock, Building2, Users } from 'lucide-react';
 import { sendNotificationToUser, notifyCandidatesOfNewJob } from '../lib/notifications';
 import { Link, useNavigate } from 'react-router-dom';
 import { openBase64InNewTab } from '../lib/fileViewer';
