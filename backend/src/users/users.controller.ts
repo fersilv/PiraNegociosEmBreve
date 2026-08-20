@@ -2,6 +2,7 @@ import { BadRequestException, Controller, Get, Post, Put, Body, UseGuards, Req, 
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from './users.service';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
+import { SettingsService } from '../admin/settings.service';
 
 import { User, UserType } from './entities/user.entity';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -13,6 +14,7 @@ export class UsersController {
     private readonly usersService: UsersService,
     private readonly configService: ConfigService,
     private readonly analytics: AnalyticsService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   private isBootstrapAdmin(email?: string): boolean {
@@ -22,6 +24,18 @@ export class UsersController {
       .map(value => value.trim().toLowerCase())
       .filter(Boolean);
     return admins.includes(email.toLowerCase());
+  }
+
+  private async exposeProfileForRuntime(profile: User) {
+    const aiEnabled =
+      (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
+    if (aiEnabled) return profile;
+
+    const { aiAnalysis: _aiAnalysis, ...safeProfile } = profile;
+    return {
+      ...safeProfile,
+      hasAiAnalyzed: false,
+    };
   }
 
   @Get('me')
@@ -35,17 +49,18 @@ export class UsersController {
     // completed onboarding as a candidate or company user.
     if (this.isBootstrapAdmin(user.email)) {
       if (!existing || existing.type !== UserType.ADMIN) {
-        return await this.usersService.createOrUpdate(user.uid, {
+        const profile = await this.usersService.createOrUpdate(user.uid, {
           type: UserType.ADMIN,
           displayName: existing?.displayName || user.name || user.email,
           email: user.email,
         });
+        return this.exposeProfileForRuntime(profile);
       }
-      return existing;
+      return this.exposeProfileForRuntime(existing);
     }
 
-    if (existing) return existing;
-    return await this.usersService.findOne(user.uid);
+    if (existing) return this.exposeProfileForRuntime(existing);
+    return this.exposeProfileForRuntime(await this.usersService.findOne(user.uid));
   }
 
   @Post('me')
