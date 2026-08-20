@@ -14,6 +14,7 @@ import { CreativeTemplate } from "../components/resume-templates/CreativeTemplat
 import { CityStateSelector } from "../components/CityStateSelector";
 import { FileUpload } from "../components/FileUpload";
 import { SearchSelect } from "../components/SearchSelect";
+import { useAiStatus } from "../hooks/useAiStatus";
 
 const TEMPLATES = [
   { id: "modern", name: "Moderno" },
@@ -50,6 +51,7 @@ function profileHasData(p: UserProfile | null): boolean {
 
 export function ResumeBuilderPage() {
   const { profile, loading, refreshProfile } = useAuth();
+  const { enabled: aiEnabled } = useAiStatus();
   const [step, setStep] = useState(-1); // -1 = deciding, 0+ = wizard steps
   const [isFirstJob, setIsFirstJob] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -221,7 +223,7 @@ export function ResumeBuilderPage() {
   // ─── AI Upload Handler ───
   const handleAiUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !aiEnabled) return;
     setAiLoading(true);
     try {
       const reader = new FileReader();
@@ -243,7 +245,8 @@ export function ResumeBuilderPage() {
           if (data.courses) setFormCourses(data.courses);
           setStep(0); // Go to first step to review
         } else {
-          alert("Não foi possível analisar o currículo. Tente novamente.");
+          const errorData = await resp.json().catch(() => ({}));
+          alert(errorData.message || errorData.error || "Não foi possível analisar o currículo. Tente novamente.");
         }
         setAiLoading(false);
       };
@@ -267,26 +270,29 @@ export function ResumeBuilderPage() {
             Responda algumas perguntas e nós montamos um currículo profissional pra você em minutos.
           </p>
 
-          {/* AI Upload Option */}
-          <div className="bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-200 rounded-2xl p-5 mb-8 text-left">
-            <h3 className="font-bold text-violet-900 flex items-center gap-2 mb-2">
-              <Sparkles className="w-5 h-5 text-violet-500" /> Atalho com Inteligência Artificial
-            </h3>
-            <p className="text-sm text-violet-700 mb-3">
-              Já tem um currículo em PDF? Envie e nossa IA preencherá todos os campos automaticamente para você apenas revisar.
-            </p>
-            <label className="relative cursor-pointer inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition-colors shadow-sm">
-              <Upload className="w-4 h-4" />
-              {aiLoading ? "Analisando..." : "Enviar Currículo Existente"}
-              <input type="file" accept=".pdf,image/*" onChange={handleAiUpload} className="hidden" disabled={aiLoading} />
-            </label>
-          </div>
+          {aiEnabled && (
+            <>
+              <div className="bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-200 rounded-2xl p-5 mb-8 text-left">
+                <h3 className="font-bold text-violet-900 flex items-center gap-2 mb-2">
+                  <Sparkles className="w-5 h-5 text-violet-500" /> Atalho com Inteligência Artificial
+                </h3>
+                <p className="text-sm text-violet-700 mb-3">
+                  Já tem um currículo em PDF? Envie e nossa IA preencherá todos os campos automaticamente para você apenas revisar.
+                </p>
+                <label className="relative cursor-pointer inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition-colors shadow-sm">
+                  <Upload className="w-4 h-4" />
+                  {aiLoading ? "Analisando..." : "Enviar Currículo Existente"}
+                  <input type="file" accept=".pdf,image/*" onChange={handleAiUpload} className="hidden" disabled={aiLoading} />
+                </label>
+              </div>
 
-          <div className="flex items-center gap-4 mb-8">
-            <div className="h-px flex-1 bg-stone-200" />
-            <span className="text-sm text-stone-400 font-medium">ou preencha manualmente</span>
-            <div className="h-px flex-1 bg-stone-200" />
-          </div>
+              <div className="flex items-center gap-4 mb-8">
+                <div className="h-px flex-1 bg-stone-200" />
+                <span className="text-sm text-stone-400 font-medium">ou preencha manualmente</span>
+                <div className="h-px flex-1 bg-stone-200" />
+              </div>
+            </>
+          )}
 
           <h2 className="text-lg font-bold text-stone-900 mb-4">Este é o seu primeiro emprego?</h2>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
