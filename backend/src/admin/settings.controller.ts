@@ -10,7 +10,8 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { SettingsService, AiBrainEntryInput, AiBehaviorSettings } from './settings.service';
+import { SettingsService } from './settings.service';
+import type { AiBrainEntryInput, AiBehaviorSettings } from './settings.service';
 import { AdminGuard } from './admin.guard';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 
