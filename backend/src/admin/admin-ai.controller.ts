@@ -187,8 +187,6 @@ export class AdminAiController {
         if (!model)
           throw new Error('Nenhum modelo de linguagem compatível foi encontrado.');
 
-        // Não basta listar modelos: uma geração mínima valida chave, acesso ao
-        // modelo, cobrança/quota e capacidade real de responder.
         await openai.responses.create({
           model,
           input: 'Responda apenas OK.',
@@ -294,11 +292,20 @@ export class AdminAiController {
     const rawProvider = await this.settingsService.getValue('AI_PROVIDER');
     const provider = this.isProvider(rawProvider) ? rawProvider : null;
     const model = (await this.settingsService.getValue('AI_MODEL')) || null;
-    const hasKey = provider ? Boolean(await this.getProviderKey(provider)) : false;
+    const configuredEntries = await Promise.all(
+      PROVIDERS.map(async (item) => [item, Boolean(await this.getProviderKey(item))] as const),
+    );
+    const configuredProviders = Object.fromEntries(configuredEntries) as Record<
+      AiProvider,
+      boolean
+    >;
     return {
-      enabled: enabledSetting && Boolean(provider && model && hasKey),
+      enabled:
+        enabledSetting &&
+        Boolean(provider && model && configuredProviders[provider]),
       provider,
       model,
+      configuredProviders,
     };
   }
 
@@ -339,7 +346,14 @@ export class AdminAiController {
       );
     }
 
-    // AI_ENABLED só é gravado depois de uma chamada de geração real funcionar.
+    // Um enable nunca herda um true antigo. Primeiro derrubamos a flag,
+    // fazemos a chamada real e só religamos quando ela terminar com sucesso.
+    await this.settingsService.createOrUpdate(
+      'AI_ENABLED',
+      'false',
+      'Habilita os recursos de inteligência artificial no sistema',
+    );
+
     const tested = await this.testProvider(body.provider);
     await this.settingsService.createOrUpdate(
       'AI_PROVIDER',
