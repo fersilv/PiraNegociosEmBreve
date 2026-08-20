@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { JobSkillsService } from './job-skills.service';
+import type { JobSkillScore } from './job-skills.service';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 
 @Controller('ai')
@@ -73,9 +74,10 @@ export class AiController {
       this.jobSkillsService.scoreJobs(body.profile, body.jobs),
     ]);
 
-    const skillScores = new Map(
-      (skillResult.scores || []).map((item) => [item.jobId, item] as const),
+    const skillScores = new Map<string, JobSkillScore>(
+      skillResult.scores.map((item: JobSkillScore) => [item.jobId, item]),
     );
+
     const matches = Array.isArray(generalResult?.matches)
       ? generalResult.matches.map((match: any) => {
           const skill = skillScores.get(String(match?.jobId || ''));
@@ -83,11 +85,12 @@ export class AiController {
           const skillSentence = skill
             ? `Compatibilidade de habilidades: ${Math.round(skill.score)}%.`
             : '';
+
           return {
             ...match,
             reason: [originalReason, skillSentence].filter(Boolean).join(' '),
-            skillScore: skill ? skill.score : null,
-            skillMatches: skill?.matches || [],
+            skillScore: skill?.score ?? null,
+            skillMatches: skill?.matches ?? [],
           };
         })
       : [];
