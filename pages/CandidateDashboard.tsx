@@ -13,9 +13,11 @@ import {
 } from "lucide-react";
 import { openBase64InNewTab } from "../lib/fileViewer";
 import { Link } from "react-router-dom";
+import { useAiStatus } from "../hooks/useAiStatus";
 
 export function CandidateDashboard() {
   const { user, profile } = useAuth();
+  const { enabled: aiEnabled } = useAiStatus();
   const [myApplications, setMyApplications] = useState<any[]>([]);
   const [jobsMap, setJobsMap] = useState<Record<string, any>>({});
   const [talentInvites, setTalentInvites] = useState<any[]>([]);
@@ -83,7 +85,7 @@ export function CandidateDashboard() {
   };
 
   const handleMatchAI = async () => {
-    if (!user) return;
+    if (!user || !aiEnabled) return;
     setMatching(true);
     setMatchError("");
     try {
@@ -93,7 +95,7 @@ export function CandidateDashboard() {
         return;
       }
 
-      const response = await fetch("/api/gemini/job-match", {
+      const response = await fetch("/api/ai/job-match", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -107,7 +109,9 @@ export function CandidateDashboard() {
       });
       const data = await response.json();
       if (!response.ok)
-        throw new Error(data.error || "Não foi possível gerar recomendações.");
+        throw new Error(
+          data.message || data.error || "Não foi possível gerar recomendações.",
+        );
       setMatchResults(data.matches);
     } catch (err: any) {
       console.error(err);
@@ -472,85 +476,87 @@ export function CandidateDashboard() {
         )}
       </div>
 
-      <div className="bg-gradient-to-br from-terracotta-50 to-orange-50 p-6 md:p-8 rounded-3xl border border-terracotta-100">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-          <div>
-            <h2 className="text-2xl font-serif font-bold text-stone-900 flex items-center gap-2">
-              <Sparkles className="w-6 h-6 text-terracotta-600" />
-              Recomendações Inteligentes
-            </h2>
-            <p className="text-stone-600 mt-1">
-              Nossa Inteligência Artificial analisa seu currículo e sugere as
-              melhores vagas para o seu perfil.
-            </p>
+      {aiEnabled && (
+        <div className="bg-gradient-to-br from-terracotta-50 to-orange-50 p-6 md:p-8 rounded-3xl border border-terracotta-100">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+            <div>
+              <h2 className="text-2xl font-serif font-bold text-stone-900 flex items-center gap-2">
+                <Sparkles className="w-6 h-6 text-terracotta-600" />
+                Recomendações Inteligentes
+              </h2>
+              <p className="text-stone-600 mt-1">
+                Nossa Inteligência Artificial analisa seu currículo e sugere as
+                melhores vagas para o seu perfil.
+              </p>
+            </div>
+            <button
+              onClick={handleMatchAI}
+              disabled={matching}
+              className="shrink-0 bg-terracotta-600 hover:bg-terracotta-700 text-white font-bold py-3 px-6 rounded-xl flex items-center gap-2 transition-all shadow-md disabled:opacity-70"
+            >
+              {matching ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Analisando...
+                </>
+              ) : (
+                <>
+                  Descobrir Vagas Ideais
+                  <Sparkles className="w-5 h-5" />
+                </>
+              )}
+            </button>
           </div>
-          <button
-            onClick={handleMatchAI}
-            disabled={matching}
-            className="shrink-0 bg-terracotta-600 hover:bg-terracotta-700 text-white font-bold py-3 px-6 rounded-xl flex items-center gap-2 transition-all shadow-md disabled:opacity-70"
-          >
-            {matching ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Analisando...
-              </>
-            ) : (
-              <>
-                Descobrir Vagas Ideais
-                <Sparkles className="w-5 h-5" />
-              </>
-            )}
-          </button>
-        </div>
 
-        {matchError && (
-          <div className="bg-red-50 text-red-600 p-4 rounded-xl border border-red-100 mb-6 text-sm">
-            {matchError}
-          </div>
-        )}
+          {matchError && (
+            <div className="bg-red-50 text-red-600 p-4 rounded-xl border border-red-100 mb-6 text-sm">
+              {matchError}
+            </div>
+          )}
 
-        {matchResults && matchResults.length > 0 && (
-          <div className="space-y-4 mt-8 animate-in fade-in duration-500 slide-in-from-bottom-4">
-            {matchResults.slice(0, 5).map((match, idx) => {
-              const job = jobsMap[match.jobId];
-              if (!job) return null;
+          {matchResults && matchResults.length > 0 && (
+            <div className="space-y-4 mt-8 animate-in fade-in duration-500 slide-in-from-bottom-4">
+              {matchResults.slice(0, 5).map((match, idx) => {
+                const job = jobsMap[match.jobId];
+                if (!job) return null;
 
-              return (
-                <div
-                  key={`${match.jobId}-${idx}`}
-                  className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm flex flex-col md:flex-row gap-6"
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full">
-                        {match.score}% Match
-                      </span>
-                      <h3 className="font-bold text-lg text-stone-900 line-clamp-1">
-                        {job.title}
-                      </h3>
+                return (
+                  <div
+                    key={`${match.jobId}-${idx}`}
+                    className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm flex flex-col md:flex-row gap-6"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full">
+                          {match.score}% Match
+                        </span>
+                        <h3 className="font-bold text-lg text-stone-900 line-clamp-1">
+                          {job.title}
+                        </h3>
+                      </div>
+                      <p className="text-terracotta-700 text-sm font-medium mb-3">
+                        {job.companyName}
+                      </p>
+                      <p className="text-stone-600 text-sm leading-relaxed">
+                        {match.reason}
+                      </p>
                     </div>
-                    <p className="text-terracotta-700 text-sm font-medium mb-3">
-                      {job.companyName}
-                    </p>
-                    <p className="text-stone-600 text-sm leading-relaxed">
-                      {match.reason}
-                    </p>
+                    <div className="flex items-center justify-end md:items-center shrink-0">
+                      <Link
+                        to={`/?applyTo=${job.id}`}
+                        className="group flex items-center gap-2 text-terracotta-600 font-bold hover:text-terracotta-800 transition-colors"
+                      >
+                        Ver Vaga
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                      </Link>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-end md:items-center shrink-0">
-                    <Link
-                      to={`/?applyTo=${job.id}`}
-                      className="group flex items-center gap-2 text-terracotta-600 font-bold hover:text-terracotta-800 transition-colors"
-                    >
-                      Ver Vaga
-                      <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                    </Link>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
