@@ -127,7 +127,7 @@ export function AiIntegrationsPanel() {
       Object.entries(keys).map(([key, value]) =>
         api.post("/admin/settings", {
           key,
-          value: value.trim(),
+          value: String(value).trim(),
           description: `Chave para ${key}`,
         }),
       ),
