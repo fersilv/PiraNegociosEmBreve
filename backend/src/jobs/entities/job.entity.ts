@@ -30,6 +30,9 @@ export class Job {
   @Column({ type: 'text', nullable: true })
   requirements: string | null;
 
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  skills: string[];
+
   @Column({ nullable: true })
   location: string;
 
