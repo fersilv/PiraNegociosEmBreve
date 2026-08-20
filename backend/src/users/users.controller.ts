@@ -29,6 +29,10 @@ export class UsersController {
   private async exposeProfileForRuntime(profile: User) {
     const runtimeProfile = {
       ...profile,
+      // Compatibilidade temporária com telas antigas que ainda tratam
+      // CANDIDATE como sinônimo de perfil pessoal. Isto NÃO é persistido e
+      // NÃO deve ser usado como autorização. Usuário comum no banco é neutro.
+      type: profile.type ?? UserType.CANDIDATE,
       experiences: this.usersService.normalizeExperienceDates(profile.experiences),
     };
     const aiEnabled =
@@ -63,12 +67,9 @@ export class UsersController {
 
     if (existing) return this.exposeProfileForRuntime(existing);
 
-    // Firebase Authentication and the application database have independent
-    // lifecycles. A valid Firebase account may legitimately reach the app
-    // before a row exists in users (local development, imported accounts,
-    // restored databases, etc.). Bootstrap the application profile instead of
-    // returning 404. UsersService.createOrUpdate also consumes a pending
-    // company invitation, when one exists for this e-mail.
+    // Firebase Authentication e o banco da aplicação têm ciclos de vida
+    // independentes. Se o token é válido mas ainda não há linha em users,
+    // criamos uma conta neutra. Recursos pessoais não dependem de CANDIDATE.
     const email =
       typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
     if (!email) {
@@ -80,7 +81,6 @@ export class UsersController {
     const displayName =
       (typeof user.name === 'string' && user.name.trim()) || email.split('@')[0];
     const profile = await this.usersService.createOrUpdate(user.uid, {
-      type: UserType.CANDIDATE,
       email,
       displayName,
       fullName: displayName,
@@ -96,8 +96,14 @@ export class UsersController {
     const existing = await this.usersService.findOneOrNull(user.uid);
     const sanitized = this.usersService.sanitizeSelfUpdate(updateData, existing);
 
-    if (updateData.type === UserType.ADMIN || updateData.isCompanyAdmin !== undefined || updateData.companyId !== undefined) {
-      throw new BadRequestException('Campos de permissão e vínculo corporativo são gerenciados exclusivamente pelo servidor.');
+    if (
+      updateData.type !== undefined ||
+      updateData.isCompanyAdmin !== undefined ||
+      updateData.companyId !== undefined
+    ) {
+      throw new BadRequestException(
+        'Campos de papel e vínculo corporativo são gerenciados exclusivamente pelo servidor.',
+      );
     }
 
     if (typeof user.email === 'string' && user.email.trim()) {
