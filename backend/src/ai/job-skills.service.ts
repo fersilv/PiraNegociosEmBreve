@@ -88,6 +88,7 @@ export class JobSkillsService {
     config: RuntimeConfig,
     prompt: string,
     systemInstruction: string,
+    maxOutputTokens = 1800,
   ) {
     if (config.provider === 'OPENAI') {
       const openai = new OpenAI({ apiKey: config.apiKey });
@@ -95,7 +96,7 @@ export class JobSkillsService {
         model: config.model,
         instructions: systemInstruction,
         input: prompt,
-        max_output_tokens: 1800,
+        max_output_tokens: maxOutputTokens,
       });
       return this.parseJson(response.output_text || '{}');
     }
@@ -105,7 +106,7 @@ export class JobSkillsService {
       const response = await anthropic.messages.create({
         model: config.model,
         system: systemInstruction,
-        max_tokens: 1800,
+        max_tokens: maxOutputTokens,
         messages: [{ role: 'user', content: prompt }],
       });
       const text = response.content
@@ -125,7 +126,7 @@ export class JobSkillsService {
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
           generationConfig: {
             responseMimeType: 'application/json',
-            maxOutputTokens: 1800,
+            maxOutputTokens,
           },
         }),
       },
@@ -149,7 +150,7 @@ export class JobSkillsService {
     return this.parseJson(text || '{}');
   }
 
-  private normalizeSkills(value: unknown): string[] {
+  private normalizeSkills(value: unknown, limit = 10): string[] {
     if (!Array.isArray(value)) return [];
     const seen = new Set<string>();
     const skills: string[] = [];
@@ -161,9 +162,33 @@ export class JobSkillsService {
       if (seen.has(key)) continue;
       seen.add(key);
       skills.push(skill);
-      if (skills.length === 10) break;
+      if (skills.length === limit) break;
     }
     return skills;
+  }
+
+  private collectCandidateSkills(profile: unknown): string[] {
+    const data = profile && typeof profile === 'object' ? (profile as any) : {};
+    const direct = this.normalizeSkills(data.skills, 40);
+    const fromExperiences = Array.isArray(data.experiences)
+      ? data.experiences.flatMap((experience: any) =>
+          this.normalizeSkills(experience?.skills, 20),
+        )
+      : [];
+    return this.normalizeSkills([...direct, ...fromExperiences], 50);
+  }
+
+  private normalizeMatches(value: unknown) {
+    return Array.isArray(value)
+      ? value
+          .map((item: any) => ({
+            jobSkill: String(item?.jobSkill || '').slice(0, 80),
+            candidateSkill: String(item?.candidateSkill || '').slice(0, 80),
+            score: Math.max(0, Math.min(100, Number(item?.score) || 0)),
+          }))
+          .filter((item: any) => item.jobSkill)
+          .slice(0, 10)
+      : [];
   }
 
   async suggestSkills(title: string, description: string, requirements?: string) {
@@ -207,7 +232,7 @@ Retorne EXCLUSIVAMENTE:
   }
 
   async scoreCompatibility(candidateSkills: unknown, jobSkills: unknown) {
-    const candidate = this.normalizeSkills(candidateSkills);
+    const candidate = this.normalizeSkills(candidateSkills, 50);
     const job = this.normalizeSkills(jobSkills);
     if (candidate.length === 0 || job.length === 0) {
       return { score: 0, matches: [] };
@@ -235,24 +260,81 @@ Retorne EXCLUSIVAMENTE:
 
     try {
       const result = await this.generateJson(config, prompt, systemInstruction);
-      const matches = Array.isArray(result?.matches)
-        ? result.matches
-            .map((item: any) => ({
-              jobSkill: String(item?.jobSkill || '').slice(0, 80),
-              candidateSkill: String(item?.candidateSkill || '').slice(0, 80),
-              score: Math.max(0, Math.min(100, Number(item?.score) || 0)),
-            }))
-            .filter((item: any) => item.jobSkill)
-            .slice(0, 10)
-        : [];
-      const score = Math.max(0, Math.min(100, Number(result?.score) || 0));
-      return { score, matches };
+      return {
+        score: Math.max(0, Math.min(100, Number(result?.score) || 0)),
+        matches: this.normalizeMatches(result?.matches),
+      };
     } catch (error: any) {
       if (error instanceof ServiceUnavailableException) throw error;
       console.error('AI skill compatibility error:', error);
       throw new InternalServerErrorException(
         error?.message || 'Não foi possível calcular compatibilidade de habilidades.',
       );
+    }
+  }
+
+  async scoreJobs(profile: unknown, jobs: unknown[]) {
+    const candidateSkills = this.collectCandidateSkills(profile);
+    const normalizedJobs = (Array.isArray(jobs) ? jobs : [])
+      .slice(0, 100)
+      .map((job: any) => ({
+        jobId: String(job?.id || '').slice(0, 120),
+        title: String(job?.title || '').slice(0, 180),
+        skills: this.normalizeSkills(job?.skills),
+      }))
+      .filter((job) => job.jobId && job.skills.length > 0);
+
+    if (candidateSkills.length === 0 || normalizedJobs.length === 0) {
+      return { scores: [] as Array<{ jobId: string; score: number; matches: any[] }> };
+    }
+
+    const config = await this.getRuntimeConfig();
+    const systemInstruction = await this.buildInstruction(
+      `matching em lote de habilidades candidato ${candidateSkills.join(', ')} vagas ${normalizedJobs
+        .map((job) => `${job.title}: ${job.skills.join(', ')}`)
+        .join(' | ')
+        .slice(0, 5000)}`,
+    );
+    const prompt = `Calcule em UMA ÚNICA ANÁLISE a compatibilidade semântica das habilidades do candidato com cada vaga.
+
+HABILIDADES DO CANDIDATO: ${JSON.stringify(candidateSkills)}
+VAGAS: ${JSON.stringify(normalizedJobs)}
+
+Para cada habilidade de cada vaga, escolha a habilidade do candidato mais compatível e dê score de 0 a 100:
+100 = equivalente ou praticamente a mesma competência
+80-99 = fortemente equivalente, incluindo traduções e sinônimos
+50-79 = relacionada e parcialmente transferível
+20-49 = relação fraca
+0-19 = sem compatibilidade útil
+
+O score de cada vaga é a cobertura média das habilidades daquela vaga. Habilidade sem cobertura conta como zero. Não aumente a nota apenas porque o candidato possui muitas habilidades que a vaga não pediu.
+
+Retorne EXCLUSIVAMENTE:
+{"scores":[{"jobId":"id","score":0,"matches":[{"jobSkill":"","candidateSkill":"","score":0}]}]}`;
+
+    try {
+      const result = await this.generateJson(
+        config,
+        prompt,
+        systemInstruction,
+        Math.min(6000, Math.max(1800, normalizedJobs.length * 240)),
+      );
+      const validIds = new Set(normalizedJobs.map((job) => job.jobId));
+      const scores = Array.isArray(result?.scores)
+        ? result.scores
+            .map((item: any) => ({
+              jobId: String(item?.jobId || ''),
+              score: Math.max(0, Math.min(100, Number(item?.score) || 0)),
+              matches: this.normalizeMatches(item?.matches),
+            }))
+            .filter((item: any) => validIds.has(item.jobId))
+        : [];
+      return { scores };
+    } catch (error: any) {
+      if (error instanceof ServiceUnavailableException) throw error;
+      console.error('AI batch skill compatibility error:', error);
+      // O matching geral não deve cair só porque o detalhamento de skills falhou.
+      return { scores: [] };
     }
   }
 }
