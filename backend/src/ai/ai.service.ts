@@ -5,7 +5,6 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { SettingsService } from '../admin/settings.service';
-import { GoogleGenAI } from '@google/genai';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -155,18 +154,60 @@ export class AiService {
     }
   }
 
+  private async geminiGenerate(
+    config: AiRuntimeConfig,
+    contents: unknown[],
+    options?: { systemInstruction?: string; json?: boolean; maxOutputTokens?: number },
+  ) {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:generateContent?key=${encodeURIComponent(config.apiKey)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          contents,
+          ...(options?.systemInstruction
+            ? {
+                systemInstruction: {
+                  parts: [{ text: options.systemInstruction }],
+                },
+              }
+            : {}),
+          generationConfig: {
+            ...(options?.json ? { responseMimeType: 'application/json' } : {}),
+            ...(options?.maxOutputTokens
+              ? { maxOutputTokens: options.maxOutputTokens }
+              : {}),
+          },
+        }),
+      },
+    );
+    const raw = await response.text();
+    if (!response.ok) {
+      throw new Error(
+        `Google Gemini respondeu HTTP ${response.status}${raw ? `: ${raw.slice(0, 500)}` : ''}`,
+      );
+    }
+    const data = JSON.parse(raw || '{}') as {
+      candidates?: Array<{
+        content?: { parts?: Array<{ text?: string }> };
+      }>;
+    };
+    return (data.candidates || [])
+      .flatMap((candidate) => candidate.content?.parts || [])
+      .map((part) => part.text || '')
+      .filter(Boolean)
+      .join('\n');
+  }
+
   private async generateResumeWithGemini(
     config: AiRuntimeConfig,
     cleanBase64: string,
     cleanMimeType: string,
   ) {
-    const ai = new GoogleGenAI({
-      apiKey: config.apiKey,
-      httpOptions: { headers: { 'User-Agent': 'piranegocios' } },
-    });
-    const response = await ai.models.generateContent({
-      model: config.model,
-      contents: [
+    const text = await this.geminiGenerate(
+      config,
+      [
         {
           role: 'user',
           parts: [
@@ -177,9 +218,13 @@ export class AiService {
           ],
         },
       ],
-      config: { systemInstruction: RESUME_SYSTEM_INSTRUCTION },
-    });
-    return this.parseJson(response.text || '{}');
+      {
+        systemInstruction: RESUME_SYSTEM_INSTRUCTION,
+        json: true,
+        maxOutputTokens: 5000,
+      },
+    );
+    return this.parseJson(text || '{}');
   }
 
   private async generateResumeWithOpenAi(
@@ -320,12 +365,11 @@ export class AiService {
         .map((block: any) => block.text)
         .join('\n');
     }
-    const ai = new GoogleGenAI({ apiKey: config.apiKey });
-    const response = await ai.models.generateContent({
-      model: config.model,
-      contents: prompt,
-    });
-    return response.text || '';
+    return this.geminiGenerate(
+      config,
+      [{ role: 'user', parts: [{ text: prompt }] }],
+      { json: true, maxOutputTokens: 3500 },
+    );
   }
 
   async matchJobs(profile: unknown, jobs: unknown[], applications: unknown[]) {
@@ -340,6 +384,7 @@ CANDIDATURAS JÁ FEITAS: ${JSON.stringify(applications || [])}`;
       const parsed = this.parseJson(text);
       return { matches: Array.isArray(parsed.matches) ? parsed.matches : [] };
     } catch (error: any) {
+      if (error instanceof ServiceUnavailableException) throw error;
       console.error('AI job match error:', error);
       throw new InternalServerErrorException(
         error?.message || 'Erro ao gerar recomendações de vagas.',
