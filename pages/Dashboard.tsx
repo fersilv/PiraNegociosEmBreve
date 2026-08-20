@@ -84,9 +84,11 @@ export function Dashboard() {
     return <Navigate to="/dashboard/onboarding" replace />;
   }
 
-  // Full-screen pages that should NOT have the dashboard layout
+  // Full-screen pages that should NOT have the dashboard layout.
+  // Currículo é um recurso pessoal do usuário, mesmo quando ele também possui
+  // vínculo com uma empresa. Apenas administradores não usam este fluxo.
   if (location.pathname.includes("/curriculo/gerador")) {
-    if (profile?.type !== "CANDIDATE") return <Navigate to="/dashboard" replace />;
+    if (profile?.type === "ADMIN") return <Navigate to="/dashboard" replace />;
     return <ResumeBuilderPage />;
   }
 
