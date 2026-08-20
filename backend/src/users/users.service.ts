@@ -8,11 +8,15 @@ const SELF_MANAGED_FIELDS = [
   'displayName',
   'photoURL',
   'fullName',
+  'birthDate',
   'socialName',
   'treatment',
   'phone',
   'bio',
   'resumeURL',
+  'resumePhotoURL',
+  'address',
+  'salaryExpectation',
   'acceptedTerms',
   'linkedinURL',
   'additionalPhones',
@@ -20,6 +24,7 @@ const SELF_MANAGED_FIELDS = [
   'skills',
   'courses',
   'education',
+  'languages',
   'aiAnalysis',
   'hasAiAnalyzed',
   'aiAnalysisCount',
@@ -48,6 +53,80 @@ export class UsersService {
     return this.usersRepository.findOne({ where: { id } });
   }
 
+  private normalizeMonthYear(value: unknown): string {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^(atual|presente)$/i.test(raw)) return 'Atual';
+
+    let match = raw.match(/^(\d{4})-(\d{1,2})(?:-\d{1,2})?$/);
+    if (match) {
+      const month = Number(match[2]);
+      if (month >= 1 && month <= 12) {
+        return `${String(month).padStart(2, '0')}/${match[1]}`;
+      }
+    }
+
+    match = raw.match(/^\d{1,2}[/-](\d{1,2})[/-](\d{4})$/);
+    if (match) {
+      const month = Number(match[1]);
+      if (month >= 1 && month <= 12) {
+        return `${String(month).padStart(2, '0')}/${match[2]}`;
+      }
+    }
+
+    match = raw.match(/^(\d{1,2})[/-](\d{4})$/);
+    if (match) {
+      const month = Number(match[1]);
+      if (month >= 1 && month <= 12) {
+        return `${String(month).padStart(2, '0')}/${match[2]}`;
+      }
+    }
+
+    const months: Record<string, string> = {
+      jan: '01', janeiro: '01', january: '01',
+      fev: '02', fevereiro: '02', feb: '02', february: '02',
+      mar: '03', março: '03', marco: '03', march: '03',
+      abr: '04', abril: '04', apr: '04', april: '04',
+      mai: '05', maio: '05', may: '05',
+      jun: '06', junho: '06', june: '06',
+      jul: '07', julho: '07', july: '07',
+      ago: '08', agosto: '08', aug: '08', august: '08',
+      set: '09', setembro: '09', sep: '09', sept: '09', september: '09',
+      out: '10', outubro: '10', oct: '10', october: '10',
+      nov: '11', novembro: '11', november: '11',
+      dez: '12', dezembro: '12', dec: '12', december: '12',
+    };
+    const textual = raw
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .match(/^([a-z]+)[\s/-]+(\d{4})$/);
+    if (textual) {
+      const month = months[textual[1]];
+      if (month) return `${month}/${textual[2]}`;
+    }
+
+    // Quando a fonte informa apenas o ano, preservamos o dado em vez de inventar um mês.
+    if (/^\d{4}$/.test(raw)) return raw;
+    return raw;
+  }
+
+  private normalizeExperiences(value: unknown): unknown {
+    if (!Array.isArray(value)) return value;
+    return value.map((item) => {
+      if (!item || typeof item !== 'object') return item;
+      const experience = item as Record<string, unknown>;
+      const current = experience.current === true;
+      return {
+        ...experience,
+        startDate: this.normalizeMonthYear(experience.startDate),
+        endDate: current
+          ? 'Atual'
+          : this.normalizeMonthYear(experience.endDate),
+      };
+    });
+  }
+
   sanitizeSelfUpdate(
     data: Partial<User>,
     existing: User | null,
@@ -57,6 +136,10 @@ export class UsersService {
       if (data[field] !== undefined) {
         (sanitized as Record<string, unknown>)[field] = data[field];
       }
+    }
+
+    if (data.experiences !== undefined) {
+      sanitized.experiences = this.normalizeExperiences(data.experiences) as unknown[];
     }
 
     if (!existing || !existing.type) {
