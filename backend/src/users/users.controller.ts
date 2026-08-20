@@ -27,11 +27,15 @@ export class UsersController {
   }
 
   private async exposeProfileForRuntime(profile: User) {
+    const runtimeProfile = {
+      ...profile,
+      experiences: this.usersService.normalizeExperienceDates(profile.experiences),
+    };
     const aiEnabled =
       (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
-    if (aiEnabled) return profile;
+    if (aiEnabled) return runtimeProfile;
 
-    const { aiAnalysis: _aiAnalysis, ...safeProfile } = profile;
+    const { aiAnalysis: _aiAnalysis, ...safeProfile } = runtimeProfile;
     return {
       ...safeProfile,
       hasAiAnalyzed: false,
@@ -40,13 +44,10 @@ export class UsersController {
 
   @Get('me')
   async getProfile(@Req() req: any) {
-    const user = req.user; // Vem do AuthGuard
+    const user = req.user;
     void this.analytics.recordAccountAccess(user.uid, req.headers).catch(() => undefined);
     const existing = await this.usersService.findOneOrNull(user.uid);
 
-    // The allowlist is also applied to an existing profile. This makes the
-    // bootstrap-admin configuration safe to add after the person has already
-    // completed onboarding as a candidate or company user.
     if (this.isBootstrapAdmin(user.email)) {
       if (!existing || existing.type !== UserType.ADMIN) {
         const profile = await this.usersService.createOrUpdate(user.uid, {
@@ -74,8 +75,6 @@ export class UsersController {
       throw new BadRequestException('Campos de permissão e vínculo corporativo são gerenciados exclusivamente pelo servidor.');
     }
 
-    // The identity provider is the only trusted source for a user's e-mail.
-    // Persist it when missing so ADMIN_EMAILS can safely bootstrap the platform owner.
     if (typeof user.email === 'string' && user.email.trim()) {
       sanitized.email = user.email.trim().toLowerCase();
     } else if (!existing) {
