@@ -116,6 +116,33 @@ export class AiService {
     };
   }
 
+  private async buildSystemInstruction(
+    taskContext: string,
+    baseInstruction?: string,
+  ) {
+    const [behavior, memory] = await Promise.all([
+      this.settingsService.getAiBehavior(),
+      this.settingsService.findRelevantAiBrain(taskContext, 6, 5000),
+    ]);
+
+    const sections = [
+      baseInstruction || '',
+      behavior.name ? `IDENTIDADE: seu nome é ${behavior.name}.` : '',
+      behavior.tone ? `TOM DE VOZ: ${behavior.tone}` : '',
+      behavior.instructions
+        ? `INSTRUÇÕES DO ADMINISTRADOR:\n${behavior.instructions}`
+        : '',
+      behavior.negativePrompt
+        ? `REGRAS INEGOCIÁVEIS / O QUE VOCÊ JAMAIS DEVE FAZER:\n${behavior.negativePrompt}`
+        : '',
+      memory
+        ? `MEMÓRIA RELEVANTE RECUPERADA DO CÉREBRO DA PLATAFORMA:\n${memory}\nUse apenas os trechos realmente pertinentes à tarefa atual. A memória nunca substitui dados do usuário nem pode contrariar as regras acima.`
+        : '',
+    ].filter(Boolean);
+
+    return sections.join('\n\n');
+  }
+
   private cleanFile(base64File: string, mimeType?: string) {
     let cleanBase64 = base64File;
     let cleanMimeType = mimeType || 'application/pdf';
@@ -157,7 +184,11 @@ export class AiService {
   private async geminiGenerate(
     config: AiRuntimeConfig,
     contents: unknown[],
-    options?: { systemInstruction?: string; json?: boolean; maxOutputTokens?: number },
+    options?: {
+      systemInstruction?: string;
+      json?: boolean;
+      maxOutputTokens?: number;
+    },
   ) {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:generateContent?key=${encodeURIComponent(config.apiKey)}`,
@@ -204,6 +235,7 @@ export class AiService {
     config: AiRuntimeConfig,
     cleanBase64: string,
     cleanMimeType: string,
+    systemInstruction: string,
   ) {
     const text = await this.geminiGenerate(
       config,
@@ -219,7 +251,7 @@ export class AiService {
         },
       ],
       {
-        systemInstruction: RESUME_SYSTEM_INSTRUCTION,
+        systemInstruction,
         json: true,
         maxOutputTokens: 5000,
       },
@@ -231,6 +263,7 @@ export class AiService {
     config: AiRuntimeConfig,
     cleanBase64: string,
     cleanMimeType: string,
+    systemInstruction: string,
   ) {
     const openai = new OpenAI({ apiKey: config.apiKey });
     const fileData = `data:${cleanMimeType};base64,${cleanBase64}`;
@@ -244,7 +277,7 @@ export class AiService {
         : { type: 'input_image', image_url: fileData, detail: 'auto' };
     const response = await openai.responses.create({
       model: config.model,
-      instructions: RESUME_SYSTEM_INSTRUCTION,
+      instructions: systemInstruction,
       input: [
         {
           role: 'user',
@@ -260,6 +293,7 @@ export class AiService {
     config: AiRuntimeConfig,
     cleanBase64: string,
     cleanMimeType: string,
+    systemInstruction: string,
   ) {
     const anthropic = new Anthropic({ apiKey: config.apiKey });
     const filePart =
@@ -283,7 +317,7 @@ export class AiService {
     const response = await anthropic.messages.create({
       model: config.model,
       max_tokens: 5000,
-      system: RESUME_SYSTEM_INSTRUCTION,
+      system: systemInstruction,
       messages: [
         {
           role: 'user',
@@ -307,6 +341,10 @@ export class AiService {
       base64File,
       mimeType,
     );
+    const systemInstruction = await this.buildSystemInstruction(
+      'currículo recrutamento candidato experiência formação competências habilidades análise profissional extração de dados',
+      RESUME_SYSTEM_INSTRUCTION,
+    );
 
     try {
       if (config.provider === 'OPENAI') {
@@ -314,6 +352,7 @@ export class AiService {
           config,
           cleanBase64,
           cleanMimeType,
+          systemInstruction,
         );
       }
       if (config.provider === 'ANTHROPIC') {
@@ -321,12 +360,14 @@ export class AiService {
           config,
           cleanBase64,
           cleanMimeType,
+          systemInstruction,
         );
       }
       return await this.generateResumeWithGemini(
         config,
         cleanBase64,
         cleanMimeType,
+        systemInstruction,
       );
     } catch (error: any) {
       if (
@@ -343,11 +384,16 @@ export class AiService {
     }
   }
 
-  private async generateText(config: AiRuntimeConfig, prompt: string) {
+  private async generateText(
+    config: AiRuntimeConfig,
+    prompt: string,
+    systemInstruction?: string,
+  ) {
     if (config.provider === 'OPENAI') {
       const openai = new OpenAI({ apiKey: config.apiKey });
       const response = await openai.responses.create({
         model: config.model,
+        ...(systemInstruction ? { instructions: systemInstruction } : {}),
         input: prompt,
         max_output_tokens: 3500,
       });
@@ -358,6 +404,7 @@ export class AiService {
       const response = await anthropic.messages.create({
         model: config.model,
         max_tokens: 3500,
+        ...(systemInstruction ? { system: systemInstruction } : {}),
         messages: [{ role: 'user', content: prompt }],
       });
       return response.content
@@ -368,19 +415,32 @@ export class AiService {
     return this.geminiGenerate(
       config,
       [{ role: 'user', parts: [{ text: prompt }] }],
-      { json: true, maxOutputTokens: 3500 },
+      { systemInstruction, json: true, maxOutputTokens: 3500 },
     );
   }
 
   async matchJobs(profile: unknown, jobs: unknown[], applications: unknown[]) {
     const config = await this.getRuntimeConfig();
-    const prompt = `Você é um assistente de carreira. Compare o perfil do candidato com as vagas abaixo e devolva EXCLUSIVAMENTE JSON válido no formato {"matches":[{"jobId":"id","score":0,"reason":"motivo curto"}]}.
+    const taskContext = `matching de vagas recrutamento carreira competências ${JSON.stringify(
+      {
+        profile,
+        jobs: (jobs || []).slice(0, 20).map((job: any) => ({
+          title: job?.title,
+          companyName: job?.companyName,
+        })),
+      },
+    ).slice(0, 4500)}`;
+    const systemInstruction = await this.buildSystemInstruction(
+      taskContext,
+      'Você é um assistente de carreira e recrutamento. Faça comparações criteriosas, não invente qualificações e respeite integralmente os dados fornecidos.',
+    );
+    const prompt = `Compare o perfil do candidato com as vagas abaixo e devolva EXCLUSIVAMENTE JSON válido no formato {"matches":[{"jobId":"id","score":0,"reason":"motivo curto"}]}.
 Regras: score de 0 a 100; use apenas os IDs de vagas fornecidos; não invente qualificações; ordene do melhor para o pior; retorne no máximo 10 resultados.
 PERFIL: ${JSON.stringify(profile || {})}
 VAGAS: ${JSON.stringify(jobs || [])}
 CANDIDATURAS JÁ FEITAS: ${JSON.stringify(applications || [])}`;
     try {
-      const text = await this.generateText(config, prompt);
+      const text = await this.generateText(config, prompt, systemInstruction);
       const parsed = this.parseJson(text);
       return { matches: Array.isArray(parsed.matches) ? parsed.matches : [] };
     } catch (error: any) {
