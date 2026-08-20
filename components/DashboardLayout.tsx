@@ -298,7 +298,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
           {isAdmin ? (
             <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-stone-200 px-2 py-2 flex items-center gap-1 overflow-x-auto shadow-[0_-8px_30px_rgba(0,0,0,0.04)]">
-              <MobileNavItem to="/dashboard" icon={<Home className="w-5 h-5" />} label="Início" />
+              <MobileNavItem end to="/dashboard" icon={<Home className="w-5 h-5" />} label="Início" />
               <MobileNavItem to="/dashboard/admin/empresas" icon={<Building2 className="w-5 h-5" />} label="Empresas" />
               <MobileNavItem to="/dashboard/admin/vagas" icon={<Briefcase className="w-5 h-5" />} label="Vagas" />
               <MobileNavItem to="/dashboard/admin/usuarios" icon={<Users className="w-5 h-5" />} label="Usuários" />
@@ -327,6 +327,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     label="Talentos"
                   />
                   <MobileNavItem
+                    end
                     to="/dashboard/empresa"
                     icon={<Building2 className="w-5 h-5" />}
                     label="Empresa"
@@ -429,6 +430,7 @@ function CompanyNavigation() {
         label="Contratação"
       />
       <NavItem
+        end
         to="/dashboard/empresa"
         icon={<Building2 className="w-5 h-5" />}
         label="Perfil da empresa"
@@ -441,6 +443,7 @@ function AdminNavigation() {
   return (
     <>
       <NavItem
+        end
         to="/dashboard"
         icon={<Home className="w-5 h-5" />}
         label="Dashboard"
@@ -501,14 +504,17 @@ function NavItem({
   to,
   icon,
   label,
+  end = false,
 }: {
   to: string;
   icon: React.ReactNode;
   label: string;
+  end?: boolean;
 }) {
   return (
     <NavLink
       to={to}
+      end={end}
       className={({ isActive }) =>
         `flex items-center gap-3 px-4 py-3 rounded-xl transition-colors font-medium ${
           isActive
@@ -527,14 +533,17 @@ function MobileNavItem({
   to,
   icon,
   label,
+  end = false,
 }: {
   to: string;
   icon: React.ReactNode;
   label: string;
+  end?: boolean;
 }) {
   return (
     <NavLink
       to={to}
+      end={end}
       className={({ isActive }) =>
         `min-w-14 flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold ${
           isActive ? "text-terracotta-700" : "text-stone-500"
