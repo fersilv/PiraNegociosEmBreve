@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { Company } from '../companies/entities/company.entity';
+import { SettingsService } from '../admin/settings.service';
 import { User, UserType } from './entities/user.entity';
 
 @Controller('candidates')
@@ -17,6 +18,7 @@ export class CandidatesController {
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(Company) private readonly companies: Repository<Company>,
+    private readonly settingsService: SettingsService,
   ) {}
 
   @Get()
@@ -36,17 +38,25 @@ export class CandidatesController {
           'A empresa precisa ser verificada para acessar o banco de talentos.',
         );
     }
+
+    const aiEnabled =
+      (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
     const candidates = await this.users.find({
       where: { type: UserType.CANDIDATE, isOpenToWork: true },
       order: { updatedAt: 'DESC' },
     });
-    return candidates.map((candidate) => ({
-      ...candidate,
-      name:
-        candidate.socialName ||
-        candidate.fullName ||
-        candidate.displayName ||
-        'Candidato',
-    }));
+
+    return candidates.map((candidate) => {
+      const { aiAnalysis, ...candidateData } = candidate;
+      return {
+        ...candidateData,
+        ...(aiEnabled ? { aiAnalysis } : {}),
+        name:
+          candidate.socialName ||
+          candidate.fullName ||
+          candidate.displayName ||
+          'Candidato',
+      };
+    });
   }
 }
