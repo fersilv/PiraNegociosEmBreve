@@ -128,7 +128,7 @@ export class UsersService {
 
   sanitizeSelfUpdate(
     data: Partial<User>,
-    existing: User | null,
+    _existing: User | null,
   ): Partial<User> {
     const sanitized: Partial<User> = {};
     for (const field of SELF_MANAGED_FIELDS) {
@@ -141,9 +141,9 @@ export class UsersService {
       sanitized.experiences = this.normalizeExperienceDates(data.experiences) as unknown[];
     }
 
-    if (!existing || !existing.type) {
-      sanitized.type = UserType.CANDIDATE;
-    }
+    // Usuários comuns não recebem um papel obrigatório. Recursos pessoais são
+    // capacidades da conta, enquanto acesso empresarial vem de companyId e
+    // isCompanyAdmin. O campo type permanece apenas para ADMIN e legado.
     return sanitized;
   }
 
