@@ -67,9 +67,6 @@ export class UsersController {
 
     if (existing) return this.exposeProfileForRuntime(existing);
 
-    // Firebase Authentication e o banco da aplicação têm ciclos de vida
-    // independentes. Se o token é válido mas ainda não há linha em users,
-    // criamos uma conta neutra. Recursos pessoais não dependem de CANDIDATE.
     const email =
       typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
     if (!email) {
@@ -97,7 +94,7 @@ export class UsersController {
     const sanitized = this.usersService.sanitizeSelfUpdate(updateData, existing);
 
     if (
-      updateData.type !== undefined ||
+      updateData.type === UserType.ADMIN ||
       updateData.isCompanyAdmin !== undefined ||
       updateData.companyId !== undefined
     ) {
@@ -106,6 +103,8 @@ export class UsersController {
       );
     }
 
+    // Clientes antigos ainda podem enviar CANDIDATE/COMPANY. O valor é
+    // ignorado por sanitizeSelfUpdate e nunca é persistido como autorização.
     if (typeof user.email === 'string' && user.email.trim()) {
       sanitized.email = user.email.trim().toLowerCase();
     } else if (!existing) {
