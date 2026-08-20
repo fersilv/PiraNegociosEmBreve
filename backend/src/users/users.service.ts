@@ -163,6 +163,7 @@ export class UsersService {
       id,
       ...data,
       email,
+      isOpenToWork: data.isOpenToWork ?? true,
       ...(invitation
         ? {
             type: UserType.COMPANY,
