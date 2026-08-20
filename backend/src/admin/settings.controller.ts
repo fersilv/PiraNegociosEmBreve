@@ -25,6 +25,7 @@ export class SettingsController {
   async updateSetting(
     @Body() body: { key: string; value: string; description?: string },
   ) {
+    const previousValue = await this.settingsService.getValue(body.key);
     const result = await this.settingsService.createOrUpdate(
       body.key,
       body.value,
@@ -37,7 +38,7 @@ export class SettingsController {
       ANTHROPIC_API_KEY: 'ANTHROPIC',
     };
     const changedProvider = providerByKey[body.key];
-    if (changedProvider) {
+    if (changedProvider && previousValue !== body.value) {
       const activeProvider = await this.settingsService.getValue('AI_PROVIDER');
       const enabled =
         (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
