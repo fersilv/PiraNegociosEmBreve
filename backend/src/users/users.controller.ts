@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Post, Put, Body, UseGuards, Req, Param, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Patch, Put, Body, UseGuards, Req, Param, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from './users.service';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
@@ -64,6 +64,7 @@ export class UsersController {
   }
 
   @Post('me')
+  @Patch('me')
   async updateProfile(@Req() req: any, @Body() updateData: Partial<User>) {
     const user = req.user;
     const existing = await this.usersService.findOneOrNull(user.uid);
