@@ -146,6 +146,70 @@ export function CompanyDashboard() {
       
       fetchMyJobs();
       alert('Vaga publicada com sucesso! Candidatos compatíveis estão sendo notificados.');
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao publicar vaga');
+    }
+  };
+
+  if (loadingCompany) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-terracotta-600" />
+      </div>
+    );
+  }
+
+  if (!company) {
+    return (
+      <div className="max-w-2xl mx-auto py-12">
+        <div className="bg-white rounded-3xl p-8 md:p-12 shadow-sm border border-stone-200 text-center animate-in fade-in zoom-in-95 duration-500">
+          <div className="w-20 h-20 bg-terracotta-50 rounded-2xl flex items-center justify-center mx-auto mb-6 text-terracotta-600">
+            <Building2 className="w-10 h-10" />
+          </div>
+          <h2 className="text-3xl font-serif font-bold text-stone-900 mb-4">
+            Módulo Empresa
+          </h2>
+          <p className="text-stone-500 text-lg leading-relaxed mb-8">
+            Anuncie suas vagas, construa um banco de currículos exclusivo e gerencie todo o processo de atração de talentos de forma simples e profissional.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8 text-left">
+            <div className="p-4 rounded-2xl bg-stone-50 border border-stone-100">
+              <h4 className="font-bold text-stone-900 mb-1 flex items-center gap-2"><Briefcase className="w-4 h-4 text-terracotta-500" /> Vagas Ilimitadas</h4>
+              <p className="text-sm text-stone-500">Publique quantas vagas quiser gratuitamente.</p>
+            </div>
+            <div className="p-4 rounded-2xl bg-stone-50 border border-stone-100">
+              <h4 className="font-bold text-stone-900 mb-1 flex items-center gap-2"><Users className="w-4 h-4 text-terracotta-500" /> Banco de Talentos</h4>
+              <p className="text-sm text-stone-500">Acesso aos currículos recebidos e perfis salvos.</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => navigate('/dashboard/empresa')}
+            className="w-full sm:w-auto bg-terracotta-600 hover:bg-terracotta-700 text-white px-8 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-md mx-auto"
+          >
+            <Plus className="w-5 h-5" />
+            Cadastrar Minha Empresa
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-8">
+      {/* Required basic info banner */}
+      {!hasBasicInfo() && (
+        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 flex items-start gap-4 text-amber-900 animate-in fade-in duration-300">
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h4 className="font-bold text-sm">Dados Básicos da Empresa Ausentes!</h4>
+            <p className="text-amber-800 text-xs mt-1 leading-relaxed">
+              Para garantir a segurança dos candidatos, a legislação exige que a empresa tenha pelo menos <strong>Nome, Endereço e Telefone</strong> cadastrados para poder publicar uma nova vaga de emprego.
+            </p>
+            <Link 
+              to="/dashboard/empresa" 
+              className="text-terracotta-700 hover:text-terracotta-900 font-bold text-xs underline mt-3 flex items-center gap-1.5"
+            >
               Preencher dados no Perfil da Empresa
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
