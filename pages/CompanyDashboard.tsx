@@ -1,16 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth, getGreetingName } from '../contexts/AuthContext';
 import { api, asArray } from '../lib/api';
-import { Plus, Briefcase, FileText, CheckCircle, BellRing, AlertTriangle, ArrowRight, EyeOff, User, Loader2, Clock, Building2, Users } from 'lucide-react';
+import { Plus, Briefcase, FileText, CheckCircle, BellRing, AlertTriangle, ArrowRight, EyeOff, User, Loader2, Clock, Building2, Users, Sparkles, X } from 'lucide-react';
 import { sendNotificationToUser, notifyCandidatesOfNewJob } from '../lib/notifications';
 import { Link, useNavigate } from 'react-router-dom';
 import { openBase64InNewTab } from '../lib/fileViewer';
 import { CandidateProfileModal } from '../components/CandidateProfileModal';
 import { CityStateSelector } from '../components/CityStateSelector';
+import { useAiStatus } from '../hooks/useAiStatus';
 
 export function CompanyDashboard() {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
+  const { enabled: aiEnabled } = useAiStatus();
   const [isPosting, setIsPosting] = useState(false);
   const [myJobs, setMyJobs] = useState<any[]>([]);
   const [company, setCompany] = useState<any>(null);
@@ -24,12 +26,93 @@ export function CompanyDashboard() {
   const [workModel, setWorkModel] = useState('Presencial');
   const [description, setDescription] = useState('');
   const [requirements, setRequirements] = useState('');
+  const [skills, setSkills] = useState<string[]>([]);
+  const [newSkill, setNewSkill] = useState('');
+  const [suggestingSkills, setSuggestingSkills] = useState(false);
+  const [skillSuggestionError, setSkillSuggestionError] = useState('');
+  const lastAutoSuggestionSignature = useRef('');
   const [isConfidential, setIsConfidential] = useState(false);
   const [isTalentPool, setIsTalentPool] = useState(false);
   const [acceptsPlatformApplications, setAcceptsPlatformApplications] = useState(true);
   const [externalApplicationInstructions, setExternalApplicationInstructions] = useState('');
   
   const [loadingJobs, setLoadingJobs] = useState(true);
+
+  const normalizeSkill = (value: string) => value.trim().replace(/\s+/g, ' ').slice(0, 80);
+
+  const mergeSkills = (incoming: unknown) => {
+    if (!Array.isArray(incoming)) return;
+    setSkills((current) => {
+      const seen = new Set(current.map((item) => item.toLocaleLowerCase('pt-BR')));
+      const next = [...current];
+      for (const raw of incoming) {
+        if (typeof raw !== 'string') continue;
+        const skill = normalizeSkill(raw);
+        if (!skill) continue;
+        const key = skill.toLocaleLowerCase('pt-BR');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        next.push(skill);
+        if (next.length === 10) break;
+      }
+      return next;
+    });
+  };
+
+  const addSkill = () => {
+    const skill = normalizeSkill(newSkill);
+    if (!skill || skills.length >= 10) return;
+    if (skills.some((item) => item.toLocaleLowerCase('pt-BR') === skill.toLocaleLowerCase('pt-BR'))) {
+      setNewSkill('');
+      return;
+    }
+    setSkills([...skills, skill]);
+    setNewSkill('');
+  };
+
+  const suggestSkillsWithAi = async (automatic = false) => {
+    if (!aiEnabled || suggestingSkills) return;
+    if (title.trim().length < 3 || description.trim().length < 40) {
+      if (!automatic) {
+        setSkillSuggestionError('Preencha o cargo e uma descrição um pouco mais detalhada para a IA sugerir habilidades.');
+      }
+      return;
+    }
+    setSuggestingSkills(true);
+    setSkillSuggestionError('');
+    try {
+      const response = await api.post('/ai/suggest-job-skills', {
+        title,
+        description,
+        requirements,
+      });
+      mergeSkills(response.data?.skills);
+    } catch (error: any) {
+      console.error('Erro ao sugerir habilidades:', error);
+      if (!automatic) {
+        setSkillSuggestionError(
+          error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          'Não foi possível sugerir habilidades agora.',
+        );
+      }
+    } finally {
+      setSuggestingSkills(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!aiEnabled || !isPosting || skills.length > 0) return;
+    if (title.trim().length < 3 || description.trim().length < 40) return;
+    const signature = `${title.trim()}|${description.trim()}|${requirements.trim()}`;
+    if (lastAutoSuggestionSignature.current === signature) return;
+
+    const timer = window.setTimeout(() => {
+      lastAutoSuggestionSignature.current = signature;
+      void suggestSkillsWithAi(true);
+    }, 1600);
+    return () => window.clearTimeout(timer);
+  }, [aiEnabled, isPosting, title, description, requirements, skills.length]);
 
   const toggleJobActive = async (jobId: string, currentActive: boolean) => {
     try {
@@ -117,6 +200,7 @@ export function CompanyDashboard() {
         workModel: workModel || 'Presencial',
         description,
         requirements,
+        skills,
         isConfidential,
         isTalentPool,
         acceptsPlatformApplications,
@@ -139,6 +223,10 @@ export function CompanyDashboard() {
       setWorkModel('Presencial');
       setDescription('');
       setRequirements('');
+      setSkills([]);
+      setNewSkill('');
+      setSkillSuggestionError('');
+      lastAutoSuggestionSignature.current = '';
       setIsConfidential(false);
       setIsTalentPool(false);
       setAcceptsPlatformApplications(true);
@@ -293,7 +381,75 @@ export function CompanyDashboard() {
             </div>
             <div>
               <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Requisitos</label>
-              <textarea value={requirements} onChange={(e) => setRequirements(e.target.value)} placeholder="Ex.: experiência, escolaridade, conhecimentos técnicos, disponibilidade e habilidades desejadas." className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 min-h-[120px]" />
+              <textarea value={requirements} onChange={(e) => setRequirements(e.target.value)} placeholder="Ex.: experiência, escolaridade, conhecimentos técnicos e disponibilidade. As habilidades são cadastradas separadamente abaixo." className="w-full px-4 py-3 rounded-xl border border-stone-200 outline-none focus:border-terracotta-500 min-h-[120px]" />
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-stone-50/60 p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest">Habilidades da vaga</label>
+                  <p className="text-xs text-stone-500 mt-1">Opcional. Até 10 competências usadas para melhorar a compatibilidade entre vaga e candidato.</p>
+                </div>
+                {aiEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => void suggestSkillsWithAi(false)}
+                    disabled={suggestingSkills || skills.length >= 10}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 px-3 py-2 text-xs font-bold disabled:opacity-50"
+                  >
+                    {suggestingSkills ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    {skills.length > 0 ? 'Sugerir mais com IA' : 'Sugerir com IA'}
+                  </button>
+                )}
+              </div>
+
+              {skills.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {skills.map((skill) => (
+                    <span key={skill} className="inline-flex items-center gap-1.5 bg-white border border-stone-200 text-stone-700 px-3 py-1.5 rounded-full text-sm font-medium">
+                      {skill}
+                      <button
+                        type="button"
+                        onClick={() => setSkills(skills.filter((item) => item !== skill))}
+                        className="text-stone-400 hover:text-red-500"
+                        aria-label={`Remover ${skill}`}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <input
+                  value={newSkill}
+                  onChange={(e) => setNewSkill(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addSkill();
+                    }
+                  }}
+                  disabled={skills.length >= 10}
+                  placeholder={skills.length >= 10 ? 'Limite de 10 habilidades atingido' : 'Ex.: Atendimento ao cliente'}
+                  className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-stone-200 bg-white outline-none focus:border-terracotta-500 disabled:bg-stone-100"
+                />
+                <button
+                  type="button"
+                  onClick={addSkill}
+                  disabled={!newSkill.trim() || skills.length >= 10}
+                  className="px-4 py-2.5 rounded-xl bg-stone-900 text-white font-bold disabled:opacity-40"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex justify-between text-[11px] text-stone-400">
+                <span>{aiEnabled && skills.length === 0 && title.trim().length >= 3 && description.trim().length >= 40 ? 'A IA sugere automaticamente após uma pausa na digitação.' : 'Você pode cadastrar as habilidades manualmente.'}</span>
+                <span>{skills.length}/10</span>
+              </div>
+              {skillSuggestionError && <p className="text-xs text-red-600">{skillSuggestionError}</p>}
             </div>
 
             <div className="pt-2 space-y-3">
