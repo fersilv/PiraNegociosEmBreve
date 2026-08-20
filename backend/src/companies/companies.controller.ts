@@ -60,7 +60,6 @@ export class CompaniesController {
     if (user?.type === UserType.ADMIN) return company;
     if (
       !user ||
-      user.type !== UserType.COMPANY ||
       (company.ownerId !== uid &&
         !(user.companyId === companyId && user.isCompanyAdmin))
     ) {
@@ -177,7 +176,6 @@ export class CompaniesController {
       : null;
     if (
       !candidate ||
-      candidate.type !== UserType.CANDIDATE ||
       !candidate.isOpenToWork
     )
       throw new BadRequestException(
@@ -276,9 +274,9 @@ export class CompaniesController {
     const user = await this.usersRepository.findOne({
       where: { id: req.user.uid },
     });
-    if (!user || user.type !== UserType.COMPANY)
+    if (!user)
       throw new ForbiddenException(
-        'Apenas contas empresariais podem criar empresas.',
+        'Acesso negado ao criar empresa.',
       );
     if (!createData.name?.trim())
       throw new BadRequestException('O nome da empresa é obrigatório.');
@@ -302,7 +300,7 @@ export class CompaniesController {
     const user = await this.usersRepository.findOne({
       where: { id: req.user.uid },
     });
-    if (!user || user.type !== UserType.COMPANY)
+    if (!user)
       throw new ForbiddenException(
         'Conclua primeiro o cadastro como conta empresarial.',
       );
@@ -337,7 +335,7 @@ export class CompaniesController {
       this.usersRepository.findOne({ where: { id: req.user.uid } }),
     ]);
     if (!company) throw new BadRequestException('Empresa não encontrada.');
-    if (!user || user.type !== UserType.COMPANY)
+    if (!user)
       throw new ForbiddenException(
         'Conclua primeiro o cadastro como conta empresarial.',
       );

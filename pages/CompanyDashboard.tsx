@@ -146,27 +146,6 @@ export function CompanyDashboard() {
       
       fetchMyJobs();
       alert('Vaga publicada com sucesso! Candidatos compatíveis estão sendo notificados.');
-    } catch (err) {
-      console.error(err);
-      alert('Erro ao publicar vaga');
-    }
-  };
-
-  return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      {/* Required basic info banner */}
-      {!loadingCompany && !hasBasicInfo() && (
-        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-5 flex items-start gap-4 text-amber-900 animate-in fade-in duration-300">
-          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h4 className="font-bold text-sm">Dados Básicos da Empresa Ausentes!</h4>
-            <p className="text-amber-800 text-xs mt-1 leading-relaxed">
-              Para garantir a segurança dos candidatos, a legislação exige que a empresa tenha pelo menos <strong>Nome, Endereço e Telefone</strong> cadastrados para poder publicar uma nova vaga de emprego.
-            </p>
-            <Link 
-              to="/dashboard/empresa" 
-              className="text-terracotta-700 hover:text-terracotta-900 font-bold text-xs underline mt-3 flex items-center gap-1.5"
-            >
               Preencher dados no Perfil da Empresa
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>

@@ -71,7 +71,7 @@ export class ApplicationsController {
       this.usersRepository.findOne({ where: { id: req.user.uid } }),
       this.jobsRepository.findOne({ where: { id: createData.jobId } }),
     ]);
-    if (!candidate || candidate.type !== UserType.CANDIDATE) throw new ForbiddenException('Apenas candidatos podem se candidatar.');
+    if (!candidate) throw new ForbiddenException('Usuário não encontrado.');
     if (!job || !job.active) throw new BadRequestException('Esta vaga não está disponível para candidaturas.');
     if (!job.acceptsPlatformApplications) throw new BadRequestException('Esta empresa recebe currículos por um canal externo indicado na vaga.');
     const resumeUrl = createData.resumeURL || createData.resumeUrl || candidate.resumeURL || undefined;

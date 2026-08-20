@@ -47,7 +47,6 @@ export class JobsController {
     if (user?.type === UserType.ADMIN) return company;
     if (
       !user ||
-      user.type !== UserType.COMPANY ||
       (company.ownerId !== uid &&
         !(user.companyId === companyId && user.isCompanyAdmin))
     ) {

@@ -37,29 +37,9 @@ export function Dashboard() {
     );
   }
 
-  // If user hasn't selected a type yet, force onboarding
-  if (profile && !profile.type && !location.pathname.includes("/onboarding")) {
+  // If user hasn't filled phone yet, force onboarding
+  if (profile && !profile.phone && !location.pathname.includes("/onboarding")) {
     return <Navigate to="/dashboard/onboarding" replace />;
-  }
-
-  // Force users to fill mandatory fields if they bypassed the form
-  if (
-    profile &&
-    profile.type === "COMPANY" &&
-    (!profile.phone || !profile.companyId)
-  ) {
-    if (
-      !location.pathname.includes("/empresa") &&
-      !location.pathname.includes("/perfil")
-    ) {
-      return <Navigate to="/dashboard/empresa" replace />;
-    }
-  }
-
-  if (profile && profile.type === "CANDIDATE" && !profile.phone) {
-    if (!location.pathname.includes("/perfil")) {
-      return <Navigate to="/dashboard/perfil" replace />;
-    }
   }
 
   // Full-screen pages that should NOT have the dashboard layout
@@ -78,36 +58,20 @@ export function Dashboard() {
           element={
             profile?.type === "ADMIN" ? (
               <AdminDashboard mode="dashboard" />
-            ) : profile?.type === "COMPANY" ? (
-              <CompanyDashboard />
-            ) : profile?.type === "CANDIDATE" ? (
-              <CandidateDashboard />
             ) : (
-              <Navigate to="/dashboard/onboarding" />
+              <CandidateDashboard />
             )
           }
         />
 
         <Route
-          path="vagas"
-          element={
-            profile?.type === "COMPANY" ? (
-              <CompanyDashboard />
-            ) : (
-              <Navigate to="/dashboard" />
-            )
-          }
+          path="empresa/painel"
+          element={<CompanyDashboard />}
         />
 
         <Route
           path="vaga/:jobId"
-          element={
-            profile?.type === "COMPANY" || profile?.type === "ADMIN" ? (
-              <CompanyJobPage />
-            ) : (
-              <Navigate to="/dashboard" />
-            )
-          }
+          element={<CompanyJobPage />}
         />
 
         <Route
@@ -213,35 +177,17 @@ export function Dashboard() {
 
         <Route
           path="curriculos"
-          element={
-            profile?.type === "COMPANY" || profile?.type === "ADMIN" ? (
-              <ResumeDatabase />
-            ) : (
-              <Navigate to="/dashboard" />
-            )
-          }
+          element={<ResumeDatabase />}
         />
 
         <Route path="perfil" element={<ProfilePage />} />
         <Route
           path="empresa"
-          element={
-            profile?.type === "COMPANY" || profile?.type === "ADMIN" ? (
-              <CompanyProfilePage />
-            ) : (
-              <Navigate to="/dashboard" />
-            )
-          }
+          element={<CompanyProfilePage />}
         />
         <Route
           path="configuracao-contratacao"
-          element={
-            profile?.type === "COMPANY" || profile?.type === "ADMIN" ? (
-              <CompanyHiringConfig />
-            ) : (
-              <Navigate to="/dashboard" />
-            )
-          }
+          element={<CompanyHiringConfig />}
         />
         <Route path="admissao/:appId" element={<CandidateOnboardingPage />} />
         <Route path="vaga-detalhes/:jobId" element={<CandidateJobViewPage />} />

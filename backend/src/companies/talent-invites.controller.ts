@@ -54,7 +54,7 @@ export class TalentInvitesController {
         ? this.jobs.findOne({ where: { id: invite.jobId, active: true } })
         : null,
     ]);
-    if (!invite || !job || candidate?.type !== UserType.CANDIDATE)
+    if (!invite || !job || !candidate)
       throw new BadRequestException('Convite não disponível.');
     const existing = await this.applications.findOne({
       where: { candidateId: candidate.id, jobId: job.id },

@@ -59,12 +59,8 @@ export class UsersService {
       }
     }
 
-    if (
-      (!existing || !existing.type) &&
-      data.type &&
-      [UserType.CANDIDATE, UserType.COMPANY].includes(data.type)
-    ) {
-      sanitized.type = data.type;
+    if (!existing || !existing.type) {
+      sanitized.type = UserType.CANDIDATE;
     }
     return sanitized;
   }

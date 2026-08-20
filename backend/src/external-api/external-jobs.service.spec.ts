@@ -76,7 +76,7 @@ describe('ExternalJobsService', () => {
     expect(result.duplicate).toBe(true);
     expect(result.job?.id).toBe('job-1');
     expect(result.confidence).toBe(1);
-    expect(result.matchType).toBe('SIMILAR');
+    expect(result.matchType).toBe('LIKELY');
   });
 
   it('lista todas as vagas com paginação por cursor, sem restringir às externas', async () => {
@@ -235,6 +235,11 @@ describe('ExternalJobsService', () => {
     const { service, jobs } = setup();
     jobs.findOne.mockResolvedValue({
       id: 'job-other',
+      title: 'Vaga',
+      description: 'Desc',
+      sourceName: 'Source',
+      city: 'City',
+      state: 'ST',
       ownerId: 'api:other-client',
       ingestionSourceId: 'other-client',
       isExternalListing: true,

@@ -71,13 +71,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               PiraNegócios
             </Link>
             <div className="mt-2 text-xs font-bold tracking-widest text-stone-400 uppercase">
-              {profile?.type === "ADMIN"
-                ? "Painel Administrador"
-                : profile?.type === "COMPANY"
-                  ? "Painel Empresa"
-                  : profile?.type === "CANDIDATE"
-                    ? "Painel Candidato"
-                    : "Onboarding"}
+              {profile?.type === "ADMIN" ? "Painel Administrador" : "Painel Pessoal"}
             </div>
           </div>
 
@@ -132,43 +126,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 />
               </>
             )}
-            {profile?.type === "COMPANY" && (
+            {profile?.type !== "ADMIN" && (
               <>
+                <div className="px-4 py-2 mt-2 mb-1 text-[10px] font-bold tracking-widest text-stone-400 uppercase">
+                  Meu Perfil
+                </div>
                 <NavItem
-                  to="/dashboard"
-                  icon={<Home className="w-5 h-5" />}
-                  label="Visão Geral"
-                />
-                <NavItem
-                  to="/dashboard/vagas"
-                  icon={<Briefcase className="w-5 h-5" />}
-                  label="Minhas Vagas"
-                />
-                <NavItem
-                  to="/dashboard/curriculos"
-                  icon={<FileText className="w-5 h-5" />}
-                  label="Banco de Currículos"
-                />
-                <NavItem
-                  to="/dashboard/empresa"
-                  icon={<Building2 className="w-5 h-5" />}
-                  label="Perfil da Empresa"
-                />
-                <NavItem
-                  to="/dashboard/configuracao-contratacao"
-                  icon={<FileText className="w-5 h-5" />}
-                  label="Contratação (Onboarding)"
-                />
-                <NavItem
-                  to="/dashboard/perfil"
-                  icon={<User className="w-5 h-5" />}
-                  label="Meus Dados Pessoais"
-                />
-              </>
-            )}
-            {profile?.type === "CANDIDATE" && (
-              <>
-                <NavItem
+                  end
                   to="/dashboard"
                   icon={<Home className="w-5 h-5" />}
                   label="Minhas Vagas"
@@ -178,6 +142,42 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                   icon={<User className="w-5 h-5" />}
                   label="Meus Dados Pessoais"
                 />
+
+                <div className="px-4 pt-4 pb-2 mt-4 mb-1 border-t border-stone-100 text-[10px] font-bold tracking-widest text-stone-400 uppercase">
+                  Módulo Empresa
+                </div>
+                {profile?.companyId ? (
+                  <>
+                    <NavItem
+                      to="/dashboard/empresa/painel"
+                      icon={<Briefcase className="w-5 h-5" />}
+                      label="Painel de Vagas"
+                    />
+                    <NavItem
+                      to="/dashboard/curriculos"
+                      icon={<FileText className="w-5 h-5" />}
+                      label="Banco de Currículos"
+                    />
+                    <NavItem
+                      to="/dashboard/empresa"
+                      icon={<Building2 className="w-5 h-5" />}
+                      label="Perfil da Empresa"
+                    />
+                    <NavItem
+                      to="/dashboard/configuracao-contratacao"
+                      icon={<FileText className="w-5 h-5" />}
+                      label="Contratação"
+                    />
+                  </>
+                ) : (
+                  <Link
+                    to="/dashboard/empresa/painel"
+                    className="flex items-center gap-3 mx-2 w-[calc(100%-16px)] px-4 py-3 rounded-xl transition-all text-terracotta-700 hover:bg-terracotta-50 font-bold border border-terracotta-200 mt-2 text-sm"
+                  >
+                    <Building2 className="w-5 h-5" />
+                    Cadastrar Empresa
+                  </Link>
+                )}
               </>
             )}
           </nav>

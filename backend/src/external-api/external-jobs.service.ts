@@ -325,9 +325,9 @@ export class ExternalJobsService {
     }
 
     const job = await this.jobs.findOne({ where: { id } });
-    if (!job || !job.isExternalListing) {
+    if (!job || !job.isExternalListing || job.ingestionSourceId !== client.id) {
       throw new NotFoundException(
-        'Vaga não encontrada ou não é um cadastro externo.',
+        'Vaga não encontrada ou não é um cadastro externo gerido por esta API.',
       );
     }
 
