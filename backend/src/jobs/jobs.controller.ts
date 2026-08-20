@@ -152,6 +152,7 @@ export class JobsController {
       );
     }
     this.validateApplicationFields(createJobDto);
+    this.normalizeJobSkills(createJobDto);
     const company = await this.assertCanManageCompany(
       req.user.uid,
       createJobDto.companyId,
@@ -186,6 +187,7 @@ export class JobsController {
       );
     }
     this.validateApplicationFields(updateJobDto);
+    this.normalizeJobSkills(updateJobDto);
     return this.jobsService.update(req.user.uid, id, updateJobDto, true);
   }
 
@@ -235,6 +237,34 @@ export class JobsController {
       throw new BadRequestException(
         'Informe o WhatsApp com DDD e número, com DDI opcional.',
       );
+  }
+
+  private normalizeJobSkills(data: Partial<Job>) {
+    if (data.skills === undefined) return;
+    if (!Array.isArray(data.skills)) {
+      throw new BadRequestException('As habilidades da vaga devem ser uma lista.');
+    }
+
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+    for (const raw of data.skills) {
+      if (typeof raw !== 'string') {
+        throw new BadRequestException('Cada habilidade deve ser um texto.');
+      }
+      const skill = raw.trim().replace(/\s+/g, ' ').slice(0, 80);
+      if (!skill) continue;
+      const key = skill.toLocaleLowerCase('pt-BR');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      normalized.push(skill);
+    }
+
+    if (normalized.length > 10) {
+      throw new BadRequestException(
+        'Cada vaga pode ter no máximo 10 habilidades.',
+      );
+    }
+    data.skills = normalized;
   }
 
   @Put(':id')
