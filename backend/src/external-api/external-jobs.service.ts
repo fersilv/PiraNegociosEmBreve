@@ -398,7 +398,7 @@ export class ExternalJobsService {
     return slug;
   }
 
-  private async log(clientId: string, method: string, jobId: string | null, result: string, metadata: Record<string, unknown> | null) {
-    await this.requests.save(this.requests.create({ clientId, method, jobId, result, metadata }));
+  private async log(clientId: string, action: string, jobId: string | null, result: string, metadata: Record<string, unknown> | null) {
+    await this.requests.save(this.requests.create({ clientId, action, jobId, result, metadata }));
   }
 }
