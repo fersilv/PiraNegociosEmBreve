@@ -53,11 +53,6 @@ const COST_DATABASE: Record<
     output: 0.4,
     name: 'Gemini 2.0 Flash',
   },
-  'gemini-1.5-pro': {
-    input: 1.25,
-    output: 5.0,
-    name: 'Gemini 1.5 Pro',
-  },
 };
 
 @Controller('admin/ai')
@@ -94,37 +89,82 @@ export class AdminAiController {
   }
 
   private chooseOpenAiModel(ids: string[]): string | null {
+    const compatible = ids.filter(
+      (id) =>
+        /^gpt-/i.test(id) &&
+        !/(audio|realtime|transcribe|tts|search|image|codex|chat)/i.test(id),
+    );
     const priorities = [
-      'gpt-5.6-luna',
-      'gpt-5.4-mini',
+      'gpt-5-mini',
+      'gpt-5.1',
+      'gpt-5',
+      'gpt-4.1-mini',
+      'gpt-4.1',
       'gpt-4o-mini',
       'gpt-4o',
     ];
     return (
-      priorities.find((id) => ids.includes(id)) ||
-      ids.find((id) => /^gpt-/i.test(id) && /mini|luna|nano/i.test(id)) ||
-      ids.find((id) => /^gpt-/i.test(id)) ||
+      priorities.find((id) => compatible.includes(id)) ||
+      compatible.find((id) => /mini|nano/i.test(id)) ||
+      compatible[0] ||
       null
     );
   }
 
   private chooseAnthropicModel(ids: string[]): string | null {
+    const compatible = ids
+      .filter((id) => /^claude-/i.test(id))
+      .sort((a, b) => b.localeCompare(a));
     return (
-      ids.find((id) => /haiku/i.test(id)) ||
-      ids.find((id) => /sonnet/i.test(id)) ||
-      ids[0] ||
+      compatible.find((id) => /sonnet/i.test(id)) ||
+      compatible.find((id) => /opus/i.test(id)) ||
+      compatible.find((id) => /haiku/i.test(id)) ||
+      compatible[0] ||
       null
     );
   }
 
   private chooseGeminiModel(ids: string[]): string | null {
-    const priorities = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+    const compatible = ids.filter(
+      (id) =>
+        /^gemini-/i.test(id) &&
+        !/(image|embedding|tts|live|robotics)/i.test(id),
+    );
+    const priorities = [
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite',
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+    ];
     return (
-      priorities.find((id) => ids.includes(id)) ||
-      ids.find((id) => /flash/i.test(id)) ||
-      ids[0] ||
+      priorities.find((id) => compatible.includes(id)) ||
+      compatible.find((id) => /flash/i.test(id)) ||
+      compatible.find((id) => /pro/i.test(id)) ||
+      compatible[0] ||
       null
     );
+  }
+
+  private async testGeminiGeneration(apiKey: string, model: string) {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'Responda apenas OK.' }] }],
+          generationConfig: { maxOutputTokens: 16 },
+        }),
+      },
+    );
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '');
+      throw new Error(
+        `Google Gemini respondeu HTTP ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ''}`,
+      );
+    }
   }
 
   private async testProvider(provider: AiProvider): Promise<{
@@ -142,25 +182,46 @@ export class AdminAiController {
       if (provider === 'OPENAI') {
         const openai = new OpenAI({ apiKey });
         const list = await openai.models.list();
-        const ids = list.data
-          .map((model) => model.id)
-          .filter((id) => /^gpt-/i.test(id));
+        const ids = list.data.map((item) => item.id);
         const model = this.chooseOpenAiModel(ids);
         if (!model)
           throw new Error('Nenhum modelo de linguagem compatível foi encontrado.');
+
+        // Não basta listar modelos: uma geração mínima valida chave, acesso ao
+        // modelo, cobrança/quota e capacidade real de responder.
+        await openai.responses.create({
+          model,
+          input: 'Responda apenas OK.',
+          max_output_tokens: 16,
+        });
+
+        const compatibleIds = ids.filter(
+          (id) =>
+            /^gpt-/i.test(id) &&
+            !/(audio|realtime|transcribe|tts|search|image|codex|chat)/i.test(id),
+        );
         return {
           model,
-          models: ids.map((id) => this.modelInfo(id, 'OPENAI', 'OpenAI')),
+          models: compatibleIds.map((id) =>
+            this.modelInfo(id, 'OPENAI', 'OpenAI'),
+          ),
         };
       }
 
       if (provider === 'ANTHROPIC') {
         const anthropic = new Anthropic({ apiKey });
         const list = await anthropic.models.list();
-        const ids = list.data.map((model) => model.id);
+        const ids = list.data.map((item) => item.id);
         const model = this.chooseAnthropicModel(ids);
         if (!model)
           throw new Error('Nenhum modelo de linguagem compatível foi encontrado.');
+
+        await anthropic.messages.create({
+          model,
+          max_tokens: 16,
+          messages: [{ role: 'user', content: 'Responda apenas OK.' }],
+        });
+
         return {
           model,
           models: list.data.map((item) =>
@@ -195,11 +256,18 @@ export class AdminAiController {
           id: String(item.name || '').replace(/^models\//, ''),
           name: item.displayName,
         }))
-        .filter((item) => item.id.startsWith('gemini-'));
+        .filter(
+          (item) =>
+            item.id.startsWith('gemini-') &&
+            !/(image|embedding|tts|live|robotics)/i.test(item.id),
+        );
       const ids = available.map((item) => item.id);
       const model = this.chooseGeminiModel(ids);
       if (!model)
         throw new Error('Nenhum modelo Gemini compatível foi encontrado.');
+
+      await this.testGeminiGeneration(apiKey, model);
+
       return {
         model,
         models: available.map((item) =>
@@ -207,8 +275,10 @@ export class AdminAiController {
         ),
       };
     } catch (error: any) {
+      if (error instanceof BadRequestException) throw error;
+      const status = error?.status || error?.statusCode;
       const message =
-        error?.status === 401 || error?.status === 403
+        status === 401 || status === 403
           ? 'A chave foi recusada pelo provedor.'
           : error?.message || 'Não foi possível conectar ao provedor.';
       throw new BadRequestException(
@@ -219,12 +289,17 @@ export class AdminAiController {
 
   @Get('config')
   async getConfig() {
-    const enabled =
+    const enabledSetting =
       (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
     const rawProvider = await this.settingsService.getValue('AI_PROVIDER');
     const provider = this.isProvider(rawProvider) ? rawProvider : null;
     const model = (await this.settingsService.getValue('AI_MODEL')) || null;
-    return { enabled: enabled && Boolean(provider && model), provider, model };
+    const hasKey = provider ? Boolean(await this.getProviderKey(provider)) : false;
+    return {
+      enabled: enabledSetting && Boolean(provider && model && hasKey),
+      provider,
+      model,
+    };
   }
 
   @Post('test')
@@ -264,7 +339,7 @@ export class AdminAiController {
       );
     }
 
-    // A flag só é ativada depois que o provedor responde com sucesso.
+    // AI_ENABLED só é gravado depois de uma chamada de geração real funcionar.
     const tested = await this.testProvider(body.provider);
     await this.settingsService.createOrUpdate(
       'AI_PROVIDER',
@@ -300,7 +375,7 @@ export class AdminAiController {
         const result = await this.testProvider(provider);
         models.push(...result.models);
       } catch {
-        // O endpoint de modelos é diagnóstico. Falhas individuais não derrubam os demais.
+        // Diagnóstico: uma chave inválida não impede mostrar os outros provedores.
       }
     }
     return models;
