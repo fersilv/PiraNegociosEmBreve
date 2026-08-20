@@ -53,7 +53,7 @@ export class User {
   @Column({ nullable: true })
   phone: string;
 
-  @Column({ default: false })
+  @Column({ default: true })
   isOpenToWork: boolean;
 
   @Column({ type: 'text', nullable: true })
