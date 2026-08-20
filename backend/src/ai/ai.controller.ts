@@ -64,9 +64,6 @@ export class AiController {
       throw new BadRequestException('Nenhuma vaga foi enviada para análise.');
     }
 
-    // Mantemos duas notas separadas: o matching geral considera o perfil inteiro,
-    // enquanto skillScore mede especificamente a cobertura semântica das habilidades.
-    // A análise de skills de todas as vagas é feita em uma única chamada adicional.
     const [generalResult, skillResult] = await Promise.all([
       this.aiService.matchJobs(
         body.profile,
@@ -82,8 +79,13 @@ export class AiController {
     const matches = Array.isArray(generalResult?.matches)
       ? generalResult.matches.map((match: any) => {
           const skill = skillScores.get(String(match?.jobId || ''));
+          const originalReason = String(match?.reason || '').trim();
+          const skillSentence = skill
+            ? `Compatibilidade de habilidades: ${Math.round(skill.score)}%.`
+            : '';
           return {
             ...match,
+            reason: [originalReason, skillSentence].filter(Boolean).join(' '),
             skillScore: skill ? skill.score : null,
             skillMatches: skill?.matches || [],
           };
