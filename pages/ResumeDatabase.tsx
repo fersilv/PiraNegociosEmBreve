@@ -112,6 +112,7 @@ export function ResumeDatabase() {
   const { profile } = useAuth();
   const [candidates, setCandidates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [companyVerified, setCompanyVerified] = useState<boolean | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<any | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [folders, setFolders] = useState<any[]>([]);
@@ -126,33 +127,43 @@ export function ResumeDatabase() {
 
   useEffect(() => {
     fetchCandidates();
-  }, [profile]);
+  }, [profile?.type, profile?.companyId]);
 
   const fetchCandidates = async () => {
-    if (profile?.type !== "COMPANY" || !profile?.isVerified) {
+    if (profile?.type !== "COMPANY" || !profile?.companyId) {
+      setCompanyVerified(false);
+      setCandidates([]);
       setLoading(false);
       return;
     }
 
     setLoading(true);
+    setCompanyVerified(null);
     try {
-      const res = await api.get("/candidates");
-      setCandidates(asArray(res.data));
-      if (profile?.companyId)
-        setFolders(
-          asArray(
-            (await api.get(`/companies/${profile.companyId}/talent-folders`))
-              .data,
-          ),
-        );
-      if (profile?.companyId)
-        setCompanyJobs(
-          asArray(
-            (await api.get(`/companies/${profile.companyId}/talent-jobs`)).data,
-          ),
-        );
+      const companyResponse = await api.get(`/companies/${profile.companyId}`);
+      const isCompanyVerified = Boolean(companyResponse.data?.isVerified);
+      setCompanyVerified(isCompanyVerified);
+
+      if (!isCompanyVerified) {
+        setCandidates([]);
+        setFolders([]);
+        setCompanyJobs([]);
+        return;
+      }
+
+      const [candidatesResponse, foldersResponse, jobsResponse] =
+        await Promise.all([
+          api.get("/candidates"),
+          api.get(`/companies/${profile.companyId}/talent-folders`),
+          api.get(`/companies/${profile.companyId}/talent-jobs`),
+        ]);
+
+      setCandidates(asArray(candidatesResponse.data));
+      setFolders(asArray(foldersResponse.data));
+      setCompanyJobs(asArray(jobsResponse.data));
     } catch (err) {
       console.error(err);
+      setCandidates([]);
     } finally {
       setLoading(false);
     }
@@ -192,7 +203,15 @@ export function ResumeDatabase() {
     );
   }
 
-  if (!profile.isVerified) {
+  if (companyVerified === null) {
+    return (
+      <div className="flex justify-center py-16">
+        <Loader2 className="w-8 h-8 animate-spin text-terracotta-500" />
+      </div>
+    );
+  }
+
+  if (!companyVerified) {
     return (
       <div className="max-w-2xl mx-auto py-12">
         <div className="bg-stone-50 border border-stone-200 rounded-3xl p-12 text-center shadow-sm">
@@ -208,7 +227,7 @@ export function ResumeDatabase() {
             <strong>verificadas e aprovadas</strong> por nossa equipe.
           </p>
           <p className="text-stone-500 text-sm">
-            Sua conta está atualmente em análise. Nossa equipe entrará em
+            Esta empresa está atualmente em análise. Nossa equipe entrará em
             contato em breve para concluir a verificação.
           </p>
         </div>
