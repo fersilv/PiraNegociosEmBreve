@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User, UserType } from './entities/user.entity';
+import { User } from './entities/user.entity';
 import { CompanyInvitation } from './entities/company-invitation.entity';
 
 const SELF_MANAGED_FIELDS = [
@@ -141,9 +141,6 @@ export class UsersService {
       sanitized.experiences = this.normalizeExperienceDates(data.experiences) as unknown[];
     }
 
-    // Usuários comuns não recebem um papel obrigatório. Recursos pessoais são
-    // capacidades da conta, enquanto acesso empresarial vem de companyId e
-    // isCompanyAdmin. O campo type permanece apenas para ADMIN e legado.
     return sanitized;
   }
 
@@ -166,7 +163,6 @@ export class UsersService {
       isOpenToWork: data.isOpenToWork ?? true,
       ...(invitation
         ? {
-            type: UserType.COMPANY,
             companyId: invitation.companyId,
             isCompanyAdmin: invitation.isCompanyAdmin,
             status: 'ACTIVE',
