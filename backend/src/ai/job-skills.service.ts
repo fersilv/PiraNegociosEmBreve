@@ -16,6 +16,25 @@ type RuntimeConfig = {
   apiKey: string;
 };
 
+export interface SkillCompatibilityMatch {
+  jobSkill: string;
+  candidateSkill: string;
+  score: number;
+}
+
+export interface SkillCompatibilityResult {
+  score: number;
+  matches: SkillCompatibilityMatch[];
+}
+
+export interface JobSkillScore extends SkillCompatibilityResult {
+  jobId: string;
+}
+
+export interface JobSkillScoresResult {
+  scores: JobSkillScore[];
+}
+
 @Injectable()
 export class JobSkillsService {
   constructor(private readonly settingsService: SettingsService) {}
@@ -178,17 +197,17 @@ export class JobSkillsService {
     return this.normalizeSkills([...direct, ...fromExperiences], 50);
   }
 
-  private normalizeMatches(value: unknown) {
-    return Array.isArray(value)
-      ? value
-          .map((item: any) => ({
-            jobSkill: String(item?.jobSkill || '').slice(0, 80),
-            candidateSkill: String(item?.candidateSkill || '').slice(0, 80),
-            score: Math.max(0, Math.min(100, Number(item?.score) || 0)),
-          }))
-          .filter((item: any) => item.jobSkill)
-          .slice(0, 10)
-      : [];
+  private normalizeMatches(value: unknown): SkillCompatibilityMatch[] {
+    if (!Array.isArray(value)) return [];
+
+    return value
+      .map((item: any): SkillCompatibilityMatch => ({
+        jobSkill: String(item?.jobSkill || '').slice(0, 80),
+        candidateSkill: String(item?.candidateSkill || '').slice(0, 80),
+        score: Math.max(0, Math.min(100, Number(item?.score) || 0)),
+      }))
+      .filter((item) => Boolean(item.jobSkill))
+      .slice(0, 10);
   }
 
   async suggestSkills(title: string, description: string, requirements?: string) {
@@ -205,14 +224,7 @@ export class JobSkillsService {
     const systemInstruction = await this.buildInstruction(
       `sugestão de habilidades para vaga cargo ${cleanTitle} ${cleanDescription.slice(0, 2500)} ${cleanRequirements.slice(0, 1200)}`,
     );
-    const prompt = `Sugira de 3 a 10 habilidades relevantes para esta vaga. Use nomes curtos e canônicos, adequados para comparação entre currículos e vagas. Misture competências técnicas e comportamentais somente quando forem realmente pertinentes. Não inclua escolaridade, disponibilidade, salário, benefícios ou tempo de experiência como habilidade.
-
-CARGO: ${cleanTitle}
-DESCRIÇÃO: ${cleanDescription}
-REQUISITOS: ${cleanRequirements || 'Não informado'}
-
-Retorne EXCLUSIVAMENTE:
-{"skills":["Habilidade 1","Habilidade 2"]}`;
+    const prompt = `Sugira de 3 a 10 habilidades relevantes para esta vaga. Use nomes curtos e canônicos, adequados para comparação entre currículos e vagas. Misture competências técnicas e comportamentais somente quando forem realmente pertinentes. Não inclua escolaridade, disponibilidade, salário, benefícios ou tempo de experiência como habilidade.\n\nCARGO: ${cleanTitle}\nDESCRIÇÃO: ${cleanDescription}\nREQUISITOS: ${cleanRequirements || 'Não informado'}\n\nRetorne EXCLUSIVAMENTE:\n{"skills":["Habilidade 1","Habilidade 2"]}`;
 
     try {
       const result = await this.generateJson(config, prompt, systemInstruction);
@@ -231,7 +243,10 @@ Retorne EXCLUSIVAMENTE:
     }
   }
 
-  async scoreCompatibility(candidateSkills: unknown, jobSkills: unknown) {
+  async scoreCompatibility(
+    candidateSkills: unknown,
+    jobSkills: unknown,
+  ): Promise<SkillCompatibilityResult> {
     const candidate = this.normalizeSkills(candidateSkills, 50);
     const job = this.normalizeSkills(jobSkills);
     if (candidate.length === 0 || job.length === 0) {
@@ -242,21 +257,7 @@ Retorne EXCLUSIVAMENTE:
     const systemInstruction = await this.buildInstruction(
       `compatibilidade semântica entre habilidades candidato ${candidate.join(', ')} vaga ${job.join(', ')}`,
     );
-    const prompt = `Compare semanticamente as habilidades do candidato com as habilidades exigidas pela vaga. Não dependa de texto idêntico: traduções, sinônimos, tecnologias relacionadas e competências de mesma família podem ter compatibilidade parcial. Porém não trate conhecimentos apenas vagamente relacionados como equivalentes.
-
-HABILIDADES DO CANDIDATO: ${JSON.stringify(candidate)}
-HABILIDADES DA VAGA: ${JSON.stringify(job)}
-
-Para CADA habilidade da vaga, escolha no máximo uma habilidade do candidato que melhor corresponda e dê score de 0 a 100:
-100 = equivalente ou praticamente a mesma competência
-80-99 = fortemente equivalente
-50-79 = relacionada e parcialmente transferível
-20-49 = relação fraca
-0-19 = sem compatibilidade útil
-
-O score geral deve representar a cobertura das habilidades da vaga, dando peso igual para cada habilidade da vaga. Habilidades não cobertas contam como zero.
-Retorne EXCLUSIVAMENTE:
-{"score":0,"matches":[{"jobSkill":"","candidateSkill":"","score":0}]}`;
+    const prompt = `Compare semanticamente as habilidades do candidato com as habilidades exigidas pela vaga. Não dependa de texto idêntico: traduções, sinônimos, tecnologias relacionadas e competências de mesma família podem ter compatibilidade parcial. Porém não trate conhecimentos apenas vagamente relacionados como equivalentes.\n\nHABILIDADES DO CANDIDATO: ${JSON.stringify(candidate)}\nHABILIDADES DA VAGA: ${JSON.stringify(job)}\n\nPara CADA habilidade da vaga, escolha no máximo uma habilidade do candidato que melhor corresponda e dê score de 0 a 100:\n100 = equivalente ou praticamente a mesma competência\n80-99 = fortemente equivalente\n50-79 = relacionada e parcialmente transferível\n20-49 = relação fraca\n0-19 = sem compatibilidade útil\n\nO score geral deve representar a cobertura das habilidades da vaga, dando peso igual para cada habilidade da vaga. Habilidades não cobertas contam como zero.\nRetorne EXCLUSIVAMENTE:\n{"score":0,"matches":[{"jobSkill":"","candidateSkill":"","score":0}]}`;
 
     try {
       const result = await this.generateJson(config, prompt, systemInstruction);
@@ -273,7 +274,7 @@ Retorne EXCLUSIVAMENTE:
     }
   }
 
-  async scoreJobs(profile: unknown, jobs: unknown[]) {
+  async scoreJobs(profile: unknown, jobs: unknown[]): Promise<JobSkillScoresResult> {
     const candidateSkills = this.collectCandidateSkills(profile);
     const normalizedJobs = (Array.isArray(jobs) ? jobs : [])
       .slice(0, 100)
@@ -285,7 +286,7 @@ Retorne EXCLUSIVAMENTE:
       .filter((job) => job.jobId && job.skills.length > 0);
 
     if (candidateSkills.length === 0 || normalizedJobs.length === 0) {
-      return { scores: [] as Array<{ jobId: string; score: number; matches: any[] }> };
+      return { scores: [] };
     }
 
     const config = await this.getRuntimeConfig();
@@ -295,22 +296,7 @@ Retorne EXCLUSIVAMENTE:
         .join(' | ')
         .slice(0, 5000)}`,
     );
-    const prompt = `Calcule em UMA ÚNICA ANÁLISE a compatibilidade semântica das habilidades do candidato com cada vaga.
-
-HABILIDADES DO CANDIDATO: ${JSON.stringify(candidateSkills)}
-VAGAS: ${JSON.stringify(normalizedJobs)}
-
-Para cada habilidade de cada vaga, escolha a habilidade do candidato mais compatível e dê score de 0 a 100:
-100 = equivalente ou praticamente a mesma competência
-80-99 = fortemente equivalente, incluindo traduções e sinônimos
-50-79 = relacionada e parcialmente transferível
-20-49 = relação fraca
-0-19 = sem compatibilidade útil
-
-O score de cada vaga é a cobertura média das habilidades daquela vaga. Habilidade sem cobertura conta como zero. Não aumente a nota apenas porque o candidato possui muitas habilidades que a vaga não pediu.
-
-Retorne EXCLUSIVAMENTE:
-{"scores":[{"jobId":"id","score":0,"matches":[{"jobSkill":"","candidateSkill":"","score":0}]}]}`;
+    const prompt = `Calcule em UMA ÚNICA ANÁLISE a compatibilidade semântica das habilidades do candidato com cada vaga.\n\nHABILIDADES DO CANDIDATO: ${JSON.stringify(candidateSkills)}\nVAGAS: ${JSON.stringify(normalizedJobs)}\n\nPara cada habilidade de cada vaga, escolha a habilidade do candidato mais compatível e dê score de 0 a 100:\n100 = equivalente ou praticamente a mesma competência\n80-99 = fortemente equivalente, incluindo traduções e sinônimos\n50-79 = relacionada e parcialmente transferível\n20-49 = relação fraca\n0-19 = sem compatibilidade útil\n\nO score de cada vaga é a cobertura média das habilidades daquela vaga. Habilidade sem cobertura conta como zero. Não aumente a nota apenas porque o candidato possui muitas habilidades que a vaga não pediu.\n\nRetorne EXCLUSIVAMENTE:\n{"scores":[{"jobId":"id","score":0,"matches":[{"jobSkill":"","candidateSkill":"","score":0}]}]}`;
 
     try {
       const result = await this.generateJson(
@@ -320,14 +306,14 @@ Retorne EXCLUSIVAMENTE:
         Math.min(6000, Math.max(1800, normalizedJobs.length * 240)),
       );
       const validIds = new Set(normalizedJobs.map((job) => job.jobId));
-      const scores = Array.isArray(result?.scores)
+      const scores: JobSkillScore[] = Array.isArray(result?.scores)
         ? result.scores
-            .map((item: any) => ({
+            .map((item: any): JobSkillScore => ({
               jobId: String(item?.jobId || ''),
               score: Math.max(0, Math.min(100, Number(item?.score) || 0)),
               matches: this.normalizeMatches(item?.matches),
             }))
-            .filter((item: any) => validIds.has(item.jobId))
+            .filter((item: JobSkillScore) => validIds.has(item.jobId))
         : [];
       return { scores };
     } catch (error: any) {
