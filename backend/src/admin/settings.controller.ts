@@ -1,5 +1,16 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
-import { SettingsService } from './settings.service';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { SettingsService, AiBrainEntryInput, AiBehaviorSettings } from './settings.service';
 import { AdminGuard } from './admin.guard';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 
@@ -52,5 +63,43 @@ export class SettingsController {
     }
 
     return result;
+  }
+
+  @Get('ai-behavior')
+  getAiBehavior() {
+    return this.settingsService.getAiBehavior();
+  }
+
+  @Post('ai-behavior')
+  saveAiBehavior(@Body() body: Partial<AiBehaviorSettings>) {
+    return this.settingsService.saveAiBehavior(body || {});
+  }
+
+  @Get('ai-brain')
+  listAiBrain(@Query('q') search?: string) {
+    return this.settingsService.listAiBrain(search);
+  }
+
+  @Post('ai-brain')
+  createAiBrain(@Body() body: AiBrainEntryInput) {
+    if (!String(body?.title || '').trim() || !String(body?.content || '').trim()) {
+      throw new BadRequestException(
+        'Título e conteúdo do aprendizado são obrigatórios.',
+      );
+    }
+    return this.settingsService.createAiBrain(body);
+  }
+
+  @Patch('ai-brain/:id')
+  updateAiBrain(
+    @Param('id') id: string,
+    @Body() body: AiBrainEntryInput,
+  ) {
+    return this.settingsService.updateAiBrain(id, body || {});
+  }
+
+  @Delete('ai-brain/:id')
+  deleteAiBrain(@Param('id') id: string) {
+    return this.settingsService.deleteAiBrain(id);
   }
 }
