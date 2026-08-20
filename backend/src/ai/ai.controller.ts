@@ -63,10 +63,33 @@ export class AiController {
     if (!Array.isArray(body.jobs) || body.jobs.length === 0) {
       throw new BadRequestException('Nenhuma vaga foi enviada para análise.');
     }
-    return this.aiService.matchJobs(
-      body.profile,
-      body.jobs,
-      Array.isArray(body.applications) ? body.applications : [],
+
+    // Mantemos duas notas separadas: o matching geral considera o perfil inteiro,
+    // enquanto skillScore mede especificamente a cobertura semântica das habilidades.
+    // A análise de skills de todas as vagas é feita em uma única chamada adicional.
+    const [generalResult, skillResult] = await Promise.all([
+      this.aiService.matchJobs(
+        body.profile,
+        body.jobs,
+        Array.isArray(body.applications) ? body.applications : [],
+      ),
+      this.jobSkillsService.scoreJobs(body.profile, body.jobs),
+    ]);
+
+    const skillScores = new Map(
+      (skillResult.scores || []).map((item) => [item.jobId, item] as const),
     );
+    const matches = Array.isArray(generalResult?.matches)
+      ? generalResult.matches.map((match: any) => {
+          const skill = skillScores.get(String(match?.jobId || ''));
+          return {
+            ...match,
+            skillScore: skill ? skill.score : null,
+            skillMatches: skill?.matches || [],
+          };
+        })
+      : [];
+
+    return { ...generalResult, matches };
   }
 }
