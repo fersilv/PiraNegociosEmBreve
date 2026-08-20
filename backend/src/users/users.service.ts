@@ -106,12 +106,11 @@ export class UsersService {
       if (month) return `${month}/${textual[2]}`;
     }
 
-    // Quando a fonte informa apenas o ano, preservamos o dado em vez de inventar um mês.
     if (/^\d{4}$/.test(raw)) return raw;
     return raw;
   }
 
-  private normalizeExperiences(value: unknown): unknown {
+  normalizeExperienceDates(value: unknown): unknown {
     if (!Array.isArray(value)) return value;
     return value.map((item) => {
       if (!item || typeof item !== 'object') return item;
@@ -139,7 +138,7 @@ export class UsersService {
     }
 
     if (data.experiences !== undefined) {
-      sanitized.experiences = this.normalizeExperiences(data.experiences) as unknown[];
+      sanitized.experiences = this.normalizeExperienceDates(data.experiences) as unknown[];
     }
 
     if (!existing || !existing.type) {
