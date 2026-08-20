@@ -5,6 +5,7 @@ import { useAiStatus } from "../hooks/useAiStatus";
 import { Onboarding } from "./Onboarding";
 import { DashboardLayout } from "../components/DashboardLayout";
 import { CompanyDashboard } from "./CompanyDashboard";
+import { CompanyHomePage } from "./CompanyHomePage";
 import { CandidateDashboard } from "./CandidateDashboard";
 import { AdminDashboard, ApiV1Panel } from "./AdminDashboard";
 import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
@@ -21,12 +22,9 @@ function ProfilePageWithAiAvailability() {
   const { profile } = useAuth();
   const { enabled: aiEnabled, loading: aiStatusLoading } = useAiStatus();
   const hideAiAssistant =
-    profile?.type === "CANDIDATE" && (aiStatusLoading || !aiEnabled);
+    profile?.type !== "ADMIN" && (aiStatusLoading || !aiEnabled);
 
   useEffect(() => {
-    // ProfilePage ainda possui chamadas antigas /api/gemini/*.
-    // Mantemos compatibilidade aqui, mas fazemos todas passarem pelo serviço
-    // central que respeita AI_ENABLED, AI_PROVIDER e AI_MODEL.
     const originalFetch = window.fetch;
     window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
       if (typeof input === "string") {
@@ -79,18 +77,17 @@ export function Dashboard() {
     );
   }
 
-  // If user hasn't filled phone yet, force onboarding
   if (profile && !profile.phone && !location.pathname.includes("/onboarding")) {
     return <Navigate to="/dashboard/onboarding" replace />;
   }
 
-  // Full-screen pages that should NOT have the dashboard layout.
-  // Currículo é um recurso pessoal do usuário, mesmo quando ele também possui
-  // vínculo com uma empresa. Apenas administradores não usam este fluxo.
   if (location.pathname.includes("/curriculo/gerador")) {
     if (profile?.type === "ADMIN") return <Navigate to="/dashboard" replace />;
     return <ResumeBuilderPage />;
   }
+
+  const companyOnly = (element: React.ReactNode) =>
+    profile?.companyId ? element : <Navigate to="/dashboard/empresa" replace />;
 
   return (
     <DashboardLayout>
@@ -98,25 +95,25 @@ export function Dashboard() {
         <Route path="onboarding" element={<Onboarding />} />
 
         <Route
-          path="/"
+          index
           element={
             profile?.type === "ADMIN" ? (
               <AdminDashboard mode="dashboard" />
+            ) : profile?.companyId ? (
+              <Navigate to="empresa/inicio" replace />
             ) : (
-              <CandidateDashboard />
+              <Navigate to="pessoal" replace />
             )
           }
         />
 
+        <Route path="pessoal" element={<CandidateDashboard />} />
         <Route
-          path="empresa/painel"
-          element={<CompanyDashboard />}
+          path="empresa/inicio"
+          element={companyOnly(<CompanyHomePage />)}
         />
-
-        <Route
-          path="vaga/:jobId"
-          element={<CompanyJobPage />}
-        />
+        <Route path="empresa/painel" element={<CompanyDashboard />} />
+        <Route path="vaga/:jobId" element={companyOnly(<CompanyJobPage />)} />
 
         <Route
           path="admin"
@@ -219,22 +216,16 @@ export function Dashboard() {
           }
         />
 
-        <Route
-          path="curriculos"
-          element={<ResumeDatabase />}
-        />
-
+        <Route path="curriculos" element={companyOnly(<ResumeDatabase />)} />
         <Route path="perfil" element={<ProfilePageWithAiAvailability />} />
-        <Route
-          path="empresa"
-          element={<CompanyProfilePage />}
-        />
+        <Route path="empresa" element={<CompanyProfilePage />} />
         <Route
           path="configuracao-contratacao"
-          element={<CompanyHiringConfig />}
+          element={companyOnly(<CompanyHiringConfig />)}
         />
         <Route path="admissao/:appId" element={<CandidateOnboardingPage />} />
         <Route path="vaga-detalhes/:jobId" element={<CandidateJobViewPage />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </DashboardLayout>
   );
