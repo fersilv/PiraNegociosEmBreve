@@ -11,16 +11,45 @@ export class SettingsController {
   @Get()
   async getAllSettings() {
     const settings = await this.settingsService.findAll();
-    // Return key-value map for easier frontend consumption
-    const map = settings.reduce((acc, s) => {
-      acc[s.key] = s.value;
-      return acc;
-    }, {} as Record<string, string>);
+    const map = settings.reduce(
+      (acc, setting) => {
+        acc[setting.key] = setting.value;
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
     return map;
   }
 
   @Post()
-  async updateSetting(@Body() body: { key: string; value: string; description?: string }) {
-    return this.settingsService.createOrUpdate(body.key, body.value, body.description);
+  async updateSetting(
+    @Body() body: { key: string; value: string; description?: string },
+  ) {
+    const result = await this.settingsService.createOrUpdate(
+      body.key,
+      body.value,
+      body.description,
+    );
+
+    const providerByKey: Record<string, string> = {
+      GEMINI_API_KEY: 'GEMINI',
+      OPENAI_API_KEY: 'OPENAI',
+      ANTHROPIC_API_KEY: 'ANTHROPIC',
+    };
+    const changedProvider = providerByKey[body.key];
+    if (changedProvider) {
+      const activeProvider = await this.settingsService.getValue('AI_PROVIDER');
+      const enabled =
+        (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
+      if (enabled && activeProvider === changedProvider) {
+        await this.settingsService.createOrUpdate(
+          'AI_ENABLED',
+          'false',
+          'Habilita os recursos de inteligência artificial no sistema',
+        );
+      }
+    }
+
+    return result;
   }
 }
