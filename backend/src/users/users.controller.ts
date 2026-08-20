@@ -53,6 +53,7 @@ export class UsersController {
         const profile = await this.usersService.createOrUpdate(user.uid, {
           type: UserType.ADMIN,
           displayName: existing?.displayName || user.name || user.email,
+          fullName: existing?.fullName || user.name || user.email,
           email: user.email,
         });
         return this.exposeProfileForRuntime(profile);
@@ -61,7 +62,31 @@ export class UsersController {
     }
 
     if (existing) return this.exposeProfileForRuntime(existing);
-    return this.exposeProfileForRuntime(await this.usersService.findOne(user.uid));
+
+    // Firebase Authentication and the application database have independent
+    // lifecycles. A valid Firebase account may legitimately reach the app
+    // before a row exists in users (local development, imported accounts,
+    // restored databases, etc.). Bootstrap the application profile instead of
+    // returning 404. UsersService.createOrUpdate also consumes a pending
+    // company invitation, when one exists for this e-mail.
+    const email =
+      typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
+    if (!email) {
+      throw new BadRequestException(
+        'Sua conta de autenticação precisa possuir um e-mail válido.',
+      );
+    }
+
+    const displayName =
+      (typeof user.name === 'string' && user.name.trim()) || email.split('@')[0];
+    const profile = await this.usersService.createOrUpdate(user.uid, {
+      type: UserType.CANDIDATE,
+      email,
+      displayName,
+      fullName: displayName,
+    });
+
+    return this.exposeProfileForRuntime(profile);
   }
 
   @Post('me')
