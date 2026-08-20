@@ -23,7 +23,11 @@ export class ApplicationsController {
     ]);
     if (!job) throw new BadRequestException('Vaga vinculada não encontrada.');
     if (user?.type === UserType.ADMIN) return;
-    if (!user || user.type !== UserType.COMPANY || (job.ownerId !== uid && !(user.companyId === job.companyId && user.isCompanyAdmin))) {
+    if (
+      !user ||
+      (job.ownerId !== uid &&
+        !(user.companyId === job.companyId && user.isCompanyAdmin))
+    ) {
       throw new ForbiddenException('Você não tem permissão para administrar esta candidatura.');
     }
   }
