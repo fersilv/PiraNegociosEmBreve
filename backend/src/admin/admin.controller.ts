@@ -305,21 +305,8 @@ export class AdminController {
       where: { status: CompanyAccessRequestStatus.PENDING },
       order: { createdAt: 'ASC' },
     });
-    const managerCompanyIds = new Set(
-      (
-        await this.users.find({
-          where: { isCompanyAdmin: true },
-          select: { companyId: true },
-        })
-      )
-        .map((user) => user.companyId)
-        .filter((companyId): companyId is string => Boolean(companyId)),
-    );
-    const platformRequests = requests.filter(
-      (request) => !managerCompanyIds.has(request.companyId),
-    );
     const companyIds = [
-      ...new Set(platformRequests.map((request) => request.companyId)),
+      ...new Set(requests.map((request) => request.companyId)),
     ];
     const companies = companyIds.length
       ? await this.companies.findBy({ id: In(companyIds) })
@@ -327,7 +314,7 @@ export class AdminController {
     const companyNames = new Map(
       companies.map((company) => [company.id, company.name]),
     );
-    return platformRequests.map((request) => ({
+    return requests.map((request) => ({
       ...request,
       companyName: companyNames.get(request.companyId) || 'Empresa removida',
     }));
@@ -348,15 +335,6 @@ export class AdminController {
       );
     if (!['approve', 'reject'].includes(data.action || ''))
       throw new BadRequestException('Ação inválida.');
-    if (
-      await this.users.count({
-        where: { companyId: request.companyId, isCompanyAdmin: true },
-      })
-    ) {
-      throw new BadRequestException(
-        'Esta empresa já possui gestores. A solicitação deve ser analisada por um administrador da própria empresa.',
-      );
-    }
     request.reviewedById = req.user.uid;
     request.reviewNote =
       typeof data.note === 'string' ? data.note.slice(0, 1000) : null;

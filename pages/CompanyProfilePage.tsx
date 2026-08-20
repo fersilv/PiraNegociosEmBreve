@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { FileUpload } from "../components/FileUpload";
 import { CityStateSelector } from "../components/CityStateSelector";
+import { CompanyRegistrationFlow } from "../components/CompanyRegistrationFlow";
 
 export function CompanyProfilePage() {
   const { user, profile, refreshProfile } = useAuth();
@@ -425,23 +426,38 @@ export function CompanyProfilePage() {
 
   if (!companyId) {
     const isRejected = accessRequest?.status === "REJECTED";
+    
+    if (!accessRequest || isRejected) {
+      return (
+        <div className="space-y-8">
+          {isRejected && (
+            <div className="max-w-2xl mx-auto mt-12">
+              <div className="bg-red-50 border border-red-200 rounded-3xl p-6 flex items-start gap-4">
+                <AlertTriangle className="w-6 h-6 text-red-600 shrink-0" />
+                <div>
+                  <h4 className="font-bold text-red-900">Solicitação não aprovada</h4>
+                  <p className="text-red-800 mt-1 leading-relaxed text-sm">
+                    Sua solicitação anterior para a empresa {accessRequest?.companyName} foi recusada.
+                    Você pode tentar solicitar vínculo com outra empresa ou criar um novo cadastro abaixo.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          <CompanyRegistrationFlow onComplete={() => window.location.reload()} />
+        </div>
+      );
+    }
+
     return (
       <div className="max-w-2xl mx-auto py-12">
         <div className="bg-white rounded-3xl p-8 border border-stone-200 shadow-sm text-center">
-          <Clock
-            className={`w-10 h-10 mx-auto mb-4 ${isRejected ? "text-red-500" : "text-terracotta-500"}`}
-          />
+          <Clock className="w-10 h-10 mx-auto mb-4 text-terracotta-500" />
           <h1 className="text-2xl font-serif font-bold text-stone-900">
-            {isRejected
-              ? "Solicitação não aprovada"
-              : "Aguardando vínculo com empresa"}
+            Aguardando vínculo com empresa
           </h1>
           <p className="text-stone-500 mt-3 leading-relaxed">
-            {isRejected
-              ? `A solicitação para ${accessRequest?.companyName || "a empresa"} não foi aprovada. Você pode entrar em contato com a empresa ou falar com o suporte.`
-              : accessRequest
-                ? `Sua solicitação para ${accessRequest.companyName} foi enviada. Um administrador da empresa ou da plataforma poderá aprovar e definir seu nível de acesso.`
-                : "Você ainda não está vinculado a uma empresa. Refaça o cadastro empresarial para buscar ou cadastrar sua empresa."}
+            Sua solicitação para {accessRequest.companyName} foi enviada. Um administrador da empresa ou da plataforma poderá aprovar e definir seu nível de acesso.
           </p>
         </div>
       </div>
