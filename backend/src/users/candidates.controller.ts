@@ -25,8 +25,11 @@ export class CandidatesController {
   async list(@Req() req: any) {
     const viewer = await this.users.findOne({ where: { id: req.user.uid } });
     if (!viewer) throw new ForbiddenException('Conta não encontrada.');
+
+    // Acesso empresarial é uma capacidade do vínculo com a empresa, não um
+    // tipo exclusivo de usuário. ADMIN continua sendo o único papel global.
     if (viewer.type !== UserType.ADMIN) {
-      if (viewer.type !== UserType.COMPANY || !viewer.companyId)
+      if (!viewer.companyId)
         throw new ForbiddenException(
           'O banco de talentos é destinado a empresas verificadas.',
         );
@@ -41,10 +44,15 @@ export class CandidatesController {
 
     const aiEnabled =
       (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
-    const candidates = await this.users.find({
-      where: { type: UserType.CANDIDATE, isOpenToWork: true },
-      order: { updatedAt: 'DESC' },
-    });
+
+    // Qualquer usuário comum pode optar por aparecer no banco de talentos.
+    // O critério de candidatura é isOpenToWork, não type = CANDIDATE.
+    const candidates = (
+      await this.users.find({
+        where: { isOpenToWork: true },
+        order: { updatedAt: 'DESC' },
+      })
+    ).filter((candidate) => candidate.type !== UserType.ADMIN);
 
     return candidates.map((candidate) => {
       const { aiAnalysis, ...candidateData } = candidate;
