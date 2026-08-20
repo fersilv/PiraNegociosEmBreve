@@ -143,11 +143,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                         <span className="block truncate text-xs font-bold">
                           {companyLabel}
                         </span>
-                        <span
-                          className={`block text-[10px] ${
-                            isCompanyWorkspace ? "text-stone-400" : "text-stone-400"
-                          }`}
-                        >
+                        <span className="block text-[10px] text-stone-400">
                           Workspace da empresa
                         </span>
                       </span>
@@ -300,7 +296,18 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             {children}
           </div>
 
-          {!isAdmin && (
+          {isAdmin ? (
+            <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-stone-200 px-2 py-2 flex items-center gap-1 overflow-x-auto shadow-[0_-8px_30px_rgba(0,0,0,0.04)]">
+              <MobileNavItem to="/dashboard" icon={<Home className="w-5 h-5" />} label="Início" />
+              <MobileNavItem to="/dashboard/admin/empresas" icon={<Building2 className="w-5 h-5" />} label="Empresas" />
+              <MobileNavItem to="/dashboard/admin/vagas" icon={<Briefcase className="w-5 h-5" />} label="Vagas" />
+              <MobileNavItem to="/dashboard/admin/usuarios" icon={<Users className="w-5 h-5" />} label="Usuários" />
+              <MobileNavItem to="/dashboard/admin/vinculos" icon={<Link2 className="w-5 h-5" />} label="Vínculos" />
+              <MobileNavItem to="/dashboard/admin/publicidade" icon={<Megaphone className="w-5 h-5" />} label="Ads" />
+              <MobileNavItem to="/dashboard/admin/api" icon={<KeyRound className="w-5 h-5" />} label="API" />
+              <MobileNavItem to="/dashboard/admin/ai" icon={<Cpu className="w-5 h-5" />} label="IA" />
+            </nav>
+          ) : (
             <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-stone-200 px-2 py-2 flex items-center justify-around shadow-[0_-8px_30px_rgba(0,0,0,0.04)]">
               {isCompanyWorkspace ? (
                 <>
