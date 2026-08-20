@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { useAiStatus } from "../hooks/useAiStatus";
 import { Onboarding } from "./Onboarding";
 import { DashboardLayout } from "../components/DashboardLayout";
 import { CompanyDashboard } from "./CompanyDashboard";
@@ -15,6 +16,47 @@ import { CompanyHiringConfig } from "./CompanyHiringConfig";
 import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
 import { CandidateJobViewPage } from "./CandidateJobViewPage";
 import { ResumeBuilderPage } from "./ResumeBuilderPage";
+
+function ProfilePageWithAiAvailability() {
+  const { profile } = useAuth();
+  const { enabled: aiEnabled, loading: aiStatusLoading } = useAiStatus();
+  const hideAiAssistant =
+    profile?.type === "CANDIDATE" && (aiStatusLoading || !aiEnabled);
+
+  useEffect(() => {
+    // ProfilePage ainda possui chamadas antigas /api/gemini/*.
+    // Mantemos compatibilidade aqui, mas fazemos todas passarem pelo serviço
+    // central que respeita AI_ENABLED, AI_PROVIDER e AI_MODEL.
+    const originalFetch = window.fetch;
+    window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      if (typeof input === "string") {
+        if (input === "/api/gemini/analyze-resume") {
+          input = "/api/ai/analyze-resume";
+        } else if (input === "/api/gemini/job-match") {
+          input = "/api/ai/job-match";
+        }
+      }
+      return originalFetch.call(window, input, init);
+    }) as typeof window.fetch;
+
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, []);
+
+  return (
+    <div className={hideAiAssistant ? "profile-ai-disabled" : undefined}>
+      {hideAiAssistant && (
+        <style>{`
+          .profile-ai-disabled div.bg-gradient-to-br.from-stone-900.to-stone-950.text-white.rounded-3xl {
+            display: none !important;
+          }
+        `}</style>
+      )}
+      <ProfilePage />
+    </div>
+  );
+}
 
 export function Dashboard() {
   const { user, profile, loading } = useAuth();
@@ -180,7 +222,7 @@ export function Dashboard() {
           element={<ResumeDatabase />}
         />
 
-        <Route path="perfil" element={<ProfilePage />} />
+        <Route path="perfil" element={<ProfilePageWithAiAvailability />} />
         <Route
           path="empresa"
           element={<CompanyProfilePage />}
