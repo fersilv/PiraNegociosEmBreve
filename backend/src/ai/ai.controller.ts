@@ -46,15 +46,25 @@ export class AiController {
     const analysisCount = Number(user?.aiAnalysisCount || 0);
     const freeAnalysisLimit = user?.aiAnalysisLimit ?? 1;
     const freeResumeAnalysisAvailable = analysisCount < freeAnalysisLimit;
-    const resumeScorePaymentRequired =
+    const hasSavedResumeAnalysis = Boolean(
+      user?.aiAnalysis && user?.hasAiAnalyzed,
+    );
+    const resumeReanalysisPaymentRequired =
       rawPaymentRequired === 'true' &&
       !user?.resumeScoreUnlocked &&
       !freeResumeAnalysisAvailable;
 
+    // A pontuação já conquistada nunca volta para trás do paywall. O gatilho
+    // de pagamento passa a valer somente para uma NOVA análise.
+    const resumeScorePaymentRequired =
+      resumeReanalysisPaymentRequired && !hasSavedResumeAnalysis;
+
     return {
       ...status,
       resumeScorePaymentRequired,
+      resumeReanalysisPaymentRequired,
       freeResumeAnalysisAvailable,
+      hasSavedResumeAnalysis,
       resumeAnalysisCount: analysisCount,
     };
   }
