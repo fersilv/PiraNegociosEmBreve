@@ -25,6 +25,7 @@ interface AiModelInfo {
 }
 
 const PROVIDERS: AiProvider[] = ['GEMINI', 'OPENAI', 'ANTHROPIC'];
+const PROVIDER_REQUEST_TIMEOUT_MS = 25_000;
 
 const COST_DATABASE: Record<
   string,
@@ -212,6 +213,7 @@ export class AdminAiController {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
+        signal: AbortSignal.timeout(PROVIDER_REQUEST_TIMEOUT_MS),
         body: JSON.stringify({
           contents: [{ parts: [{ text: 'Responda apenas OK.' }] }],
           generationConfig: { maxOutputTokens: 16 },
@@ -242,7 +244,10 @@ export class AdminAiController {
 
     try {
       if (provider === 'OPENAI') {
-        const openai = new OpenAI({ apiKey });
+        const openai = new OpenAI({
+          apiKey,
+          timeout: PROVIDER_REQUEST_TIMEOUT_MS,
+        });
         const list = await openai.models.list();
         const ids = list.data.map((item) => item.id);
         const compatibleIds = ids.filter(
@@ -271,7 +276,10 @@ export class AdminAiController {
       }
 
       if (provider === 'ANTHROPIC') {
-        const anthropic = new Anthropic({ apiKey });
+        const anthropic = new Anthropic({
+          apiKey,
+          timeout: PROVIDER_REQUEST_TIMEOUT_MS,
+        });
         const list = await anthropic.models.list();
         const ids = list.data.map((item) => item.id);
         const compatibleIds = ids.filter((id) => /^claude-/i.test(id));
@@ -304,6 +312,7 @@ export class AdminAiController {
 
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+        { signal: AbortSignal.timeout(PROVIDER_REQUEST_TIMEOUT_MS) },
       );
       if (!response.ok) {
         throw new Error(`Google Gemini respondeu HTTP ${response.status}.`);
@@ -346,8 +355,13 @@ export class AdminAiController {
     } catch (error: any) {
       if (error instanceof BadRequestException) throw error;
       const status = error?.status || error?.statusCode;
-      const message =
-        status === 401 || status === 403
+      const timedOut =
+        error?.name === 'TimeoutError' ||
+        error?.name === 'AbortError' ||
+        /timed out|timeout/i.test(String(error?.message || ''));
+      const message = timedOut
+        ? 'O provedor não respondeu dentro de 25 segundos.'
+        : status === 401 || status === 403
           ? 'A chave foi recusada pelo provedor.'
           : error?.message || 'Não foi possível conectar ao provedor.';
       throw new BadRequestException(`Falha ao testar ${provider}: ${message}`);
