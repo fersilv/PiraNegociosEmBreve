@@ -1,0 +1,352 @@
+import React, { useState } from "react";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import {
+  Activity,
+  Briefcase,
+  Building2,
+  Cpu,
+  KeyRound,
+  LayoutDashboard,
+  Link2,
+  LogOut,
+  Megaphone,
+  MoreHorizontal,
+  ShieldCheck,
+  User,
+  Users,
+  X,
+} from "lucide-react";
+import { auth } from "../lib/firebase";
+import { NotificationCenter } from "./NotificationCenter";
+import { AdminTheme } from "./AdminTheme";
+
+const adminGroups = [
+  {
+    label: "Visão geral",
+    items: [
+      {
+        to: "/dashboard",
+        label: "Dashboard",
+        icon: <LayoutDashboard className="h-4 w-4" />,
+        end: true,
+      },
+    ],
+  },
+  {
+    label: "Operação",
+    items: [
+      {
+        to: "/dashboard/admin/empresas",
+        label: "Empresas",
+        icon: <Building2 className="h-4 w-4" />,
+      },
+      {
+        to: "/dashboard/admin/vagas",
+        label: "Vagas",
+        icon: <Briefcase className="h-4 w-4" />,
+      },
+      {
+        to: "/dashboard/admin/usuarios",
+        label: "Usuários",
+        icon: <Users className="h-4 w-4" />,
+      },
+      {
+        to: "/dashboard/admin/vinculos",
+        label: "Vínculos",
+        icon: <Link2 className="h-4 w-4" />,
+      },
+    ],
+  },
+  {
+    label: "Plataforma",
+    items: [
+      {
+        to: "/dashboard/admin/publicidade",
+        label: "Publicidade",
+        icon: <Megaphone className="h-4 w-4" />,
+      },
+      {
+        to: "/dashboard/admin/api",
+        label: "API v1",
+        icon: <KeyRound className="h-4 w-4" />,
+      },
+      {
+        to: "/dashboard/admin/ai",
+        label: "Inteligência Artificial",
+        icon: <Cpu className="h-4 w-4" />,
+      },
+    ],
+  },
+  {
+    label: "Conta",
+    items: [
+      {
+        to: "/dashboard/perfil",
+        label: "Meus dados",
+        icon: <User className="h-4 w-4" />,
+      },
+    ],
+  },
+] as const;
+
+export function AdminLayout({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const handleLogout = () => {
+    auth.signOut();
+    navigate("/");
+  };
+
+  const moreActive =
+    location.pathname.startsWith("/dashboard/admin/vinculos") ||
+    location.pathname.startsWith("/dashboard/admin/publicidade") ||
+    location.pathname.startsWith("/dashboard/admin/api") ||
+    location.pathname.startsWith("/dashboard/admin/ai") ||
+    location.pathname === "/dashboard/perfil";
+
+  return (
+    <div className="admin-workspace min-h-screen bg-[#f4f3ef] text-stone-900">
+      <AdminTheme />
+      <div className="flex min-h-screen">
+        <aside className="fixed inset-y-0 left-0 z-30 hidden w-[286px] flex-col border-r border-white/5 bg-[#171714] text-white md:flex">
+          <div className="px-5 pb-5 pt-6">
+            <Link to="/" className="font-serif text-xl font-bold text-white">
+              PiraNegócios
+            </Link>
+
+            <div className="mt-5 rounded-[22px] border border-white/8 bg-white/[0.04] p-3.5">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-terracotta-500/15 text-terracotta-300 ring-1 ring-terracotta-400/20">
+                  <ShieldCheck className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/30">
+                    Central de operação
+                  </p>
+                  <p className="mt-0.5 truncate text-sm font-bold text-white">
+                    Administração
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2 rounded-xl bg-black/20 px-3 py-2 text-[11px] text-white/55">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.65)]" />
+                Plataforma operacional
+              </div>
+            </div>
+          </div>
+
+          <nav className="admin-sidebar-nav flex-1 overflow-y-auto px-4 pb-5">
+            {adminGroups.map((group) => (
+              <div key={group.label}>
+                <div className="px-3 pb-2 pt-5 text-[9px] font-bold uppercase tracking-[0.22em] text-white/25 first:pt-1">
+                  {group.label}
+                </div>
+                <div className="space-y-1">
+                  {group.items.map((item) => (
+                    <AdminNavLink key={item.to} {...item} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </nav>
+
+          <div className="border-t border-white/5 p-4">
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 font-medium text-white/45 transition hover:bg-white/[0.06] hover:text-white"
+            >
+              <LogOut className="h-5 w-5" />
+              Sair
+            </button>
+          </div>
+        </aside>
+
+        <div className="flex min-h-screen min-w-0 flex-1 flex-col md:pl-[286px]">
+          <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between border-b border-stone-200/80 bg-[#f4f3ef]/92 px-4 backdrop-blur-xl md:px-7">
+            <div className="flex min-w-0 items-center gap-3">
+              <Link to="/" className="font-serif text-lg font-bold text-terracotta-800 md:hidden">
+                PiraNegócios
+              </Link>
+              <span className="hidden h-9 w-9 items-center justify-center rounded-xl bg-stone-900 text-white md:flex">
+                <Activity className="h-4 w-4" />
+              </span>
+              <div className="hidden min-w-0 sm:block">
+                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-stone-400">
+                  Operação
+                </p>
+                <p className="truncate text-sm font-bold text-stone-900">
+                  PiraNegócios Control Center
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <div className="hidden items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-[10px] font-bold text-stone-600 shadow-sm lg:flex">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Online
+              </div>
+              <NotificationCenter />
+              <Link
+                to="/dashboard/perfil"
+                className="hidden h-9 w-9 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-600 shadow-sm transition hover:bg-stone-50 md:flex"
+                title="Meus dados"
+              >
+                <User className="h-4 w-4" />
+              </Link>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex h-9 w-9 items-center justify-center rounded-xl text-stone-500 transition hover:bg-white hover:text-stone-900"
+                title="Sair"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          </header>
+
+          <main className="admin-content flex-1 p-4 pb-24 sm:p-6 md:p-8 md:pb-8">
+            {children}
+          </main>
+        </div>
+      </div>
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-white/5 bg-[#171714]/98 px-2 py-2 text-white shadow-[0_-12px_36px_rgba(0,0,0,.14)] backdrop-blur md:hidden">
+        <AdminMobileLink end to="/dashboard" icon={<LayoutDashboard className="h-5 w-5" />} label="Início" />
+        <AdminMobileLink to="/dashboard/admin/empresas" icon={<Building2 className="h-5 w-5" />} label="Empresas" />
+        <AdminMobileLink to="/dashboard/admin/vagas" icon={<Briefcase className="h-5 w-5" />} label="Vagas" />
+        <AdminMobileLink to="/dashboard/admin/usuarios" icon={<Users className="h-5 w-5" />} label="Usuários" />
+        <button
+          type="button"
+          onClick={() => setMoreOpen(true)}
+          className={`flex min-w-14 flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold ${
+            moreActive ? "text-terracotta-300" : "text-white/45"
+          }`}
+        >
+          <MoreHorizontal className="h-5 w-5" />
+          <span>Mais</span>
+        </button>
+      </nav>
+
+      {moreOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-black/45 backdrop-blur-sm md:hidden"
+          onClick={() => setMoreOpen(false)}
+        >
+          <div
+            className="w-full rounded-t-[30px] bg-[#1d1d19] p-4 pb-7 text-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between px-1">
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/30">
+                  Administração
+                </p>
+                <h3 className="mt-1 text-lg font-bold">Mais ferramentas</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMoreOpen(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.07] text-white/60"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <MoreLink to="/dashboard/admin/vinculos" icon={<Link2 className="h-4 w-4" />} label="Vínculos" close={() => setMoreOpen(false)} />
+              <MoreLink to="/dashboard/admin/publicidade" icon={<Megaphone className="h-4 w-4" />} label="Publicidade" close={() => setMoreOpen(false)} />
+              <MoreLink to="/dashboard/admin/api" icon={<KeyRound className="h-4 w-4" />} label="API v1" close={() => setMoreOpen(false)} />
+              <MoreLink to="/dashboard/admin/ai" icon={<Cpu className="h-4 w-4" />} label="Inteligência Artificial" close={() => setMoreOpen(false)} />
+              <MoreLink to="/dashboard/perfil" icon={<User className="h-4 w-4" />} label="Meus dados" close={() => setMoreOpen(false)} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminNavLink({
+  to,
+  label,
+  icon,
+  end = false,
+}: {
+  to: string;
+  label: string;
+  icon: React.ReactNode;
+  end?: boolean;
+}) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        `group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+          isActive
+            ? "bg-white text-stone-950 shadow-[0_8px_30px_rgba(0,0,0,.18)]"
+            : "text-white/50 hover:bg-white/[0.055] hover:text-white"
+        }`
+      }
+    >
+      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.055] group-hover:bg-white/[0.08]">
+        {icon}
+      </span>
+      <span className="truncate">{label}</span>
+    </NavLink>
+  );
+}
+
+function AdminMobileLink({
+  to,
+  label,
+  icon,
+  end = false,
+}: {
+  to: string;
+  label: string;
+  icon: React.ReactNode;
+  end?: boolean;
+}) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        `flex min-w-14 flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold transition ${
+          isActive ? "text-terracotta-300" : "text-white/45"
+        }`
+      }
+    >
+      {icon}
+      <span>{label}</span>
+    </NavLink>
+  );
+}
+
+function MoreLink({
+  to,
+  icon,
+  label,
+  close,
+}: {
+  to: string;
+  icon: React.ReactNode;
+  label: string;
+  close: () => void;
+}) {
+  return (
+    <Link
+      to={to}
+      onClick={close}
+      className="flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.045] px-3 py-3 text-sm font-semibold text-white/75 transition hover:bg-white/[0.08] hover:text-white"
+    >
+      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.06] text-terracotta-300">
+        {icon}
+      </span>
+      <span className="min-w-0 truncate">{label}</span>
+    </Link>
+  );
+}
