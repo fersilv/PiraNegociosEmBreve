@@ -15,6 +15,7 @@ const SELF_MANAGED_FIELDS = [
   'bio',
   'resumeURL',
   'resumePhotoURL',
+  'resumePreferences',
   'address',
   'salaryExpectation',
   'acceptedTerms',
@@ -110,6 +111,20 @@ export class UsersService {
     return raw;
   }
 
+  private normalizeTimeline(value: unknown): unknown {
+    if (!Array.isArray(value)) return value;
+    return value.map((item) => {
+      if (!item || typeof item !== 'object') return item;
+      const stage = item as Record<string, unknown>;
+      const current = stage.current === true;
+      return {
+        ...stage,
+        startDate: this.normalizeMonthYear(stage.startDate),
+        endDate: current ? 'Atual' : this.normalizeMonthYear(stage.endDate),
+      };
+    });
+  }
+
   normalizeExperienceDates(value: unknown): unknown {
     if (!Array.isArray(value)) return value;
     return value.map((item) => {
@@ -122,6 +137,7 @@ export class UsersService {
         endDate: current
           ? 'Atual'
           : this.normalizeMonthYear(experience.endDate),
+        timeline: this.normalizeTimeline(experience.timeline),
       };
     });
   }
