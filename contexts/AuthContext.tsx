@@ -95,6 +95,7 @@ export interface UserProfile {
   linkedinURL?: string;
   aiAnalysisLimit?: number;
   aiAnalysisCount?: number;
+  resumeScoreUnlocked?: boolean;
   additionalPhones?: string[];
   experiences?: ProfessionalExperience[];
   skills?: string[];
