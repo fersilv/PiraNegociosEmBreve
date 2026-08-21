@@ -4,14 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - '.github/workflows/resume-builder-polish.yml'
+      - '.resume-builder-trigger'
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'chore: patch resume builder polish'
+    if: github.event.head_commit.message == 'chore: trigger resume builder polish'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -168,11 +168,11 @@ function mergeUniqueStrings(current: string[], incoming: unknown): string[] {'''
 
           path.write_text(text)
           PY
-      - name: Commit patch and remove workflow
+      - name: Commit patch and remove temporary files
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add pages/ResumeBuilderPage.tsx
-          git rm .github/workflows/resume-builder-polish.yml
+          git rm .github/workflows/resume-builder-polish.yml .resume-builder-trigger
           git commit -m 'feat: add professional photo option and free score flow'
           git push origin main
