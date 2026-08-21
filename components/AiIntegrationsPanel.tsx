@@ -295,11 +295,14 @@ export function AiIntegrationsPanel() {
     setMessage({ type: "", text: "" });
     try {
       await persistKeys();
+      const selectedModelIsCurrent = models.some(
+        (model) => model.id === selectedModel,
+      );
       const response = await api.post(
         "/admin/ai/test",
         {
           provider: selectedProvider,
-          ...(selectedModel ? { model: selectedModel } : {}),
+          ...(selectedModelIsCurrent ? { model: selectedModel } : {}),
         },
         { timeout: 60000 },
       );
@@ -410,6 +413,9 @@ export function AiIntegrationsPanel() {
   const activeProviderLabel = PROVIDERS.find(
     (provider) => provider.id === config.provider,
   )?.label;
+  const selectedModelIsCurrent = models.some(
+    (model) => model.id === selectedModel,
+  );
 
   return (
     <div className="space-y-6">
@@ -613,7 +619,7 @@ export function AiIntegrationsPanel() {
             ) : (
               <Sparkles className="h-5 w-5" />
             )}
-            {selectedModel
+            {selectedModelIsCurrent
               ? "Testar modelo selecionado"
               : "Testar conexão e carregar modelos"}
           </button>
