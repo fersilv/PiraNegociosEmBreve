@@ -120,6 +120,9 @@ export class Company {
   @Column({ nullable: true })
   documentURL: string;
 
+  @Column({ type: 'jsonb', nullable: true })
+  hiringConfig: Record<string, unknown> | null;
+
   @CreateDateColumn()
   createdAt: Date;
 
