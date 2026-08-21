@@ -36,20 +36,31 @@ export class AiController {
   ) {}
 
   @Get('status')
-  async getStatus() {
-    const [status, paymentRequired] = await Promise.all([
+  async getStatus(@Req() req: any) {
+    const [status, rawPaymentRequired, user] = await Promise.all([
       this.aiService.getStatus(),
       this.settingsService.getValue('RESUME_SCORE_PAYMENT_REQUIRED', 'false'),
+      this.usersRepository.findOne({ where: { id: req.user.uid } }),
     ]);
+
+    const analysisCount = Number(user?.aiAnalysisCount || 0);
+    const freeAnalysisLimit = user?.aiAnalysisLimit ?? 1;
+    const freeResumeAnalysisAvailable = analysisCount < freeAnalysisLimit;
+    const resumeScorePaymentRequired =
+      rawPaymentRequired === 'true' &&
+      !user?.resumeScoreUnlocked &&
+      !freeResumeAnalysisAvailable;
+
     return {
       ...status,
-      resumeScorePaymentRequired: paymentRequired === 'true',
+      resumeScorePaymentRequired,
+      freeResumeAnalysisAvailable,
+      resumeAnalysisCount: analysisCount,
     };
   }
 
   @Post('analyze-resume')
   async analyzeResume(
-    @Req() _req: any,
     @Body() body: { base64File: string; mimeType: string },
   ) {
     if (!body.base64File) {
@@ -66,7 +77,6 @@ export class AiController {
 
   @Post('analyze-resume-documents')
   async analyzeResumeDocuments(
-    @Req() _req: any,
     @Body() body: { documents?: ResumeSourceDocumentInput[] },
   ) {
     return this.resumeImportService.importDocuments(body.documents || []);
