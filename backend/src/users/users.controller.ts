@@ -103,6 +103,18 @@ export class UsersController {
       );
     }
 
+    const resumeContentChanged =
+      updateData.bio !== undefined ||
+      updateData.experiences !== undefined ||
+      updateData.education !== undefined ||
+      updateData.skills !== undefined ||
+      updateData.courses !== undefined ||
+      updateData.languages !== undefined;
+    if (resumeContentChanged) {
+      sanitized.aiAnalysis = null;
+      sanitized.hasAiAnalyzed = false;
+    }
+
     if (typeof user.email === 'string' && user.email.trim()) {
       sanitized.email = user.email.trim().toLowerCase();
     } else if (!existing) {
