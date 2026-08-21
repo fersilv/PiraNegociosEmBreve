@@ -292,7 +292,8 @@ export class SettingsService {
         'SELECT * FROM ai_brain_entries WHERE id = $1 LIMIT 1',
         [id],
       );
-      if (!existing[0]) throw new NotFoundException('Aprendizado não encontrado.');
+      if (!existing[0])
+        throw new NotFoundException('Aprendizado não encontrado.');
       return existing[0];
     }
 
@@ -347,14 +348,43 @@ export class SettingsService {
       .join(' OR ');
   }
 
+  private async getAiTaskInstruction(query: string): Promise<string> {
+    const normalized = String(query || '').toLocaleLowerCase('pt-BR');
+    let settingKey = '';
+
+    if (normalized.includes('sugestão de habilidades')) {
+      settingKey = 'AI_INSTRUCTION_SKILL_SUGGESTION';
+    } else if (
+      normalized.includes('compatibilidade semântica') ||
+      normalized.includes('matching em lote de habilidades')
+    ) {
+      settingKey = 'AI_INSTRUCTION_SKILL_COMPATIBILITY';
+    } else if (normalized.includes('matching de vagas')) {
+      settingKey = 'AI_INSTRUCTION_JOB_MATCH';
+    } else if (
+      normalized.includes('currículo') &&
+      (normalized.includes('extração') || normalized.includes('análise profissional'))
+    ) {
+      settingKey = 'AI_INSTRUCTION_RESUME_ANALYSIS';
+    }
+
+    if (!settingKey) return '';
+    const instruction = await this.getValue(settingKey, '');
+    return String(instruction || '').trim().slice(0, 12000);
+  }
+
   async findRelevantAiBrain(
     query: string,
     limit = 6,
     maxChars = 5000,
   ): Promise<string> {
     await this.ensureAiBrainTable();
+    const taskInstruction = await this.getAiTaskInstruction(query);
+    const taskBlock = taskInstruction
+      ? `[INSTRUÇÕES ESPECÍFICAS DO ADMINISTRADOR PARA ESTA TAREFA - OBRIGATÓRIAS]\n${taskInstruction}`
+      : '';
     const search = this.buildBrainSearchQuery(query);
-    if (!search) return '';
+    if (!search) return taskBlock;
 
     const safeLimit = Math.min(10, Math.max(1, Math.round(limit)));
     const rows = await this.dataSource.query(
@@ -379,7 +409,7 @@ export class SettingsService {
       [search],
     );
 
-    if (rows.length === 0) return '';
+    if (rows.length === 0) return taskBlock;
 
     const selectedIds: string[] = [];
     let used = 0;
@@ -407,6 +437,6 @@ export class SettingsService {
         .catch(() => undefined);
     }
 
-    return blocks.join('\n\n');
+    return [taskBlock, blocks.join('\n\n')].filter(Boolean).join('\n\n');
   }
 }
