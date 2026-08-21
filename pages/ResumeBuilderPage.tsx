@@ -328,6 +328,7 @@ export function ResumeBuilderPage() {
   const [preferences, setPreferences] = useState<ResumePreferences>(DEFAULT_RESUME_PREFERENCES);
   const [scale, setScale] = useState(1);
   const previewRef = useRef<HTMLDivElement>(null);
+  const initialProfileHydratedRef = useRef(false);
   const [newSkill, setNewSkill] = useState("");
 
   useEffect(() => {
@@ -355,7 +356,10 @@ export function ResumeBuilderPage() {
       ...(profile.resumePreferences || {}),
       nameMode: profile.resumePreferences?.nameMode || "SOCIAL",
     });
-    if (profileHasData(profile)) setStep(99);
+    if (!initialProfileHydratedRef.current) {
+      initialProfileHydratedRef.current = true;
+      if (profileHasData(profile)) setStep(99);
+    }
   }, [profile]);
 
   const recalcScale = useCallback(() => {
