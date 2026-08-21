@@ -164,6 +164,7 @@ export function Dashboard() {
   const isAdminRoute = location.pathname === "/admin" || location.pathname.startsWith("/admin/");
   const isCompanyRoute = location.pathname === "/company" || location.pathname.startsWith("/company/");
   const isUserRoute = location.pathname === "/user" || location.pathname.startsWith("/user/");
+  const isResumeStudioRoute = location.pathname === "/user/curriculo";
 
   if (profile && !profile.phone && !location.pathname.includes("/onboarding")) {
     return <Navigate to={profile.type === "ADMIN" ? "/admin/onboarding" : "/user/onboarding"} replace />;
@@ -188,6 +189,10 @@ export function Dashboard() {
         <CompanyRoutes hasCompany={Boolean(profile?.companyId)} />
       </WorkspaceLayout>
     );
+  }
+
+  if (isResumeStudioRoute) {
+    return <ResumeBuilderStudio />;
   }
 
   if (isUserRoute) {
