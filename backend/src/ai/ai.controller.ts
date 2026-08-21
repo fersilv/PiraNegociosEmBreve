@@ -2,15 +2,24 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { AiService } from './ai.service';
 import { JobSkillsService } from './job-skills.service';
 import type { JobSkillScore } from './job-skills.service';
+import {
+  ResumeImportService,
+  type ResumeSourceDocumentInput,
+} from './resume-import.service';
 import { ResumeReviewService } from './resume-review.service';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
+import { User } from '../users/entities/user.entity';
 
 @Controller('ai')
 @UseGuards(FirebaseAuthGuard)
@@ -18,7 +27,10 @@ export class AiController {
   constructor(
     private readonly aiService: AiService,
     private readonly jobSkillsService: JobSkillsService,
+    private readonly resumeImportService: ResumeImportService,
     private readonly resumeReviewService: ResumeReviewService,
+    @InjectRepository(User)
+    private readonly usersRepository: Repository<User>,
   ) {}
 
   @Get('status')
@@ -36,10 +48,26 @@ export class AiController {
     return this.aiService.analyzeResume(body.base64File, body.mimeType);
   }
 
+  @Post('analyze-resume-documents')
+  async analyzeResumeDocuments(
+    @Body() body: { documents?: ResumeSourceDocumentInput[] },
+  ) {
+    return this.resumeImportService.importDocuments(body.documents || []);
+  }
+
   @Post('review-resume')
-  reviewResume(@Body() body: { profile?: unknown }) {
+  async reviewResume(@Req() req: any, @Body() body: { profile?: unknown }) {
     if (!body || !body.profile) {
       throw new BadRequestException('Envie os dados do currículo para avaliação.');
+    }
+    const user = await this.usersRepository.findOne({
+      where: { id: req.user.uid },
+      select: { id: true, resumeScoreUnlocked: true },
+    });
+    if (!user?.resumeScoreUnlocked) {
+      throw new ForbiddenException(
+        'A pontuação detalhada do currículo é um recurso premium e ainda não está desbloqueada para esta conta.',
+      );
     }
     return this.resumeReviewService.review(body.profile);
   }
