@@ -19,7 +19,7 @@ import { CompanyJobPage } from "./CompanyJobPage";
 import { CompanyHiringConfig } from "./CompanyHiringConfig";
 import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
 import { CandidateJobViewPage } from "./CandidateJobViewPage";
-import { ResumeBuilderPage } from "./ResumeBuilderPage";
+import { ResumeBuilderStudio } from "./ResumeBuilderStudio";
 
 function ProfilePageWithoutLegacyResumeAi() {
   return (
@@ -78,7 +78,7 @@ function UserRoutes() {
       <Route path="onboarding" element={<Onboarding />} />
       <Route index element={<CandidateDashboard />} />
       <Route path="vagas" element={<UserJobsPage />} />
-      <Route path="curriculo" element={<ResumeBuilderPage />} />
+      <Route path="curriculo" element={<ResumeBuilderStudio />} />
       <Route path="perfil" element={<ProfilePageWithoutLegacyResumeAi />} />
       <Route path="admissao/:appId" element={<CandidateOnboardingPage />} />
       <Route path="vaga/:jobId" element={<CandidateJobViewPage />} />
