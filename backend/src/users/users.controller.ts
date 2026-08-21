@@ -34,7 +34,13 @@ export class UsersController {
     };
     const aiEnabled =
       (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
-    const canExposeResumeAnalysis = aiEnabled && profile.resumeScoreUnlocked;
+    const resumeScorePaymentRequired =
+      (await this.settingsService.getValue(
+        'RESUME_SCORE_PAYMENT_REQUIRED',
+        'false',
+      )) === 'true';
+    const canExposeResumeAnalysis =
+      aiEnabled && (!resumeScorePaymentRequired || profile.resumeScoreUnlocked);
 
     if (canExposeResumeAnalysis) return runtimeProfile;
 
