@@ -38,14 +38,30 @@ export class AiController {
     return this.aiService.getStatus();
   }
 
+  private async invalidateResumeScore(userId: string) {
+    await this.usersRepository.update(
+      { id: userId },
+      { aiAnalysis: null, hasAiAnalyzed: false },
+    );
+  }
+
   @Post('analyze-resume')
   async analyzeResume(
+    @Req() req: any,
     @Body() body: { base64File: string; mimeType: string },
   ) {
     if (!body.base64File) {
       throw new BadRequestException('Nenhum arquivo de currículo enviado.');
     }
-    return this.aiService.analyzeResume(body.base64File, body.mimeType);
+    const result = await this.resumeImportService.importDocuments([
+      {
+        base64File: body.base64File,
+        mimeType: body.mimeType,
+        fileName: 'curriculo',
+      },
+    ]);
+    await this.invalidateResumeScore(req.user.uid);
+    return result;
   }
 
   @Post('analyze-resume-documents')
@@ -56,10 +72,7 @@ export class AiController {
     const result = await this.resumeImportService.importDocuments(
       body.documents || [],
     );
-    await this.usersRepository.update(
-      { id: req.user.uid },
-      { aiAnalysis: null, hasAiAnalyzed: false },
-    );
+    await this.invalidateResumeScore(req.user.uid);
     return result;
   }
 
