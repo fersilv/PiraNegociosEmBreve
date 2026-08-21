@@ -17,10 +17,18 @@ export const api = axios.create({
   timeout: 15000,
 });
 
-// Interceptor para adicionar o Token do Firebase em todas as requisições
+// Interceptor para adicionar o Token do Firebase em todas as requisições.
+// /users/me já possui POST como contrato estável de atualização e alguns
+// ambientes antigos ainda não expõem PATCH. Normalizamos aqui para evitar que
+// telas novas dependam do método HTTP adicionado posteriormente.
 api.interceptors.request.use(async (config) => {
   const auth = getAuth();
   const user = auth.currentUser;
+
+  const normalizedUrl = String(config.url || '').split('?')[0].replace(/\/$/, '');
+  if (normalizedUrl === '/users/me' && config.method?.toLowerCase() === 'patch') {
+    config.method = 'post';
+  }
 
   if (user) {
     const token = await user.getIdToken();
