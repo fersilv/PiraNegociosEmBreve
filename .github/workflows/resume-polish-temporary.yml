@@ -29,7 +29,6 @@ jobs:
                   raise SystemExit(f'Expected source not found in {path}: {old[:120]}')
               path.write_text(text.replace(old, new, 1))
 
-          # AI status exposes the temporary payment gate.
           path = Path('backend/src/ai/ai.service.ts')
           replace_once(path,
           """    const apiKey = provider
@@ -78,7 +77,6 @@ jobs:
   }
 """)
 
-          # Resume score endpoint remains entitlement-aware, but is free while payment gate is off.
           path = Path('backend/src/ai/ai.controller.ts')
           replace_once(path,
           """    if (!user?.resumeScoreUnlocked) {
@@ -103,7 +101,6 @@ jobs:
     const analysis = await this.resumeReviewService.review(body.profile);
 """)
 
-          # Free beta users can receive their real analysis while payment is disabled.
           path = Path('backend/src/users/users.controller.ts')
           replace_once(path,
           """    const canExposeResumeAnalysis = aiEnabled && profile.resumeScoreUnlocked;
@@ -121,63 +118,42 @@ jobs:
     if (canExposeResumeAnalysis) return runtimeProfile;
 """)
 
-          # Frontend AI status mirrors the payment gate.
           path = Path('hooks/useAiStatus.ts')
-          replace_once(path,
-          """  model: string | null;
+          replace_once(path, """  model: string | null;
   loading: boolean;
-}""",
-          """  model: string | null;
+}""", """  model: string | null;
   resumeScorePaymentRequired: boolean;
   loading: boolean;
 }""")
-          replace_once(path,
-          """    model: null,
+          replace_once(path, """    model: null,
     loading: true,
-""",
-          """    model: null,
+""", """    model: null,
     resumeScorePaymentRequired: false,
     loading: true,
 """)
-          replace_once(path,
-          """          model: response.data?.model || null,
+          replace_once(path, """          model: response.data?.model || null,
           loading: false,
-""",
-          """          model: response.data?.model || null,
-          resumeScorePaymentRequired: Boolean(
-            response.data?.resumeScorePaymentRequired,
-          ),
+""", """          model: response.data?.model || null,
+          resumeScorePaymentRequired: Boolean(response.data?.resumeScorePaymentRequired),
           loading: false,
 """)
-          replace_once(path,
-          """          model: null,
+          replace_once(path, """          model: null,
           loading: false,
-""",
-          """          model: null,
+""", """          model: null,
           resumeScorePaymentRequired: false,
           loading: false,
 """)
 
-          # Avatar camera uses the front camera; documents keep the rear camera.
           path = Path('components/FileUpload.tsx')
-          replace_once(path,
-          """        capture="environment"
-""",
-          """        capture={type === 'avatar' ? 'user' : 'environment'}
+          replace_once(path, """        capture="environment"
+""", """        capture={type === 'avatar' ? 'user' : 'environment'}
 """)
 
-          # Resume builder: non-destructive automatic photo polish + temporary free score reveal.
           path = Path('pages/ResumeBuilderPage.tsx')
-          replace_once(path,
-          """function mergeUniqueStrings(current: string[], incoming: unknown): string[] {
-""",
-          """function enhanceProfessionalPhoto(dataUrl: string): Promise<string> {
+          replace_once(path, """function mergeUniqueStrings(current: string[], incoming: unknown): string[] {
+""", """function enhanceProfessionalPhoto(dataUrl: string): Promise<string> {
   return new Promise((resolve) => {
-    if (!dataUrl.startsWith("data:image/")) {
-      resolve(dataUrl);
-      return;
-    }
-
+    if (!dataUrl.startsWith("data:image/")) return resolve(dataUrl);
     const image = new Image();
     image.onload = () => {
       const maxDimension = 1400;
@@ -188,11 +164,7 @@ jobs:
       canvas.width = width;
       canvas.height = height;
       const context = canvas.getContext("2d");
-      if (!context) {
-        resolve(dataUrl);
-        return;
-      }
-
+      if (!context) return resolve(dataUrl);
       context.imageSmoothingEnabled = true;
       context.imageSmoothingQuality = "high";
       context.filter = "brightness(1.05) contrast(1.06) saturate(0.96)";
@@ -206,36 +178,25 @@ jobs:
 
 function mergeUniqueStrings(current: string[], incoming: unknown): string[] {
 """)
-          replace_once(path,
-          """  const { enabled: aiEnabled } = useAiStatus();
-""",
-          """  const {
-    enabled: aiEnabled,
-    resumeScorePaymentRequired,
-  } = useAiStatus();
+          replace_once(path, """  const { enabled: aiEnabled } = useAiStatus();
+""", """  const { enabled: aiEnabled, resumeScorePaymentRequired } = useAiStatus();
 """)
-          replace_once(path,
-          """  const [formPhoto, setFormPhoto] = useState("");
-""",
-          """  const [formPhoto, setFormPhoto] = useState("");
+          replace_once(path, """  const [formPhoto, setFormPhoto] = useState("");
+""", """  const [formPhoto, setFormPhoto] = useState("");
   const [professionalizePhoto, setProfessionalizePhoto] = useState(false);
   const [photoEnhancing, setPhotoEnhancing] = useState(false);
 """)
-          replace_once(path,
-          """    setFormAiAnalysis(profile.resumeScoreUnlocked ? profile.aiAnalysis : undefined);
-""",
-          """    setFormAiAnalysis(
+          replace_once(path, """    setFormAiAnalysis(profile.resumeScoreUnlocked ? profile.aiAnalysis : undefined);
+""", """    setFormAiAnalysis(
       profile.resumeScoreUnlocked || !resumeScorePaymentRequired
         ? profile.aiAnalysis || undefined
         : undefined,
     );
 """)
-          replace_once(path,
-          """  }, [profile]);
+          replace_once(path, """  }, [profile]);
 
   const recalcScale = useCallback(() => {
-""",
-          """  }, [profile, resumeScorePaymentRequired]);
+""", """  }, [profile, resumeScorePaymentRequired]);
 
   const applyProfessionalPhoto = async (value: string) => {
     if (!value || !value.startsWith("data:image/")) {
@@ -260,42 +221,35 @@ function mergeUniqueStrings(current: string[], incoming: unknown): string[] {
 
   const recalcScale = useCallback(() => {
 """)
-          replace_once(path,
-          """    aiAnalysis: profile.resumeScoreUnlocked ? formAiAnalysis : undefined,
-""",
-          """    aiAnalysis:
+          replace_once(path, """    aiAnalysis: profile.resumeScoreUnlocked ? formAiAnalysis : undefined,
+""", """    aiAnalysis:
       profile.resumeScoreUnlocked || !resumeScorePaymentRequired
         ? formAiAnalysis
         : undefined,
 """)
-          replace_once(path,
-          """    if (aiEnabled && !profile.resumeScoreUnlocked) {
+          replace_once(path, """    if (aiEnabled && !profile.resumeScoreUnlocked) {
       setScoreOfferMessage("");
       setScoreOfferOpen(true);
       return;
     }
-""",
-          """    if (aiEnabled && !formAiAnalysis) {
+""", """    if (aiEnabled && !formAiAnalysis) {
       setScoreOfferMessage("");
       setScoreOfferOpen(true);
       return;
     }
 """)
-          replace_once(path,
-          """    if (!profile.resumeScoreUnlocked) {
+          replace_once(path, """    if (!profile.resumeScoreUnlocked) {
       setScoreOfferMessage("");
       setScoreOfferOpen(true);
       return undefined;
     }
-""",
-          """    if (resumeScorePaymentRequired && !profile.resumeScoreUnlocked) {
+""", """    if (resumeScorePaymentRequired && !profile.resumeScoreUnlocked) {
       setScoreOfferMessage("");
       setScoreOfferOpen(true);
       return undefined;
     }
 """)
-          replace_once(path,
-          """  const handleScoreInterest = () => {
+          replace_once(path, """  const handleScoreInterest = () => {
     if (profile.resumeScoreUnlocked) {
       setScoreOfferOpen(false);
       setStep(99);
@@ -306,8 +260,7 @@ function mergeUniqueStrings(current: string[], incoming: unknown): string[] {
       "A etapa de pagamento será conectada a este botão. Seu currículo continua gratuito e disponível normalmente enquanto isso.",
     );
   };
-""",
-          """  const handleScoreInterest = () => {
+""", """  const handleScoreInterest = () => {
     if (!resumeScorePaymentRequired || profile.resumeScoreUnlocked) {
       setScoreOfferOpen(false);
       setScoreOfferMessage("");
@@ -320,19 +273,15 @@ function mergeUniqueStrings(current: string[], incoming: unknown): string[] {
     );
   };
 """)
-          replace_once(path,
-          """                  unlocked={Boolean(profile.resumeScoreUnlocked)}
-""",
-          """                  unlocked={Boolean(formAiAnalysis || profile.resumeScoreUnlocked)}
+          replace_once(path, """                  unlocked={Boolean(profile.resumeScoreUnlocked)}
+""", """                  unlocked={Boolean(formAiAnalysis || profile.resumeScoreUnlocked)}
 """)
-          replace_once(path,
-          """              <p className="text-xs text-stone-500 mb-3">Ela pode ser diferente da foto do seu perfil.</p>
+          replace_once(path, """              <p className="text-xs text-stone-500 mb-3">Ela pode ser diferente da foto do seu perfil.</p>
               <div className="flex items-start gap-4">
                 <div className="flex-1 max-w-sm">
                   <FileUpload label="" accept="image/*" value={formPhoto} onChange={setFormPhoto} type="avatar" placeholder="Clique para subir uma foto profissional" />
                 </div>
-""",
-          """              <p className="text-xs text-stone-500 mb-3">Ela pode ser diferente da foto do seu perfil.</p>
+""", """              <p className="text-xs text-stone-500 mb-3">Ela pode ser diferente da foto do seu perfil.</p>
               {aiEnabled && (
                 <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-2xl border border-violet-100 bg-violet-50/60 p-3.5">
                   <input
@@ -341,17 +290,13 @@ function mergeUniqueStrings(current: string[], incoming: unknown): string[] {
                     onChange={(event) => {
                       const checked = event.target.checked;
                       setProfessionalizePhoto(checked);
-                      if (checked && formPhoto.startsWith("data:image/")) {
-                        void applyProfessionalPhoto(formPhoto);
-                      }
+                      if (checked && formPhoto.startsWith("data:image/")) void applyProfessionalPhoto(formPhoto);
                     }}
                     className="mt-0.5 h-4 w-4 rounded border-violet-300 text-violet-600 focus:ring-violet-500"
                   />
                   <span>
                     <strong className="block text-sm text-violet-950">Deixar a foto mais profissional</strong>
-                    <span className="mt-0.5 block text-xs leading-relaxed text-violet-700">
-                      Ajusta automaticamente luz, contraste, definição e tamanho sem mudar seu rosto.
-                    </span>
+                    <span className="mt-0.5 block text-xs leading-relaxed text-violet-700">Ajusta automaticamente luz, contraste, definição e tamanho sem mudar seu rosto.</span>
                   </span>
                 </label>
               )}
@@ -365,7 +310,6 @@ function mergeUniqueStrings(current: string[], incoming: unknown): string[] {
                   <FileUpload label="" accept="image/*" value={formPhoto} onChange={handleResumePhotoChange} type="avatar" placeholder="Clique para subir ou tirar uma foto" />
                 </div>
 """)
-
           PY
 
           git config user.name 'github-actions[bot]'
