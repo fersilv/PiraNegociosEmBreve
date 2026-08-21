@@ -54,6 +54,19 @@ export class UsersService {
     return this.usersRepository.findOne({ where: { id } });
   }
 
+  private asRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  }
+
+  private normalizeKey(value: unknown): string {
+    return String(value || '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toLocaleLowerCase('pt-BR');
+  }
+
   private normalizeMonthYear(value: unknown): string {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -114,8 +127,8 @@ export class UsersService {
   private normalizeTimeline(value: unknown): unknown {
     if (!Array.isArray(value)) return value;
     return value.map((item) => {
-      if (!item || typeof item !== 'object') return item;
-      const stage = item as Record<string, unknown>;
+      const stage = this.asRecord(item);
+      if (!stage) return item;
       const current = stage.current === true;
       return {
         ...stage,
@@ -128,8 +141,8 @@ export class UsersService {
   normalizeExperienceDates(value: unknown): unknown {
     if (!Array.isArray(value)) return value;
     return value.map((item) => {
-      if (!item || typeof item !== 'object') return item;
-      const experience = item as Record<string, unknown>;
+      const experience = this.asRecord(item);
+      if (!experience) return item;
       const current = experience.current === true;
       return {
         ...experience,
@@ -142,9 +155,129 @@ export class UsersService {
     });
   }
 
+  private findExistingResumeItem(
+    incoming: Record<string, unknown>,
+    existingItems: unknown[],
+    semanticFields: string[],
+  ): Record<string, unknown> | null {
+    const incomingId = this.normalizeKey(incoming.id);
+    if (incomingId) {
+      const byId = existingItems
+        .map((item) => this.asRecord(item))
+        .find((item) => item && this.normalizeKey(item.id) === incomingId);
+      if (byId) return byId;
+    }
+
+    const semanticKey = semanticFields
+      .map((field) => this.normalizeKey(incoming[field]))
+      .join('|');
+    if (!semanticKey.replace(/\|/g, '')) return null;
+
+    return (
+      existingItems
+        .map((item) => this.asRecord(item))
+        .find(
+          (item) =>
+            item &&
+            semanticFields
+              .map((field) => this.normalizeKey(item[field]))
+              .join('|') === semanticKey,
+        ) || null
+    );
+  }
+
+  private preserveExperienceStructure(
+    incomingValue: unknown,
+    existingValue: unknown,
+  ): unknown {
+    if (!Array.isArray(incomingValue)) return incomingValue;
+    const existingItems = Array.isArray(existingValue) ? existingValue : [];
+
+    return incomingValue.map((item) => {
+      const incoming = this.asRecord(item);
+      if (!incoming) return item;
+      const existing = this.findExistingResumeItem(
+        incoming,
+        existingItems,
+        ['company'],
+      );
+      if (!existing) return incoming;
+
+      const incomingTimeline = Array.isArray(incoming.timeline)
+        ? incoming.timeline
+        : null;
+      const existingTimeline = Array.isArray(existing.timeline)
+        ? existing.timeline
+        : null;
+
+      // Telas novas enviam timeline explicitamente e têm autoridade sobre ela.
+      if (incomingTimeline) {
+        return {
+          ...existing,
+          ...incoming,
+          timeline: incomingTimeline,
+        };
+      }
+
+      // Telas legadas ainda editam a experiência como um único cargo. Preserve
+      // a progressão rica já cadastrada para que uma edição antiga não apague
+      // promoções, descrições por etapa e vínculos de habilidades.
+      if (existingTimeline && existingTimeline.length > 0) {
+        if (existingTimeline.length === 1) {
+          const onlyStage = this.asRecord(existingTimeline[0]);
+          const mergedStage = onlyStage
+            ? {
+                ...onlyStage,
+                role: incoming.role ?? onlyStage.role,
+                startDate: incoming.startDate ?? onlyStage.startDate,
+                endDate: incoming.endDate ?? onlyStage.endDate,
+                current: incoming.current ?? onlyStage.current,
+                description: incoming.description ?? onlyStage.description,
+                skills: incoming.skills ?? onlyStage.skills,
+              }
+            : existingTimeline[0];
+          return {
+            ...existing,
+            ...incoming,
+            timeline: [mergedStage],
+          };
+        }
+
+        return {
+          ...existing,
+          ...incoming,
+          id: incoming.id ?? existing.id,
+          skills: incoming.skills ?? existing.skills,
+          timeline: existingTimeline,
+        };
+      }
+
+      return { ...existing, ...incoming };
+    });
+  }
+
+  private preserveStructuredArray(
+    incomingValue: unknown,
+    existingValue: unknown,
+    semanticFields: string[],
+  ): unknown {
+    if (!Array.isArray(incomingValue)) return incomingValue;
+    const existingItems = Array.isArray(existingValue) ? existingValue : [];
+    return incomingValue.map((item) => {
+      const incoming = this.asRecord(item);
+      if (!incoming) return item;
+      const existing = this.findExistingResumeItem(
+        incoming,
+        existingItems,
+        semanticFields,
+      );
+      return existing ? { ...existing, ...incoming } : incoming;
+    });
+  }
+
   sanitizeSelfUpdate(
     data: Partial<User>,
-    _existing: User | null,
+    existing: User | null,
   ): Partial<User> {
     const sanitized: Partial<User> = {};
     for (const field of SELF_MANAGED_FIELDS) {
@@ -154,7 +287,27 @@ export class UsersService {
     }
 
     if (data.experiences !== undefined) {
-      sanitized.experiences = this.normalizeExperienceDates(data.experiences) as unknown[];
+      const preserved = this.preserveExperienceStructure(
+        data.experiences,
+        existing?.experiences,
+      );
+      sanitized.experiences = this.normalizeExperienceDates(preserved) as unknown[];
+    }
+
+    if (data.education !== undefined) {
+      sanitized.education = this.preserveStructuredArray(
+        data.education,
+        existing?.education,
+        ['institution', 'degree', 'fieldOfStudy'],
+      ) as unknown[];
+    }
+
+    if (data.courses !== undefined) {
+      sanitized.courses = this.preserveStructuredArray(
+        data.courses,
+        existing?.courses,
+        ['name', 'institution'],
+      ) as unknown[];
     }
 
     return sanitized;
