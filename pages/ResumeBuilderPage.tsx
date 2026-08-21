@@ -328,8 +328,8 @@ export function ResumeBuilderPage() {
   const [preferences, setPreferences] = useState<ResumePreferences>(DEFAULT_RESUME_PREFERENCES);
   const [scale, setScale] = useState(1);
   const previewRef = useRef<HTMLDivElement>(null);
-  const initialProfileHydratedRef = useRef(false);
   const [newSkill, setNewSkill] = useState("");
+  const initializedProfileId = useRef<string | null>(null);
 
   useEffect(() => {
     if (!profile) return;
@@ -356,8 +356,9 @@ export function ResumeBuilderPage() {
       ...(profile.resumePreferences || {}),
       nameMode: profile.resumePreferences?.nameMode || "SOCIAL",
     });
-    if (!initialProfileHydratedRef.current) {
-      initialProfileHydratedRef.current = true;
+    const profileKey = profile.email || profile.fullName || profile.displayName || "profile";
+    if (initializedProfileId.current !== profileKey) {
+      initializedProfileId.current = profileKey;
       if (profileHasData(profile)) setStep(99);
     }
   }, [profile]);
@@ -496,7 +497,7 @@ export function ResumeBuilderPage() {
   };
 
   const handleAiUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
+    const files: File[] = Array.from<File>(event.target.files || []);
     event.target.value = "";
     if (files.length === 0 || !aiEnabled) return;
     if (files.length > 8) {
@@ -522,7 +523,7 @@ export function ResumeBuilderPage() {
 
     try {
       const documents = await Promise.all(
-        files.map(async (file) => ({
+        files.map(async (file: File) => ({
           base64File: await readFileAsDataUrl(file),
           mimeType: file.type,
           fileName: file.name,
@@ -1410,7 +1411,7 @@ function FormField({ label, value, onChange, placeholder, disabled, type = "text
   return <div><label className="block text-sm font-semibold text-stone-700 mb-1">{label}</label><input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} disabled={disabled} className="w-full px-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent disabled:bg-stone-100 disabled:text-stone-400" /></div>;
 }
 
-function ExperienceEditor({ value, onChange, onDelete }: { value: ProfessionalExperience; onChange: (value: ProfessionalExperience) => void; onDelete: () => void }) {
+function ExperienceEditor({ value, onChange, onDelete }: { key?: React.Key; value: ProfessionalExperience; onChange: (value: ProfessionalExperience) => void; onDelete: () => void }) {
   const [editing, setEditing] = useState(false);
   const experience = syncExperience(value);
   const stages = experience.timeline || [];
@@ -1465,7 +1466,7 @@ function ExperienceForm({ onAdd }: { onAdd: (experience: ProfessionalExperience)
   return <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3"><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><FormField label="Cargo *" value={role} onChange={setRole} placeholder="Vendedor" /><div className="z-20"><label className="block text-sm font-semibold text-stone-700 mb-1">Empresa *</label><SearchSelect value={company} onChange={setCompany} placeholder="Loja ABC" options={companyOptions} onSearch={handleCompanySearch} allowCustom customLabel="Adicionar empresa:" className="w-full" /></div><FormField label="Início" value={start} onChange={setStart} type="month" /><div><FormField label="Término" value={end} onChange={setEnd} type="month" disabled={current} /><label className="flex items-center gap-2 mt-1.5 cursor-pointer"><input type="checkbox" checked={current} onChange={(event) => { setCurrent(event.target.checked); if (event.target.checked) setEnd(""); }} className="rounded" /><span className="text-xs text-stone-600">Cargo atual</span></label></div></div><div><label className="block text-sm font-semibold text-stone-700 mb-1">Descrição desta etapa</label><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder="Atividades, responsabilidades, resultados e conquistas..." className="w-full px-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 resize-none" /></div><div className="flex gap-2 justify-end"><button onClick={() => setOpen(false)} className="text-sm text-stone-500 px-4 py-2">Cancelar</button><button onClick={handleAdd} className="bg-terracotta-600 text-white text-sm font-bold px-5 py-2 rounded-xl">Adicionar</button></div></div>;
 }
 
-function EducationEditor({ value, onChange, onDelete }: { value: AcademicEducation; onChange: (value: AcademicEducation) => void; onDelete: () => void }) {
+function EducationEditor({ value, onChange, onDelete }: { key?: React.Key; value: AcademicEducation; onChange: (value: AcademicEducation) => void; onDelete: () => void }) {
   const [editing, setEditing] = useState(false);
   if (!editing) return <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 flex items-start justify-between gap-4"><div><div className="font-bold text-stone-900">{value.degree}{value.fieldOfStudy ? ` em ${value.fieldOfStudy}` : ""}</div><div className="text-sm text-stone-600">{value.institution}</div><div className="text-xs text-stone-500 mt-1">{value.startYear} – {value.current ? "Atual" : value.endYear}</div></div><div className="flex gap-1"><button onClick={() => setEditing(true)} className="p-2 text-stone-400 hover:text-terracotta-600"><Edit3 className="h-4 w-4" /></button><button onClick={onDelete} className="p-2 text-stone-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></div></div>;
   return <div className="rounded-2xl border border-terracotta-200 bg-white p-4 space-y-3"><div className="grid gap-3 sm:grid-cols-2"><FormField label="Instituição" value={value.institution} onChange={(institution) => onChange({ ...value, institution })} /><FormField label="Grau" value={value.degree} onChange={(degree) => onChange({ ...value, degree })} /><FormField label="Área de estudo" value={value.fieldOfStudy} onChange={(fieldOfStudy) => onChange({ ...value, fieldOfStudy })} /><FormField label="Ano de início" value={value.startYear} onChange={(startYear) => onChange({ ...value, startYear })} /><FormField label="Ano de término" value={value.current ? "" : value.endYear} onChange={(endYear) => onChange({ ...value, endYear })} disabled={value.current} /></div><label className="flex items-center gap-2 text-xs text-stone-600"><input type="checkbox" checked={value.current} onChange={(event) => onChange({ ...value, current: event.target.checked, endYear: event.target.checked ? "Atual" : "" })} /> Cursando atualmente</label><textarea value={value.description || ""} onChange={(event) => onChange({ ...value, description: event.target.value })} rows={2} placeholder="Descrição opcional, projetos, ênfases ou conquistas." className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-terracotta-500" />{value.skills && value.skills.length > 0 && <div className="flex flex-wrap gap-1.5">{value.skills.map((skill) => <span key={skill} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-600">{skill}</span>)}</div>}<div className="flex justify-end"><button onClick={() => setEditing(false)} className="rounded-xl bg-stone-900 px-4 py-2 text-xs font-bold text-white">Concluir</button></div></div>;
@@ -1479,7 +1480,7 @@ function EducationForm({ onAdd }: { onAdd: (education: AcademicEducation) => voi
   return <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3"><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><div><label className="block text-sm font-semibold text-stone-700 mb-1">Instituição *</label><SearchSelect value={institution} onChange={setInstitution} placeholder="Universidade X" options={institutionOptions} onSearch={searchInstitution} allowCustom customLabel="Adicionar nova instituição:" className="w-full" /></div><FormField label="Grau *" value={degree} onChange={setDegree} placeholder="Graduação / Técnico / Ensino Médio" /><FormField label="Área de estudo" value={field} onChange={setField} placeholder="Administração" /><FormField label="Ano de início" value={start} onChange={setStart} placeholder="2018" /><FormField label="Ano de término" value={end} onChange={setEnd} placeholder="2022" disabled={current} /></div><label className="flex items-center gap-2 text-xs text-stone-600"><input type="checkbox" checked={current} onChange={(event) => setCurrent(event.target.checked)} /> Cursando atualmente</label><div className="flex justify-end gap-2"><button onClick={() => setOpen(false)} className="px-4 py-2 text-sm text-stone-500">Cancelar</button><button onClick={handleAdd} className="rounded-xl bg-terracotta-600 px-5 py-2 text-sm font-bold text-white">Adicionar</button></div></div>;
 }
 
-function CourseEditor({ value, onChange, onDelete }: { value: ExtraCourse; onChange: (value: ExtraCourse) => void; onDelete: () => void }) {
+function CourseEditor({ value, onChange, onDelete }: { key?: React.Key; value: ExtraCourse; onChange: (value: ExtraCourse) => void; onDelete: () => void }) {
   const [editing, setEditing] = useState(false);
   if (!editing) return <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 flex items-start justify-between gap-4"><div><div className="text-[10px] font-bold uppercase tracking-wider text-stone-400">{value.type === "CERTIFICATION" ? "Certificação" : "Curso"}</div><div className="font-bold text-stone-900">{value.name}</div><div className="text-sm text-stone-600">{value.institution}{value.year ? ` · ${value.year}` : ""}</div></div><div className="flex gap-1"><button onClick={() => setEditing(true)} className="p-2 text-stone-400 hover:text-terracotta-600"><Edit3 className="h-4 w-4" /></button><button onClick={onDelete} className="p-2 text-stone-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></div></div>;
   return <div className="rounded-2xl border border-terracotta-200 bg-white p-4 space-y-3"><div className="grid gap-3 sm:grid-cols-2"><FormField label="Nome" value={value.name} onChange={(name) => onChange({ ...value, name })} /><FormField label="Instituição" value={value.institution} onChange={(institution) => onChange({ ...value, institution })} /><FormField label="Ano" value={value.year} onChange={(year) => onChange({ ...value, year })} /><div><label className="block text-sm font-semibold text-stone-700 mb-1">Tipo</label><select value={value.type || "COURSE"} onChange={(event) => onChange({ ...value, type: event.target.value as "COURSE" | "CERTIFICATION" })} className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm"><option value="COURSE">Curso</option><option value="CERTIFICATION">Certificação</option></select></div></div><textarea value={value.description || ""} onChange={(event) => onChange({ ...value, description: event.target.value })} rows={2} placeholder="Descrição opcional." className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-terracotta-500" />{value.skills && value.skills.length > 0 && <div className="flex flex-wrap gap-1.5">{value.skills.map((skill) => <span key={skill} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-600">{skill}</span>)}</div>}<div className="flex justify-end"><button onClick={() => setEditing(false)} className="rounded-xl bg-stone-900 px-4 py-2 text-xs font-bold text-white">Concluir</button></div></div>;
