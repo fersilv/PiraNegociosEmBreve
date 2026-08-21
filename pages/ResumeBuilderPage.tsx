@@ -28,6 +28,7 @@ import {
   GraduationCap,
   Layout,
   Loader2,
+  Lock,
   Palette,
   Plus,
   Printer,
@@ -72,6 +73,18 @@ type SkillSource =
   | { kind: "education"; index: number; label: string }
   | { kind: "course"; index: number; label: string };
 
+interface ImportConflict {
+  field?: string;
+  message?: string;
+  options?: string[];
+  sources?: string[];
+}
+
+interface ImportNotice {
+  documents: number;
+  conflicts: ImportConflict[];
+}
+
 const DEFAULT_RESUME_PREFERENCES: ResumePreferences = {
   nameMode: "SOCIAL",
   showHeadline: true,
@@ -82,12 +95,20 @@ const DEFAULT_RESUME_PREFERENCES: ResumePreferences = {
 };
 
 const AI_PROCESS_MESSAGES = [
-  "Arquivo recebido. Preparando o conteúdo para leitura.",
-  "Lendo identidade, contatos e resumo profissional.",
-  "Organizando experiências e procurando evoluções de cargo.",
-  "Mapeando formação, cursos, certificações e habilidades.",
-  "Avaliando a qualidade e os pontos que podem ser melhorados.",
+  "Documentos recebidos. Preparando as fontes para leitura.",
+  "Lendo dados profissionais, contatos, vínculos e formações.",
+  "Cruzando informações entre currículo, carteira e demais documentos.",
+  "Organizando empresas e identificando evoluções de cargo.",
+  "Mapeando cursos, certificações e habilidades comprovadas.",
   "Aplicando os dados ao seu currículo para você revisar.",
+];
+
+const SCORE_PROCESS_MESSAGES = [
+  "Verificando a estrutura geral do currículo.",
+  "Analisando como suas experiências contam sua trajetória.",
+  "Conferindo clareza, evidências e organização das habilidades.",
+  "Identificando pontos fortes e oportunidades de melhoria.",
+  "Preparando sua pontuação e recomendações.",
 ];
 
 function makeId(prefix: string): string {
@@ -147,8 +168,12 @@ function monthInputToMonthYear(value: string): string {
 }
 
 function dateSortValue(value: string): number {
-  const match = normalizeMonthYear(value).match(/^(\d{2})\/(\d{4})$/);
-  return match ? Number(match[2]) * 12 + Number(match[1]) : 0;
+  const normalized = normalizeMonthYear(value);
+  if (!normalized) return Number.MAX_SAFE_INTEGER;
+  const match = normalized.match(/^(\d{2})\/(\d{4})$/);
+  if (match) return Number(match[2]) * 12 + Number(match[1]);
+  if (/^\d{4}$/.test(normalized)) return Number(normalized) * 12;
+  return Number.MAX_SAFE_INTEGER - 1;
 }
 
 function normalizeStage(stage: ExperienceTimelineEntry): ExperienceTimelineEntry {
@@ -177,9 +202,12 @@ function syncExperience(exp: ProfessionalExperience): ProfessionalExperience {
           skills: exp.skills || [],
         },
       ];
-  const timeline = rawTimeline.map(normalizeStage).sort((a, b) => dateSortValue(a.startDate) - dateSortValue(b.startDate));
-  const first = timeline[0];
-  const latest = timeline[timeline.length - 1];
+  const timeline = rawTimeline
+    .map(normalizeStage)
+    .sort((a, b) => dateSortValue(a.startDate) - dateSortValue(b.startDate));
+  const datedStages = timeline.filter((stage) => Boolean(stage.startDate));
+  const first = datedStages[0] || timeline[0];
+  const latest = datedStages[datedStages.length - 1] || timeline[timeline.length - 1];
   const allSkills = Array.from(
     new Set([...(exp.skills || []), ...timeline.flatMap((stage) => stage.skills || [])]),
   );
@@ -254,6 +282,19 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+function mergeUniqueStrings(current: string[], incoming: unknown): string[] {
+  const next = Array.isArray(incoming)
+    ? incoming.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const seen = new Set<string>();
+  return [...current, ...next].filter((item) => {
+    const key = item.toLocaleLowerCase("pt-BR");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function ResumeBuilderPage() {
   const { profile, loading, refreshProfile } = useAuth();
   const { enabled: aiEnabled } = useAiStatus();
@@ -262,8 +303,12 @@ export function ResumeBuilderPage() {
   const [saving, setSaving] = useState(false);
   const [aiProcessing, setAiProcessing] = useState(false);
   const [aiProcessStage, setAiProcessStage] = useState(0);
+  const [processingDocumentCount, setProcessingDocumentCount] = useState(1);
   const [aiError, setAiError] = useState("");
   const [reviewing, setReviewing] = useState(false);
+  const [scoreOfferOpen, setScoreOfferOpen] = useState(false);
+  const [scoreOfferMessage, setScoreOfferMessage] = useState("");
+  const [importNotice, setImportNotice] = useState<ImportNotice | null>(null);
 
   const [formName, setFormName] = useState("");
   const [formSocialName, setFormSocialName] = useState("");
@@ -304,7 +349,7 @@ export function ResumeBuilderPage() {
     setFormSkills(profile.skills || []);
     setFormCourses(normalizeCourses(profile.courses || []));
     setFormLanguages(profile.languages || []);
-    setFormAiAnalysis(profile.aiAnalysis);
+    setFormAiAnalysis(profile.resumeScoreUnlocked ? profile.aiAnalysis : undefined);
     setPreferences({
       ...DEFAULT_RESUME_PREFERENCES,
       ...(profile.resumePreferences || {}),
@@ -356,7 +401,7 @@ export function ResumeBuilderPage() {
     skills: formSkills,
     courses: formCourses,
     languages: formLanguages,
-    aiAnalysis: formAiAnalysis,
+    aiAnalysis: profile.resumeScoreUnlocked ? formAiAnalysis : undefined,
     resumePreferences: preferences,
   };
 
@@ -379,8 +424,6 @@ export function ResumeBuilderPage() {
         skills: formSkills,
         courses: formCourses,
         languages: formLanguages.length > 0 ? formLanguages : undefined,
-        aiAnalysis: formAiAnalysis,
-        hasAiAnalyzed: Boolean(formAiAnalysis),
         resumePreferences: preferences,
       });
       await refreshProfile();
@@ -400,19 +443,33 @@ export function ResumeBuilderPage() {
     await saveProgress();
     setStep(99);
   };
+  const finishBuilder = async () => {
+    await saveProgress();
+    if (aiEnabled && !profile.resumeScoreUnlocked) {
+      setScoreOfferMessage("");
+      setScoreOfferOpen(true);
+      return;
+    }
+    setStep(99);
+  };
 
   const reviewResume = async (candidateProfile: UserProfile = previewProfile) => {
     if (!aiEnabled) return undefined;
+    if (!profile.resumeScoreUnlocked) {
+      setScoreOfferMessage("");
+      setScoreOfferOpen(true);
+      return undefined;
+    }
     setReviewing(true);
     try {
       const response = await api.post(
         "/ai/review-resume",
         { profile: candidateProfile },
-        { timeout: 60000 },
+        { timeout: 90000 },
       );
       const analysis = response.data as ResumeAIAnalysis;
       setFormAiAnalysis(analysis);
-      await api.patch("/users/me", { aiAnalysis: analysis, hasAiAnalyzed: true });
+      await refreshProfile();
       return analysis;
     } catch (error) {
       console.error("Erro ao avaliar currículo:", error);
@@ -422,46 +479,101 @@ export function ResumeBuilderPage() {
     }
   };
 
+  const handleScoreInterest = () => {
+    if (profile.resumeScoreUnlocked) {
+      setScoreOfferOpen(false);
+      setStep(99);
+      void reviewResume();
+      return;
+    }
+    setScoreOfferMessage(
+      "A etapa de pagamento será conectada a este botão. Seu currículo continua gratuito e disponível normalmente enquanto isso.",
+    );
+  };
+
   const handleAiUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files || []);
     event.target.value = "";
-    if (!file || !aiEnabled) return;
+    if (files.length === 0 || !aiEnabled) return;
+    if (files.length > 8) {
+      setAiError("Selecione no máximo 8 documentos por vez.");
+      return;
+    }
+
+    const allowedTypes = new Set(["application/pdf", "image/png", "image/jpeg"]);
+    const unsupported = files.find((file) => !allowedTypes.has(file.type));
+    if (unsupported) {
+      setAiError(`O arquivo ${unsupported.name} precisa ser PDF, PNG ou JPG.`);
+      return;
+    }
 
     setAiError("");
+    setImportNotice(null);
+    setProcessingDocumentCount(files.length);
     setAiProcessing(true);
     setAiProcessStage(0);
     const timer = window.setInterval(() => {
       setAiProcessStage((current) => Math.min(4, current + 1));
-    }, 1800);
+    }, 2200);
 
     try {
-      const base64 = await readFileAsDataUrl(file);
+      const documents = await Promise.all(
+        files.map(async (file) => ({
+          base64File: await readFileAsDataUrl(file),
+          mimeType: file.type,
+          fileName: file.name,
+        })),
+      );
       setAiProcessStage(1);
       const response = await api.post(
-        "/ai/analyze-resume",
-        { base64File: base64, mimeType: file.type || "application/pdf" },
-        { timeout: 120000 },
+        "/ai/analyze-resume-documents",
+        { documents },
+        { timeout: 180000 },
       );
       const data = response.data || {};
       setAiProcessStage(3);
 
-      const experiences = mergeExperiencesByCompany(data.experiences || []);
-      const education = normalizeEducation(data.education || []);
-      const courses = normalizeCourses(data.courses || []);
-      const skills = Array.isArray(data.skills) ? data.skills.filter(Boolean) : [];
-      const languages = Array.isArray(data.languages) ? data.languages : [];
+      const importedExperiences = mergeExperiencesByCompany(data.experiences || []);
+      const importedEducation = normalizeEducation(data.education || []);
+      const importedCourses = normalizeCourses(data.courses || []);
+      const experiences = importedExperiences.length > 0
+        ? mergeExperiencesByCompany([...formExperiences, ...importedExperiences])
+        : formExperiences;
+      const education = importedEducation.length > 0
+        ? normalizeEducation([...formEducation, ...importedEducation])
+        : formEducation;
+      const courses = importedCourses.length > 0
+        ? normalizeCourses([...formCourses, ...importedCourses])
+        : formCourses;
+      const skills = mergeUniqueStrings(formSkills, data.skills);
+      const importedLanguages = Array.isArray(data.languages) ? data.languages : [];
+      const languageMap = new Map<string, Language>();
+      [...formLanguages, ...importedLanguages].forEach((language: Language) => {
+        if (!language?.name) return;
+        languageMap.set(language.name.toLocaleLowerCase("pt-BR"), language);
+      });
+      const languages = Array.from(languageMap.values());
 
-      if (data.name) setFormName(data.name);
-      if (data.phone) setFormPhone(data.phone);
-      if (data.bio) setFormBio(data.bio);
-      if (experiences.length > 0) setFormExperiences(experiences);
-      if (education.length > 0) setFormEducation(education);
-      if (skills.length > 0) setFormSkills(skills);
-      if (courses.length > 0) setFormCourses(courses);
-      if (languages.length > 0) setFormLanguages(languages);
+      if (data.name) setFormName(String(data.name));
+      if (data.phone) setFormPhone(String(data.phone));
+      if (data.bio) setFormBio(String(data.bio));
+      setFormExperiences(experiences);
+      setFormEducation(education);
+      setFormSkills(skills);
+      setFormCourses(courses);
+      setFormLanguages(languages);
+      setFormAiAnalysis(undefined);
 
-      const structuredProfile: UserProfile = {
-        ...profile,
+      const conflicts: ImportConflict[] = Array.isArray(data.conflicts)
+        ? data.conflicts.filter((item: unknown): item is ImportConflict => Boolean(item && typeof item === "object"))
+        : [];
+      setImportNotice({
+        documents: Number(data.documentsProcessed || files.length),
+        conflicts,
+      });
+
+      setAiProcessStage(5);
+      await api.patch("/users/me", {
         fullName: data.name || formName,
         phone: data.phone || formPhone,
         bio: data.bio || formBio,
@@ -469,36 +581,7 @@ export function ResumeBuilderPage() {
         education,
         skills,
         courses,
-        languages,
-        resumePreferences: preferences,
-      };
-
-      setAiProcessStage(4);
-      let analysis: ResumeAIAnalysis | undefined;
-      try {
-        const reviewResponse = await api.post(
-          "/ai/review-resume",
-          { profile: structuredProfile },
-          { timeout: 60000 },
-        );
-        analysis = reviewResponse.data as ResumeAIAnalysis;
-        setFormAiAnalysis(analysis);
-      } catch (reviewError) {
-        console.error("A análise estrutural funcionou, mas a nota não pôde ser calculada:", reviewError);
-      }
-
-      setAiProcessStage(5);
-      await api.patch("/users/me", {
-        fullName: structuredProfile.fullName,
-        phone: structuredProfile.phone,
-        bio: structuredProfile.bio,
-        experiences,
-        education,
-        skills,
-        courses,
         languages: languages.length > 0 ? languages : undefined,
-        aiAnalysis: analysis,
-        hasAiAnalyzed: Boolean(analysis),
         resumePreferences: preferences,
       });
       await refreshProfile();
@@ -514,7 +597,7 @@ export function ResumeBuilderPage() {
         error?.response?.data?.message ||
           error?.response?.data?.error ||
           error?.message ||
-          "Não foi possível analisar o currículo. Tente novamente.",
+          "Não foi possível organizar os documentos. Tente novamente.",
       );
     }
   };
@@ -649,7 +732,11 @@ export function ResumeBuilderPage() {
   ];
 
   if (aiProcessing) {
-    return <AiResumeProcessingScreen stage={aiProcessStage} />;
+    return <AiResumeProcessingScreen stage={aiProcessStage} documentCount={processingDocumentCount} />;
+  }
+
+  if (reviewing) {
+    return <ResumeScoreProcessingScreen />;
   }
 
   if (step === -1) {
@@ -661,14 +748,14 @@ export function ResumeBuilderPage() {
           </div>
           <h1 className="text-3xl font-serif font-bold text-stone-900 mb-3">Vamos criar seu currículo!</h1>
           <p className="text-stone-500 mb-8 leading-relaxed">
-            Preencha manualmente ou envie um currículo existente para a IA organizar os dados para você revisar.
+            Preencha manualmente ou deixe a IA organizar os documentos que você já possui.
           </p>
 
           {aiError && (
             <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-left text-sm text-red-700">
               <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
               <div>
-                <p className="font-bold">Não conseguimos concluir a análise</p>
+                <p className="font-bold">Não conseguimos concluir a importação</p>
                 <p className="mt-1">{aiError}</p>
               </div>
             </div>
@@ -678,15 +765,22 @@ export function ResumeBuilderPage() {
             <>
               <div className="bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-200 rounded-2xl p-5 mb-8 text-left">
                 <h3 className="font-bold text-violet-900 flex items-center gap-2 mb-2">
-                  <Sparkles className="w-5 h-5 text-violet-500" /> Criar a partir do meu currículo
+                  <Sparkles className="w-5 h-5 text-violet-500" /> Já tem documentos da sua trajetória?
                 </h3>
-                <p className="text-sm text-violet-700 mb-3">
-                  A IA lê o arquivo, organiza experiências e habilidades, agrupa evoluções na mesma empresa e prepara tudo para sua revisão.
+                <p className="text-sm text-violet-700 mb-4">
+                  Pode ser currículo, fotos, prints da Carteira de Trabalho, extrato da CTPS Digital ou certificados. Selecione vários de uma vez e a IA cruza as informações para montar sua trajetória.
                 </p>
                 <label className="cursor-pointer inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition-colors shadow-sm">
-                  <Upload className="w-4 h-4" /> Enviar currículo existente
-                  <input type="file" accept=".pdf,image/png,image/jpeg" onChange={handleAiUpload} className="hidden" />
+                  <Upload className="w-4 h-4" /> Usar meus documentos
+                  <input
+                    type="file"
+                    accept=".pdf,image/png,image/jpeg"
+                    multiple
+                    onChange={handleAiUpload}
+                    className="hidden"
+                  />
                 </label>
+                <p className="mt-2 text-[11px] text-violet-500">PDF, PNG ou JPG · até 8 arquivos por vez</p>
               </div>
               <div className="flex items-center gap-4 mb-8">
                 <div className="h-px flex-1 bg-stone-200" />
@@ -729,7 +823,16 @@ export function ResumeBuilderPage() {
 
             <div className="p-5 flex-1 overflow-y-auto space-y-7">
               {aiEnabled && (
-                <ResumeScoreCard analysis={formAiAnalysis} reviewing={reviewing} onReview={() => void reviewResume()} />
+                <ResumeScoreCard
+                  analysis={formAiAnalysis}
+                  unlocked={Boolean(profile.resumeScoreUnlocked)}
+                  reviewing={reviewing}
+                  onReview={() => void reviewResume()}
+                  onUpgrade={() => {
+                    setScoreOfferMessage("");
+                    setScoreOfferOpen(true);
+                  }}
+                />
               )}
 
               <section>
@@ -829,6 +932,16 @@ export function ResumeBuilderPage() {
             </div>
           </main>
         </div>
+        {scoreOfferOpen && (
+          <ResumeScoreOfferModal
+            message={scoreOfferMessage}
+            onLater={() => {
+              setScoreOfferOpen(false);
+              setScoreOfferMessage("");
+            }}
+            onContinue={handleScoreInterest}
+          />
+        )}
         <style dangerouslySetInnerHTML={{ __html: `@media print { @page { size: A4 portrait; margin: 0; } html, body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background: white !important; margin: 0 !important; padding: 0 !important; } #resume-builder-sidebar { display: none !important; } #resume-builder-root { display: block !important; background: white !important; } #resume-preview-area { padding: 0 !important; background: white !important; overflow: visible !important; } #resume-preview-area > div { transform: none !important; width: 100% !important; } }` }} />
       </>
     );
@@ -843,6 +956,32 @@ export function ResumeBuilderPage() {
       case "personal":
         return (
           <div className="space-y-5">
+            {importNotice && (
+              <div className={`rounded-2xl border p-4 ${importNotice.conflicts.length > 0 ? "border-amber-200 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
+                <div className="flex items-start gap-3">
+                  {importNotice.conflicts.length > 0 ? (
+                    <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                  ) : (
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                  )}
+                  <div>
+                    <p className={`text-sm font-bold ${importNotice.conflicts.length > 0 ? "text-amber-900" : "text-emerald-900"}`}>
+                      {importNotice.documents} {importNotice.documents === 1 ? "documento organizado" : "documentos organizados"}
+                    </p>
+                    <p className={`mt-1 text-xs leading-relaxed ${importNotice.conflicts.length > 0 ? "text-amber-700" : "text-emerald-700"}`}>
+                      {importNotice.conflicts.length > 0
+                        ? `Encontramos ${importNotice.conflicts.length} divergência(s) entre as fontes. Revise os campos antes de concluir.`
+                        : "Os dados foram cruzados e aplicados. Agora você pode revisar e complementar o que quiser."}
+                    </p>
+                    {importNotice.conflicts.slice(0, 3).map((conflict, index) => (
+                      <div key={`${conflict.field || "conflito"}-${index}`} className="mt-2 rounded-xl bg-white/70 px-3 py-2 text-xs text-amber-800">
+                        <strong>{conflict.field || "Informação divergente"}:</strong> {conflict.message || "Confira as informações encontradas."}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField label="Nome completo (registro) *" value={formName} onChange={setFormName} placeholder="Maria Silva dos Santos" />
               <FormField label="Nome social (opcional)" value={formSocialName} onChange={setFormSocialName} placeholder="Como prefere ser chamado" />
@@ -1067,19 +1206,31 @@ export function ResumeBuilderPage() {
             <button onClick={prevStep} className="flex items-center gap-2 text-stone-500 hover:text-stone-700 font-medium text-sm py-2.5 px-4 rounded-xl hover:bg-stone-100 transition-colors">
               <ArrowLeft className="w-4 h-4" /> Voltar
             </button>
-            <button onClick={isLastWizardStep ? goToPreview : nextStep} disabled={saving} className="bg-terracotta-600 hover:bg-terracotta-700 text-white font-bold py-2.5 px-6 rounded-xl flex items-center gap-2 text-sm shadow-sm transition-colors disabled:opacity-60">
+            <button onClick={isLastWizardStep ? finishBuilder : nextStep} disabled={saving} className="bg-terracotta-600 hover:bg-terracotta-700 text-white font-bold py-2.5 px-6 rounded-xl flex items-center gap-2 text-sm shadow-sm transition-colors disabled:opacity-60">
               {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              {isLastWizardStep ? "Ver currículo" : "Próximo"}
+              {isLastWizardStep ? "Concluir currículo" : "Próximo"}
               {!isLastWizardStep && <ArrowRight className="w-4 h-4" />}
             </button>
           </div>
         </div>
       </main>
+
+      {scoreOfferOpen && (
+        <ResumeScoreOfferModal
+          message={scoreOfferMessage}
+          onLater={() => {
+            setScoreOfferOpen(false);
+            setScoreOfferMessage("");
+            setStep(99);
+          }}
+          onContinue={handleScoreInterest}
+        />
+      )}
     </div>
   );
 }
 
-function AiResumeProcessingScreen({ stage }: { stage: number }) {
+function AiResumeProcessingScreen({ stage, documentCount }: { stage: number; documentCount: number }) {
   return (
     <div className="min-h-screen overflow-hidden bg-stone-950 px-5 py-10 text-white flex items-center justify-center">
       <div className="w-full max-w-2xl">
@@ -1087,9 +1238,11 @@ function AiResumeProcessingScreen({ stage }: { stage: number }) {
           <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-violet-500/15 ring-1 ring-violet-400/30">
             <BrainCircuit className="h-8 w-8 text-violet-300 animate-pulse" />
           </div>
-          <p className="text-xs font-bold uppercase tracking-[0.24em] text-violet-300">Currículo em construção</p>
+          <p className="text-xs font-bold uppercase tracking-[0.24em] text-violet-300">Sua trajetória em construção</p>
           <h1 className="mt-2 text-2xl sm:text-3xl font-bold">A IA está organizando sua história profissional</h1>
-          <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-stone-400">Você não precisa fazer nada agora. Quando terminar, abrimos os dados preenchidos para sua revisão.</p>
+          <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-stone-400">
+            {documentCount} {documentCount === 1 ? "documento foi recebido" : "documentos foram recebidos"}. Estamos cruzando as fontes e preparando tudo para sua revisão.
+          </p>
         </div>
 
         <div className="space-y-3">
@@ -1119,41 +1272,119 @@ function AiResumeProcessingScreen({ stage }: { stage: number }) {
   );
 }
 
-function ResumeScoreCard({ analysis, reviewing, onReview }: { analysis?: ResumeAIAnalysis; reviewing: boolean; onReview: () => void }) {
+function ResumeScoreProcessingScreen() {
+  const [stage, setStage] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setStage((current) => Math.min(SCORE_PROCESS_MESSAGES.length - 1, current + 1));
+    }, 1800);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="min-h-screen overflow-hidden bg-stone-950 px-5 py-10 text-white flex items-center justify-center">
+      <div className="w-full max-w-2xl">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-violet-500/15 ring-1 ring-violet-400/30">
+            <Sparkles className="h-8 w-8 text-violet-300 animate-pulse" />
+          </div>
+          <p className="text-xs font-bold uppercase tracking-[0.24em] text-violet-300">Análise premium</p>
+          <h1 className="mt-2 text-2xl sm:text-3xl font-bold">Vamos olhar seu currículo com olhos de recrutador</h1>
+          <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-stone-400">A pontuação avalia o documento, nunca o valor ou potencial da pessoa.</p>
+        </div>
+        <div className="space-y-3">
+          {SCORE_PROCESS_MESSAGES.map((message, index) => {
+            if (index > stage + 1) return null;
+            const complete = index < stage;
+            const active = index === stage;
+            return (
+              <div key={message} className={`flex items-start gap-3 transition-all duration-500 ${active ? "translate-x-1 opacity-100" : complete ? "opacity-70" : "opacity-35"}`}>
+                <div className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${complete ? "bg-emerald-500/20 text-emerald-300" : active ? "bg-violet-500/20 text-violet-300" : "bg-white/5 text-stone-500"}`}>
+                  {complete ? <Check className="h-3.5 w-3.5" /> : active ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}
+                </div>
+                <div className={`max-w-[86%] rounded-2xl rounded-tl-sm border px-4 py-3 text-sm leading-relaxed ${active ? "border-violet-400/25 bg-violet-400/10 text-stone-100" : "border-white/5 bg-white/[0.03] text-stone-400"}`}>
+                  {message}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResumeScoreOfferModal({ message, onLater, onContinue }: { message: string; onLater: () => void; onContinue: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-stone-950/60 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-3xl border border-white/20 bg-white p-6 shadow-2xl sm:p-7">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
+          <Sparkles className="h-6 w-6" />
+        </div>
+        <h2 className="mt-5 text-2xl font-bold text-stone-900">Seu currículo está pronto.</h2>
+        <p className="mt-2 text-sm leading-relaxed text-stone-600">Quer descobrir a pontuação do seu currículo, seus pontos fortes e o que pode ser melhorado?</p>
+        <div className="mt-5 rounded-2xl border border-violet-100 bg-violet-50/70 p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-violet-600">Análise profissional</span>
+            <Lock className="h-4 w-4 text-violet-500" />
+          </div>
+          <div className="mt-3 flex items-end gap-2">
+            <span className="select-none text-4xl font-black text-stone-900 blur-[6px]">86</span>
+            <span className="pb-1 text-sm font-bold text-stone-400">/100</span>
+          </div>
+          <p className="mt-2 text-[11px] text-stone-400">Prévia ilustrativa. Sua nota real ainda não foi calculada.</p>
+        </div>
+        {message && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">{message}</div>}
+        <div className="mt-6 grid gap-2 sm:grid-cols-2">
+          <button onClick={onLater} className="rounded-xl border border-stone-200 px-4 py-3 text-sm font-bold text-stone-600 hover:bg-stone-50">Agora não</button>
+          <button onClick={onContinue} className="rounded-xl bg-violet-600 px-4 py-3 text-sm font-bold text-white hover:bg-violet-700">Quero ver minha pontuação</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResumeScoreCard({ analysis, unlocked, reviewing, onReview, onUpgrade }: { analysis?: ResumeAIAnalysis; unlocked: boolean; reviewing: boolean; onReview: () => void; onUpgrade: () => void }) {
+  if (!unlocked) {
+    return (
+      <section className="relative overflow-hidden rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><Lock className="h-5 w-5" /></div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-bold uppercase tracking-wider text-violet-600">Análise profissional</p>
+            <p className="mt-0.5 text-xs text-stone-500">Descubra a qualidade do documento e onde melhorar.</p>
+          </div>
+        </div>
+        <div className="relative mt-4 overflow-hidden rounded-xl border border-violet-100 bg-white p-3">
+          <div className="select-none blur-[5px]">
+            <div className="flex items-end justify-between"><span className="text-3xl font-black text-stone-900">86<span className="text-xs text-stone-400">/100</span></span><span className="text-xs font-bold text-emerald-600">Muito bom</span></div>
+            <div className="mt-2 h-2 rounded-full bg-violet-100"><div className="h-full w-[86%] rounded-full bg-violet-500" /></div>
+            <div className="mt-3 space-y-1.5"><div className="h-2.5 w-full rounded bg-stone-200" /><div className="h-2.5 w-4/5 rounded bg-stone-200" /><div className="h-2.5 w-2/3 rounded bg-stone-200" /></div>
+          </div>
+          <div className="absolute inset-0 flex items-center justify-center"><div className="rounded-full bg-white/90 px-3 py-1.5 text-[11px] font-bold text-violet-700 shadow-sm"><Lock className="mr-1 inline h-3 w-3" /> Pontuação bloqueada</div></div>
+        </div>
+        <p className="mt-2 text-[10px] text-stone-400">Visual ilustrativo. Nenhuma pontuação real foi calculada.</p>
+        <button onClick={onUpgrade} className="mt-4 w-full rounded-xl bg-violet-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-violet-700">Descobrir minha pontuação</button>
+      </section>
+    );
+  }
+
   const score = Math.max(0, Math.min(100, Math.round(Number(analysis?.score) || 0)));
   return (
     <section className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-4">
       <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
-          <Sparkles className="h-5 w-5" />
-        </div>
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><Sparkles className="h-5 w-5" /></div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-violet-600">Qualidade do currículo</p>
-              <p className="mt-0.5 text-xs text-stone-500">Nota do documento, não da pessoa.</p>
-            </div>
+            <div><p className="text-xs font-bold uppercase tracking-wider text-violet-600">Qualidade do currículo</p><p className="mt-0.5 text-xs text-stone-500">Nota do documento, não da pessoa.</p></div>
             {analysis?.score !== undefined && <div className="text-2xl font-black text-stone-900">{score}<span className="text-xs font-bold text-stone-400">/100</span></div>}
           </div>
-          {analysis?.score !== undefined && (
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-violet-100">
-              <div className="h-full rounded-full bg-violet-500" style={{ width: `${score}%` }} />
-            </div>
-          )}
+          {analysis?.score !== undefined && <div className="mt-3 h-2 overflow-hidden rounded-full bg-violet-100"><div className="h-full rounded-full bg-violet-500" style={{ width: `${score}%` }} /></div>}
           {analysis?.feedbackText && <p className="mt-3 text-xs leading-relaxed text-stone-600">{analysis.feedbackText}</p>}
-          {analysis?.suggestions && analysis.suggestions.length > 0 && (
-            <div className="mt-3 space-y-1.5">
-              {analysis.suggestions.slice(0, 3).map((suggestion) => (
-                <div key={suggestion} className="flex items-start gap-2 text-xs text-stone-600">
-                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" />
-                  <span>{suggestion}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          {analysis?.suggestions && analysis.suggestions.length > 0 && <div className="mt-3 space-y-1.5">{analysis.suggestions.slice(0, 3).map((suggestion) => <div key={suggestion} className="flex items-start gap-2 text-xs text-stone-600"><span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" /><span>{suggestion}</span></div>)}</div>}
           <button onClick={onReview} disabled={reviewing} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-3 py-2 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-50">
             {reviewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BrainCircuit className="h-3.5 w-3.5" />}
-            {analysis ? "Reavaliar currículo" : "Avaliar meu currículo"}
+            {analysis ? "Reavaliar currículo" : "Analisar meu currículo"}
           </button>
         </div>
       </div>
@@ -1164,9 +1395,7 @@ function ResumeScoreCard({ analysis, reviewing, onReview }: { analysis?: ResumeA
 function ToggleRow({ checked, onChange, label, icon }: { checked: boolean; onChange: (checked: boolean) => void; label: string; icon: React.ReactNode }) {
   return (
     <label className="flex items-center gap-3 cursor-pointer">
-      <div className={`w-10 h-6 rounded-full transition-colors flex items-center p-1 ${checked ? "bg-terracotta-500" : "bg-stone-300"}`}>
-        <div className={`w-4 h-4 rounded-full bg-white transition-transform shadow-sm ${checked ? "translate-x-4" : "translate-x-0"}`} />
-      </div>
+      <div className={`w-10 h-6 rounded-full transition-colors flex items-center p-1 ${checked ? "bg-terracotta-500" : "bg-stone-300"}`}><div className={`w-4 h-4 rounded-full bg-white transition-transform shadow-sm ${checked ? "translate-x-4" : "translate-x-0"}`} /></div>
       <span className="text-sm font-medium text-stone-700 flex items-center gap-2">{icon}{label}</span>
       <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="hidden" />
     </label>
@@ -1174,111 +1403,39 @@ function ToggleRow({ checked, onChange, label, icon }: { checked: boolean; onCha
 }
 
 function FormField({ label, value, onChange, placeholder, disabled, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; disabled?: boolean; type?: string }) {
-  return (
-    <div>
-      <label className="block text-sm font-semibold text-stone-700 mb-1">{label}</label>
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} disabled={disabled} className="w-full px-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent disabled:bg-stone-100 disabled:text-stone-400" />
-    </div>
-  );
+  return <div><label className="block text-sm font-semibold text-stone-700 mb-1">{label}</label><input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} disabled={disabled} className="w-full px-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent disabled:bg-stone-100 disabled:text-stone-400" /></div>;
 }
 
 function ExperienceEditor({ value, onChange, onDelete }: { value: ProfessionalExperience; onChange: (value: ProfessionalExperience) => void; onDelete: () => void }) {
   const [editing, setEditing] = useState(false);
   const experience = syncExperience(value);
   const stages = experience.timeline || [];
-  const latest = stages[stages.length - 1];
-
+  const latest = [...stages].filter((stage) => stage.startDate).sort((a, b) => dateSortValue(a.startDate) - dateSortValue(b.startDate)).at(-1) || stages.at(-1);
   const updateStage = (index: number, patch: Partial<ExperienceTimelineEntry>) => {
     const timeline = stages.map((stage, stageIndex) => stageIndex === index ? normalizeStage({ ...stage, ...patch }) : stage);
     onChange(syncExperience({ ...experience, timeline }));
   };
 
   if (!editing) {
-    return (
-      <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-xs font-bold uppercase tracking-wider text-stone-400">{experience.company}</div>
-            <div className="mt-1 font-bold text-stone-900">{latest?.role || experience.role}</div>
-            <div className="mt-1 text-xs text-stone-500">{experience.startDate} – {experience.current ? "Atual" : experience.endDate}</div>
-            {stages.length > 1 && <div className="mt-2 inline-flex rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700">{stages.length} etapas na empresa</div>}
-          </div>
-          <div className="flex gap-1">
-            <button onClick={() => setEditing(true)} className="rounded-lg p-2 text-stone-400 hover:bg-white hover:text-terracotta-600"><Edit3 className="h-4 w-4" /></button>
-            <button onClick={onDelete} className="rounded-lg p-2 text-stone-400 hover:bg-white hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
-          </div>
-        </div>
-      </div>
-    );
+    return <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4"><div className="flex items-start justify-between gap-4"><div><div className="text-xs font-bold uppercase tracking-wider text-stone-400">{experience.company}</div><div className="mt-1 font-bold text-stone-900">{latest?.role || experience.role}</div><div className="mt-1 text-xs text-stone-500">{experience.startDate} – {experience.current ? "Atual" : experience.endDate}</div>{stages.length > 1 && <div className="mt-2 inline-flex rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700">{stages.length} etapas na empresa</div>}</div><div className="flex gap-1"><button onClick={() => setEditing(true)} className="rounded-lg p-2 text-stone-400 hover:bg-white hover:text-terracotta-600"><Edit3 className="h-4 w-4" /></button><button onClick={onDelete} className="rounded-lg p-2 text-stone-400 hover:bg-white hover:text-red-500"><Trash2 className="h-4 w-4" /></button></div></div></div>;
   }
 
   return (
     <div className="rounded-2xl border border-terracotta-200 bg-white p-4 sm:p-5 space-y-5">
-      <div className="flex items-center justify-between gap-3 border-b border-stone-100 pb-4">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-terracotta-600">Trajetória na empresa</p>
-          <h3 className="font-bold text-stone-900">Edite cargos, períodos e descrições</h3>
-        </div>
-        <button onClick={() => setEditing(false)} className="rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600">Concluir</button>
-      </div>
-
+      <div className="flex items-center justify-between gap-3 border-b border-stone-100 pb-4"><div><p className="text-xs font-bold uppercase tracking-wider text-terracotta-600">Trajetória na empresa</p><h3 className="font-bold text-stone-900">Edite cargos, períodos e descrições</h3></div><button onClick={() => setEditing(false)} className="rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600">Concluir</button></div>
       <FormField label="Empresa *" value={experience.company} onChange={(company) => onChange({ ...experience, company })} />
-      {stages.length > 1 && (
-        <div>
-          <label className="mb-1 block text-sm font-semibold text-stone-700">Descrição geral da passagem pela empresa (opcional)</label>
-          <textarea value={experience.description || ""} onChange={(event) => onChange({ ...experience, description: event.target.value })} rows={2} className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-terracotta-500" placeholder="Um resumo opcional da sua trajetória nessa empresa." />
-        </div>
-      )}
-
+      {stages.length > 1 && <div><label className="mb-1 block text-sm font-semibold text-stone-700">Descrição geral da passagem pela empresa (opcional)</label><textarea value={experience.description || ""} onChange={(event) => onChange({ ...experience, description: event.target.value })} rows={2} className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-terracotta-500" placeholder="Um resumo opcional da sua trajetória nessa empresa." /></div>}
       <div className="space-y-4">
         {stages.map((stage, index) => (
           <div key={stage.id || index} className="relative rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-terracotta-100 text-xs font-black text-terracotta-700">{index + 1}</span>
-                <span className="text-xs font-bold uppercase tracking-wider text-stone-500">{index === stages.length - 1 ? "Cargo mais recente" : "Etapa da trajetória"}</span>
-              </div>
-              {stages.length > 1 && (
-                <button onClick={() => onChange(syncExperience({ ...experience, timeline: stages.filter((_, stageIndex) => stageIndex !== index) }))} className="text-stone-400 hover:text-red-500">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FormField label="Cargo / função *" value={stage.role} onChange={(role) => updateStage(index, { role })} placeholder="Ex.: Líder de Atendimento" />
-              <FormField label="Início" value={monthYearToInput(stage.startDate)} onChange={(value) => updateStage(index, { startDate: monthInputToMonthYear(value) })} type="month" />
-              <div>
-                <FormField label="Término" value={stage.current ? "" : monthYearToInput(stage.endDate)} onChange={(value) => updateStage(index, { endDate: monthInputToMonthYear(value) })} type="month" disabled={stage.current} />
-                <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-xs text-stone-600">
-                  <input type="checkbox" checked={stage.current} onChange={(event) => updateStage(index, { current: event.target.checked, endDate: event.target.checked ? "Atual" : "" })} className="rounded" /> Cargo atual
-                </label>
-              </div>
-            </div>
-            <div className="mt-3">
-              <label className="mb-1 block text-sm font-semibold text-stone-700">Descrição desta etapa</label>
-              <textarea value={stage.description || ""} onChange={(event) => updateStage(index, { description: event.target.value })} rows={3} className="w-full rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-terracotta-500" placeholder="Atividades, responsabilidades, resultados e conquistas deste cargo." />
-            </div>
-            {stage.skills && stage.skills.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {stage.skills.map((skill) => <span key={skill} className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-stone-600 border border-stone-200">{skill}</span>)}
-              </div>
-            )}
+            <div className="mb-3 flex items-center justify-between"><div className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-terracotta-100 text-xs font-black text-terracotta-700">{index + 1}</span><span className="text-xs font-bold uppercase tracking-wider text-stone-500">Etapa da trajetória</span></div>{stages.length > 1 && <button onClick={() => onChange(syncExperience({ ...experience, timeline: stages.filter((_, stageIndex) => stageIndex !== index) }))} className="text-stone-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>}</div>
+            <div className="grid gap-3 sm:grid-cols-2"><FormField label="Cargo / função *" value={stage.role} onChange={(role) => updateStage(index, { role })} placeholder="Ex.: Líder de Atendimento" /><FormField label="Início" value={monthYearToInput(stage.startDate)} onChange={(value) => updateStage(index, { startDate: monthInputToMonthYear(value) })} type="month" /><div><FormField label="Término" value={stage.current ? "" : monthYearToInput(stage.endDate)} onChange={(value) => updateStage(index, { endDate: monthInputToMonthYear(value) })} type="month" disabled={stage.current} /><label className="mt-1.5 flex cursor-pointer items-center gap-2 text-xs text-stone-600"><input type="checkbox" checked={stage.current} onChange={(event) => updateStage(index, { current: event.target.checked, endDate: event.target.checked ? "Atual" : "" })} className="rounded" /> Cargo atual</label></div></div>
+            <div className="mt-3"><label className="mb-1 block text-sm font-semibold text-stone-700">Descrição desta etapa</label><textarea value={stage.description || ""} onChange={(event) => updateStage(index, { description: event.target.value })} rows={3} className="w-full rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-terracotta-500" placeholder="Atividades, responsabilidades, resultados e conquistas deste cargo." /></div>
+            {stage.skills && stage.skills.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{stage.skills.map((skill) => <span key={skill} className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-stone-600 border border-stone-200">{skill}</span>)}</div>}
           </div>
         ))}
       </div>
-
-      <button
-        onClick={() => onChange(syncExperience({
-          ...experience,
-          timeline: [
-            ...stages.map((stage) => ({ ...stage, current: false, endDate: stage.current ? "" : stage.endDate })),
-            { id: makeId("stage"), role: "", startDate: "", endDate: "", current: false, description: "", skills: [] },
-          ],
-        }))}
-        className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-emerald-200 bg-emerald-50/60 py-3 text-sm font-bold text-emerald-700 hover:bg-emerald-50"
-      >
-        <Plus className="h-4 w-4" /> Adicionar evolução / novo cargo nesta empresa
-      </button>
+      <button onClick={() => onChange(syncExperience({ ...experience, timeline: [...stages.map((stage) => ({ ...stage, current: false, endDate: stage.current ? "" : stage.endDate })), { id: makeId("stage"), role: "", startDate: "", endDate: "", current: false, description: "", skills: [] }] }))} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-emerald-200 bg-emerald-50/60 py-3 text-sm font-bold text-emerald-700 hover:bg-emerald-50"><Plus className="h-4 w-4" /> Adicionar evolução / novo cargo nesta empresa</button>
     </div>
   );
 }
@@ -1292,207 +1449,47 @@ function ExperienceForm({ onAdd }: { onAdd: (experience: ProfessionalExperience)
   const [current, setCurrent] = useState(false);
   const [description, setDescription] = useState("");
   const [companyOptions, setCompanyOptions] = useState<{ value: string; label: string }[]>([]);
-
-  const handleCompanySearch = async (term: string) => {
-    if (term.length < 2) return setCompanyOptions([]);
-    try {
-      const response = await api.get(`/companies/search?q=${encodeURIComponent(term)}`);
-      setCompanyOptions((response.data || []).map((companyItem: { name: string }) => ({ value: companyItem.name, label: companyItem.name })));
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  if (!open) {
-    return <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Adicionar experiência</button>;
-  }
-
+  const handleCompanySearch = async (term: string) => { if (term.length < 2) return setCompanyOptions([]); try { const response = await api.get(`/companies/search?q=${encodeURIComponent(term)}`); setCompanyOptions((response.data || []).map((companyItem: { name: string }) => ({ value: companyItem.name, label: companyItem.name }))); } catch (error) { console.error(error); } };
+  if (!open) return <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Adicionar experiência</button>;
   const handleAdd = () => {
     if (!role.trim() || !company.trim()) return;
-    if (start && end && !current && end < start) {
-      alert("O término da experiência não pode ser anterior ao início.");
-      return;
-    }
-    const stage: ExperienceTimelineEntry = {
-      id: makeId("stage"),
-      role: role.trim(),
-      startDate: monthInputToMonthYear(start),
-      endDate: current ? "Atual" : monthInputToMonthYear(end),
-      current,
-      description,
-      skills: [],
-    };
-    onAdd({
-      id: makeId("exp"),
-      company: company.trim(),
-      role: stage.role,
-      startDate: stage.startDate,
-      endDate: stage.endDate,
-      current,
-      description,
-      skills: [],
-      timeline: [stage],
-    });
-    setRole("");
-    setCompany("");
-    setStart("");
-    setEnd("");
-    setCurrent(false);
-    setDescription("");
-    setOpen(false);
+    if (start && end && !current && end < start) { alert("O término da experiência não pode ser anterior ao início."); return; }
+    const stage: ExperienceTimelineEntry = { id: makeId("stage"), role: role.trim(), startDate: monthInputToMonthYear(start), endDate: current ? "Atual" : monthInputToMonthYear(end), current, description, skills: [] };
+    onAdd({ id: makeId("exp"), company: company.trim(), role: stage.role, startDate: stage.startDate, endDate: stage.endDate, current, description, skills: [], timeline: [stage] });
+    setRole(""); setCompany(""); setStart(""); setEnd(""); setCurrent(false); setDescription(""); setOpen(false);
   };
-
-  return (
-    <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <FormField label="Cargo *" value={role} onChange={setRole} placeholder="Vendedor" />
-        <div className="z-20">
-          <label className="block text-sm font-semibold text-stone-700 mb-1">Empresa *</label>
-          <SearchSelect value={company} onChange={setCompany} placeholder="Loja ABC" options={companyOptions} onSearch={handleCompanySearch} allowCustom customLabel="Adicionar empresa:" className="w-full" />
-        </div>
-        <FormField label="Início" value={start} onChange={setStart} type="month" />
-        <div>
-          <FormField label="Término" value={end} onChange={setEnd} type="month" disabled={current} />
-          <label className="flex items-center gap-2 mt-1.5 cursor-pointer"><input type="checkbox" checked={current} onChange={(event) => { setCurrent(event.target.checked); if (event.target.checked) setEnd(""); }} className="rounded" /><span className="text-xs text-stone-600">Cargo atual</span></label>
-        </div>
-      </div>
-      <div>
-        <label className="block text-sm font-semibold text-stone-700 mb-1">Descrição desta etapa</label>
-        <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder="Atividades, responsabilidades, resultados e conquistas..." className="w-full px-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 resize-none" />
-      </div>
-      <div className="flex gap-2 justify-end"><button onClick={() => setOpen(false)} className="text-sm text-stone-500 px-4 py-2">Cancelar</button><button onClick={handleAdd} className="bg-terracotta-600 text-white text-sm font-bold px-5 py-2 rounded-xl">Adicionar</button></div>
-    </div>
-  );
+  return <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3"><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><FormField label="Cargo *" value={role} onChange={setRole} placeholder="Vendedor" /><div className="z-20"><label className="block text-sm font-semibold text-stone-700 mb-1">Empresa *</label><SearchSelect value={company} onChange={setCompany} placeholder="Loja ABC" options={companyOptions} onSearch={handleCompanySearch} allowCustom customLabel="Adicionar empresa:" className="w-full" /></div><FormField label="Início" value={start} onChange={setStart} type="month" /><div><FormField label="Término" value={end} onChange={setEnd} type="month" disabled={current} /><label className="flex items-center gap-2 mt-1.5 cursor-pointer"><input type="checkbox" checked={current} onChange={(event) => { setCurrent(event.target.checked); if (event.target.checked) setEnd(""); }} className="rounded" /><span className="text-xs text-stone-600">Cargo atual</span></label></div></div><div><label className="block text-sm font-semibold text-stone-700 mb-1">Descrição desta etapa</label><textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder="Atividades, responsabilidades, resultados e conquistas..." className="w-full px-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 resize-none" /></div><div className="flex gap-2 justify-end"><button onClick={() => setOpen(false)} className="text-sm text-stone-500 px-4 py-2">Cancelar</button><button onClick={handleAdd} className="bg-terracotta-600 text-white text-sm font-bold px-5 py-2 rounded-xl">Adicionar</button></div></div>;
 }
 
 function EducationEditor({ value, onChange, onDelete }: { value: AcademicEducation; onChange: (value: AcademicEducation) => void; onDelete: () => void }) {
   const [editing, setEditing] = useState(false);
-  if (!editing) {
-    return (
-      <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 flex items-start justify-between gap-4">
-        <div><div className="font-bold text-stone-900">{value.degree}{value.fieldOfStudy ? ` em ${value.fieldOfStudy}` : ""}</div><div className="text-sm text-stone-600">{value.institution}</div><div className="text-xs text-stone-500 mt-1">{value.startYear} – {value.current ? "Atual" : value.endYear}</div></div>
-        <div className="flex gap-1"><button onClick={() => setEditing(true)} className="p-2 text-stone-400 hover:text-terracotta-600"><Edit3 className="h-4 w-4" /></button><button onClick={onDelete} className="p-2 text-stone-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></div>
-      </div>
-    );
-  }
-  return (
-    <div className="rounded-2xl border border-terracotta-200 bg-white p-4 space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <FormField label="Instituição" value={value.institution} onChange={(institution) => onChange({ ...value, institution })} />
-        <FormField label="Grau" value={value.degree} onChange={(degree) => onChange({ ...value, degree })} />
-        <FormField label="Área de estudo" value={value.fieldOfStudy} onChange={(fieldOfStudy) => onChange({ ...value, fieldOfStudy })} />
-        <FormField label="Ano de início" value={value.startYear} onChange={(startYear) => onChange({ ...value, startYear })} />
-        <FormField label="Ano de término" value={value.current ? "" : value.endYear} onChange={(endYear) => onChange({ ...value, endYear })} disabled={value.current} />
-      </div>
-      <label className="flex items-center gap-2 text-xs text-stone-600"><input type="checkbox" checked={value.current} onChange={(event) => onChange({ ...value, current: event.target.checked, endYear: event.target.checked ? "Atual" : "" })} /> Cursando atualmente</label>
-      <textarea value={value.description || ""} onChange={(event) => onChange({ ...value, description: event.target.value })} rows={2} placeholder="Descrição opcional, projetos, ênfases ou conquistas." className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-terracotta-500" />
-      {value.skills && value.skills.length > 0 && <div className="flex flex-wrap gap-1.5">{value.skills.map((skill) => <span key={skill} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-600">{skill}</span>)}</div>}
-      <div className="flex justify-end"><button onClick={() => setEditing(false)} className="rounded-xl bg-stone-900 px-4 py-2 text-xs font-bold text-white">Concluir</button></div>
-    </div>
-  );
+  if (!editing) return <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 flex items-start justify-between gap-4"><div><div className="font-bold text-stone-900">{value.degree}{value.fieldOfStudy ? ` em ${value.fieldOfStudy}` : ""}</div><div className="text-sm text-stone-600">{value.institution}</div><div className="text-xs text-stone-500 mt-1">{value.startYear} – {value.current ? "Atual" : value.endYear}</div></div><div className="flex gap-1"><button onClick={() => setEditing(true)} className="p-2 text-stone-400 hover:text-terracotta-600"><Edit3 className="h-4 w-4" /></button><button onClick={onDelete} className="p-2 text-stone-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></div></div>;
+  return <div className="rounded-2xl border border-terracotta-200 bg-white p-4 space-y-3"><div className="grid gap-3 sm:grid-cols-2"><FormField label="Instituição" value={value.institution} onChange={(institution) => onChange({ ...value, institution })} /><FormField label="Grau" value={value.degree} onChange={(degree) => onChange({ ...value, degree })} /><FormField label="Área de estudo" value={value.fieldOfStudy} onChange={(fieldOfStudy) => onChange({ ...value, fieldOfStudy })} /><FormField label="Ano de início" value={value.startYear} onChange={(startYear) => onChange({ ...value, startYear })} /><FormField label="Ano de término" value={value.current ? "" : value.endYear} onChange={(endYear) => onChange({ ...value, endYear })} disabled={value.current} /></div><label className="flex items-center gap-2 text-xs text-stone-600"><input type="checkbox" checked={value.current} onChange={(event) => onChange({ ...value, current: event.target.checked, endYear: event.target.checked ? "Atual" : "" })} /> Cursando atualmente</label><textarea value={value.description || ""} onChange={(event) => onChange({ ...value, description: event.target.value })} rows={2} placeholder="Descrição opcional, projetos, ênfases ou conquistas." className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-terracotta-500" />{value.skills && value.skills.length > 0 && <div className="flex flex-wrap gap-1.5">{value.skills.map((skill) => <span key={skill} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-600">{skill}</span>)}</div>}<div className="flex justify-end"><button onClick={() => setEditing(false)} className="rounded-xl bg-stone-900 px-4 py-2 text-xs font-bold text-white">Concluir</button></div></div>;
 }
 
 function EducationForm({ onAdd }: { onAdd: (education: AcademicEducation) => void }) {
-  const [open, setOpen] = useState(false);
-  const [institution, setInstitution] = useState("");
-  const [degree, setDegree] = useState("");
-  const [field, setField] = useState("");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [current, setCurrent] = useState(false);
-  const [institutionOptions, setInstitutionOptions] = useState<{ value: string; label: string }[]>([]);
-
-  const searchInstitution = async (term: string) => {
-    if (term.length < 2) return setInstitutionOptions([]);
-    try {
-      const response = await api.get(`/users/institutions/search?q=${encodeURIComponent(term)}`);
-      setInstitutionOptions((response.data || []).map((item: { name: string }) => ({ value: item.name, label: item.name })));
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
+  const [open, setOpen] = useState(false); const [institution, setInstitution] = useState(""); const [degree, setDegree] = useState(""); const [field, setField] = useState(""); const [start, setStart] = useState(""); const [end, setEnd] = useState(""); const [current, setCurrent] = useState(false); const [institutionOptions, setInstitutionOptions] = useState<{ value: string; label: string }[]>([]);
+  const searchInstitution = async (term: string) => { if (term.length < 2) return setInstitutionOptions([]); try { const response = await api.get(`/users/institutions/search?q=${encodeURIComponent(term)}`); setInstitutionOptions((response.data || []).map((item: { name: string }) => ({ value: item.name, label: item.name }))); } catch (error) { console.error(error); } };
   if (!open) return <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Adicionar formação</button>;
-
-  const handleAdd = async () => {
-    if (!institution.trim() || !degree.trim()) return;
-    try { await api.post("/users/institutions", { name: institution }); } catch { /* catálogo é auxiliar */ }
-    onAdd({ id: makeId("edu"), institution, degree, fieldOfStudy: field, startYear: start, endYear: current ? "Atual" : end, current, skills: [] });
-    setInstitution(""); setDegree(""); setField(""); setStart(""); setEnd(""); setCurrent(false); setOpen(false);
-  };
-
-  return (
-    <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div><label className="block text-sm font-semibold text-stone-700 mb-1">Instituição *</label><SearchSelect value={institution} onChange={setInstitution} placeholder="Universidade X" options={institutionOptions} onSearch={searchInstitution} allowCustom customLabel="Adicionar nova instituição:" className="w-full" /></div>
-        <FormField label="Grau *" value={degree} onChange={setDegree} placeholder="Graduação / Técnico / Ensino Médio" />
-        <FormField label="Área de estudo" value={field} onChange={setField} placeholder="Administração" />
-        <FormField label="Ano de início" value={start} onChange={setStart} placeholder="2018" />
-        <FormField label="Ano de término" value={end} onChange={setEnd} placeholder="2022" disabled={current} />
-      </div>
-      <label className="flex items-center gap-2 text-xs text-stone-600"><input type="checkbox" checked={current} onChange={(event) => setCurrent(event.target.checked)} /> Cursando atualmente</label>
-      <div className="flex justify-end gap-2"><button onClick={() => setOpen(false)} className="px-4 py-2 text-sm text-stone-500">Cancelar</button><button onClick={handleAdd} className="rounded-xl bg-terracotta-600 px-5 py-2 text-sm font-bold text-white">Adicionar</button></div>
-    </div>
-  );
+  const handleAdd = async () => { if (!institution.trim() || !degree.trim()) return; try { await api.post("/users/institutions", { name: institution }); } catch { /* catálogo auxiliar */ } onAdd({ id: makeId("edu"), institution, degree, fieldOfStudy: field, startYear: start, endYear: current ? "Atual" : end, current, skills: [] }); setInstitution(""); setDegree(""); setField(""); setStart(""); setEnd(""); setCurrent(false); setOpen(false); };
+  return <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3"><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><div><label className="block text-sm font-semibold text-stone-700 mb-1">Instituição *</label><SearchSelect value={institution} onChange={setInstitution} placeholder="Universidade X" options={institutionOptions} onSearch={searchInstitution} allowCustom customLabel="Adicionar nova instituição:" className="w-full" /></div><FormField label="Grau *" value={degree} onChange={setDegree} placeholder="Graduação / Técnico / Ensino Médio" /><FormField label="Área de estudo" value={field} onChange={setField} placeholder="Administração" /><FormField label="Ano de início" value={start} onChange={setStart} placeholder="2018" /><FormField label="Ano de término" value={end} onChange={setEnd} placeholder="2022" disabled={current} /></div><label className="flex items-center gap-2 text-xs text-stone-600"><input type="checkbox" checked={current} onChange={(event) => setCurrent(event.target.checked)} /> Cursando atualmente</label><div className="flex justify-end gap-2"><button onClick={() => setOpen(false)} className="px-4 py-2 text-sm text-stone-500">Cancelar</button><button onClick={handleAdd} className="rounded-xl bg-terracotta-600 px-5 py-2 text-sm font-bold text-white">Adicionar</button></div></div>;
 }
 
 function CourseEditor({ value, onChange, onDelete }: { value: ExtraCourse; onChange: (value: ExtraCourse) => void; onDelete: () => void }) {
   const [editing, setEditing] = useState(false);
-  if (!editing) {
-    return (
-      <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 flex items-start justify-between gap-4">
-        <div><div className="text-[10px] font-bold uppercase tracking-wider text-stone-400">{value.type === "CERTIFICATION" ? "Certificação" : "Curso"}</div><div className="font-bold text-stone-900">{value.name}</div><div className="text-sm text-stone-600">{value.institution}{value.year ? ` · ${value.year}` : ""}</div></div>
-        <div className="flex gap-1"><button onClick={() => setEditing(true)} className="p-2 text-stone-400 hover:text-terracotta-600"><Edit3 className="h-4 w-4" /></button><button onClick={onDelete} className="p-2 text-stone-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></div>
-      </div>
-    );
-  }
-  return (
-    <div className="rounded-2xl border border-terracotta-200 bg-white p-4 space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <FormField label="Nome" value={value.name} onChange={(name) => onChange({ ...value, name })} />
-        <FormField label="Instituição" value={value.institution} onChange={(institution) => onChange({ ...value, institution })} />
-        <FormField label="Ano" value={value.year} onChange={(year) => onChange({ ...value, year })} />
-        <div><label className="block text-sm font-semibold text-stone-700 mb-1">Tipo</label><select value={value.type || "COURSE"} onChange={(event) => onChange({ ...value, type: event.target.value as "COURSE" | "CERTIFICATION" })} className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm"><option value="COURSE">Curso</option><option value="CERTIFICATION">Certificação</option></select></div>
-      </div>
-      <textarea value={value.description || ""} onChange={(event) => onChange({ ...value, description: event.target.value })} rows={2} placeholder="Descrição opcional." className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-terracotta-500" />
-      {value.skills && value.skills.length > 0 && <div className="flex flex-wrap gap-1.5">{value.skills.map((skill) => <span key={skill} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-600">{skill}</span>)}</div>}
-      <div className="flex justify-end"><button onClick={() => setEditing(false)} className="rounded-xl bg-stone-900 px-4 py-2 text-xs font-bold text-white">Concluir</button></div>
-    </div>
-  );
+  if (!editing) return <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 flex items-start justify-between gap-4"><div><div className="text-[10px] font-bold uppercase tracking-wider text-stone-400">{value.type === "CERTIFICATION" ? "Certificação" : "Curso"}</div><div className="font-bold text-stone-900">{value.name}</div><div className="text-sm text-stone-600">{value.institution}{value.year ? ` · ${value.year}` : ""}</div></div><div className="flex gap-1"><button onClick={() => setEditing(true)} className="p-2 text-stone-400 hover:text-terracotta-600"><Edit3 className="h-4 w-4" /></button><button onClick={onDelete} className="p-2 text-stone-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></div></div>;
+  return <div className="rounded-2xl border border-terracotta-200 bg-white p-4 space-y-3"><div className="grid gap-3 sm:grid-cols-2"><FormField label="Nome" value={value.name} onChange={(name) => onChange({ ...value, name })} /><FormField label="Instituição" value={value.institution} onChange={(institution) => onChange({ ...value, institution })} /><FormField label="Ano" value={value.year} onChange={(year) => onChange({ ...value, year })} /><div><label className="block text-sm font-semibold text-stone-700 mb-1">Tipo</label><select value={value.type || "COURSE"} onChange={(event) => onChange({ ...value, type: event.target.value as "COURSE" | "CERTIFICATION" })} className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm"><option value="COURSE">Curso</option><option value="CERTIFICATION">Certificação</option></select></div></div><textarea value={value.description || ""} onChange={(event) => onChange({ ...value, description: event.target.value })} rows={2} placeholder="Descrição opcional." className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-terracotta-500" />{value.skills && value.skills.length > 0 && <div className="flex flex-wrap gap-1.5">{value.skills.map((skill) => <span key={skill} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-600">{skill}</span>)}</div>}<div className="flex justify-end"><button onClick={() => setEditing(false)} className="rounded-xl bg-stone-900 px-4 py-2 text-xs font-bold text-white">Concluir</button></div></div>;
 }
 
 function CourseForm({ onAdd }: { onAdd: (course: ExtraCourse) => void }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [institution, setInstitution] = useState("");
-  const [year, setYear] = useState("");
-  const [type, setType] = useState<"COURSE" | "CERTIFICATION">("COURSE");
-
+  const [open, setOpen] = useState(false); const [name, setName] = useState(""); const [institution, setInstitution] = useState(""); const [year, setYear] = useState(""); const [type, setType] = useState<"COURSE" | "CERTIFICATION">("COURSE");
   if (!open) return <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Adicionar curso ou certificação</button>;
-
-  const handleAdd = () => {
-    if (!name.trim()) return;
-    onAdd({ id: makeId("course"), name, institution, year, type, skills: [] });
-    setName(""); setInstitution(""); setYear(""); setType("COURSE"); setOpen(false);
-  };
-
-  return (
-    <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <FormField label="Nome *" value={name} onChange={setName} placeholder="Excel Avançado" />
-        <FormField label="Instituição" value={institution} onChange={setInstitution} placeholder="Senai" />
-        <FormField label="Ano" value={year} onChange={setYear} placeholder="2025" />
-        <div><label className="block text-sm font-semibold text-stone-700 mb-1">Tipo</label><select value={type} onChange={(event) => setType(event.target.value as "COURSE" | "CERTIFICATION")} className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm"><option value="COURSE">Curso</option><option value="CERTIFICATION">Certificação</option></select></div>
-      </div>
-      <div className="flex justify-end gap-2"><button onClick={() => setOpen(false)} className="px-4 py-2 text-sm text-stone-500">Cancelar</button><button onClick={handleAdd} className="rounded-xl bg-terracotta-600 px-5 py-2 text-sm font-bold text-white">Adicionar</button></div>
-    </div>
-  );
+  const handleAdd = () => { if (!name.trim()) return; onAdd({ id: makeId("course"), name, institution, year, type, skills: [] }); setName(""); setInstitution(""); setYear(""); setType("COURSE"); setOpen(false); };
+  return <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3"><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><FormField label="Nome *" value={name} onChange={setName} placeholder="Excel Avançado" /><FormField label="Instituição" value={institution} onChange={setInstitution} placeholder="Senai" /><FormField label="Ano" value={year} onChange={setYear} placeholder="2025" /><div><label className="block text-sm font-semibold text-stone-700 mb-1">Tipo</label><select value={type} onChange={(event) => setType(event.target.value as "COURSE" | "CERTIFICATION")} className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm"><option value="COURSE">Curso</option><option value="CERTIFICATION">Certificação</option></select></div></div><div className="flex justify-end gap-2"><button onClick={() => setOpen(false)} className="px-4 py-2 text-sm text-stone-500">Cancelar</button><button onClick={handleAdd} className="rounded-xl bg-terracotta-600 px-5 py-2 text-sm font-bold text-white">Adicionar</button></div></div>;
 }
 
 function LanguageForm({ onAdd }: { onAdd: (language: Language) => void }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [level, setLevel] = useState("Básico");
+  const [open, setOpen] = useState(false); const [name, setName] = useState(""); const [level, setLevel] = useState("Básico");
   if (!open) return <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Adicionar idioma</button>;
   const handleAdd = () => { if (!name.trim()) return; onAdd({ name, level }); setName(""); setLevel("Básico"); setOpen(false); };
   return <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3"><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><FormField label="Idioma *" value={name} onChange={setName} placeholder="Inglês" /><div><label className="block text-sm font-semibold text-stone-700 mb-1">Nível</label><select value={level} onChange={(event) => setLevel(event.target.value)} className="w-full px-4 py-2.5 border border-stone-200 rounded-xl text-sm">{LANGUAGE_LEVELS.map((item) => <option key={item} value={item}>{item}</option>)}</select></div></div><div className="flex justify-end gap-2"><button onClick={() => setOpen(false)} className="px-4 py-2 text-sm text-stone-500">Cancelar</button><button onClick={handleAdd} className="rounded-xl bg-terracotta-600 px-5 py-2 text-sm font-bold text-white">Adicionar</button></div></div>;
