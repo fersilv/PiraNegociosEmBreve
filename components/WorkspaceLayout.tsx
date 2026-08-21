@@ -337,7 +337,7 @@ function WorkspaceNavLink({
   end = false,
   company,
   onClick,
-}: NavItem & { company: boolean; onClick?: () => void }) {
+}: NavItem & { company: boolean; onClick?: () => void; key?: React.Key }) {
   return (
     <NavLink
       to={to}
@@ -361,7 +361,7 @@ function WorkspaceNavLink({
   );
 }
 
-function MobileNavLink({ to, label, icon, end = false }: NavItem) {
+function MobileNavLink({ to, label, icon, end = false }: NavItem & { key?: React.Key }) {
   return (
     <NavLink
       to={to}
