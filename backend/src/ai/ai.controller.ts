@@ -50,9 +50,17 @@ export class AiController {
 
   @Post('analyze-resume-documents')
   async analyzeResumeDocuments(
+    @Req() req: any,
     @Body() body: { documents?: ResumeSourceDocumentInput[] },
   ) {
-    return this.resumeImportService.importDocuments(body.documents || []);
+    const result = await this.resumeImportService.importDocuments(
+      body.documents || [],
+    );
+    await this.usersRepository.update(
+      { id: req.user.uid },
+      { aiAnalysis: null, hasAiAnalyzed: false },
+    );
+    return result;
   }
 
   @Post('review-resume')
@@ -62,14 +70,28 @@ export class AiController {
     }
     const user = await this.usersRepository.findOne({
       where: { id: req.user.uid },
-      select: { id: true, resumeScoreUnlocked: true },
+      select: {
+        id: true,
+        resumeScoreUnlocked: true,
+        aiAnalysisCount: true,
+      },
     });
     if (!user?.resumeScoreUnlocked) {
       throw new ForbiddenException(
         'A pontuação detalhada do currículo é um recurso premium e ainda não está desbloqueada para esta conta.',
       );
     }
-    return this.resumeReviewService.review(body.profile);
+
+    const analysis = await this.resumeReviewService.review(body.profile);
+    await this.usersRepository.update(
+      { id: req.user.uid },
+      {
+        aiAnalysis: analysis as unknown as Record<string, unknown>,
+        hasAiAnalyzed: true,
+        aiAnalysisCount: Number(user.aiAnalysisCount || 0) + 1,
+      },
+    );
+    return analysis;
   }
 
   @Post('suggest-job-skills')
