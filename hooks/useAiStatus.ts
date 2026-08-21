@@ -6,6 +6,10 @@ export interface AiStatus {
   provider: "GEMINI" | "OPENAI" | "ANTHROPIC" | null;
   model: string | null;
   resumeScorePaymentRequired: boolean;
+  resumeReanalysisPaymentRequired: boolean;
+  freeResumeAnalysisAvailable: boolean;
+  hasSavedResumeAnalysis: boolean;
+  resumeAnalysisCount: number;
   loading: boolean;
 }
 
@@ -15,6 +19,10 @@ export function useAiStatus(): AiStatus {
     provider: null,
     model: null,
     resumeScorePaymentRequired: false,
+    resumeReanalysisPaymentRequired: false,
+    freeResumeAnalysisAvailable: true,
+    hasSavedResumeAnalysis: false,
+    resumeAnalysisCount: 0,
     loading: true,
   });
 
@@ -31,6 +39,15 @@ export function useAiStatus(): AiStatus {
           resumeScorePaymentRequired: Boolean(
             response.data?.resumeScorePaymentRequired,
           ),
+          resumeReanalysisPaymentRequired: Boolean(
+            response.data?.resumeReanalysisPaymentRequired,
+          ),
+          freeResumeAnalysisAvailable:
+            response.data?.freeResumeAnalysisAvailable !== false,
+          hasSavedResumeAnalysis: Boolean(
+            response.data?.hasSavedResumeAnalysis,
+          ),
+          resumeAnalysisCount: Number(response.data?.resumeAnalysisCount || 0),
           loading: false,
         });
       })
@@ -41,6 +58,10 @@ export function useAiStatus(): AiStatus {
           provider: null,
           model: null,
           resumeScorePaymentRequired: false,
+          resumeReanalysisPaymentRequired: false,
+          freeResumeAnalysisAvailable: true,
+          hasSavedResumeAnalysis: false,
+          resumeAnalysisCount: 0,
           loading: false,
         });
       });
