@@ -113,7 +113,6 @@ function ResumeStudioTheme() {
         font-weight: 700;
       }
 
-      /* Remove apenas o header legado do builder. */
       .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col > header {
         display: none !important;
       }
@@ -125,7 +124,6 @@ function ResumeStudioTheme() {
         background: transparent !important;
       }
 
-      /* Etapas: sticky, mas a rolagem continua sendo a da página. */
       .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col > div.bg-white.border-b {
         position: sticky;
         top: 76px;
@@ -187,7 +185,6 @@ function ResumeStudioTheme() {
         background: #2b211c !important;
       }
 
-      /* Primeira utilização. */
       .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col.items-center.justify-center {
         min-height: calc(100vh - 76px) !important;
         padding: 36px 20px 56px !important;
@@ -202,7 +199,7 @@ function ResumeStudioTheme() {
         box-shadow: 0 24px 70px rgba(60,39,26,.09);
       }
 
-      /* Preview: duas colunas, zero scroll interno. */
+      /* Preview: duas colunas e somente o scroll da página. */
       .resume-studio-body #resume-builder-root {
         display: grid !important;
         grid-template-columns: 330px minmax(0, 1fr);
@@ -213,8 +210,8 @@ function ResumeStudioTheme() {
       }
 
       .resume-studio-body #resume-builder-sidebar {
-        position: sticky !important;
-        top: 92px !important;
+        position: relative !important;
+        top: auto !important;
         align-self: start !important;
         width: 330px !important;
         height: auto !important;
@@ -275,8 +272,6 @@ function ResumeStudioTheme() {
         }
 
         .resume-studio-body #resume-builder-sidebar {
-          position: relative !important;
-          top: auto !important;
           width: 100% !important;
           border-radius: 0 !important;
           border-left: 0 !important;
