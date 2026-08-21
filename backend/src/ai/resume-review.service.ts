@@ -91,11 +91,15 @@ export class ResumeReviewService {
     };
   }
 
+  private serialize(value: unknown, limit: number): string {
+    return String(JSON.stringify(value ?? {}) || '{}').slice(0, limit);
+  }
+
   private async buildSystemInstruction(profile: unknown) {
     const [behavior, memory] = await Promise.all([
       this.settingsService.getAiBehavior(),
       this.settingsService.findRelevantAiBrain(
-        `currículo análise profissional extração qualidade clareza experiência formação habilidades ${JSON.stringify(profile).slice(0, 3500)}`,
+        `currículo análise profissional extração qualidade clareza experiência formação habilidades ${this.serialize(profile, 3500)}`,
         5,
         3500,
       ),
@@ -178,7 +182,7 @@ export class ResumeReviewService {
   async review(profile: unknown): Promise<ResumeReviewResult> {
     const config = await this.getRuntimeConfig();
     const systemInstruction = await this.buildSystemInstruction(profile);
-    const prompt = `Avalie o currículo estruturado abaixo.\n\nCURRÍCULO: ${JSON.stringify(profile || {}).slice(0, 30000)}\n\nCritérios da nota (0 a 100): completude das seções relevantes, clareza das descrições, coerência de datas e progressão, evidências de atividades/conquistas, organização das habilidades e qualidade do resumo. Não penalize a pessoa por ser iniciante ou ter pouca experiência; avalie se o documento representa bem o que ela realmente possui.\n\nRetorne EXCLUSIVAMENTE:\n{"score":0,"strengths":[""],"suggestions":[""],"feedbackText":"","missingSections":[""]}`;
+    const prompt = `Avalie o currículo estruturado abaixo.\n\nCURRÍCULO: ${this.serialize(profile, 30000)}\n\nCritérios da nota (0 a 100): completude das seções relevantes, clareza das descrições, coerência de datas e progressão, evidências de atividades/conquistas, organização das habilidades e qualidade do resumo. Não penalize a pessoa por ser iniciante ou ter pouca experiência; avalie se o documento representa bem o que ela realmente possui.\n\nRetorne EXCLUSIVAMENTE:\n{"score":0,"strengths":[""],"suggestions":[""],"feedbackText":"","missingSections":[""]}`;
 
     try {
       return this.normalize(await this.generate(config, prompt, systemInstruction));
