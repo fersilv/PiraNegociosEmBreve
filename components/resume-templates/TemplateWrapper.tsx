@@ -20,14 +20,34 @@ export function getResumeDisplayName(profile: UserProfile): string {
   return socialName || civilName || "Seu Nome";
 }
 
+function monthYearValue(value: string | undefined): number {
+  const raw = String(value || "").trim();
+  if (/^(atual|presente)$/i.test(raw)) return Number.MAX_SAFE_INTEGER;
+  const monthYear = raw.match(/^(\d{1,2})\/(\d{4})$/);
+  if (monthYear) return Number(monthYear[2]) * 12 + Number(monthYear[1]);
+  const year = raw.match(/^(\d{4})$/);
+  return year ? Number(year[1]) * 12 : 0;
+}
+
 export function getResumeHeadline(profile: UserProfile): string {
   if (profile.resumePreferences?.showHeadline === false) return "";
   const custom = profile.resumePreferences?.headline?.trim();
   if (custom) return custom;
-  const firstExperience = profile.experiences?.[0];
-  const timeline = firstExperience?.timeline || [];
-  const latestStage = timeline.length > 0 ? timeline[timeline.length - 1] : undefined;
-  return latestStage?.role || firstExperience?.role || "";
+
+  const stages = (profile.experiences || []).flatMap((experience) =>
+    getExperienceStages(experience).map((stage) => ({
+      ...stage,
+      company: experience.company,
+    })),
+  );
+  const current = stages.find((stage) => stage.current);
+  if (current?.role) return current.role;
+  const latest = [...stages].sort(
+    (a, b) =>
+      Math.max(monthYearValue(b.endDate), monthYearValue(b.startDate)) -
+      Math.max(monthYearValue(a.endDate), monthYearValue(a.startDate)),
+  )[0];
+  return latest?.role || "";
 }
 
 export function getExperienceStages(exp: ProfessionalExperience) {
