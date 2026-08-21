@@ -76,6 +76,13 @@ export class CompanyHiringConfigController {
     if (!company) {
       throw new ForbiddenException('A empresa vinculada à conta não foi encontrada.');
     }
+
+    if (!user.isCompanyAdmin && company.ownerId !== uid) {
+      throw new ForbiddenException(
+        'Somente administradores da empresa podem alterar as configurações de contratação.',
+      );
+    }
+
     return company;
   }
 
