@@ -3,8 +3,8 @@ import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "../lib/firebase";
 import { api } from "../lib/api";
 
-export interface ProfessionalExperience {
-  company: string;
+export interface ExperienceTimelineEntry {
+  id?: string;
   role: string;
   startDate: string;
   endDate: string;
@@ -13,13 +13,30 @@ export interface ProfessionalExperience {
   skills?: string[];
 }
 
+export interface ProfessionalExperience {
+  id?: string;
+  company: string;
+  role: string;
+  startDate: string;
+  endDate: string;
+  current: boolean;
+  description: string;
+  skills?: string[];
+  timeline?: ExperienceTimelineEntry[];
+}
+
 export interface ExtraCourse {
+  id?: string;
   name: string;
   institution: string;
   year: string;
+  type?: "COURSE" | "CERTIFICATION";
+  description?: string;
+  skills?: string[];
 }
 
 export interface AcademicEducation {
+  id?: string;
   institution: string;
   degree: string;
   fieldOfStudy: string;
@@ -27,12 +44,26 @@ export interface AcademicEducation {
   endYear: string;
   current: boolean;
   status?: "CONCLUIDO" | "EM_ANDAMENTO" | "TRANCADO" | "INTERROMPIDO";
+  description?: string;
+  skills?: string[];
 }
 
 export interface ResumeAIAnalysis {
+  score?: number;
+  strengths?: string[];
   suggestions: string[];
   feedbackText: string;
+  missingSections?: string[];
   parsedAt?: string;
+}
+
+export interface ResumePreferences {
+  nameMode?: "SOCIAL" | "CIVIL";
+  showHeadline?: boolean;
+  headline?: string;
+  showPhoto?: boolean;
+  template?: "modern" | "creative" | "classic" | "minimalist";
+  color?: string;
 }
 
 export interface Language {
@@ -76,6 +107,7 @@ export interface UserProfile {
   salaryExpectation?: string;
   address?: string;
   resumePhotoURL?: string;
+  resumePreferences?: ResumePreferences;
 }
 
 export function getFirstName(fullName: string | undefined | null): string {
@@ -117,10 +149,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchProfile = async (currentUser: User) => {
     try {
-      // Pequeno delay para garantir que o token JWT do Firebase foi injetado pelo interceptor do Axios
       const response = await api.get("/users/me");
       const data = response.data as UserProfile;
-
       setProfile(data);
     } catch (error) {
       console.error("Erro ao buscar perfil da API:", error);
