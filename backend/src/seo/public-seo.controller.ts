@@ -3,6 +3,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  Post,
   Query,
   Res,
 } from '@nestjs/common';
@@ -83,27 +84,23 @@ export class PublicSeoController {
 
   @Get('public/jobs/:slug')
   async job(@Param('slug') slug: string) {
-    const job = await this.jobs
-      .createQueryBuilder('job')
-      .where('job.slug = :slug', { slug })
-      .andWhere('job.active = true')
-      .andWhere('job.isConfidential = false')
-      .andWhere(
-        '(job.deadlineDate IS NULL OR job.deadlineDate >= CURRENT_DATE)',
-      )
-      .getOne();
-    if (!job) throw new NotFoundException('Vaga pública não encontrada.');
-    const company = job.companyId
-      ? await this.companies.findOne({
-          where: {
-            id: job.companyId,
-            verificationStatus: CompanyStatus.VERIFIED,
-          },
-        })
-      : null;
-    if (job.companyId && !company)
-      throw new NotFoundException('Vaga pública não encontrada.');
+    const job = await this.findPublicJob('slug', slug);
+    const company = await this.publicJobCompany(job);
     return this.publicJob(job, company);
+  }
+
+  @Post('public/jobs/:id/view')
+  async registerJobView(@Param('id') id: string) {
+    const job = await this.findPublicJob('id', id);
+    await this.publicJobCompany(job);
+
+    await this.jobs.increment({ id: job.id }, 'views', 1);
+    const updated = await this.jobs.findOne({
+      where: { id: job.id },
+      select: { views: true },
+    });
+
+    return { views: Number(updated?.views || job.views + 1) };
   }
 
   @Get('seo/sitemap')
@@ -145,11 +142,41 @@ export class PublicSeoController {
           lastmod: job.updatedAt || new Date(),
         })),
     ];
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((url) => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/sitemap/0.9">\n${urls.map((url) => {
       const d = url.lastmod instanceof Date && !isNaN(url.lastmod.getTime()) ? url.lastmod : new Date();
       return `  <url><loc>${this.escapeXml(url.loc)}</loc><lastmod>${d.toISOString().slice(0, 10)}</lastmod></url>`;
     }).join('\n')}\n</urlset>`;
     response.type('application/xml').send(xml);
+  }
+
+  private async findPublicJob(field: 'id' | 'slug', value: string) {
+    const job = await this.jobs
+      .createQueryBuilder('job')
+      .where(`job.${field} = :value`, { value })
+      .andWhere('job.active = true')
+      .andWhere('job.isConfidential = false')
+      .andWhere(
+        '(job.deadlineDate IS NULL OR job.deadlineDate >= CURRENT_DATE)',
+      )
+      .getOne();
+
+    if (!job) throw new NotFoundException('Vaga pública não encontrada.');
+    return job;
+  }
+
+  private async publicJobCompany(job: Job) {
+    const company = job.companyId
+      ? await this.companies.findOne({
+          where: {
+            id: job.companyId,
+            verificationStatus: CompanyStatus.VERIFIED,
+          },
+        })
+      : null;
+
+    if (job.companyId && !company)
+      throw new NotFoundException('Vaga pública não encontrada.');
+    return company;
   }
 
   private publicCompany(company: Company) {
@@ -191,6 +218,7 @@ export class PublicSeoController {
       deadlineDate: job.deadlineDate,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
+      views: job.views,
       company: company ? this.publicCompany(company) : null,
       isExternalListing: job.isExternalListing,
       sourceName: job.sourceName,
