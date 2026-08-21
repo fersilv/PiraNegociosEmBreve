@@ -8,6 +8,7 @@ import { CompanyDashboard } from "./CompanyDashboard";
 import { CompanyHomePage } from "./CompanyHomePage";
 import { CandidateDashboard } from "./CandidateDashboard";
 import { AdminDashboard, ApiV1Panel } from "./AdminDashboard";
+import { AdminOverview } from "./AdminOverview";
 import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
 import { ResumeDatabase } from "./ResumeDatabase";
 import { ProfilePage } from "./ProfilePage";
@@ -43,11 +44,14 @@ function AdminRoutes() {
         index
         element={
           <AdminPage>
-            <AdminDashboard mode="dashboard" />
+            <AdminOverview />
           </AdminPage>
         }
       />
-      <Route path="admin" element={<Navigate to="/dashboard/admin/empresas" replace />} />
+      <Route
+        path="admin"
+        element={<Navigate to="/dashboard/admin/empresas" replace />}
+      />
       <Route
         path="admin/empresas"
         element={
@@ -101,7 +105,8 @@ function AdminRoutes() {
                   API v1
                 </h1>
                 <p className="mt-1 max-w-3xl text-stone-500">
-                  Gerencie chaves, origens, auditoria e a documentação da API de vagas.
+                  Gerencie chaves, origens, auditoria e a documentação da API
+                  de vagas.
                 </p>
               </header>
               <section className="rounded-2xl border border-stone-200 bg-white shadow-sm admin-primary-surface">
@@ -191,7 +196,10 @@ export function Dashboard() {
         />
 
         <Route path="pessoal" element={<CandidateDashboard />} />
-        <Route path="empresa/inicio" element={companyOnly(<CompanyHomePage />)} />
+        <Route
+          path="empresa/inicio"
+          element={companyOnly(<CompanyHomePage />)}
+        />
         <Route path="empresa/painel" element={<CompanyDashboard />} />
         <Route path="vaga/:jobId" element={companyOnly(<CompanyJobPage />)} />
 
@@ -199,7 +207,10 @@ export function Dashboard() {
         <Route path="curriculos" element={companyOnly(<ResumeDatabase />)} />
         <Route path="perfil" element={<ProfilePageWithoutLegacyResumeAi />} />
         <Route path="empresa" element={<CompanyProfilePage />} />
-        <Route path="configuracao-contratacao" element={companyOnly(<CompanyHiringConfig />)} />
+        <Route
+          path="configuracao-contratacao"
+          element={companyOnly(<CompanyHiringConfig />)}
+        />
         <Route path="admissao/:appId" element={<CandidateOnboardingPage />} />
         <Route path="vaga-detalhes/:jobId" element={<CandidateJobViewPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
