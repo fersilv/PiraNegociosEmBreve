@@ -34,13 +34,13 @@ export class UsersController {
     };
     const aiEnabled =
       (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
-    const resumeScorePaymentRequired =
-      (await this.settingsService.getValue(
-        'RESUME_SCORE_PAYMENT_REQUIRED',
-        'false',
-      )) === 'true';
     const canExposeResumeAnalysis =
-      aiEnabled && (!resumeScorePaymentRequired || profile.resumeScoreUnlocked);
+      aiEnabled &&
+      Boolean(
+        profile.resumeScoreUnlocked ||
+          profile.hasAiAnalyzed ||
+          profile.aiAnalysis,
+      );
 
     if (canExposeResumeAnalysis) return runtimeProfile;
 
@@ -109,17 +109,9 @@ export class UsersController {
       );
     }
 
-    const resumeContentChanged =
-      updateData.bio !== undefined ||
-      updateData.experiences !== undefined ||
-      updateData.education !== undefined ||
-      updateData.skills !== undefined ||
-      updateData.courses !== undefined ||
-      updateData.languages !== undefined;
-    if (resumeContentChanged) {
-      sanitized.aiAnalysis = null;
-      sanitized.hasAiAnalyzed = false;
-    }
+    // A análise gratuita pertence ao histórico da conta. Editar o currículo
+    // não apaga a pontuação nem zera o uso gratuito. Quando houver reanálise
+    // premium, ela substituirá estes dados de forma explícita.
 
     if (typeof user.email === 'string' && user.email.trim()) {
       sanitized.email = user.email.trim().toLowerCase();
