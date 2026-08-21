@@ -328,8 +328,8 @@ export function ResumeBuilderPage() {
   const [preferences, setPreferences] = useState<ResumePreferences>(DEFAULT_RESUME_PREFERENCES);
   const [scale, setScale] = useState(1);
   const previewRef = useRef<HTMLDivElement>(null);
+  const initialProfileHydratedRef = useRef(false);
   const [newSkill, setNewSkill] = useState("");
-  const initializedProfileId = useRef<string | null>(null);
 
   useEffect(() => {
     if (!profile) return;
@@ -356,9 +356,8 @@ export function ResumeBuilderPage() {
       ...(profile.resumePreferences || {}),
       nameMode: profile.resumePreferences?.nameMode || "SOCIAL",
     });
-    const profileKey = profile.email || profile.fullName || profile.displayName || "profile";
-    if (initializedProfileId.current !== profileKey) {
-      initializedProfileId.current = profileKey;
+    if (!initialProfileHydratedRef.current) {
+      initialProfileHydratedRef.current = true;
       if (profileHasData(profile)) setStep(99);
     }
   }, [profile]);
