@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Activity,
@@ -89,6 +89,19 @@ const adminGroups = [
   },
 ] as const;
 
+const pageLabels: Array<{ test: (path: string) => boolean; label: string; eyebrow: string }> = [
+  { test: (path) => path === "/dashboard", label: "Dashboard", eyebrow: "Visão geral" },
+  { test: (path) => path.startsWith("/dashboard/admin/empresas"), label: "Empresas", eyebrow: "Operação" },
+  { test: (path) => path.startsWith("/dashboard/admin/vagas"), label: "Vagas", eyebrow: "Operação" },
+  { test: (path) => path.startsWith("/dashboard/admin/usuarios"), label: "Usuários", eyebrow: "Operação" },
+  { test: (path) => path.startsWith("/dashboard/admin/vinculos"), label: "Vínculos", eyebrow: "Operação" },
+  { test: (path) => path.startsWith("/dashboard/admin/publicidade"), label: "Publicidade", eyebrow: "Plataforma" },
+  { test: (path) => path.startsWith("/dashboard/admin/api"), label: "API v1", eyebrow: "Plataforma" },
+  { test: (path) => path.startsWith("/dashboard/admin/ai"), label: "Inteligência Artificial", eyebrow: "Plataforma" },
+  { test: (path) => path === "/dashboard/perfil", label: "Meus dados", eyebrow: "Conta" },
+  { test: (path) => path.includes("/onboarding"), label: "Completar cadastro", eyebrow: "Conta" },
+];
+
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -98,6 +111,15 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     auth.signOut();
     navigate("/");
   };
+
+  const currentPage = useMemo(
+    () =>
+      pageLabels.find((item) => item.test(location.pathname)) || {
+        label: "Administração",
+        eyebrow: "Operação",
+      },
+    [location.pathname],
+  );
 
   const moreActive =
     location.pathname.startsWith("/dashboard/admin/vinculos") ||
@@ -110,13 +132,13 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     <div className="admin-workspace min-h-screen bg-[#f4f3ef] text-stone-900">
       <AdminTheme />
       <div className="flex min-h-screen">
-        <aside className="fixed inset-y-0 left-0 z-30 hidden w-[286px] flex-col border-r border-white/5 bg-[#171714] text-white md:flex">
+        <aside className="fixed inset-y-0 left-0 z-30 hidden w-[286px] flex-col border-r border-white/[0.05] bg-[#171714] text-white md:flex">
           <div className="px-5 pb-5 pt-6">
             <Link to="/" className="font-serif text-xl font-bold text-white">
               PiraNegócios
             </Link>
 
-            <div className="mt-5 rounded-[22px] border border-white/8 bg-white/[0.04] p-3.5">
+            <div className="mt-5 rounded-[22px] border border-white/[0.08] bg-white/[0.04] p-3.5">
               <div className="flex items-center gap-3">
                 <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-terracotta-500/15 text-terracotta-300 ring-1 ring-terracotta-400/20">
                   <ShieldCheck className="h-5 w-5" />
@@ -152,7 +174,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
 
-          <div className="border-t border-white/5 p-4">
+          <div className="border-t border-white/[0.05] p-4">
             <button
               type="button"
               onClick={handleLogout}
@@ -173,12 +195,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
               <span className="hidden h-9 w-9 items-center justify-center rounded-xl bg-stone-900 text-white md:flex">
                 <Activity className="h-4 w-4" />
               </span>
-              <div className="hidden min-w-0 sm:block">
-                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-stone-400">
-                  Operação
+              <div className="min-w-0">
+                <p className="hidden text-[9px] font-bold uppercase tracking-[0.2em] text-stone-400 sm:block">
+                  {currentPage.eyebrow}
                 </p>
-                <p className="truncate text-sm font-bold text-stone-900">
-                  PiraNegócios Control Center
+                <p className="truncate text-sm font-bold text-stone-900 sm:text-[15px]">
+                  {currentPage.label}
                 </p>
               </div>
             </div>
@@ -213,7 +235,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-white/5 bg-[#171714]/98 px-2 py-2 text-white shadow-[0_-12px_36px_rgba(0,0,0,.14)] backdrop-blur md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-white/[0.05] bg-[#171714]/98 px-2 py-2 text-white shadow-[0_-12px_36px_rgba(0,0,0,.14)] backdrop-blur md:hidden">
         <AdminMobileLink end to="/dashboard" icon={<LayoutDashboard className="h-5 w-5" />} label="Início" />
         <AdminMobileLink to="/dashboard/admin/empresas" icon={<Building2 className="h-5 w-5" />} label="Empresas" />
         <AdminMobileLink to="/dashboard/admin/vagas" icon={<Briefcase className="h-5 w-5" />} label="Vagas" />
