@@ -20,6 +20,7 @@ import {
 import { ResumeReviewService } from './resume-review.service';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { User } from '../users/entities/user.entity';
+import { SettingsService } from '../admin/settings.service';
 
 @Controller('ai')
 @UseGuards(FirebaseAuthGuard)
@@ -29,13 +30,21 @@ export class AiController {
     private readonly jobSkillsService: JobSkillsService,
     private readonly resumeImportService: ResumeImportService,
     private readonly resumeReviewService: ResumeReviewService,
+    private readonly settingsService: SettingsService,
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
   ) {}
 
   @Get('status')
-  getStatus() {
-    return this.aiService.getStatus();
+  async getStatus() {
+    const [status, paymentRequired] = await Promise.all([
+      this.aiService.getStatus(),
+      this.settingsService.getValue('RESUME_SCORE_PAYMENT_REQUIRED', 'false'),
+    ]);
+    return {
+      ...status,
+      resumeScorePaymentRequired: paymentRequired === 'true',
+    };
   }
 
   private async invalidateResumeScore(userId: string) {
@@ -85,7 +94,16 @@ export class AiController {
     const user = await this.usersRepository.findOne({
       where: { id: req.user.uid },
     });
-    if (!user?.resumeScoreUnlocked) {
+    if (!user) {
+      throw new ForbiddenException('Perfil de usuário não encontrado.');
+    }
+
+    const paymentRequired =
+      (await this.settingsService.getValue(
+        'RESUME_SCORE_PAYMENT_REQUIRED',
+        'false',
+      )) === 'true';
+    if (paymentRequired && !user.resumeScoreUnlocked) {
       throw new ForbiddenException(
         'A pontuação detalhada do currículo é um recurso premium e ainda não está desbloqueada para esta conta.',
       );
