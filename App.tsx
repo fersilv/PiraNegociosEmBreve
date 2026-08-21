@@ -27,7 +27,7 @@ function RouteLoader() {
 }
 
 export default function App() {
-  const isEmbed = window.location.pathname.startsWith('/embed');
+  const isEmbed = window.location.pathname.startsWith("/embed");
 
   return (
     <AuthProvider>
@@ -43,7 +43,15 @@ export default function App() {
             <Route path="/vagas/:slug" element={<PublicJobPage />} />
             <Route path="/embed/vagas" element={<EmbedJobsWidget />} />
             <Route path="/login" element={<Login />} />
+
+            <Route path="/user/*" element={<Dashboard />} />
+            <Route path="/company/*" element={<Dashboard />} />
+            <Route path="/admin/*" element={<Dashboard />} />
+
+            {/* Compatibilidade: links antigos continuam funcionando e são
+                redirecionados internamente para os workspaces canônicos. */}
             <Route path="/dashboard/*" element={<Dashboard />} />
+
             <Route path="/:companySlug" element={<PublicCompanyPage />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
