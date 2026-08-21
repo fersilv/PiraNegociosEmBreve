@@ -199,7 +199,6 @@ function ResumeStudioTheme() {
         box-shadow: 0 24px 70px rgba(60,39,26,.09);
       }
 
-      /* Preview: duas colunas e somente o scroll da página. */
       .resume-studio-body #resume-builder-root {
         display: grid !important;
         grid-template-columns: 330px minmax(0, 1fr);
@@ -210,13 +209,18 @@ function ResumeStudioTheme() {
       }
 
       .resume-studio-body #resume-builder-sidebar {
-        position: relative !important;
-        top: auto !important;
+        position: sticky !important;
+        top: 92px !important;
         align-self: start !important;
         width: 330px !important;
         height: auto !important;
-        max-height: none !important;
-        overflow: visible !important;
+        max-height: calc(100vh - 108px) !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,.24) transparent;
         border: 1px solid var(--rs-line) !important;
         border-radius: 0 0 24px 0 !important;
         background: #2b211c !important;
@@ -224,8 +228,30 @@ function ResumeStudioTheme() {
         box-shadow: 12px 18px 42px rgba(43,33,28,.10);
       }
 
+      .resume-studio-body #resume-builder-sidebar::-webkit-scrollbar {
+        width: 7px;
+      }
+
+      .resume-studio-body #resume-builder-sidebar::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .resume-studio-body #resume-builder-sidebar::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: rgba(255,255,255,.22);
+      }
+
+      .resume-studio-body #resume-builder-sidebar::-webkit-scrollbar-thumb:hover {
+        background: rgba(255,255,255,.34);
+      }
+
       .resume-studio-body #resume-builder-sidebar > div:first-child {
+        position: sticky;
+        top: 0;
+        z-index: 5;
         border-color: rgba(255,255,255,.08) !important;
+        background: rgba(43,33,28,.97);
+        backdrop-filter: blur(14px);
       }
 
       .resume-studio-body #resume-builder-sidebar > div:first-child button:first-child {
@@ -272,10 +298,20 @@ function ResumeStudioTheme() {
         }
 
         .resume-studio-body #resume-builder-sidebar {
+          position: relative !important;
+          top: auto !important;
           width: 100% !important;
+          max-height: none !important;
+          overflow: visible !important;
+          scrollbar-gutter: auto;
           border-radius: 0 !important;
           border-left: 0 !important;
           border-right: 0 !important;
+        }
+
+        .resume-studio-body #resume-builder-sidebar > div:first-child {
+          position: relative;
+          top: auto;
         }
 
         .resume-studio-body #resume-preview-area {
