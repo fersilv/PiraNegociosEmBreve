@@ -23,7 +23,7 @@ export function UserTheme() {
       .user-workspace .user-content::before {
         content: "";
         position: fixed;
-        inset: 68px 0 auto 288px;
+        inset: 72px 0 auto 288px;
         height: 180px;
         pointer-events: none;
         background: linear-gradient(180deg, rgba(255,255,255,0.34), transparent);
@@ -46,6 +46,31 @@ export function UserTheme() {
         box-shadow:
           0 1px 0 rgba(255,255,255,0.8) inset,
           0 20px 60px rgba(64, 42, 28, 0.09);
+      }
+
+      /* Reinterpreta superfícies legadas dentro do workspace pessoal sem mexer
+         em regras ou componentes compartilhados com empresa/admin. */
+      .user-workspace .user-content .bg-white {
+        background-color: rgba(255, 253, 249, 0.82) !important;
+        backdrop-filter: blur(16px);
+      }
+
+      .user-workspace .user-content .border-stone-200 {
+        border-color: rgba(73, 52, 40, 0.11) !important;
+      }
+
+      .user-workspace .user-content .bg-stone-50 {
+        background-color: rgba(248, 243, 237, 0.78) !important;
+      }
+
+      .user-workspace .user-content .shadow-sm,
+      .user-workspace .user-content .shadow-md {
+        box-shadow: 0 18px 55px rgba(61, 40, 28, 0.08) !important;
+      }
+
+      .user-workspace .user-content .rounded-3xl,
+      .user-workspace .user-content .rounded-2xl {
+        border-color: rgba(73, 52, 40, 0.10);
       }
 
       .user-workspace input:not([type="checkbox"]):not([type="radio"]),
