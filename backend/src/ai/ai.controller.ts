@@ -81,13 +81,9 @@ export class AiController {
     if (!body || !body.profile) {
       throw new BadRequestException('Envie os dados do currículo para avaliação.');
     }
+
     const user = await this.usersRepository.findOne({
       where: { id: req.user.uid },
-      select: {
-        id: true,
-        resumeScoreUnlocked: true,
-        aiAnalysisCount: true,
-      },
     });
     if (!user?.resumeScoreUnlocked) {
       throw new ForbiddenException(
@@ -96,14 +92,10 @@ export class AiController {
     }
 
     const analysis = await this.resumeReviewService.review(body.profile);
-    await this.usersRepository.update(
-      { id: req.user.uid },
-      {
-        aiAnalysis: analysis as unknown as Record<string, unknown>,
-        hasAiAnalyzed: true,
-        aiAnalysisCount: Number(user.aiAnalysisCount || 0) + 1,
-      },
-    );
+    user.aiAnalysis = analysis as unknown as Record<string, unknown>;
+    user.hasAiAnalyzed = true;
+    user.aiAnalysisCount = Number(user.aiAnalysisCount || 0) + 1;
+    await this.usersRepository.save(user);
     return analysis;
   }
 
