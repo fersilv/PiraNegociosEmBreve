@@ -2,16 +2,14 @@ import React from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowLeft,
-  FileText,
   ShieldCheck,
-  Sparkles,
   WandSparkles,
 } from "lucide-react";
 import { ResumeBuilderPage } from "./ResumeBuilderPage";
 
 export function ResumeBuilderStudio() {
   return (
-    <div className="resume-studio -m-4 sm:-m-6 md:-m-8 md:-mb-10">
+    <div className="resume-studio">
       <ResumeStudioTheme />
 
       <div className="resume-studio-shell">
@@ -67,9 +65,13 @@ function ResumeStudioTheme() {
         --rs-ink: #241914;
         --rs-muted: #74675f;
         --rs-line: rgba(75, 51, 38, .12);
-        --rs-surface: rgba(255, 253, 249, .88);
+        --rs-surface: rgba(255, 253, 249, .9);
         --rs-accent: #c45b3c;
-        min-height: calc(100vh - 72px);
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        min-height: 100vh;
+        overflow: auto;
         background:
           radial-gradient(circle at 15% -5%, rgba(211, 126, 87, .18), transparent 29rem),
           radial-gradient(circle at 90% 10%, rgba(96, 68, 51, .09), transparent 31rem),
@@ -78,15 +80,15 @@ function ResumeStudioTheme() {
       }
 
       .resume-studio-shell {
-        min-height: calc(100vh - 72px);
+        min-height: 100vh;
       }
 
       .resume-studio-header {
         position: sticky;
-        top: 72px;
-        z-index: 24;
+        top: 0;
+        z-index: 40;
         border-bottom: 1px solid var(--rs-line);
-        background: rgba(249, 244, 238, .86);
+        background: rgba(249, 244, 238, .92);
         backdrop-filter: blur(24px);
         box-shadow: 0 1px 0 rgba(255,255,255,.72) inset;
       }
@@ -109,13 +111,16 @@ function ResumeStudioTheme() {
         justify-content: center;
         border: 1px solid var(--rs-line);
         border-radius: 15px;
-        background: rgba(255,253,249,.76);
+        background: rgba(255,253,249,.8);
         color: #5e5048;
         box-shadow: 0 8px 25px rgba(65,43,29,.06);
         transition: transform .18s ease, background .18s ease;
       }
 
-      .resume-studio-back:hover { transform: translateY(-1px); background: #fffdfa; }
+      .resume-studio-back:hover {
+        transform: translateY(-1px);
+        background: #fffdfa;
+      }
 
       .resume-studio-kicker {
         font-size: 9px;
@@ -124,6 +129,7 @@ function ResumeStudioTheme() {
         text-transform: uppercase;
         color: #b55236;
       }
+
       .resume-studio-kicker--muted { color: #9b8b81; }
       .resume-studio-dot { width: 3px; height: 3px; border-radius: 99px; background: #cabbb0; }
 
@@ -134,13 +140,12 @@ function ResumeStudioTheme() {
         padding: 9px 12px;
         border: 1px solid var(--rs-line);
         border-radius: 999px;
-        background: rgba(255,253,249,.64);
+        background: rgba(255,253,249,.68);
         color: #78695f;
         font-size: 10px;
         font-weight: 700;
       }
 
-      /* The builder already lives inside the Career workspace. Remove its old nested app chrome. */
       .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col > header {
         display: none !important;
       }
@@ -148,17 +153,16 @@ function ResumeStudioTheme() {
       .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col,
       .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col.items-center,
       .resume-studio-body #resume-builder-root {
-        min-height: auto !important;
         background: transparent !important;
       }
 
       /* Wizard navigation */
       .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col > div.bg-white.border-b {
         position: sticky;
-        top: 150px;
-        z-index: 20;
+        top: 78px;
+        z-index: 30;
         border-bottom: 1px solid var(--rs-line) !important;
-        background: rgba(247,241,234,.84) !important;
+        background: rgba(247,241,234,.9) !important;
         padding: 12px 24px !important;
         backdrop-filter: blur(18px);
       }
@@ -231,14 +235,13 @@ function ResumeStudioTheme() {
 
       .resume-studio-body label { color: #655850; }
 
-      /* Existing editors and summary cards */
       .resume-studio-body .rounded-2xl.border.border-stone-200.bg-stone-50,
       .resume-studio-body .rounded-2xl.border.border-stone-200.bg-stone-50\/70 {
         border-color: rgba(75,51,38,.10) !important;
         background: rgba(246,239,232,.66) !important;
       }
 
-      /* Skills must stay simple. Detailed provenance remains internal, not a mandatory matrix. */
+      /* Keep skills simple. */
       .resume-studio-body .rounded-2xl.border.border-stone-200.bg-stone-50\/70.p-4:has(h3) {
         display: none !important;
       }
@@ -251,7 +254,7 @@ function ResumeStudioTheme() {
         margin-top: 18px !important;
         border: 1px solid var(--rs-line);
         border-radius: 20px;
-        background: rgba(255,253,249,.84);
+        background: rgba(255,253,249,.88);
         padding: 10px;
         box-shadow: 0 18px 55px rgba(57,37,25,.12);
         backdrop-filter: blur(20px);
@@ -267,79 +270,176 @@ function ResumeStudioTheme() {
 
       /* First-use screen */
       .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col.items-center.justify-center {
-        min-height: calc(100vh - 150px) !important;
+        min-height: calc(100vh - 78px) !important;
         padding: 38px 24px 60px !important;
       }
+
       .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col.items-center.justify-center > .max-w-lg {
         max-width: 760px !important;
         border: 1px solid var(--rs-line);
         border-radius: 34px;
-        background: rgba(255,253,249,.84);
+        background: rgba(255,253,249,.86);
         padding: 36px;
         box-shadow: 0 28px 90px rgba(60,39,26,.10);
         backdrop-filter: blur(22px);
       }
+
       .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col.items-center.justify-center .w-20.h-20 {
         background: #2b211c !important;
         color: #f0c2a9 !important;
         box-shadow: 0 16px 42px rgba(43,33,28,.16);
       }
 
-      /* Preview studio */
-      .resume-studio-body #resume-builder-root {
-        min-height: calc(100vh - 150px) !important;
-        border-top: 1px solid var(--rs-line);
+      /* Preview mode behaves like a real document editor. */
+      .resume-studio:has(#resume-builder-root) .resume-studio-header {
+        display: none;
       }
+
+      .resume-studio:has(#resume-builder-root) {
+        overflow: hidden;
+      }
+
+      .resume-studio-body #resume-builder-root {
+        display: grid !important;
+        grid-template-columns: 340px minmax(0, 1fr);
+        align-items: stretch;
+        min-height: 100vh !important;
+        height: 100vh;
+        overflow: hidden;
+        border: 0 !important;
+      }
+
       .resume-studio-body #resume-builder-sidebar {
-        width: min(390px, 100%) !important;
-        border-color: rgba(255,255,255,.07) !important;
+        width: 340px !important;
+        height: 100vh !important;
+        position: relative !important;
+        top: auto !important;
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        border: 0 !important;
+        border-right: 1px solid rgba(255,255,255,.07) !important;
         background: #2b211c !important;
         color: white;
+        box-shadow: 16px 0 50px rgba(43,33,28,.11);
       }
+
       .resume-studio-body #resume-builder-sidebar > div:first-child {
+        position: sticky;
+        top: 0;
+        z-index: 5;
         border-color: rgba(255,255,255,.08) !important;
+        background: rgba(43,33,28,.96);
+        backdrop-filter: blur(18px);
       }
+
       .resume-studio-body #resume-builder-sidebar > div:first-child button:first-child {
-        color: rgba(255,255,255,.62) !important;
+        color: rgba(255,255,255,.66) !important;
       }
+
       .resume-studio-body #resume-builder-sidebar > .p-5 {
         padding: 22px !important;
       }
+
       .resume-studio-body #resume-builder-sidebar > .p-5 > section:not(.border-violet-200) h2,
       .resume-studio-body #resume-builder-sidebar > .p-5 > section:not(.border-violet-200) label,
       .resume-studio-body #resume-builder-sidebar > .p-5 > section:not(.border-violet-200) span {
         color: rgba(255,255,255,.76);
       }
+
       .resume-studio-body #resume-builder-sidebar .border-stone-200.bg-white {
         border-color: rgba(255,255,255,.10) !important;
         background: rgba(255,255,255,.07) !important;
         color: white !important;
       }
+
       .resume-studio-body #resume-preview-area {
+        min-width: 0;
+        height: 100vh;
+        overflow: auto !important;
+        align-items: flex-start !important;
+        justify-content: center !important;
         background:
-          radial-gradient(circle at 80% 10%, rgba(196,91,60,.11), transparent 24rem),
-          #e9e2da !important;
-        padding: 32px !important;
+          radial-gradient(circle at 82% 8%, rgba(196,91,60,.10), transparent 28rem),
+          linear-gradient(145deg, #eee8e1, #e5ddd4) !important;
+        padding: 34px 28px 60px !important;
       }
+
       .resume-studio-body #resume-preview-area > div {
-        filter: drop-shadow(0 30px 45px rgba(42,29,21,.18));
+        flex: 0 0 auto;
+        filter: drop-shadow(0 28px 48px rgba(42,29,21,.20));
+      }
+
+      @media (max-width: 900px) {
+        .resume-studio-body #resume-builder-root {
+          display: flex !important;
+          height: auto;
+          min-height: 100vh !important;
+          overflow: visible;
+          flex-direction: column !important;
+        }
+
+        .resume-studio:has(#resume-builder-root) {
+          overflow: auto;
+        }
+
+        .resume-studio-body #resume-builder-sidebar {
+          width: 100% !important;
+          height: auto !important;
+          max-height: none !important;
+          position: relative !important;
+          border-right: 0 !important;
+          border-bottom: 1px solid rgba(255,255,255,.08) !important;
+        }
+
+        .resume-studio-body #resume-preview-area {
+          height: auto;
+          min-height: 72vh;
+          padding: 20px 12px 48px !important;
+        }
       }
 
       @media (max-width: 767px) {
-        .resume-studio-header { top: 68px; }
-        .resume-studio-header__inner { min-height: 70px; padding: 10px 14px; }
-        .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col > div.bg-white.border-b { top: 138px; padding-inline: 12px !important; }
-        .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col > main { padding: 20px 12px 38px !important; }
-        .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col > main > .max-w-2xl > .bg-white.rounded-2xl.border { padding: 18px !important; border-radius: 24px !important; }
-        .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col.items-center.justify-center > .max-w-lg { padding: 24px 18px; border-radius: 26px; }
-        .resume-studio-body #resume-builder-root { flex-direction: column !important; }
-        .resume-studio-body #resume-builder-sidebar { position: relative !important; top: auto !important; height: auto !important; }
-        .resume-studio-body #resume-preview-area { padding: 20px 10px !important; min-height: 70vh; }
+        .resume-studio-header__inner {
+          min-height: 70px;
+          padding: 10px 14px;
+        }
+
+        .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col > div.bg-white.border-b {
+          top: 70px;
+          padding-inline: 12px !important;
+        }
+
+        .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col > main {
+          padding: 20px 12px 38px !important;
+        }
+
+        .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col > main > .max-w-2xl > .bg-white.rounded-2xl.border {
+          padding: 18px !important;
+          border-radius: 24px !important;
+        }
+
+        .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col.items-center.justify-center > .max-w-lg {
+          padding: 24px 18px;
+          border-radius: 26px;
+        }
       }
 
       @media (prefers-reduced-motion: no-preference) {
-        .resume-studio-body > * { animation: rsIn .34s cubic-bezier(.2,.7,.2,1) both; }
-        @keyframes rsIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .resume-studio-body > * {
+          animation: rsIn .34s cubic-bezier(.2,.7,.2,1) both;
+        }
+        @keyframes rsIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      }
+
+      @media print {
+        .resume-studio {
+          position: static !important;
+          overflow: visible !important;
+          background: white !important;
+        }
       }
     `}</style>
   );
