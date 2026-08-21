@@ -18,7 +18,19 @@ import { auth } from "../lib/firebase";
 import { NotificationCenter } from "./NotificationCenter";
 import { AdminTheme } from "./AdminTheme";
 
-const groups = [
+type AdminNavItem = {
+  to: string;
+  label: string;
+  icon: React.ReactNode;
+  end?: boolean;
+};
+
+type AdminNavGroup = {
+  label: string;
+  items: AdminNavItem[];
+};
+
+const groups: AdminNavGroup[] = [
   {
     label: "Visão geral",
     items: [
@@ -48,7 +60,7 @@ const groups = [
       { to: "/admin/conta", label: "Meus dados", icon: <User className="h-4 w-4" /> },
     ],
   },
-] as const;
+];
 
 export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
