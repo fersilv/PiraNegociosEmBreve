@@ -1,11 +1,41 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useAuth, UserProfile, ProfessionalExperience, ExtraCourse, AcademicEducation, Language } from "../contexts/AuthContext";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AcademicEducation,
+  ExperienceTimelineEntry,
+  ExtraCourse,
+  Language,
+  ProfessionalExperience,
+  ResumeAIAnalysis,
+  ResumePreferences,
+  UserProfile,
+  useAuth,
+} from "../contexts/AuthContext";
 import { api } from "../lib/api";
 import { Link, Navigate } from "react-router-dom";
 import {
-  ArrowLeft, ArrowRight, Printer, Settings, Check, Layout, Palette,
-  Camera, MapPin, Plus, Trash2, Briefcase, GraduationCap, BookOpen,
-  Globe, User, FileText, Sparkles, Loader2, Upload, ChevronDown
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  BookOpen,
+  BrainCircuit,
+  Briefcase,
+  Camera,
+  Check,
+  CheckCircle2,
+  Edit3,
+  FileText,
+  Globe,
+  GraduationCap,
+  Layout,
+  Loader2,
+  Palette,
+  Plus,
+  Printer,
+  Settings,
+  Sparkles,
+  Trash2,
+  Upload,
+  User,
 } from "lucide-react";
 import { ClassicTemplate } from "../components/resume-templates/ClassicTemplate";
 import { ModernTemplate } from "../components/resume-templates/ModernTemplate";
@@ -37,14 +67,44 @@ const LANGUAGE_LEVELS = ["Básico", "Intermediário", "Avançado", "Fluente", "N
 
 type TemplateId = (typeof TEMPLATES)[number]["id"];
 
+type SkillSource =
+  | { kind: "stage"; experienceIndex: number; stageIndex: number; label: string }
+  | { kind: "education"; index: number; label: string }
+  | { kind: "course"; index: number; label: string };
+
+const DEFAULT_RESUME_PREFERENCES: ResumePreferences = {
+  nameMode: "SOCIAL",
+  showHeadline: true,
+  headline: "",
+  showPhoto: true,
+  template: "modern",
+  color: "#0284c7",
+};
+
+const AI_PROCESS_MESSAGES = [
+  "Arquivo recebido. Preparando o conteúdo para leitura.",
+  "Lendo identidade, contatos e resumo profissional.",
+  "Organizando experiências e procurando evoluções de cargo.",
+  "Mapeando formação, cursos, certificações e habilidades.",
+  "Avaliando a qualidade e os pontos que podem ser melhorados.",
+  "Aplicando os dados ao seu currículo para você revisar.",
+];
+
+function makeId(prefix: string): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function profileHasData(p: UserProfile | null): boolean {
   if (!p) return false;
-  return !!(
+  return Boolean(
     p.bio ||
-    (p.experiences && p.experiences.length > 0) ||
-    (p.education && p.education.length > 0) ||
-    (p.skills && p.skills.length > 0) ||
-    (p.courses && p.courses.length > 0)
+      (p.experiences && p.experiences.length > 0) ||
+      (p.education && p.education.length > 0) ||
+      (p.skills && p.skills.length > 0) ||
+      (p.courses && p.courses.length > 0),
   );
 }
 
@@ -71,27 +131,7 @@ function normalizeMonthYear(value: unknown): string {
     if (month >= 1 && month <= 12) return `${String(month).padStart(2, "0")}/${match[2]}`;
   }
 
-  const normalized = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  const textual = normalized.match(/^([a-z]+)[\s/-]+(\d{4})$/);
-  if (textual) {
-    const months: Record<string, string> = {
-      jan: "01", janeiro: "01", january: "01",
-      fev: "02", fevereiro: "02", feb: "02", february: "02",
-      mar: "03", marco: "03", march: "03",
-      abr: "04", abril: "04", apr: "04", april: "04",
-      mai: "05", maio: "05", may: "05",
-      jun: "06", junho: "06", june: "06",
-      jul: "07", julho: "07", july: "07",
-      ago: "08", agosto: "08", aug: "08", august: "08",
-      set: "09", setembro: "09", sep: "09", sept: "09", september: "09",
-      out: "10", outubro: "10", oct: "10", october: "10",
-      nov: "11", novembro: "11", november: "11",
-      dez: "12", dezembro: "12", dec: "12", december: "12",
-    };
-    const month = months[textual[1]];
-    if (month) return `${month}/${textual[2]}`;
-  }
-
+  if (/^\d{4}$/.test(raw)) return raw;
   return raw;
 }
 
@@ -106,12 +146,112 @@ function monthInputToMonthYear(value: string): string {
   return match ? `${match[2]}/${match[1]}` : normalizeMonthYear(value);
 }
 
-function normalizeExperience(exp: ProfessionalExperience): ProfessionalExperience {
+function dateSortValue(value: string): number {
+  const match = normalizeMonthYear(value).match(/^(\d{2})\/(\d{4})$/);
+  return match ? Number(match[2]) * 12 + Number(match[1]) : 0;
+}
+
+function normalizeStage(stage: ExperienceTimelineEntry): ExperienceTimelineEntry {
+  return {
+    ...stage,
+    id: stage.id || makeId("stage"),
+    role: String(stage.role || "").trim(),
+    startDate: normalizeMonthYear(stage.startDate),
+    endDate: stage.current ? "Atual" : normalizeMonthYear(stage.endDate),
+    description: String(stage.description || ""),
+    skills: Array.isArray(stage.skills) ? stage.skills.filter(Boolean) : [],
+  };
+}
+
+function syncExperience(exp: ProfessionalExperience): ProfessionalExperience {
+  const rawTimeline = Array.isArray(exp.timeline) && exp.timeline.length > 0
+    ? exp.timeline
+    : [
+        {
+          id: makeId("stage"),
+          role: exp.role || "",
+          startDate: exp.startDate || "",
+          endDate: exp.endDate || "",
+          current: Boolean(exp.current),
+          description: exp.description || "",
+          skills: exp.skills || [],
+        },
+      ];
+  const timeline = rawTimeline.map(normalizeStage).sort((a, b) => dateSortValue(a.startDate) - dateSortValue(b.startDate));
+  const first = timeline[0];
+  const latest = timeline[timeline.length - 1];
+  const allSkills = Array.from(
+    new Set([...(exp.skills || []), ...timeline.flatMap((stage) => stage.skills || [])]),
+  );
   return {
     ...exp,
-    startDate: normalizeMonthYear(exp.startDate),
-    endDate: exp.current ? "Atual" : normalizeMonthYear(exp.endDate),
+    id: exp.id || makeId("exp"),
+    company: String(exp.company || "").trim(),
+    role: latest?.role || exp.role || "",
+    startDate: first?.startDate || normalizeMonthYear(exp.startDate),
+    endDate: latest?.current ? "Atual" : latest?.endDate || normalizeMonthYear(exp.endDate),
+    current: Boolean(latest?.current),
+    description: String(exp.description || ""),
+    skills: allSkills,
+    timeline,
   };
+}
+
+function mergeExperiencesByCompany(value: unknown): ProfessionalExperience[] {
+  if (!Array.isArray(value)) return [];
+  const merged = new Map<string, ProfessionalExperience>();
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const normalized = syncExperience(raw as ProfessionalExperience);
+    const key = normalized.company.toLocaleLowerCase("pt-BR").replace(/\s+/g, " ").trim() || normalized.id || makeId("exp");
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, normalized);
+      continue;
+    }
+    merged.set(
+      key,
+      syncExperience({
+        ...existing,
+        description: existing.description || normalized.description,
+        skills: Array.from(new Set([...(existing.skills || []), ...(normalized.skills || [])])),
+        timeline: [...(existing.timeline || []), ...(normalized.timeline || [])],
+      }),
+    );
+  }
+  return Array.from(merged.values());
+}
+
+function normalizeEducation(value: unknown): AcademicEducation[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is AcademicEducation => Boolean(item && typeof item === "object"))
+    .map((item) => ({
+      ...item,
+      id: item.id || makeId("edu"),
+      skills: Array.isArray(item.skills) ? item.skills.filter(Boolean) : [],
+    }));
+}
+
+function normalizeCourses(value: unknown): ExtraCourse[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is ExtraCourse => Boolean(item && typeof item === "object"))
+    .map((item) => ({
+      ...item,
+      id: item.id || makeId("course"),
+      type: item.type === "CERTIFICATION" ? "CERTIFICATION" : "COURSE",
+      skills: Array.isArray(item.skills) ? item.skills.filter(Boolean) : [],
+    }));
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Não foi possível ler o arquivo."));
+    reader.readAsDataURL(file);
+  });
 }
 
 export function ResumeBuilderPage() {
@@ -120,7 +260,10 @@ export function ResumeBuilderPage() {
   const [step, setStep] = useState(-1);
   const [isFirstJob, setIsFirstJob] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
+  const [aiProcessing, setAiProcessing] = useState(false);
+  const [aiProcessStage, setAiProcessStage] = useState(0);
+  const [aiError, setAiError] = useState("");
+  const [reviewing, setReviewing] = useState(false);
 
   const [formName, setFormName] = useState("");
   const [formSocialName, setFormSocialName] = useState("");
@@ -136,37 +279,38 @@ export function ResumeBuilderPage() {
   const [formSkills, setFormSkills] = useState<string[]>([]);
   const [formCourses, setFormCourses] = useState<ExtraCourse[]>([]);
   const [formLanguages, setFormLanguages] = useState<Language[]>([]);
-
-  const [template, setTemplate] = useState<TemplateId>("modern");
-  const [color, setColor] = useState("#0284c7");
-  const [showPhoto, setShowPhoto] = useState(true);
+  const [formAiAnalysis, setFormAiAnalysis] = useState<ResumeAIAnalysis | undefined>();
+  const [preferences, setPreferences] = useState<ResumePreferences>(DEFAULT_RESUME_PREFERENCES);
   const [scale, setScale] = useState(1);
   const previewRef = useRef<HTMLDivElement>(null);
   const [newSkill, setNewSkill] = useState("");
 
   useEffect(() => {
-    if (profile) {
-      setFormName(profile.fullName || profile.name || "");
-      setFormSocialName(profile.socialName || "");
-      let initialBirthDate = "";
-      if (profile.birthDate) {
-        if (profile.birthDate instanceof Date) initialBirthDate = profile.birthDate.toISOString().split("T")[0];
-        else if (typeof profile.birthDate === "string") initialBirthDate = profile.birthDate.split("T")[0];
-      }
-      setFormBirthDate(initialBirthDate);
-      setFormPhone(profile.phone || "");
-      setFormEmail(profile.email || "");
-      setFormAddress(profile.address || "");
-      setFormPhoto(profile.resumePhotoURL || "");
-      setFormBio(profile.bio || "");
-      setFormSalary(profile.salaryExpectation || "");
-      setFormExperiences((profile.experiences || []).map(normalizeExperience));
-      setFormEducation(profile.education || []);
-      setFormSkills(profile.skills || []);
-      setFormCourses(profile.courses || []);
-      setFormLanguages(profile.languages || []);
-      if (profileHasData(profile)) setStep(99);
-    }
+    if (!profile) return;
+    setFormName(profile.fullName || profile.name || "");
+    setFormSocialName(profile.socialName || "");
+    let initialBirthDate = "";
+    if (profile.birthDate instanceof Date) initialBirthDate = profile.birthDate.toISOString().split("T")[0];
+    else if (typeof profile.birthDate === "string") initialBirthDate = profile.birthDate.split("T")[0];
+    setFormBirthDate(initialBirthDate);
+    setFormPhone(profile.phone || "");
+    setFormEmail(profile.email || "");
+    setFormAddress(profile.address || "");
+    setFormPhoto(profile.resumePhotoURL || "");
+    setFormBio(profile.bio || "");
+    setFormSalary(profile.salaryExpectation || "");
+    setFormExperiences(mergeExperiencesByCompany(profile.experiences || []));
+    setFormEducation(normalizeEducation(profile.education || []));
+    setFormSkills(profile.skills || []);
+    setFormCourses(normalizeCourses(profile.courses || []));
+    setFormLanguages(profile.languages || []);
+    setFormAiAnalysis(profile.aiAnalysis);
+    setPreferences({
+      ...DEFAULT_RESUME_PREFERENCES,
+      ...(profile.resumePreferences || {}),
+      nameMode: profile.resumePreferences?.nameMode || "SOCIAL",
+    });
+    if (profileHasData(profile)) setStep(99);
   }, [profile]);
 
   const recalcScale = useCallback(() => {
@@ -181,13 +325,45 @@ export function ResumeBuilderPage() {
     return () => window.removeEventListener("resize", recalcScale);
   }, [recalcScale, step]);
 
+  useEffect(() => {
+    if (step !== 99 || !profile) return;
+    const timer = window.setTimeout(() => {
+      void api.patch("/users/me", { resumePreferences: preferences }).catch((error) => {
+        console.error("Erro ao salvar preferências do currículo:", error);
+      });
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [preferences, profile, step]);
+
   if (loading) return <div className="min-h-screen flex items-center justify-center text-stone-500">Carregando...</div>;
   if (!profile) return <Navigate to="/login" replace />;
+
+  const previewProfile: UserProfile = {
+    ...profile,
+    fullName: formName,
+    socialName: formSocialName,
+    name: formName,
+    birthDate: formBirthDate,
+    phone: formPhone,
+    email: formEmail,
+    address: formAddress,
+    resumePhotoURL: formPhoto,
+    photoURL: formPhoto || profile.photoURL,
+    bio: formBio,
+    salaryExpectation: formSalary,
+    experiences: formExperiences.map(syncExperience),
+    education: formEducation,
+    skills: formSkills,
+    courses: formCourses,
+    languages: formLanguages,
+    aiAnalysis: formAiAnalysis,
+    resumePreferences: preferences,
+  };
 
   const saveProgress = async () => {
     setSaving(true);
     try {
-      const normalizedExperiences = formExperiences.map(normalizeExperience);
+      const normalizedExperiences = formExperiences.map(syncExperience);
       setFormExperiences(normalizedExperiences);
       await api.patch("/users/me", {
         fullName: formName,
@@ -203,18 +379,264 @@ export function ResumeBuilderPage() {
         skills: formSkills,
         courses: formCourses,
         languages: formLanguages.length > 0 ? formLanguages : undefined,
+        aiAnalysis: formAiAnalysis,
+        hasAiAnalyzed: Boolean(formAiAnalysis),
+        resumePreferences: preferences,
       });
       await refreshProfile();
-    } catch (e) {
-      console.error("Erro ao salvar progresso:", e);
+    } catch (error) {
+      console.error("Erro ao salvar progresso:", error);
     } finally {
       setSaving(false);
     }
   };
 
-  const nextStep = async () => { await saveProgress(); setStep((s) => s + 1); };
-  const prevStep = () => setStep((s) => Math.max(-1, s - 1));
-  const goToPreview = async () => { await saveProgress(); setStep(99); };
+  const nextStep = async () => {
+    await saveProgress();
+    setStep((current) => current + 1);
+  };
+  const prevStep = () => setStep((current) => Math.max(-1, current - 1));
+  const goToPreview = async () => {
+    await saveProgress();
+    setStep(99);
+  };
+
+  const reviewResume = async (candidateProfile: UserProfile = previewProfile) => {
+    if (!aiEnabled) return undefined;
+    setReviewing(true);
+    try {
+      const response = await api.post(
+        "/ai/review-resume",
+        { profile: candidateProfile },
+        { timeout: 60000 },
+      );
+      const analysis = response.data as ResumeAIAnalysis;
+      setFormAiAnalysis(analysis);
+      await api.patch("/users/me", { aiAnalysis: analysis, hasAiAnalyzed: true });
+      return analysis;
+    } catch (error) {
+      console.error("Erro ao avaliar currículo:", error);
+      return undefined;
+    } finally {
+      setReviewing(false);
+    }
+  };
+
+  const handleAiUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !aiEnabled) return;
+
+    setAiError("");
+    setAiProcessing(true);
+    setAiProcessStage(0);
+    const timer = window.setInterval(() => {
+      setAiProcessStage((current) => Math.min(4, current + 1));
+    }, 1800);
+
+    try {
+      const base64 = await readFileAsDataUrl(file);
+      setAiProcessStage(1);
+      const response = await api.post(
+        "/ai/analyze-resume",
+        { base64File: base64, mimeType: file.type || "application/pdf" },
+        { timeout: 120000 },
+      );
+      const data = response.data || {};
+      setAiProcessStage(3);
+
+      const experiences = mergeExperiencesByCompany(data.experiences || []);
+      const education = normalizeEducation(data.education || []);
+      const courses = normalizeCourses(data.courses || []);
+      const skills = Array.isArray(data.skills) ? data.skills.filter(Boolean) : [];
+      const languages = Array.isArray(data.languages) ? data.languages : [];
+
+      if (data.name) setFormName(data.name);
+      if (data.phone) setFormPhone(data.phone);
+      if (data.bio) setFormBio(data.bio);
+      if (experiences.length > 0) setFormExperiences(experiences);
+      if (education.length > 0) setFormEducation(education);
+      if (skills.length > 0) setFormSkills(skills);
+      if (courses.length > 0) setFormCourses(courses);
+      if (languages.length > 0) setFormLanguages(languages);
+
+      const structuredProfile: UserProfile = {
+        ...profile,
+        fullName: data.name || formName,
+        phone: data.phone || formPhone,
+        bio: data.bio || formBio,
+        experiences,
+        education,
+        skills,
+        courses,
+        languages,
+        resumePreferences: preferences,
+      };
+
+      setAiProcessStage(4);
+      let analysis: ResumeAIAnalysis | undefined;
+      try {
+        const reviewResponse = await api.post(
+          "/ai/review-resume",
+          { profile: structuredProfile },
+          { timeout: 60000 },
+        );
+        analysis = reviewResponse.data as ResumeAIAnalysis;
+        setFormAiAnalysis(analysis);
+      } catch (reviewError) {
+        console.error("A análise estrutural funcionou, mas a nota não pôde ser calculada:", reviewError);
+      }
+
+      setAiProcessStage(5);
+      await api.patch("/users/me", {
+        fullName: structuredProfile.fullName,
+        phone: structuredProfile.phone,
+        bio: structuredProfile.bio,
+        experiences,
+        education,
+        skills,
+        courses,
+        languages: languages.length > 0 ? languages : undefined,
+        aiAnalysis: analysis,
+        hasAiAnalyzed: Boolean(analysis),
+        resumePreferences: preferences,
+      });
+      await refreshProfile();
+      window.clearInterval(timer);
+      window.setTimeout(() => {
+        setAiProcessing(false);
+        setStep(0);
+      }, 550);
+    } catch (error: any) {
+      window.clearInterval(timer);
+      setAiProcessing(false);
+      setAiError(
+        error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          error?.message ||
+          "Não foi possível analisar o currículo. Tente novamente.",
+      );
+    }
+  };
+
+  const removeSkillEverywhere = (skill: string) => {
+    setFormSkills((current) => current.filter((item) => item !== skill));
+    setFormExperiences((current) =>
+      current.map((exp) =>
+        syncExperience({
+          ...exp,
+          skills: (exp.skills || []).filter((item) => item !== skill),
+          timeline: (exp.timeline || []).map((stage) => ({
+            ...stage,
+            skills: (stage.skills || []).filter((item) => item !== skill),
+          })),
+        }),
+      ),
+    );
+    setFormEducation((current) =>
+      current.map((edu) => ({ ...edu, skills: (edu.skills || []).filter((item) => item !== skill) })),
+    );
+    setFormCourses((current) =>
+      current.map((course) => ({ ...course, skills: (course.skills || []).filter((item) => item !== skill) })),
+    );
+  };
+
+  const skillSources: SkillSource[] = [
+    ...formExperiences.flatMap((exp, experienceIndex) =>
+      (exp.timeline || []).map((stage, stageIndex) => ({
+        kind: "stage" as const,
+        experienceIndex,
+        stageIndex,
+        label: `${exp.company} · ${stage.role || "Etapa sem cargo"}`,
+      })),
+    ),
+    ...formEducation.map((edu, index) => ({
+      kind: "education" as const,
+      index,
+      label: `${edu.institution} · ${edu.degree}${edu.fieldOfStudy ? ` em ${edu.fieldOfStudy}` : ""}`,
+    })),
+    ...formCourses.map((course, index) => ({
+      kind: "course" as const,
+      index,
+      label: `${course.type === "CERTIFICATION" ? "Certificação" : "Curso"} · ${course.name}`,
+    })),
+  ];
+
+  const sourceHasSkill = (source: SkillSource, skill: string): boolean => {
+    if (source.kind === "stage") {
+      return Boolean(formExperiences[source.experienceIndex]?.timeline?.[source.stageIndex]?.skills?.includes(skill));
+    }
+    if (source.kind === "education") return Boolean(formEducation[source.index]?.skills?.includes(skill));
+    return Boolean(formCourses[source.index]?.skills?.includes(skill));
+  };
+
+  const toggleSkillSource = (source: SkillSource, skill: string) => {
+    if (source.kind === "stage") {
+      setFormExperiences((current) =>
+        current.map((exp, expIndex) => {
+          if (expIndex !== source.experienceIndex) return exp;
+          const timeline = (exp.timeline || []).map((stage, stageIndex) => {
+            if (stageIndex !== source.stageIndex) return stage;
+            const currentSkills = stage.skills || [];
+            return {
+              ...stage,
+              skills: currentSkills.includes(skill)
+                ? currentSkills.filter((item) => item !== skill)
+                : [...currentSkills, skill],
+            };
+          });
+          return syncExperience({ ...exp, timeline });
+        }),
+      );
+      return;
+    }
+    if (source.kind === "education") {
+      setFormEducation((current) =>
+        current.map((edu, index) => {
+          if (index !== source.index) return edu;
+          const currentSkills = edu.skills || [];
+          return {
+            ...edu,
+            skills: currentSkills.includes(skill)
+              ? currentSkills.filter((item) => item !== skill)
+              : [...currentSkills, skill],
+          };
+        }),
+      );
+      return;
+    }
+    setFormCourses((current) =>
+      current.map((course, index) => {
+        if (index !== source.index) return course;
+        const currentSkills = course.skills || [];
+        return {
+          ...course,
+          skills: currentSkills.includes(skill)
+            ? currentSkills.filter((item) => item !== skill)
+            : [...currentSkills, skill],
+        };
+      }),
+    );
+  };
+
+  const template = (preferences.template || "modern") as TemplateId;
+  const color = preferences.color || "#0284c7";
+  const showPhoto = preferences.showPhoto !== false;
+
+  const renderTemplate = () => {
+    const props = { profile: previewProfile, color, showPhoto, isFirstJob };
+    switch (template) {
+      case "classic":
+        return <ClassicTemplate {...props} />;
+      case "minimalist":
+        return <MinimalistTemplate {...props} />;
+      case "creative":
+        return <CreativeTemplate {...props} />;
+      case "modern":
+      default:
+        return <ModernTemplate {...props} />;
+    }
+  };
 
   const STEPS = [
     { id: "personal", label: "Dados Pessoais", icon: <User className="w-4 h-4" /> },
@@ -226,103 +648,66 @@ export function ResumeBuilderPage() {
     { id: "about", label: "Sobre Você", icon: <FileText className="w-4 h-4" /> },
   ];
 
-  const currentStepIndex = step;
-  const totalSteps = STEPS.length;
-  const isLastWizardStep = currentStepIndex >= totalSteps - 1;
-
-  const previewProfile: UserProfile = {
-    ...profile,
-    fullName: formName,
-    socialName: formSocialName,
-    name: formName,
-    birthDate: formBirthDate,
-    phone: formPhone,
-    email: formEmail,
-    address: formAddress,
-    resumePhotoURL: formPhoto,
-    photoURL: formPhoto || profile.photoURL,
-    bio: formBio,
-    salaryExpectation: formSalary,
-    experiences: formExperiences.map(normalizeExperience),
-    education: formEducation,
-    skills: formSkills,
-    courses: formCourses,
-    languages: formLanguages,
-  };
-
-  const renderTemplate = () => {
-    const props = { profile: previewProfile, color, showPhoto, isFirstJob };
-    switch (template) {
-      case "classic": return <ClassicTemplate {...props} />;
-      case "minimalist": return <MinimalistTemplate {...props} />;
-      case "creative": return <CreativeTemplate {...props} />;
-      case "modern":
-      default: return <ModernTemplate {...props} />;
-    }
-  };
-
-  const handleAiUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !aiEnabled) return;
-    setAiLoading(true);
-    try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64 = reader.result as string;
-        const resp = await fetch("/api/ai/analyze-resume", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await (await import("../lib/firebase")).auth.currentUser?.getIdToken()}` },
-          body: JSON.stringify({ base64File: base64, mimeType: file.type }),
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data.name) setFormName(data.name);
-          if (data.phone) setFormPhone(data.phone);
-          if (data.bio) setFormBio(data.bio);
-          if (Array.isArray(data.experiences)) setFormExperiences(data.experiences.map(normalizeExperience));
-          if (data.education) setFormEducation(data.education);
-          if (data.skills) setFormSkills(data.skills);
-          if (data.courses) setFormCourses(data.courses);
-          setStep(0);
-        } else {
-          const errorData = await resp.json().catch(() => ({}));
-          alert(errorData.message || errorData.error || "Não foi possível analisar o currículo. Tente novamente.");
-        }
-        setAiLoading(false);
-      };
-      reader.readAsDataURL(file);
-    } catch {
-      setAiLoading(false);
-      alert("Erro ao processar o arquivo.");
-    }
-  };
+  if (aiProcessing) {
+    return <AiResumeProcessingScreen stage={aiProcessStage} />;
+  }
 
   if (step === -1) {
     return (
       <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center p-6">
         <div className="max-w-lg w-full text-center">
-          <div className="w-20 h-20 rounded-3xl bg-terracotta-100 flex items-center justify-center mx-auto mb-6"><FileText className="w-10 h-10 text-terracotta-600" /></div>
+          <div className="w-20 h-20 rounded-3xl bg-terracotta-100 flex items-center justify-center mx-auto mb-6">
+            <FileText className="w-10 h-10 text-terracotta-600" />
+          </div>
           <h1 className="text-3xl font-serif font-bold text-stone-900 mb-3">Vamos criar seu currículo!</h1>
-          <p className="text-stone-500 mb-10 leading-relaxed">Responda algumas perguntas e nós montamos um currículo profissional pra você em minutos.</p>
+          <p className="text-stone-500 mb-8 leading-relaxed">
+            Preencha manualmente ou envie um currículo existente para a IA organizar os dados para você revisar.
+          </p>
+
+          {aiError && (
+            <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-left text-sm text-red-700">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div>
+                <p className="font-bold">Não conseguimos concluir a análise</p>
+                <p className="mt-1">{aiError}</p>
+              </div>
+            </div>
+          )}
+
           {aiEnabled && (
             <>
               <div className="bg-gradient-to-br from-violet-50 to-blue-50 border border-violet-200 rounded-2xl p-5 mb-8 text-left">
-                <h3 className="font-bold text-violet-900 flex items-center gap-2 mb-2"><Sparkles className="w-5 h-5 text-violet-500" /> Atalho com Inteligência Artificial</h3>
-                <p className="text-sm text-violet-700 mb-3">Já tem um currículo em PDF? Envie e nossa IA preencherá todos os campos automaticamente para você apenas revisar.</p>
-                <label className="relative cursor-pointer inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition-colors shadow-sm">
-                  <Upload className="w-4 h-4" />{aiLoading ? "Analisando..." : "Enviar Currículo Existente"}
-                  <input type="file" accept=".pdf,image/*" onChange={handleAiUpload} className="hidden" disabled={aiLoading} />
+                <h3 className="font-bold text-violet-900 flex items-center gap-2 mb-2">
+                  <Sparkles className="w-5 h-5 text-violet-500" /> Criar a partir do meu currículo
+                </h3>
+                <p className="text-sm text-violet-700 mb-3">
+                  A IA lê o arquivo, organiza experiências e habilidades, agrupa evoluções na mesma empresa e prepara tudo para sua revisão.
+                </p>
+                <label className="cursor-pointer inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition-colors shadow-sm">
+                  <Upload className="w-4 h-4" /> Enviar currículo existente
+                  <input type="file" accept=".pdf,image/png,image/jpeg" onChange={handleAiUpload} className="hidden" />
                 </label>
               </div>
-              <div className="flex items-center gap-4 mb-8"><div className="h-px flex-1 bg-stone-200" /><span className="text-sm text-stone-400 font-medium">ou preencha manualmente</span><div className="h-px flex-1 bg-stone-200" /></div>
+              <div className="flex items-center gap-4 mb-8">
+                <div className="h-px flex-1 bg-stone-200" />
+                <span className="text-sm text-stone-400 font-medium">ou preencha manualmente</span>
+                <div className="h-px flex-1 bg-stone-200" />
+              </div>
             </>
           )}
+
           <h2 className="text-lg font-bold text-stone-900 mb-4">Este é o seu primeiro emprego?</h2>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <button onClick={() => { setIsFirstJob(true); setStep(0); }} className="flex-1 py-4 px-6 bg-white border-2 border-stone-200 rounded-2xl font-bold text-stone-700 hover:border-terracotta-400 hover:bg-terracotta-50 transition-all">Sim, é meu primeiro emprego</button>
-            <button onClick={() => { setIsFirstJob(false); setStep(0); }} className="flex-1 py-4 px-6 bg-white border-2 border-stone-200 rounded-2xl font-bold text-stone-700 hover:border-terracotta-400 hover:bg-terracotta-50 transition-all">Não, já tenho experiência</button>
+            <button onClick={() => { setIsFirstJob(true); setStep(0); }} className="flex-1 py-4 px-6 bg-white border-2 border-stone-200 rounded-2xl font-bold text-stone-700 hover:border-terracotta-400 hover:bg-terracotta-50 transition-all">
+              Sim, é meu primeiro emprego
+            </button>
+            <button onClick={() => { setIsFirstJob(false); setStep(0); }} className="flex-1 py-4 px-6 bg-white border-2 border-stone-200 rounded-2xl font-bold text-stone-700 hover:border-terracotta-400 hover:bg-terracotta-50 transition-all">
+              Não, já tenho experiência
+            </button>
           </div>
-          <Link to="/dashboard" className="mt-8 inline-flex items-center gap-2 text-sm text-stone-400 hover:text-stone-600"><ArrowLeft className="w-4 h-4" /> Voltar ao painel</Link>
+          <Link to="/dashboard/pessoal" className="mt-8 inline-flex items-center gap-2 text-sm text-stone-400 hover:text-stone-600">
+            <ArrowLeft className="w-4 h-4" /> Voltar ao painel
+          </Link>
         </div>
       </div>
     );
@@ -332,31 +717,117 @@ export function ResumeBuilderPage() {
     return (
       <>
         <div className="min-h-screen bg-stone-100 flex flex-col md:flex-row" id="resume-builder-root">
-          <aside id="resume-builder-sidebar" className="w-full md:w-80 bg-white border-b md:border-b-0 md:border-r border-stone-200 flex flex-col md:h-screen md:sticky md:top-0 z-10 shrink-0">
+          <aside id="resume-builder-sidebar" className="w-full md:w-[350px] bg-white border-b md:border-b-0 md:border-r border-stone-200 flex flex-col md:h-screen md:sticky md:top-0 z-10 shrink-0">
             <div className="p-4 border-b border-stone-200 flex items-center justify-between gap-3">
-              <button onClick={() => setStep(0)} className="flex items-center gap-2 text-stone-600 hover:text-terracotta-600 font-medium text-sm"><ArrowLeft className="w-4 h-4" /> Editar Dados</button>
-              <button onClick={() => window.print()} className="bg-terracotta-600 hover:bg-terracotta-700 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2 text-sm shadow-sm transition-colors"><Printer className="w-4 h-4" /> Exportar PDF</button>
+              <button onClick={() => setStep(0)} className="flex items-center gap-2 text-stone-600 hover:text-terracotta-600 font-medium text-sm">
+                <ArrowLeft className="w-4 h-4" /> Editar dados
+              </button>
+              <button onClick={() => window.print()} className="bg-terracotta-600 hover:bg-terracotta-700 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2 text-sm shadow-sm transition-colors">
+                <Printer className="w-4 h-4" /> PDF
+              </button>
             </div>
-            <div className="p-5 md:p-6 flex-1 overflow-y-auto space-y-7">
+
+            <div className="p-5 flex-1 overflow-y-auto space-y-7">
+              {aiEnabled && (
+                <ResumeScoreCard analysis={formAiAnalysis} reviewing={reviewing} onReview={() => void reviewResume()} />
+              )}
+
               <section>
-                <h2 className="text-xs font-bold text-stone-900 uppercase tracking-widest mb-3 flex items-center gap-2"><Layout className="w-4 h-4 text-stone-400" /> Modelos</h2>
-                <div className="grid grid-cols-2 gap-2.5">{TEMPLATES.map((tpl) => <button key={tpl.id} onClick={() => setTemplate(tpl.id)} className={`py-2.5 px-2 border-2 rounded-xl text-sm font-bold transition-all ${template === tpl.id ? "border-terracotta-600 text-terracotta-700 bg-terracotta-50" : "border-stone-200 text-stone-600 hover:border-stone-300 bg-white"}`}>{tpl.name}</button>)}</div>
+                <h2 className="text-xs font-bold text-stone-900 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <Layout className="w-4 h-4 text-stone-400" /> Modelo
+                </h2>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {TEMPLATES.map((tpl) => (
+                    <button
+                      key={tpl.id}
+                      onClick={() => setPreferences((current) => ({ ...current, template: tpl.id }))}
+                      className={`py-2.5 px-2 border-2 rounded-xl text-sm font-bold transition-all ${template === tpl.id ? "border-terracotta-600 text-terracotta-700 bg-terracotta-50" : "border-stone-200 text-stone-600 hover:border-stone-300 bg-white"}`}
+                    >
+                      {tpl.name}
+                    </button>
+                  ))}
+                </div>
               </section>
+
               <section>
-                <h2 className="text-xs font-bold text-stone-900 uppercase tracking-widest mb-3 flex items-center gap-2"><Palette className="w-4 h-4 text-stone-400" /> Cor de Destaque</h2>
-                <div className="flex flex-wrap gap-2.5">{ACCENT_COLORS.map((c) => <button key={c.hex} onClick={() => setColor(c.hex)} className="w-8 h-8 rounded-full flex items-center justify-center transition-transform hover:scale-110 shadow-sm" style={{ backgroundColor: c.hex }} title={c.name}>{color === c.hex && <Check className="w-4 h-4 text-white" />}</button>)}</div>
+                <h2 className="text-xs font-bold text-stone-900 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <Palette className="w-4 h-4 text-stone-400" /> Cor
+                </h2>
+                <div className="flex flex-wrap gap-2.5">
+                  {ACCENT_COLORS.map((item) => (
+                    <button
+                      key={item.hex}
+                      onClick={() => setPreferences((current) => ({ ...current, color: item.hex }))}
+                      className="w-8 h-8 rounded-full flex items-center justify-center transition-transform hover:scale-110 shadow-sm"
+                      style={{ backgroundColor: item.hex }}
+                      title={item.name}
+                    >
+                      {color === item.hex && <Check className="w-4 h-4 text-white" />}
+                    </button>
+                  ))}
+                </div>
               </section>
-              <section>
-                <h2 className="text-xs font-bold text-stone-900 uppercase tracking-widest mb-3 flex items-center gap-2"><Settings className="w-4 h-4 text-stone-400" /> Opções</h2>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <div className={`w-10 h-6 rounded-full transition-colors flex items-center p-1 ${showPhoto ? "bg-terracotta-500" : "bg-stone-300"}`}><div className={`w-4 h-4 rounded-full bg-white transition-transform shadow-sm ${showPhoto ? "translate-x-4" : "translate-x-0"}`} /></div>
-                  <span className="text-sm font-medium text-stone-700 flex items-center gap-2"><Camera className="w-4 h-4 text-stone-400" /> Mostrar foto</span>
-                  <input type="checkbox" checked={showPhoto} onChange={(e) => setShowPhoto(e.target.checked)} className="hidden" />
-                </label>
+
+              <section className="space-y-4">
+                <h2 className="text-xs font-bold text-stone-900 uppercase tracking-widest flex items-center gap-2">
+                  <Settings className="w-4 h-4 text-stone-400" /> Aparência do currículo
+                </h2>
+                <ToggleRow
+                  checked={showPhoto}
+                  onChange={(checked) => setPreferences((current) => ({ ...current, showPhoto: checked }))}
+                  label="Mostrar foto"
+                  icon={<Camera className="w-4 h-4 text-stone-400" />}
+                />
+
+                {formSocialName.trim() && (
+                  <div>
+                    <label className="mb-2 block text-xs font-bold text-stone-500 uppercase tracking-wider">Nome exibido</label>
+                    <div className="grid grid-cols-2 gap-2 rounded-xl bg-stone-100 p-1">
+                      <button
+                        type="button"
+                        onClick={() => setPreferences((current) => ({ ...current, nameMode: "SOCIAL" }))}
+                        className={`rounded-lg px-3 py-2 text-xs font-bold ${preferences.nameMode !== "CIVIL" ? "bg-white text-stone-900 shadow-sm" : "text-stone-500"}`}
+                      >
+                        Nome social
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreferences((current) => ({ ...current, nameMode: "CIVIL" }))}
+                        className={`rounded-lg px-3 py-2 text-xs font-bold ${preferences.nameMode === "CIVIL" ? "bg-white text-stone-900 shadow-sm" : "text-stone-500"}`}
+                      >
+                        Nome civil
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <ToggleRow
+                  checked={preferences.showHeadline !== false}
+                  onChange={(checked) => setPreferences((current) => ({ ...current, showHeadline: checked }))}
+                  label="Mostrar título profissional"
+                  icon={<Briefcase className="w-4 h-4 text-stone-400" />}
+                />
+                {preferences.showHeadline !== false && (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-bold text-stone-500 uppercase tracking-wider">Título abaixo do nome</label>
+                    <input
+                      value={preferences.headline || ""}
+                      onChange={(event) => setPreferences((current) => ({ ...current, headline: event.target.value }))}
+                      placeholder={formExperiences[0]?.role || "Ex.: Líder de Atendimento"}
+                      className="w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm outline-none focus:border-terracotta-500"
+                    />
+                    <p className="mt-1 text-[11px] leading-relaxed text-stone-400">Se deixar vazio, usamos seu cargo mais recente.</p>
+                  </div>
+                )}
               </section>
             </div>
           </aside>
-          <main ref={previewRef} id="resume-preview-area" className="flex-1 overflow-x-hidden overflow-y-auto bg-stone-100 p-4 md:p-8 flex justify-center items-start"><div className="origin-top transition-transform duration-150" style={{ transform: `scale(${scale})`, width: "210mm", transformOrigin: "top center" }}>{renderTemplate()}</div></main>
+
+          <main ref={previewRef} id="resume-preview-area" className="flex-1 overflow-x-hidden overflow-y-auto bg-stone-100 p-4 md:p-8 flex justify-center items-start">
+            <div className="origin-top transition-transform duration-150" style={{ transform: `scale(${scale})`, width: "210mm", transformOrigin: "top center" }}>
+              {renderTemplate()}
+            </div>
+          </main>
         </div>
         <style dangerouslySetInnerHTML={{ __html: `@media print { @page { size: A4 portrait; margin: 0; } html, body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background: white !important; margin: 0 !important; padding: 0 !important; } #resume-builder-sidebar { display: none !important; } #resume-builder-root { display: block !important; background: white !important; } #resume-preview-area { padding: 0 !important; background: white !important; overflow: visible !important; } #resume-preview-area > div { transform: none !important; width: 100% !important; } }` }} />
       </>
@@ -364,65 +835,477 @@ export function ResumeBuilderPage() {
   }
 
   const currentStep = STEPS[step] || STEPS[0];
+  const totalSteps = STEPS.length;
+  const isLastWizardStep = step >= totalSteps - 1;
+
   const renderStepContent = () => {
-    const stepId = currentStep?.id;
-    switch (stepId) {
+    switch (currentStep?.id) {
       case "personal":
-        return <div className="space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><FormField label="Nome Completo (Registro) *" value={formName} onChange={setFormName} placeholder="Maria Silva dos Santos" /><FormField label="Nome Social (Opcional)" value={formSocialName} onChange={setFormSocialName} placeholder="Como prefere ser chamado" /></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><FormField label="Telefone / WhatsApp *" value={formPhone} onChange={setFormPhone} placeholder="(19) 99999-9999" /><FormField label="Data de Nascimento" value={formBirthDate} onChange={setFormBirthDate} type="date" /></div>
-          <FormField label="E-mail" value={formEmail} onChange={setFormEmail} placeholder="seu@email.com" disabled />
-          <div><label className="block text-sm font-semibold text-stone-700 mb-1">Cidade / Estado</label><CityStateSelector initialValue={formAddress} onLocationChange={setFormAddress} /></div>
-          <div className="pt-2"><label className="block text-sm font-semibold text-stone-700 mb-1">Foto para o Currículo (Opcional)</label><p className="text-xs text-stone-500 mb-3">Ela pode ser diferente da foto do seu perfil.</p><div className="flex items-start gap-4"><div className="flex-1 max-w-sm"><FileUpload label="" accept="image/*" value={formPhoto} onChange={(b64) => setFormPhoto(b64)} type="avatar" placeholder="Clique para subir uma foto profissional" /></div>{!formPhoto && profile?.photoURL && <div className="flex flex-col items-center gap-2"><span className="text-xs font-semibold text-stone-400">Sua foto atual</span><img src={profile.photoURL} alt="Perfil" className="w-16 h-16 rounded-2xl object-cover grayscale opacity-50" /></div>}</div></div>
-          <FormField label="Pretensão Salarial (Opcional)" value={formSalary} onChange={setFormSalary} placeholder="Ex: R$ 2.500,00 a R$ 3.000,00" />
-        </div>;
-      case "about":
-        return <div className="space-y-4"><div><label className="block text-sm font-semibold text-stone-700 mb-1">{isFirstJob ? "Objetivo Profissional *" : "Resumo Profissional *"}</label><p className="text-xs text-stone-500 mb-2">{isFirstJob ? "Descreva o que você busca profissionalmente e suas principais qualidades." : "Escreva um breve resumo sobre sua carreira, áreas de atuação e diferenciais."}</p><textarea value={formBio} onChange={(e) => setFormBio(e.target.value)} rows={5} placeholder={isFirstJob ? "Ex: Jovem proativo e dedicado, busco minha primeira oportunidade profissional..." : "Ex: Profissional com 5 anos de experiência em [área]..."} className="w-full px-4 py-3 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent resize-none" /></div></div>;
+        return (
+          <div className="space-y-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField label="Nome completo (registro) *" value={formName} onChange={setFormName} placeholder="Maria Silva dos Santos" />
+              <FormField label="Nome social (opcional)" value={formSocialName} onChange={setFormSocialName} placeholder="Como prefere ser chamado" />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField label="Telefone / WhatsApp *" value={formPhone} onChange={setFormPhone} placeholder="(19) 99999-9999" />
+              <FormField label="Data de nascimento" value={formBirthDate} onChange={setFormBirthDate} type="date" />
+            </div>
+            <FormField label="E-mail" value={formEmail} onChange={setFormEmail} disabled />
+            <div>
+              <label className="block text-sm font-semibold text-stone-700 mb-1">Cidade / Estado</label>
+              <CityStateSelector initialValue={formAddress} onLocationChange={setFormAddress} />
+            </div>
+            <div className="pt-2">
+              <label className="block text-sm font-semibold text-stone-700 mb-1">Foto para o currículo (opcional)</label>
+              <p className="text-xs text-stone-500 mb-3">Ela pode ser diferente da foto do seu perfil.</p>
+              <div className="flex items-start gap-4">
+                <div className="flex-1 max-w-sm">
+                  <FileUpload label="" accept="image/*" value={formPhoto} onChange={setFormPhoto} type="avatar" placeholder="Clique para subir uma foto profissional" />
+                </div>
+                {!formPhoto && profile.photoURL && <img src={profile.photoURL} alt="Perfil" className="w-16 h-16 rounded-2xl object-cover grayscale opacity-50" />}
+              </div>
+            </div>
+            <FormField label="Pretensão salarial (opcional)" value={formSalary} onChange={setFormSalary} placeholder="Ex.: R$ 2.500,00 a R$ 3.000,00" />
+          </div>
+        );
+
       case "experience":
-        return <div className="space-y-4">{formExperiences.map((exp, idx) => <div key={idx} className="bg-stone-50 border border-stone-200 rounded-2xl p-4 relative"><button onClick={() => setFormExperiences(formExperiences.filter((_, i) => i !== idx))} className="absolute top-3 right-3 text-stone-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button><div className="font-bold text-stone-900">{exp.role}</div><div className="text-sm text-stone-600">{exp.company}</div><div className="text-xs text-stone-500 mt-1">{normalizeMonthYear(exp.startDate)} – {exp.current ? "Atual" : normalizeMonthYear(exp.endDate)}</div>{exp.description && <p className="text-sm text-stone-600 mt-2 line-clamp-2">{exp.description}</p>}</div>)}<ExperienceForm onAdd={(exp) => setFormExperiences([...formExperiences, normalizeExperience(exp)])} /></div>;
+        return (
+          <div className="space-y-4">
+            {formExperiences.map((experience, index) => (
+              <ExperienceEditor
+                key={experience.id || index}
+                value={experience}
+                onChange={(next) => setFormExperiences((current) => current.map((item, itemIndex) => itemIndex === index ? syncExperience(next) : item))}
+                onDelete={() => setFormExperiences((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+              />
+            ))}
+            <ExperienceForm onAdd={(experience) => setFormExperiences((current) => [...current, syncExperience(experience)])} />
+          </div>
+        );
+
       case "education":
-        return <div className="space-y-4">{formEducation.map((edu, idx) => <div key={idx} className="bg-stone-50 border border-stone-200 rounded-2xl p-4 relative"><button onClick={() => setFormEducation(formEducation.filter((_, i) => i !== idx))} className="absolute top-3 right-3 text-stone-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button><div className="font-bold text-stone-900">{edu.degree}{edu.fieldOfStudy ? ` em ${edu.fieldOfStudy}` : ""}</div><div className="text-sm text-stone-600">{edu.institution}</div><div className="text-xs text-stone-500 mt-1">{edu.startYear} – {edu.current ? "Atual" : edu.endYear}</div></div>)}<EducationForm onAdd={(edu) => setFormEducation([...formEducation, edu])} /></div>;
+        return (
+          <div className="space-y-4">
+            {formEducation.map((education, index) => (
+              <EducationEditor
+                key={education.id || index}
+                value={education}
+                onChange={(next) => setFormEducation((current) => current.map((item, itemIndex) => itemIndex === index ? next : item))}
+                onDelete={() => setFormEducation((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+              />
+            ))}
+            <EducationForm onAdd={(education) => setFormEducation((current) => [...current, education])} />
+          </div>
+        );
+
       case "skills":
-        return <div className="space-y-4"><div className="flex flex-wrap gap-2 min-h-[40px]">{formSkills.map((skill, idx) => <span key={idx} className="bg-terracotta-100 text-terracotta-800 text-sm font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5">{skill}<button onClick={() => setFormSkills(formSkills.filter((_, i) => i !== idx))} className="text-terracotta-500 hover:text-terracotta-800"><Trash2 className="w-3 h-3" /></button></span>)}</div><div className="flex gap-2"><input value={newSkill} onChange={(e) => setNewSkill(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && newSkill.trim()) { setFormSkills([...formSkills, newSkill.trim()]); setNewSkill(""); e.preventDefault(); }}} placeholder="Digite uma habilidade e pressione Enter" className="flex-1 px-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500" /><button onClick={() => { if (newSkill.trim()) { setFormSkills([...formSkills, newSkill.trim()]); setNewSkill(""); }}} className="bg-stone-900 text-white px-4 rounded-xl text-sm font-bold hover:bg-stone-800 transition-colors"><Plus className="w-4 h-4" /></button></div></div>;
+        return (
+          <div className="space-y-6">
+            <div>
+              <div className="flex flex-wrap gap-2 min-h-[40px]">
+                {formSkills.map((skill) => (
+                  <span key={skill} className="bg-terracotta-100 text-terracotta-800 text-sm font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5">
+                    {skill}
+                    <button onClick={() => removeSkillEverywhere(skill)} className="text-terracotta-500 hover:text-terracotta-800">
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="mt-4 flex gap-2">
+                <input
+                  value={newSkill}
+                  onChange={(event) => setNewSkill(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      const skill = newSkill.trim();
+                      if (skill && !formSkills.some((item) => item.toLocaleLowerCase("pt-BR") === skill.toLocaleLowerCase("pt-BR"))) {
+                        setFormSkills((current) => [...current, skill]);
+                        setNewSkill("");
+                      }
+                    }
+                  }}
+                  placeholder="Digite uma habilidade e pressione Enter"
+                  className="flex-1 px-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500"
+                />
+                <button
+                  onClick={() => {
+                    const skill = newSkill.trim();
+                    if (skill && !formSkills.some((item) => item.toLocaleLowerCase("pt-BR") === skill.toLocaleLowerCase("pt-BR"))) {
+                      setFormSkills((current) => [...current, skill]);
+                      setNewSkill("");
+                    }
+                  }}
+                  className="bg-stone-900 text-white px-4 rounded-xl text-sm font-bold hover:bg-stone-800 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {formSkills.length > 0 && skillSources.length > 0 && (
+              <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
+                <div className="mb-4">
+                  <h3 className="font-bold text-stone-900">Onde você desenvolveu cada habilidade?</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-stone-500">
+                    Uma habilidade pode estar ligada a várias experiências, formações, cursos ou certificações. Isso deixa o perfil mais verificável e melhora o matching.
+                  </p>
+                </div>
+                <div className="space-y-5">
+                  {formSkills.map((skill) => (
+                    <div key={skill} className="rounded-xl border border-stone-200 bg-white p-3">
+                      <div className="mb-2 text-sm font-bold text-stone-900">{skill}</div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {skillSources.map((source, sourceIndex) => {
+                          const checked = sourceHasSkill(source, skill);
+                          return (
+                            <label key={`${skill}-${source.kind}-${sourceIndex}`} className={`flex cursor-pointer items-start gap-2 rounded-xl border p-2.5 text-xs transition ${checked ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-stone-200 text-stone-600 hover:bg-stone-50"}`}>
+                              <input type="checkbox" checked={checked} onChange={() => toggleSkillSource(source, skill)} className="mt-0.5 rounded" />
+                              <span>{source.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
       case "courses":
-        return <div className="space-y-4">{formCourses.map((course, idx) => <div key={idx} className="bg-stone-50 border border-stone-200 rounded-2xl p-4 relative"><button onClick={() => setFormCourses(formCourses.filter((_, i) => i !== idx))} className="absolute top-3 right-3 text-stone-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button><div className="font-bold text-stone-900">{course.name}</div><div className="text-sm text-stone-600">{course.institution} · {course.year}</div></div>)}<CourseForm onAdd={(c) => setFormCourses([...formCourses, c])} /></div>;
+        return (
+          <div className="space-y-4">
+            {formCourses.map((course, index) => (
+              <CourseEditor
+                key={course.id || index}
+                value={course}
+                onChange={(next) => setFormCourses((current) => current.map((item, itemIndex) => itemIndex === index ? next : item))}
+                onDelete={() => setFormCourses((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+              />
+            ))}
+            <CourseForm onAdd={(course) => setFormCourses((current) => [...current, course])} />
+          </div>
+        );
+
       case "languages":
-        return <div className="space-y-4">{formLanguages.map((lang, idx) => <div key={idx} className="bg-stone-50 border border-stone-200 rounded-2xl p-4 flex justify-between items-center"><div><div className="font-bold text-stone-900">{lang.name}</div><div className="text-sm text-stone-500">{lang.level}</div></div><button onClick={() => setFormLanguages(formLanguages.filter((_, i) => i !== idx))} className="text-stone-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button></div>)}<LanguageForm onAdd={(l) => setFormLanguages([...formLanguages, l])} /></div>;
-      default: return null;
+        return (
+          <div className="space-y-4">
+            {formLanguages.map((language, index) => (
+              <div key={`${language.name}-${index}`} className="bg-stone-50 border border-stone-200 rounded-2xl p-4 flex justify-between items-center">
+                <div>
+                  <div className="font-bold text-stone-900">{language.name}</div>
+                  <div className="text-sm text-stone-500">{language.level}</div>
+                </div>
+                <button onClick={() => setFormLanguages((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="text-stone-400 hover:text-red-500">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+            <LanguageForm onAdd={(language) => setFormLanguages((current) => [...current, language])} />
+          </div>
+        );
+
+      case "about":
+        return (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-semibold text-stone-700 mb-1">{isFirstJob ? "Objetivo profissional *" : "Resumo profissional *"}</label>
+              <p className="text-xs text-stone-500 mb-2">{isFirstJob ? "Descreva o que você busca profissionalmente e suas principais qualidades." : "Escreva um breve resumo sobre sua carreira, áreas de atuação e diferenciais."}</p>
+              <textarea value={formBio} onChange={(event) => setFormBio(event.target.value)} rows={5} className="w-full px-4 py-3 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 resize-none" />
+            </div>
+          </div>
+        );
+      default:
+        return null;
     }
   };
 
-  return <div className="min-h-screen bg-stone-50 flex flex-col">
-    <header className="bg-white border-b border-stone-200 px-4 md:px-8 py-4 flex items-center justify-between shrink-0"><Link to="/dashboard" className="flex items-center gap-2 text-stone-500 hover:text-stone-700 text-sm font-medium"><ArrowLeft className="w-4 h-4" /> Painel</Link><button onClick={goToPreview} className="text-sm font-bold text-terracotta-600 hover:text-terracotta-700 flex items-center gap-1.5">Pular para Preview <ArrowRight className="w-4 h-4" /></button></header>
-    <div className="bg-white border-b border-stone-100 px-4 md:px-8 py-3"><div className="max-w-2xl mx-auto flex items-center gap-1">{STEPS.map((s, idx) => <React.Fragment key={s.id}><button onClick={() => setStep(idx)} className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full transition-all whitespace-nowrap ${idx === step ? "bg-terracotta-600 text-white" : idx < step ? "bg-terracotta-100 text-terracotta-700" : "bg-stone-100 text-stone-400"}`}>{idx < step ? <Check className="w-3 h-3" /> : s.icon}<span className="hidden sm:inline">{s.label}</span></button>{idx < STEPS.length - 1 && <div className={`flex-1 h-0.5 rounded-full ${idx < step ? "bg-terracotta-300" : "bg-stone-200"}`} />}</React.Fragment>)}</div></div>
-    <main className="flex-1 overflow-y-auto p-4 md:p-8"><div className="max-w-2xl mx-auto"><div className="flex items-center gap-3 mb-6"><div className="w-10 h-10 rounded-xl bg-terracotta-100 flex items-center justify-center text-terracotta-600">{currentStep?.icon}</div><div><h2 className="text-xl font-bold text-stone-900">{currentStep?.label}</h2><p className="text-sm text-stone-500">Etapa {step + 1} de {totalSteps}</p></div></div><div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-5 md:p-8">{renderStepContent()}</div><div className="flex justify-between items-center mt-6 gap-4"><button onClick={prevStep} className="flex items-center gap-2 text-stone-500 hover:text-stone-700 font-medium text-sm py-2.5 px-4 rounded-xl hover:bg-stone-100 transition-colors"><ArrowLeft className="w-4 h-4" /> Voltar</button><button onClick={isLastWizardStep ? goToPreview : nextStep} disabled={saving} className="bg-terracotta-600 hover:bg-terracotta-700 text-white font-bold py-2.5 px-6 rounded-xl flex items-center gap-2 text-sm shadow-sm transition-colors disabled:opacity-60">{saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}{isLastWizardStep ? "Ver Currículo" : "Próximo"}{!isLastWizardStep && <ArrowRight className="w-4 h-4" />}</button></div></div></main>
-  </div>;
+  return (
+    <div className="min-h-screen bg-stone-50 flex flex-col">
+      <header className="bg-white border-b border-stone-200 px-4 md:px-8 py-4 flex items-center justify-between shrink-0">
+        <Link to="/dashboard/pessoal" className="flex items-center gap-2 text-stone-500 hover:text-stone-700 text-sm font-medium">
+          <ArrowLeft className="w-4 h-4" /> Painel
+        </Link>
+        <button onClick={goToPreview} className="text-sm font-bold text-terracotta-600 hover:text-terracotta-700 flex items-center gap-1.5">
+          Pular para preview <ArrowRight className="w-4 h-4" />
+        </button>
+      </header>
+
+      <div className="bg-white border-b border-stone-100 px-4 md:px-8 py-3 overflow-x-auto">
+        <div className="max-w-2xl mx-auto flex items-center gap-1 min-w-max sm:min-w-0">
+          {STEPS.map((item, index) => (
+            <React.Fragment key={item.id}>
+              <button
+                onClick={() => setStep(index)}
+                className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-full transition-all whitespace-nowrap ${index === step ? "bg-terracotta-600 text-white" : index < step ? "bg-terracotta-100 text-terracotta-700" : "bg-stone-100 text-stone-400"}`}
+              >
+                {index < step ? <Check className="w-3 h-3" /> : item.icon}
+                <span className="hidden sm:inline">{item.label}</span>
+              </button>
+              {index < STEPS.length - 1 && <div className={`w-5 sm:flex-1 h-0.5 rounded-full ${index < step ? "bg-terracotta-300" : "bg-stone-200"}`} />}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+
+      <main className="flex-1 overflow-y-auto p-4 md:p-8">
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-terracotta-100 flex items-center justify-center text-terracotta-600">{currentStep?.icon}</div>
+            <div>
+              <h2 className="text-xl font-bold text-stone-900">{currentStep?.label}</h2>
+              <p className="text-sm text-stone-500">Etapa {step + 1} de {totalSteps}</p>
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-5 md:p-8">{renderStepContent()}</div>
+          <div className="flex justify-between items-center mt-6 gap-4">
+            <button onClick={prevStep} className="flex items-center gap-2 text-stone-500 hover:text-stone-700 font-medium text-sm py-2.5 px-4 rounded-xl hover:bg-stone-100 transition-colors">
+              <ArrowLeft className="w-4 h-4" /> Voltar
+            </button>
+            <button onClick={isLastWizardStep ? goToPreview : nextStep} disabled={saving} className="bg-terracotta-600 hover:bg-terracotta-700 text-white font-bold py-2.5 px-6 rounded-xl flex items-center gap-2 text-sm shadow-sm transition-colors disabled:opacity-60">
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+              {isLastWizardStep ? "Ver currículo" : "Próximo"}
+              {!isLastWizardStep && <ArrowRight className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
 }
 
-function FormField({ label, value, onChange, placeholder, disabled, type = "text" }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; disabled?: boolean; type?: string }) {
-  return <div><label className="block text-sm font-semibold text-stone-700 mb-1">{label}</label><input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} className="w-full px-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent disabled:bg-stone-100 disabled:text-stone-400" /></div>;
+function AiResumeProcessingScreen({ stage }: { stage: number }) {
+  return (
+    <div className="min-h-screen overflow-hidden bg-stone-950 px-5 py-10 text-white flex items-center justify-center">
+      <div className="w-full max-w-2xl">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-violet-500/15 ring-1 ring-violet-400/30">
+            <BrainCircuit className="h-8 w-8 text-violet-300 animate-pulse" />
+          </div>
+          <p className="text-xs font-bold uppercase tracking-[0.24em] text-violet-300">Currículo em construção</p>
+          <h1 className="mt-2 text-2xl sm:text-3xl font-bold">A IA está organizando sua história profissional</h1>
+          <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-stone-400">Você não precisa fazer nada agora. Quando terminar, abrimos os dados preenchidos para sua revisão.</p>
+        </div>
+
+        <div className="space-y-3">
+          {AI_PROCESS_MESSAGES.map((message, index) => {
+            const complete = index < stage;
+            const active = index === stage;
+            const hidden = index > stage + 1;
+            if (hidden) return null;
+            return (
+              <div key={message} className={`flex items-start gap-3 transition-all duration-500 ${active ? "translate-x-1 opacity-100" : complete ? "opacity-70" : "opacity-35"}`}>
+                <div className={`mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${complete ? "bg-emerald-500/20 text-emerald-300" : active ? "bg-violet-500/20 text-violet-300" : "bg-white/5 text-stone-500"}`}>
+                  {complete ? <Check className="h-3.5 w-3.5" /> : active ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}
+                </div>
+                <div className={`max-w-[86%] rounded-2xl rounded-tl-sm border px-4 py-3 text-sm leading-relaxed ${active ? "border-violet-400/25 bg-violet-400/10 text-stone-100 shadow-lg shadow-violet-950/20" : "border-white/5 bg-white/[0.03] text-stone-400"}`}>
+                  {message}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-8 h-1.5 overflow-hidden rounded-full bg-white/10">
+          <div className="h-full rounded-full bg-violet-400 transition-all duration-700" style={{ width: `${Math.max(8, ((stage + 1) / AI_PROCESS_MESSAGES.length) * 100)}%` }} />
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function ExperienceForm({ onAdd }: { onAdd: (exp: ProfessionalExperience) => void }) {
+function ResumeScoreCard({ analysis, reviewing, onReview }: { analysis?: ResumeAIAnalysis; reviewing: boolean; onReview: () => void }) {
+  const score = Math.max(0, Math.min(100, Math.round(Number(analysis?.score) || 0)));
+  return (
+    <section className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
+          <Sparkles className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-violet-600">Qualidade do currículo</p>
+              <p className="mt-0.5 text-xs text-stone-500">Nota do documento, não da pessoa.</p>
+            </div>
+            {analysis?.score !== undefined && <div className="text-2xl font-black text-stone-900">{score}<span className="text-xs font-bold text-stone-400">/100</span></div>}
+          </div>
+          {analysis?.score !== undefined && (
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-violet-100">
+              <div className="h-full rounded-full bg-violet-500" style={{ width: `${score}%` }} />
+            </div>
+          )}
+          {analysis?.feedbackText && <p className="mt-3 text-xs leading-relaxed text-stone-600">{analysis.feedbackText}</p>}
+          {analysis?.suggestions && analysis.suggestions.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {analysis.suggestions.slice(0, 3).map((suggestion) => (
+                <div key={suggestion} className="flex items-start gap-2 text-xs text-stone-600">
+                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" />
+                  <span>{suggestion}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <button onClick={onReview} disabled={reviewing} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-3 py-2 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-50">
+            {reviewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BrainCircuit className="h-3.5 w-3.5" />}
+            {analysis ? "Reavaliar currículo" : "Avaliar meu currículo"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ToggleRow({ checked, onChange, label, icon }: { checked: boolean; onChange: (checked: boolean) => void; label: string; icon: React.ReactNode }) {
+  return (
+    <label className="flex items-center gap-3 cursor-pointer">
+      <div className={`w-10 h-6 rounded-full transition-colors flex items-center p-1 ${checked ? "bg-terracotta-500" : "bg-stone-300"}`}>
+        <div className={`w-4 h-4 rounded-full bg-white transition-transform shadow-sm ${checked ? "translate-x-4" : "translate-x-0"}`} />
+      </div>
+      <span className="text-sm font-medium text-stone-700 flex items-center gap-2">{icon}{label}</span>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="hidden" />
+    </label>
+  );
+}
+
+function FormField({ label, value, onChange, placeholder, disabled, type = "text" }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; disabled?: boolean; type?: string }) {
+  return (
+    <div>
+      <label className="block text-sm font-semibold text-stone-700 mb-1">{label}</label>
+      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} disabled={disabled} className="w-full px-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent disabled:bg-stone-100 disabled:text-stone-400" />
+    </div>
+  );
+}
+
+function ExperienceEditor({ value, onChange, onDelete }: { value: ProfessionalExperience; onChange: (value: ProfessionalExperience) => void; onDelete: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const experience = syncExperience(value);
+  const stages = experience.timeline || [];
+  const latest = stages[stages.length - 1];
+
+  const updateStage = (index: number, patch: Partial<ExperienceTimelineEntry>) => {
+    const timeline = stages.map((stage, stageIndex) => stageIndex === index ? normalizeStage({ ...stage, ...patch }) : stage);
+    onChange(syncExperience({ ...experience, timeline }));
+  };
+
+  if (!editing) {
+    return (
+      <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs font-bold uppercase tracking-wider text-stone-400">{experience.company}</div>
+            <div className="mt-1 font-bold text-stone-900">{latest?.role || experience.role}</div>
+            <div className="mt-1 text-xs text-stone-500">{experience.startDate} – {experience.current ? "Atual" : experience.endDate}</div>
+            {stages.length > 1 && <div className="mt-2 inline-flex rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700">{stages.length} etapas na empresa</div>}
+          </div>
+          <div className="flex gap-1">
+            <button onClick={() => setEditing(true)} className="rounded-lg p-2 text-stone-400 hover:bg-white hover:text-terracotta-600"><Edit3 className="h-4 w-4" /></button>
+            <button onClick={onDelete} className="rounded-lg p-2 text-stone-400 hover:bg-white hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-terracotta-200 bg-white p-4 sm:p-5 space-y-5">
+      <div className="flex items-center justify-between gap-3 border-b border-stone-100 pb-4">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-terracotta-600">Trajetória na empresa</p>
+          <h3 className="font-bold text-stone-900">Edite cargos, períodos e descrições</h3>
+        </div>
+        <button onClick={() => setEditing(false)} className="rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600">Concluir</button>
+      </div>
+
+      <FormField label="Empresa *" value={experience.company} onChange={(company) => onChange({ ...experience, company })} />
+      {stages.length > 1 && (
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-stone-700">Descrição geral da passagem pela empresa (opcional)</label>
+          <textarea value={experience.description || ""} onChange={(event) => onChange({ ...experience, description: event.target.value })} rows={2} className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-terracotta-500" placeholder="Um resumo opcional da sua trajetória nessa empresa." />
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {stages.map((stage, index) => (
+          <div key={stage.id || index} className="relative rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-terracotta-100 text-xs font-black text-terracotta-700">{index + 1}</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-stone-500">{index === stages.length - 1 ? "Cargo mais recente" : "Etapa da trajetória"}</span>
+              </div>
+              {stages.length > 1 && (
+                <button onClick={() => onChange(syncExperience({ ...experience, timeline: stages.filter((_, stageIndex) => stageIndex !== index) }))} className="text-stone-400 hover:text-red-500">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FormField label="Cargo / função *" value={stage.role} onChange={(role) => updateStage(index, { role })} placeholder="Ex.: Líder de Atendimento" />
+              <FormField label="Início" value={monthYearToInput(stage.startDate)} onChange={(value) => updateStage(index, { startDate: monthInputToMonthYear(value) })} type="month" />
+              <div>
+                <FormField label="Término" value={stage.current ? "" : monthYearToInput(stage.endDate)} onChange={(value) => updateStage(index, { endDate: monthInputToMonthYear(value) })} type="month" disabled={stage.current} />
+                <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-xs text-stone-600">
+                  <input type="checkbox" checked={stage.current} onChange={(event) => updateStage(index, { current: event.target.checked, endDate: event.target.checked ? "Atual" : "" })} className="rounded" /> Cargo atual
+                </label>
+              </div>
+            </div>
+            <div className="mt-3">
+              <label className="mb-1 block text-sm font-semibold text-stone-700">Descrição desta etapa</label>
+              <textarea value={stage.description || ""} onChange={(event) => updateStage(index, { description: event.target.value })} rows={3} className="w-full rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-terracotta-500" placeholder="Atividades, responsabilidades, resultados e conquistas deste cargo." />
+            </div>
+            {stage.skills && stage.skills.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {stage.skills.map((skill) => <span key={skill} className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-stone-600 border border-stone-200">{skill}</span>)}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={() => onChange(syncExperience({
+          ...experience,
+          timeline: [
+            ...stages.map((stage) => ({ ...stage, current: false, endDate: stage.current ? "" : stage.endDate })),
+            { id: makeId("stage"), role: "", startDate: "", endDate: "", current: false, description: "", skills: [] },
+          ],
+        }))}
+        className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-emerald-200 bg-emerald-50/60 py-3 text-sm font-bold text-emerald-700 hover:bg-emerald-50"
+      >
+        <Plus className="h-4 w-4" /> Adicionar evolução / novo cargo nesta empresa
+      </button>
+    </div>
+  );
+}
+
+function ExperienceForm({ onAdd }: { onAdd: (experience: ProfessionalExperience) => void }) {
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState("");
   const [company, setCompany] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [current, setCurrent] = useState(false);
-  const [desc, setDesc] = useState("");
-  const [companyOptions, setCompanyOptions] = useState<{value: string; label: string}[]>([]);
+  const [description, setDescription] = useState("");
+  const [companyOptions, setCompanyOptions] = useState<{ value: string; label: string }[]>([]);
 
   const handleCompanySearch = async (term: string) => {
-    if (!term || term.length < 2) { setCompanyOptions([]); return; }
+    if (term.length < 2) return setCompanyOptions([]);
     try {
-      const { api } = await import("../lib/api");
-      const res = await api.get(`/companies/search?q=${encodeURIComponent(term)}`);
-      setCompanyOptions(res.data.map((c: any) => ({ value: c.name, label: c.name })));
-    } catch (e) { console.error(e); }
+      const response = await api.get(`/companies/search?q=${encodeURIComponent(term)}`);
+      setCompanyOptions((response.data || []).map((companyItem: { name: string }) => ({ value: companyItem.name, label: companyItem.name })));
+    } catch (error) {
+      console.error(error);
+    }
   };
 
-  if (!open) return <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Adicionar Experiência</button>;
+  if (!open) {
+    return <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Adicionar experiência</button>;
+  }
 
   const handleAdd = () => {
     if (!role.trim() || !company.trim()) return;
@@ -430,58 +1313,187 @@ function ExperienceForm({ onAdd }: { onAdd: (exp: ProfessionalExperience) => voi
       alert("O término da experiência não pode ser anterior ao início.");
       return;
     }
-    onAdd({ role, company, startDate: monthInputToMonthYear(start), endDate: current ? "Atual" : monthInputToMonthYear(end), current, description: desc });
-    setRole(""); setCompany(""); setStart(""); setEnd(""); setCurrent(false); setDesc(""); setOpen(false);
+    const stage: ExperienceTimelineEntry = {
+      id: makeId("stage"),
+      role: role.trim(),
+      startDate: monthInputToMonthYear(start),
+      endDate: current ? "Atual" : monthInputToMonthYear(end),
+      current,
+      description,
+      skills: [],
+    };
+    onAdd({
+      id: makeId("exp"),
+      company: company.trim(),
+      role: stage.role,
+      startDate: stage.startDate,
+      endDate: stage.endDate,
+      current,
+      description,
+      skills: [],
+      timeline: [stage],
+    });
+    setRole("");
+    setCompany("");
+    setStart("");
+    setEnd("");
+    setCurrent(false);
+    setDescription("");
+    setOpen(false);
   };
 
-  return <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3">
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <FormField label="Cargo *" value={role} onChange={setRole} placeholder="Vendedor" />
-      <div className="z-20"><label className="block text-sm font-semibold text-stone-700 mb-1">Empresa *</label><SearchSelect value={company} onChange={setCompany} placeholder="Loja ABC" options={companyOptions} onSearch={handleCompanySearch} allowCustom={true} customLabel="Adicionar empresa:" className="w-full" /></div>
-      <FormField label="Início (mês/ano)" value={start} onChange={setStart} type="month" />
-      <div><FormField label="Término (mês/ano)" value={end} onChange={setEnd} type="month" disabled={current} /><label className="flex items-center gap-2 mt-1.5 cursor-pointer"><input type="checkbox" checked={current} onChange={(e) => { setCurrent(e.target.checked); if (e.target.checked) setEnd(""); }} className="rounded" /><span className="text-xs text-stone-600">Emprego atual</span></label></div>
+  return (
+    <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <FormField label="Cargo *" value={role} onChange={setRole} placeholder="Vendedor" />
+        <div className="z-20">
+          <label className="block text-sm font-semibold text-stone-700 mb-1">Empresa *</label>
+          <SearchSelect value={company} onChange={setCompany} placeholder="Loja ABC" options={companyOptions} onSearch={handleCompanySearch} allowCustom customLabel="Adicionar empresa:" className="w-full" />
+        </div>
+        <FormField label="Início" value={start} onChange={setStart} type="month" />
+        <div>
+          <FormField label="Término" value={end} onChange={setEnd} type="month" disabled={current} />
+          <label className="flex items-center gap-2 mt-1.5 cursor-pointer"><input type="checkbox" checked={current} onChange={(event) => { setCurrent(event.target.checked); if (event.target.checked) setEnd(""); }} className="rounded" /><span className="text-xs text-stone-600">Cargo atual</span></label>
+        </div>
+      </div>
+      <div>
+        <label className="block text-sm font-semibold text-stone-700 mb-1">Descrição desta etapa</label>
+        <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder="Atividades, responsabilidades, resultados e conquistas..." className="w-full px-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 resize-none" />
+      </div>
+      <div className="flex gap-2 justify-end"><button onClick={() => setOpen(false)} className="text-sm text-stone-500 px-4 py-2">Cancelar</button><button onClick={handleAdd} className="bg-terracotta-600 text-white text-sm font-bold px-5 py-2 rounded-xl">Adicionar</button></div>
     </div>
-    <div><label className="block text-sm font-semibold text-stone-700 mb-1">Descrição das atividades</label><textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={3} placeholder="Descreva suas principais atividades e conquistas..." className="w-full px-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500 resize-none" /></div>
-    <div className="flex gap-2 justify-end"><button onClick={() => setOpen(false)} className="text-sm text-stone-500 hover:text-stone-700 px-4 py-2">Cancelar</button><button onClick={handleAdd} className="bg-terracotta-600 text-white text-sm font-bold px-5 py-2 rounded-xl hover:bg-terracotta-700 transition-colors">Adicionar</button></div>
-  </div>;
+  );
 }
 
-function EducationForm({ onAdd }: { onAdd: (edu: AcademicEducation) => void }) {
-  const [open, setOpen] = useState(false);
-  const [institution, setInstitution] = useState(""); const [degree, setDegree] = useState("");
-  const [field, setField] = useState(""); const [start, setStart] = useState(""); const [end, setEnd] = useState("");
-  const [current, setCurrent] = useState(false);
-  const [instOptions, setInstOptions] = useState<{value: string; label: string}[]>([]);
+function EducationEditor({ value, onChange, onDelete }: { value: AcademicEducation; onChange: (value: AcademicEducation) => void; onDelete: () => void }) {
+  const [editing, setEditing] = useState(false);
+  if (!editing) {
+    return (
+      <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 flex items-start justify-between gap-4">
+        <div><div className="font-bold text-stone-900">{value.degree}{value.fieldOfStudy ? ` em ${value.fieldOfStudy}` : ""}</div><div className="text-sm text-stone-600">{value.institution}</div><div className="text-xs text-stone-500 mt-1">{value.startYear} – {value.current ? "Atual" : value.endYear}</div></div>
+        <div className="flex gap-1"><button onClick={() => setEditing(true)} className="p-2 text-stone-400 hover:text-terracotta-600"><Edit3 className="h-4 w-4" /></button><button onClick={onDelete} className="p-2 text-stone-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></div>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-2xl border border-terracotta-200 bg-white p-4 space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormField label="Instituição" value={value.institution} onChange={(institution) => onChange({ ...value, institution })} />
+        <FormField label="Grau" value={value.degree} onChange={(degree) => onChange({ ...value, degree })} />
+        <FormField label="Área de estudo" value={value.fieldOfStudy} onChange={(fieldOfStudy) => onChange({ ...value, fieldOfStudy })} />
+        <FormField label="Ano de início" value={value.startYear} onChange={(startYear) => onChange({ ...value, startYear })} />
+        <FormField label="Ano de término" value={value.current ? "" : value.endYear} onChange={(endYear) => onChange({ ...value, endYear })} disabled={value.current} />
+      </div>
+      <label className="flex items-center gap-2 text-xs text-stone-600"><input type="checkbox" checked={value.current} onChange={(event) => onChange({ ...value, current: event.target.checked, endYear: event.target.checked ? "Atual" : "" })} /> Cursando atualmente</label>
+      <textarea value={value.description || ""} onChange={(event) => onChange({ ...value, description: event.target.value })} rows={2} placeholder="Descrição opcional, projetos, ênfases ou conquistas." className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-terracotta-500" />
+      {value.skills && value.skills.length > 0 && <div className="flex flex-wrap gap-1.5">{value.skills.map((skill) => <span key={skill} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-600">{skill}</span>)}</div>}
+      <div className="flex justify-end"><button onClick={() => setEditing(false)} className="rounded-xl bg-stone-900 px-4 py-2 text-xs font-bold text-white">Concluir</button></div>
+    </div>
+  );
+}
 
-  const handleInstSearch = async (term: string) => {
-    if (!term || term.length < 2) { setInstOptions([]); return; }
-    try { const { api } = await import("../lib/api"); const res = await api.get(`/users/institutions/search?q=${encodeURIComponent(term)}`); setInstOptions(res.data.map((i: any) => ({ value: i.name, label: i.name }))); } catch (e) { console.error(e); }
+function EducationForm({ onAdd }: { onAdd: (education: AcademicEducation) => void }) {
+  const [open, setOpen] = useState(false);
+  const [institution, setInstitution] = useState("");
+  const [degree, setDegree] = useState("");
+  const [field, setField] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [current, setCurrent] = useState(false);
+  const [institutionOptions, setInstitutionOptions] = useState<{ value: string; label: string }[]>([]);
+
+  const searchInstitution = async (term: string) => {
+    if (term.length < 2) return setInstitutionOptions([]);
+    try {
+      const response = await api.get(`/users/institutions/search?q=${encodeURIComponent(term)}`);
+      setInstitutionOptions((response.data || []).map((item: { name: string }) => ({ value: item.name, label: item.name })));
+    } catch (error) {
+      console.error(error);
+    }
   };
+
+  if (!open) return <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Adicionar formação</button>;
 
   const handleAdd = async () => {
     if (!institution.trim() || !degree.trim()) return;
-    try { const { api } = await import("../lib/api"); await api.post(`/users/institutions`, { name: institution }); } catch (e) { /* ignore */ }
-    onAdd({ institution, degree, fieldOfStudy: field, startYear: start, endYear: current ? "Atual" : end, current });
+    try { await api.post("/users/institutions", { name: institution }); } catch { /* catálogo é auxiliar */ }
+    onAdd({ id: makeId("edu"), institution, degree, fieldOfStudy: field, startYear: start, endYear: current ? "Atual" : end, current, skills: [] });
     setInstitution(""); setDegree(""); setField(""); setStart(""); setEnd(""); setCurrent(false); setOpen(false);
   };
 
-  if (!open) return <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Adicionar Formação</button>;
-
-  return <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3"><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><div className="z-10"><label className="block text-sm font-semibold text-stone-700 mb-1">Instituição *</label><SearchSelect value={institution} onChange={setInstitution} placeholder="Universidade X" options={instOptions} onSearch={handleInstSearch} allowCustom={true} customLabel="Adicionar nova instituição:" className="w-full" /></div><FormField label="Grau *" value={degree} onChange={setDegree} placeholder="Graduação / Técnico / Ensino Médio" /><FormField label="Área de Estudo" value={field} onChange={setField} placeholder="Administração" /><FormField label="Ano de Início" value={start} onChange={setStart} placeholder="2018" /></div><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><div><FormField label="Ano de Término" value={end} onChange={setEnd} placeholder="2022" disabled={current} /><label className="flex items-center gap-2 mt-1.5 cursor-pointer"><input type="checkbox" checked={current} onChange={(e) => setCurrent(e.target.checked)} className="rounded" /><span className="text-xs text-stone-600">Cursando atualmente</span></label></div></div><div className="flex gap-2 justify-end"><button onClick={() => setOpen(false)} className="text-sm text-stone-500 hover:text-stone-700 px-4 py-2">Cancelar</button><button onClick={handleAdd} className="bg-terracotta-600 text-white text-sm font-bold px-5 py-2 rounded-xl hover:bg-terracotta-700 transition-colors">Adicionar</button></div></div>;
+  return (
+    <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div><label className="block text-sm font-semibold text-stone-700 mb-1">Instituição *</label><SearchSelect value={institution} onChange={setInstitution} placeholder="Universidade X" options={institutionOptions} onSearch={searchInstitution} allowCustom customLabel="Adicionar nova instituição:" className="w-full" /></div>
+        <FormField label="Grau *" value={degree} onChange={setDegree} placeholder="Graduação / Técnico / Ensino Médio" />
+        <FormField label="Área de estudo" value={field} onChange={setField} placeholder="Administração" />
+        <FormField label="Ano de início" value={start} onChange={setStart} placeholder="2018" />
+        <FormField label="Ano de término" value={end} onChange={setEnd} placeholder="2022" disabled={current} />
+      </div>
+      <label className="flex items-center gap-2 text-xs text-stone-600"><input type="checkbox" checked={current} onChange={(event) => setCurrent(event.target.checked)} /> Cursando atualmente</label>
+      <div className="flex justify-end gap-2"><button onClick={() => setOpen(false)} className="px-4 py-2 text-sm text-stone-500">Cancelar</button><button onClick={handleAdd} className="rounded-xl bg-terracotta-600 px-5 py-2 text-sm font-bold text-white">Adicionar</button></div>
+    </div>
+  );
 }
 
-function CourseForm({ onAdd }: { onAdd: (c: ExtraCourse) => void }) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState(""); const [institution, setInstitution] = useState(""); const [year, setYear] = useState("");
-  if (!open) return <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Adicionar Curso</button>;
-  const handleAdd = () => { if (!name.trim()) return; onAdd({ name, institution, year }); setName(""); setInstitution(""); setYear(""); setOpen(false); };
-  return <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3"><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><FormField label="Nome do Curso *" value={name} onChange={setName} placeholder="Informática Básica" /><FormField label="Instituição" value={institution} onChange={setInstitution} placeholder="Senai" /></div><FormField label="Ano de Conclusão" value={year} onChange={setYear} placeholder="2023" /><div className="flex gap-2 justify-end"><button onClick={() => setOpen(false)} className="text-sm text-stone-500 hover:text-stone-700 px-4 py-2">Cancelar</button><button onClick={handleAdd} className="bg-terracotta-600 text-white text-sm font-bold px-5 py-2 rounded-xl hover:bg-terracotta-700 transition-colors">Adicionar</button></div></div>;
+function CourseEditor({ value, onChange, onDelete }: { value: ExtraCourse; onChange: (value: ExtraCourse) => void; onDelete: () => void }) {
+  const [editing, setEditing] = useState(false);
+  if (!editing) {
+    return (
+      <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 flex items-start justify-between gap-4">
+        <div><div className="text-[10px] font-bold uppercase tracking-wider text-stone-400">{value.type === "CERTIFICATION" ? "Certificação" : "Curso"}</div><div className="font-bold text-stone-900">{value.name}</div><div className="text-sm text-stone-600">{value.institution}{value.year ? ` · ${value.year}` : ""}</div></div>
+        <div className="flex gap-1"><button onClick={() => setEditing(true)} className="p-2 text-stone-400 hover:text-terracotta-600"><Edit3 className="h-4 w-4" /></button><button onClick={onDelete} className="p-2 text-stone-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button></div>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-2xl border border-terracotta-200 bg-white p-4 space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormField label="Nome" value={value.name} onChange={(name) => onChange({ ...value, name })} />
+        <FormField label="Instituição" value={value.institution} onChange={(institution) => onChange({ ...value, institution })} />
+        <FormField label="Ano" value={value.year} onChange={(year) => onChange({ ...value, year })} />
+        <div><label className="block text-sm font-semibold text-stone-700 mb-1">Tipo</label><select value={value.type || "COURSE"} onChange={(event) => onChange({ ...value, type: event.target.value as "COURSE" | "CERTIFICATION" })} className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm"><option value="COURSE">Curso</option><option value="CERTIFICATION">Certificação</option></select></div>
+      </div>
+      <textarea value={value.description || ""} onChange={(event) => onChange({ ...value, description: event.target.value })} rows={2} placeholder="Descrição opcional." className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-terracotta-500" />
+      {value.skills && value.skills.length > 0 && <div className="flex flex-wrap gap-1.5">{value.skills.map((skill) => <span key={skill} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-600">{skill}</span>)}</div>}
+      <div className="flex justify-end"><button onClick={() => setEditing(false)} className="rounded-xl bg-stone-900 px-4 py-2 text-xs font-bold text-white">Concluir</button></div>
+    </div>
+  );
 }
 
-function LanguageForm({ onAdd }: { onAdd: (l: { name: string; level: string }) => void }) {
+function CourseForm({ onAdd }: { onAdd: (course: ExtraCourse) => void }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState(""); const [level, setLevel] = useState("Básico");
-  if (!open) return <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Adicionar Idioma</button>;
+  const [name, setName] = useState("");
+  const [institution, setInstitution] = useState("");
+  const [year, setYear] = useState("");
+  const [type, setType] = useState<"COURSE" | "CERTIFICATION">("COURSE");
+
+  if (!open) return <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Adicionar curso ou certificação</button>;
+
+  const handleAdd = () => {
+    if (!name.trim()) return;
+    onAdd({ id: makeId("course"), name, institution, year, type, skills: [] });
+    setName(""); setInstitution(""); setYear(""); setType("COURSE"); setOpen(false);
+  };
+
+  return (
+    <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <FormField label="Nome *" value={name} onChange={setName} placeholder="Excel Avançado" />
+        <FormField label="Instituição" value={institution} onChange={setInstitution} placeholder="Senai" />
+        <FormField label="Ano" value={year} onChange={setYear} placeholder="2025" />
+        <div><label className="block text-sm font-semibold text-stone-700 mb-1">Tipo</label><select value={type} onChange={(event) => setType(event.target.value as "COURSE" | "CERTIFICATION")} className="w-full rounded-xl border border-stone-200 px-4 py-2.5 text-sm"><option value="COURSE">Curso</option><option value="CERTIFICATION">Certificação</option></select></div>
+      </div>
+      <div className="flex justify-end gap-2"><button onClick={() => setOpen(false)} className="px-4 py-2 text-sm text-stone-500">Cancelar</button><button onClick={handleAdd} className="rounded-xl bg-terracotta-600 px-5 py-2 text-sm font-bold text-white">Adicionar</button></div>
+    </div>
+  );
+}
+
+function LanguageForm({ onAdd }: { onAdd: (language: Language) => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [level, setLevel] = useState("Básico");
+  if (!open) return <button onClick={() => setOpen(true)} className="w-full py-3 border-2 border-dashed border-stone-300 rounded-2xl text-sm font-bold text-stone-500 hover:border-terracotta-400 hover:text-terracotta-600 transition-colors flex items-center justify-center gap-2"><Plus className="w-4 h-4" /> Adicionar idioma</button>;
   const handleAdd = () => { if (!name.trim()) return; onAdd({ name, level }); setName(""); setLevel("Básico"); setOpen(false); };
-  return <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3"><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><FormField label="Idioma *" value={name} onChange={setName} placeholder="Inglês" /><div><label className="block text-sm font-semibold text-stone-700 mb-1">Nível</label><select value={level} onChange={(e) => setLevel(e.target.value)} className="w-full px-4 py-2.5 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-terracotta-500">{LANGUAGE_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}</select></div></div><div className="flex gap-2 justify-end"><button onClick={() => setOpen(false)} className="text-sm text-stone-500 hover:text-stone-700 px-4 py-2">Cancelar</button><button onClick={handleAdd} className="bg-terracotta-600 text-white text-sm font-bold px-5 py-2 rounded-xl hover:bg-terracotta-700 transition-colors">Adicionar</button></div></div>;
+  return <div className="border border-terracotta-200 bg-terracotta-50/30 rounded-2xl p-4 space-y-3"><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><FormField label="Idioma *" value={name} onChange={setName} placeholder="Inglês" /><div><label className="block text-sm font-semibold text-stone-700 mb-1">Nível</label><select value={level} onChange={(event) => setLevel(event.target.value)} className="w-full px-4 py-2.5 border border-stone-200 rounded-xl text-sm">{LANGUAGE_LEVELS.map((item) => <option key={item} value={item}>{item}</option>)}</select></div></div><div className="flex justify-end gap-2"><button onClick={() => setOpen(false)} className="px-4 py-2 text-sm text-stone-500">Cancelar</button><button onClick={handleAdd} className="rounded-xl bg-terracotta-600 px-5 py-2 text-sm font-bold text-white">Adicionar</button></div></div>;
 }
