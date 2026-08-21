@@ -101,6 +101,9 @@ export class User {
   @Column({ default: false })
   hasAiAnalyzed: boolean;
 
+  @Column({ default: false })
+  resumeScoreUnlocked: boolean;
+
   @Column({ type: 'int', default: 0 })
   aiAnalysisCount: number;
 
