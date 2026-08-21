@@ -9,6 +9,7 @@ import {
 import { AiService } from './ai.service';
 import { JobSkillsService } from './job-skills.service';
 import type { JobSkillScore } from './job-skills.service';
+import { ResumeReviewService } from './resume-review.service';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 
 @Controller('ai')
@@ -17,6 +18,7 @@ export class AiController {
   constructor(
     private readonly aiService: AiService,
     private readonly jobSkillsService: JobSkillsService,
+    private readonly resumeReviewService: ResumeReviewService,
   ) {}
 
   @Get('status')
@@ -32,6 +34,14 @@ export class AiController {
       throw new BadRequestException('Nenhum arquivo de currículo enviado.');
     }
     return this.aiService.analyzeResume(body.base64File, body.mimeType);
+  }
+
+  @Post('review-resume')
+  reviewResume(@Body() body: { profile?: unknown }) {
+    if (!body || !body.profile) {
+      throw new BadRequestException('Envie os dados do currículo para avaliação.');
+    }
+    return this.resumeReviewService.review(body.profile);
   }
 
   @Post('suggest-job-skills')
