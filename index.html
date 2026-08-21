@@ -122,11 +122,11 @@
       Até o fluxo premium de reanálise ser lançado, não exibimos o botão que
       sugeria uma nova chamada à IA.
     */
-    #resume-builder-sidebar > .p-5 > section:first-child button.mt-4.inline-flex {
+    #resume-builder-sidebar > .p-5 > section:first-child.border-violet-200 button.mt-4.inline-flex {
       display: none !important;
     }
 
-    #resume-builder-sidebar > .p-5 > section:first-child:not(.relative)::after {
+    #resume-builder-sidebar > .p-5 > section:first-child.border-violet-200:not(.relative)::after {
       content: '✓ Análise gratuita utilizada. Esta pontuação fica salva; novas análises serão um recurso premium.';
       display: block;
       margin-top: 0.75rem;
