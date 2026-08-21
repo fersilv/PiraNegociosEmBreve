@@ -5,6 +5,7 @@ export interface AiStatus {
   enabled: boolean;
   provider: "GEMINI" | "OPENAI" | "ANTHROPIC" | null;
   model: string | null;
+  resumeScorePaymentRequired: boolean;
   loading: boolean;
 }
 
@@ -13,6 +14,7 @@ export function useAiStatus(): AiStatus {
     enabled: false,
     provider: null,
     model: null,
+    resumeScorePaymentRequired: false,
     loading: true,
   });
 
@@ -26,6 +28,9 @@ export function useAiStatus(): AiStatus {
           enabled: Boolean(response.data?.enabled),
           provider: response.data?.provider || null,
           model: response.data?.model || null,
+          resumeScorePaymentRequired: Boolean(
+            response.data?.resumeScorePaymentRequired,
+          ),
           loading: false,
         });
       })
@@ -35,6 +40,7 @@ export function useAiStatus(): AiStatus {
           enabled: false,
           provider: null,
           model: null,
+          resumeScorePaymentRequired: false,
           loading: false,
         });
       });
