@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   Activity,
@@ -10,9 +10,11 @@ import {
   Link2,
   LogOut,
   Megaphone,
+  MoreHorizontal,
   ShieldCheck,
   User,
   Users,
+  X,
 } from "lucide-react";
 import { auth } from "../lib/firebase";
 import { NotificationCenter } from "./NotificationCenter";
@@ -64,6 +66,7 @@ const groups: AdminNavGroup[] = [
 
 export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const logout = async () => {
     await auth.signOut();
@@ -84,9 +87,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
                 <ShieldCheck className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/30">
-                  Central de operação
-                </p>
+                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/30">Central de operação</p>
                 <p className="mt-0.5 text-sm font-bold text-white">Administração</p>
               </div>
             </div>
@@ -100,9 +101,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
         <nav className="flex-1 overflow-y-auto px-4 pb-5">
           {groups.map((group) => (
             <div key={group.label}>
-              <p className="px-3 pb-2 pt-5 text-[9px] font-bold uppercase tracking-[0.22em] text-white/25 first:pt-1">
-                {group.label}
-              </p>
+              <p className="px-3 pb-2 pt-5 text-[9px] font-bold uppercase tracking-[0.22em] text-white/25 first:pt-1">{group.label}</p>
               <div className="space-y-1">
                 {group.items.map((item) => (
                   <NavLink
@@ -117,9 +116,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
                       }`
                     }
                   >
-                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.055]">
-                      {item.icon}
-                    </span>
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.055]">{item.icon}</span>
                     {item.label}
                   </NavLink>
                 ))}
@@ -129,11 +126,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
         </nav>
 
         <div className="border-t border-white/[0.05] p-4">
-          <button
-            type="button"
-            onClick={logout}
-            className="flex w-full items-center gap-3 rounded-xl px-4 py-3 font-medium text-white/45 transition hover:bg-white/[0.06] hover:text-white"
-          >
+          <button type="button" onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 font-medium text-white/45 transition hover:bg-white/[0.06] hover:text-white">
             <LogOut className="h-5 w-5" /> Sair
           </button>
         </div>
@@ -142,9 +135,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
       <div className="min-h-screen md:pl-[286px]">
         <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between border-b border-stone-200/80 bg-[#f4f3ef]/92 px-4 backdrop-blur-xl md:px-7">
           <div className="flex items-center gap-3">
-            <span className="hidden h-9 w-9 items-center justify-center rounded-xl bg-stone-900 text-white md:flex">
-              <Activity className="h-4 w-4" />
-            </span>
+            <span className="hidden h-9 w-9 items-center justify-center rounded-xl bg-stone-900 text-white md:flex"><Activity className="h-4 w-4" /></span>
             <div>
               <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-stone-400">Operação</p>
               <p className="text-sm font-bold text-stone-900">PiraNegócios Control Center</p>
@@ -155,11 +146,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
               <span className="h-2 w-2 rounded-full bg-emerald-500" /> Online
             </div>
             <NotificationCenter />
-            <Link
-              to="/admin/conta"
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-600 shadow-sm"
-              title="Meus dados"
-            >
+            <Link to="/admin/conta" className="flex h-9 w-9 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-600 shadow-sm" title="Meus dados">
               <User className="h-4 w-4" />
             </Link>
           </div>
@@ -173,33 +160,52 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
         <MobileLink to="/admin/empresas" icon={<Building2 className="h-5 w-5" />} label="Empresas" />
         <MobileLink to="/admin/vagas" icon={<Briefcase className="h-5 w-5" />} label="Vagas" />
         <MobileLink to="/admin/usuarios" icon={<Users className="h-5 w-5" />} label="Usuários" />
-        <MobileLink to="/admin/conta" icon={<User className="h-5 w-5" />} label="Conta" />
+        <button type="button" onClick={() => setMoreOpen(true)} className="flex min-w-14 flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold text-white/45">
+          <MoreHorizontal className="h-5 w-5" />
+          <span>Mais</span>
+        </button>
       </nav>
+
+      {moreOpen && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/45 backdrop-blur-sm md:hidden" onClick={() => setMoreOpen(false)}>
+          <div className="w-full rounded-t-[30px] bg-[#1d1d19] p-4 pb-7 text-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between px-1">
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/30">Administração</p>
+                <h3 className="mt-1 text-lg font-bold">Mais ferramentas</h3>
+              </div>
+              <button type="button" onClick={() => setMoreOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.07] text-white/60">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <MoreLink to="/admin/vinculos" icon={<Link2 className="h-4 w-4" />} label="Vínculos" close={() => setMoreOpen(false)} />
+              <MoreLink to="/admin/publicidade" icon={<Megaphone className="h-4 w-4" />} label="Publicidade" close={() => setMoreOpen(false)} />
+              <MoreLink to="/admin/api" icon={<KeyRound className="h-4 w-4" />} label="API v1" close={() => setMoreOpen(false)} />
+              <MoreLink to="/admin/ai" icon={<Cpu className="h-4 w-4" />} label="Inteligência Artificial" close={() => setMoreOpen(false)} />
+              <MoreLink to="/admin/conta" icon={<User className="h-4 w-4" />} label="Meus dados" close={() => setMoreOpen(false)} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function MobileLink({
-  to,
-  label,
-  icon,
-  end = false,
-}: {
-  to: string;
-  label: string;
-  icon: React.ReactNode;
-  end?: boolean;
-}) {
+function MobileLink({ to, label, icon, end = false }: { to: string; label: string; icon: React.ReactNode; end?: boolean }) {
   return (
-    <NavLink
-      to={to}
-      end={end}
-      className={({ isActive }) =>
-        `flex min-w-14 flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold ${isActive ? "text-terracotta-300" : "text-white/45"}`
-      }
-    >
+    <NavLink to={to} end={end} className={({ isActive }) => `flex min-w-14 flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold ${isActive ? "text-terracotta-300" : "text-white/45"}`}>
       {icon}
       <span>{label}</span>
     </NavLink>
+  );
+}
+
+function MoreLink({ to, label, icon, close }: { to: string; label: string; icon: React.ReactNode; close: () => void }) {
+  return (
+    <Link to={to} onClick={close} className="flex items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.045] p-3 text-sm font-bold text-white/75">
+      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.06]">{icon}</span>
+      <span>{label}</span>
+    </Link>
   );
 }
