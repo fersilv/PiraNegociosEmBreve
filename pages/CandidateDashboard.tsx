@@ -6,6 +6,7 @@ import {
   Briefcase,
   CheckCircle2,
   Clock,
+  Eye,
   FileText,
   Loader2,
   Search,
@@ -35,11 +36,16 @@ const statusLabel = (status?: string) => {
 };
 
 const statusStyle = (status: string) => {
-  if (status === "Aprovado") return "bg-emerald-50 text-emerald-700 border-emerald-100";
-  if (status === "Em Contratação") return "bg-blue-50 text-blue-700 border-blue-100";
-  if (status === "Aguardando Exame Médico") return "bg-violet-50 text-violet-700 border-violet-100";
-  if (status === "Não Classificado" || status === "Desistiu") return "bg-stone-100 text-stone-500 border-stone-200";
-  if (status === "Entrevista" || status === "Entrevista Agendada") return "bg-amber-50 text-amber-700 border-amber-100";
+  if (status === "Aprovado")
+    return "bg-emerald-50 text-emerald-700 border-emerald-100";
+  if (status === "Em Contratação")
+    return "bg-blue-50 text-blue-700 border-blue-100";
+  if (status === "Aguardando Exame Médico")
+    return "bg-violet-50 text-violet-700 border-violet-100";
+  if (status === "Não Classificado" || status === "Desistiu")
+    return "bg-stone-100 text-stone-500 border-stone-200";
+  if (status === "Entrevista" || status === "Entrevista Agendada")
+    return "bg-amber-50 text-amber-700 border-amber-100";
   return "bg-stone-50 text-stone-700 border-stone-200";
 };
 
@@ -167,6 +173,16 @@ export function CandidateDashboard() {
   const hasUploadedResume = Boolean(profile?.resumeURL);
   const hasResume = hasResumeData || hasUploadedResume;
 
+  const profileReadiness = useMemo(() => {
+    let score = 15;
+    if (profile?.bio?.trim()) score += 20;
+    if (profile?.experiences?.length) score += 25;
+    if (profile?.skills?.length) score += 15;
+    if (profile?.education?.length) score += 10;
+    if (hasUploadedResume || hasResumeData) score += 15;
+    return Math.min(score, 100);
+  }, [profile, hasUploadedResume, hasResumeData]);
+
   const documentApplications = useMemo(
     () => myApplications.filter(isDocumentStage),
     [myApplications],
@@ -191,155 +207,247 @@ export function CandidateDashboard() {
     [myApplications],
   );
 
+  const greetingName = getGreetingName(profile);
+  const attentionCount = documentApplications.length + talentInvites.length;
+
   return (
-    <div className="mx-auto max-w-7xl space-y-6 md:space-y-7">
-      <section className="overflow-hidden rounded-[30px] border border-stone-200 bg-white shadow-sm">
-        <div className="relative px-6 py-7 md:px-8 md:py-8">
-          <div className="absolute right-0 top-0 h-36 w-36 rounded-full bg-terracotta-100/60 blur-3xl" />
-          <div className="relative flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-terracotta-600">
-                Seu espaço de carreira
-              </p>
-              <h1 className="mt-2 font-serif text-3xl font-bold tracking-tight text-stone-950 md:text-4xl">
-                Olá, {getGreetingName(profile)}.
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500 md:text-base">
-                Acompanhe seus processos, mantenha o currículo pronto e encontre a próxima oportunidade sem transformar isso em trabalho administrativo.
-              </p>
+    <div className="mx-auto max-w-[1380px] space-y-5 md:space-y-6">
+      <section className="relative overflow-hidden rounded-[34px] border border-white/10 bg-[#2b211c] text-white shadow-[0_30px_90px_rgba(55,35,25,.18)]">
+        <div className="absolute -right-20 -top-28 h-72 w-72 rounded-full bg-[#c97551]/30 blur-[90px]" />
+        <div className="absolute -bottom-24 left-[30%] h-56 w-56 rounded-full bg-[#e6b59b]/10 blur-[80px]" />
+        <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,.045),transparent_38%,rgba(255,255,255,.02))]" />
+
+        <div className="relative grid gap-8 px-6 py-7 md:px-9 md:py-9 lg:grid-cols-[1fr_310px] lg:items-end">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#efbea5]">
+                <Sparkles className="h-3.5 w-3.5" /> PiraNegócios Career
+              </span>
+              {attentionCount > 0 && (
+                <span className="inline-flex rounded-full bg-amber-300 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-stone-950">
+                  {attentionCount} {attentionCount === 1 ? "ação pendente" : "ações pendentes"}
+                </span>
+              )}
             </div>
-            <Link
-              to="/vagas"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-stone-950 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-stone-800 md:w-auto"
-            >
-              <Search className="h-4 w-4" />
-              Encontrar vagas
-            </Link>
+
+            <h1 className="mt-5 max-w-3xl font-serif text-4xl font-bold leading-[1.02] tracking-[-0.035em] md:text-5xl lg:text-[56px]">
+              Sua próxima oportunidade começa com um perfil que trabalha por você.
+            </h1>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-white/52 md:text-base">
+              {greetingName}, acompanhe seus processos, fortaleça seu currículo e descubra oportunidades sem perder tempo caçando informação em telas diferentes.
+            </p>
+
+            <div className="mt-7 flex flex-col gap-2.5 sm:flex-row">
+              <Link
+                to="/vagas"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#f1c8b2] px-5 py-3.5 text-sm font-black text-[#302019] shadow-[0_12px_35px_rgba(0,0,0,.16)] transition hover:-translate-y-0.5 hover:bg-[#f5d3c1]"
+              >
+                <Search className="h-4 w-4" /> Encontrar oportunidades
+              </Link>
+              <Link
+                to="/user/curriculo"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/[0.055] px-5 py-3.5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-white/[0.09]"
+              >
+                <FileText className="h-4 w-4" /> Meu currículo
+              </Link>
+            </div>
+          </div>
+
+          <div className="rounded-[26px] border border-white/10 bg-white/[0.065] p-5 backdrop-blur-xl">
+            <div className="flex items-center gap-4">
+              <div
+                className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-full"
+                style={{
+                  background: `conic-gradient(#e8ad8d ${profileReadiness * 3.6}deg, rgba(255,255,255,.10) 0deg)`,
+                }}
+              >
+                <div className="flex h-[66px] w-[66px] items-center justify-center rounded-full bg-[#30241f]">
+                  <span className="text-xl font-black text-white">{profileReadiness}%</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/35">
+                  Prontidão do perfil
+                </p>
+                <p className="mt-1 text-lg font-bold text-white">
+                  {profileReadiness >= 85
+                    ? "Perfil muito completo"
+                    : profileReadiness >= 60
+                      ? "Boa base profissional"
+                      : "Ainda dá para fortalecer"}
+                </p>
+                <p className="mt-1 text-[11px] leading-5 text-white/38">
+                  Indicador de completude, separado da análise de currículo por IA.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[#d47a55] to-[#f3c4aa] transition-all"
+                style={{ width: `${profileReadiness}%` }}
+              />
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
-        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm md:p-5">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-stone-400">Candidaturas</p>
-          <p className="mt-2 text-3xl font-bold tracking-tight text-stone-950">{myApplications.length}</p>
-          <p className="mt-1 text-xs text-stone-500">Total enviado</p>
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="user-glass user-elevated rounded-[24px] p-4 md:p-5">
+          <div className="flex items-center justify-between">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#2b211c] text-white">
+              <Briefcase className="h-4.5 w-4.5" />
+            </span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-stone-400">Total</span>
+          </div>
+          <p className="mt-4 text-3xl font-black tracking-[-0.04em] text-[#201813]">{myApplications.length}</p>
+          <p className="mt-1 text-xs font-semibold text-stone-500">Candidaturas enviadas</p>
         </div>
-        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm md:p-5">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-stone-400">Em andamento</p>
-          <p className="mt-2 text-3xl font-bold tracking-tight text-stone-950">{activeApplications}</p>
-          <p className="mt-1 text-xs text-stone-500">Processos ativos</p>
+
+        <div className="user-glass user-elevated rounded-[24px] p-4 md:p-5">
+          <div className="flex items-center justify-between">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+              <Clock className="h-4.5 w-4.5" />
+            </span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-stone-400">Agora</span>
+          </div>
+          <p className="mt-4 text-3xl font-black tracking-[-0.04em] text-[#201813]">{activeApplications}</p>
+          <p className="mt-1 text-xs font-semibold text-stone-500">Processos em andamento</p>
         </div>
-        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm md:p-5">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-stone-400">Convites</p>
-          <p className="mt-2 text-3xl font-bold tracking-tight text-stone-950">{talentInvites.length}</p>
-          <p className="mt-1 text-xs text-stone-500">De empresas</p>
+
+        <div className="user-glass user-elevated rounded-[24px] p-4 md:p-5">
+          <div className="flex items-center justify-between">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#f1d6c7] text-[#8f432a]">
+              <UserRoundSearch className="h-4.5 w-4.5" />
+            </span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-stone-400">Empresas</span>
+          </div>
+          <p className="mt-4 text-3xl font-black tracking-[-0.04em] text-[#201813]">{talentInvites.length}</p>
+          <p className="mt-1 text-xs font-semibold text-stone-500">Convites recebidos</p>
         </div>
-        <div className={`rounded-2xl border p-4 shadow-sm md:p-5 ${hasResume ? "border-emerald-100 bg-emerald-50/60" : "border-amber-200 bg-amber-50"}`}>
-          <p className={`text-[11px] font-bold uppercase tracking-[0.16em] ${hasResume ? "text-emerald-700" : "text-amber-700"}`}>Currículo</p>
-          <p className="mt-2 text-xl font-bold text-stone-950">{hasResume ? "Pronto" : "Pendente"}</p>
-          <p className="mt-1 text-xs text-stone-500">{hasResume ? "Disponível para processos" : "Complete para se candidatar"}</p>
+
+        <div className="relative overflow-hidden rounded-[24px] border border-[#5b4030]/10 bg-[#ead6c9] p-4 shadow-[0_20px_60px_rgba(65,39,26,.10)] md:p-5">
+          <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/45 blur-2xl" />
+          <div className="relative flex items-center justify-between">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#2b211c] text-[#f2c9b3]">
+              <FileText className="h-4.5 w-4.5" />
+            </span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#735447]">Currículo</span>
+          </div>
+          <p className="relative mt-4 text-xl font-black tracking-tight text-[#2b211c]">{hasResume ? "Pronto para usar" : "Precisa de atenção"}</p>
+          <Link to="/user/curriculo" className="relative mt-2 inline-flex items-center gap-1 text-xs font-black text-[#7f3f2a]">
+            {hasResume ? "Revisar currículo" : "Criar agora"} <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
         </div>
       </section>
 
       {(documentApplications.length > 0 || talentInvites.length > 0) && (
         <section className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-end justify-between gap-4 px-1">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-stone-400">Agora</p>
-              <h2 className="mt-1 text-xl font-bold text-stone-950">Requer sua atenção</h2>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#a15a3f]">Prioridades</p>
+              <h2 className="mt-1 font-serif text-2xl font-bold text-[#201813]">Precisa de você agora</h2>
             </div>
+            <span className="hidden text-xs font-medium text-stone-400 sm:block">Ações que podem avançar seus processos</span>
           </div>
 
-          {documentApplications.map((application) => (
-            <div
-              key={application.id}
-              className="flex flex-col gap-4 rounded-[24px] border border-stone-800 bg-stone-950 p-5 text-white shadow-sm md:flex-row md:items-center md:justify-between md:p-6"
-            >
-              <div className="min-w-0">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/20 bg-amber-300/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-amber-300">
-                  <AlertTriangle className="h-3 w-3" /> Ação necessária
-                </span>
-                <h3 className="mt-3 truncate text-lg font-bold md:text-xl">{application.jobTitle || "Processo seletivo"}</h3>
-                <p className="mt-1 text-sm text-white/55">
-                  {application.companyName || "A empresa"} aguarda documentos do seu processo de admissão.
-                </p>
-              </div>
-              <Link
-                to={`/user/admissao/${application.id}`}
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-amber-300 px-4 py-3 text-sm font-bold text-stone-950 transition hover:bg-amber-200"
+          <div className="grid gap-3 xl:grid-cols-2">
+            {documentApplications.map((application) => (
+              <article
+                key={application.id}
+                className="group relative overflow-hidden rounded-[26px] border border-white/10 bg-[#30241f] p-5 text-white shadow-[0_18px_50px_rgba(55,35,25,.15)] md:p-6"
               >
-                Ver documentos <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
-          ))}
+                <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-amber-300/10 blur-3xl" />
+                <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-300 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-stone-950">
+                      <AlertTriangle className="h-3 w-3" /> Documentos pendentes
+                    </span>
+                    <h3 className="mt-3 truncate text-lg font-bold">{application.jobTitle || "Processo seletivo"}</h3>
+                    <p className="mt-1 text-sm text-white/46">{application.companyName || "A empresa"} está aguardando sua documentação.</p>
+                  </div>
+                  <Link
+                    to={`/user/admissao/${application.id}`}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-xs font-black text-[#30241f] transition group-hover:-translate-y-0.5"
+                  >
+                    Resolver agora <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </div>
+              </article>
+            ))}
 
-          {talentInvites.map((invite) => (
-            <div
-              key={invite.id}
-              className="flex flex-col gap-4 rounded-[24px] border border-terracotta-200 bg-terracotta-50 p-5 md:flex-row md:items-center md:justify-between md:p-6"
-            >
-              <div className="min-w-0">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-terracotta-700 shadow-sm">
-                  <UserRoundSearch className="h-3 w-3" /> Convite recebido
-                </span>
-                <h3 className="mt-3 truncate text-lg font-bold text-stone-950">{invite.job?.title || "Vaga"}</h3>
-                <p className="mt-1 text-sm text-stone-600">
-                  {invite.job?.companyName || "Empresa"} quer conversar com você sobre esta oportunidade.
-                </p>
-              </div>
-              <div className="flex shrink-0 gap-2">
-                <button
-                  type="button"
-                  onClick={() => respondToInvite(invite.id, "decline")}
-                  className="rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-bold text-stone-600 transition hover:bg-stone-50"
-                >
-                  Recusar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => respondToInvite(invite.id, "accept")}
-                  className="rounded-xl bg-terracotta-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-terracotta-700"
-                >
-                  Tenho interesse
-                </button>
-              </div>
-            </div>
-          ))}
+            {talentInvites.map((invite) => (
+              <article
+                key={invite.id}
+                className="user-glass user-elevated rounded-[26px] p-5 md:p-6"
+              >
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f1d6c7] px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-[#7f3f2a]">
+                      <UserRoundSearch className="h-3 w-3" /> Empresa interessada
+                    </span>
+                    <h3 className="mt-3 truncate text-lg font-bold text-[#201813]">{invite.job?.title || "Vaga"}</h3>
+                    <p className="mt-1 text-sm text-stone-500">{invite.job?.companyName || "Empresa"} convidou você para participar do processo.</p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => respondToInvite(invite.id, "decline")}
+                      className="rounded-2xl border border-[#5b4030]/10 bg-white/70 px-4 py-3 text-xs font-bold text-stone-600 transition hover:bg-white"
+                    >
+                      Recusar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => respondToInvite(invite.id, "accept")}
+                      className="rounded-2xl bg-[#2b211c] px-4 py-3 text-xs font-black text-white transition hover:-translate-y-0.5 hover:bg-[#3a2b24]"
+                    >
+                      Tenho interesse
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
         </section>
       )}
 
-      <section className="grid gap-5 xl:grid-cols-[1.55fr_0.75fr]">
-        <div className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm md:p-6">
-          <div className="mb-5 flex items-center justify-between gap-4">
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(330px,.65fr)]">
+        <div className="user-glass user-elevated overflow-hidden rounded-[30px]">
+          <div className="flex items-center justify-between gap-4 border-b border-[#5b4030]/8 px-5 py-5 md:px-6">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-stone-400">Seus processos</p>
-              <h2 className="mt-1 text-xl font-bold text-stone-950">Candidaturas</h2>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400">Linha do tempo</p>
+              <h2 className="mt-1 font-serif text-2xl font-bold text-[#201813]">Seus processos</h2>
             </div>
-            <Link to="/vagas" className="hidden items-center gap-1 text-sm font-bold text-terracotta-700 sm:flex">
-              Ver novas vagas <ArrowRight className="h-4 w-4" />
+            <Link
+              to="/vagas"
+              className="hidden items-center gap-2 rounded-2xl bg-[#2b211c] px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 sm:inline-flex"
+            >
+              Nova candidatura <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
 
           {loadingApps ? (
-            <div className="flex min-h-52 items-center justify-center">
-              <Loader2 className="h-7 w-7 animate-spin text-terracotta-600" />
+            <div className="flex min-h-64 items-center justify-center">
+              <Loader2 className="h-7 w-7 animate-spin text-[#b85e3f]" />
             </div>
           ) : recentApplications.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 p-8 text-center">
-              <Briefcase className="mx-auto h-9 w-9 text-stone-300" />
-              <p className="mt-3 font-bold text-stone-800">Nenhuma candidatura ainda</p>
-              <p className="mt-1 text-sm text-stone-500">Quando você se candidatar, todo o andamento aparece aqui.</p>
+            <div className="m-5 rounded-[24px] border border-dashed border-[#5b4030]/15 bg-white/45 p-10 text-center md:m-6">
+              <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#ead6c9] text-[#8b4a34]">
+                <Briefcase className="h-6 w-6" />
+              </span>
+              <p className="mt-4 text-lg font-black text-[#201813]">Sua jornada começa aqui</p>
+              <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-stone-500">Quando você se candidatar, etapas, convites e documentos aparecem organizados neste espaço.</p>
               <Link
                 to="/vagas"
-                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 py-2.5 text-sm font-bold text-white"
+                className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-[#2b211c] px-5 py-3 text-sm font-bold text-white"
               >
-                Encontrar vagas <ArrowRight className="h-4 w-4" />
+                Explorar vagas <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
           ) : (
-            <div className="divide-y divide-stone-100">
-              {recentApplications.map((application) => {
+            <div className="px-5 py-2 md:px-6">
+              {recentApplications.map((application, index) => {
                 const currentStatus = statusLabel(application.status);
                 const canWithdraw = !["Não Classificado", "Desistiu", "Aprovado"].includes(currentStatus);
                 const docStage = isDocumentStage(application);
@@ -349,63 +457,74 @@ export function CandidateDashboard() {
                 const isSubmitted = application.submittedForReview === true;
 
                 return (
-                  <article key={application.id} className="py-5 first:pt-0 last:pb-0">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="truncate font-bold text-stone-950">{application.jobTitle || "Vaga"}</h3>
-                          <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusStyle(currentStatus)}`}>
-                            {currentStatus}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-sm text-stone-500">{application.companyName || "Empresa"}</p>
-                        <p className="mt-2 text-xs text-stone-400">
-                          Candidatura enviada {application.appliedAt ? `em ${new Date(application.appliedAt).toLocaleDateString("pt-BR")}` : ""}
-                        </p>
+                  <article key={application.id} className="relative grid grid-cols-[34px_1fr] gap-3 py-5 md:grid-cols-[40px_1fr] md:gap-4">
+                    {index < recentApplications.length - 1 && (
+                      <span className="absolute bottom-0 left-[16px] top-[54px] w-px bg-[#6a4d3c]/10 md:left-[19px]" />
+                    )}
+                    <div className="relative z-10 flex h-8 w-8 items-center justify-center rounded-full border-4 border-[#f7f1ea] bg-[#2b211c] text-white md:h-10 md:w-10">
+                      <Briefcase className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                    </div>
 
-                        {docStage && (
-                          <div className="mt-3">
-                            {hasRejectedDoc ? (
-                              <span className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-2.5 py-1.5 text-[11px] font-bold text-red-700">
-                                <AlertTriangle className="h-3.5 w-3.5" /> Reenvio de documento solicitado
-                              </span>
-                            ) : isSubmitted ? (
-                              <span className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1.5 text-[11px] font-bold text-blue-700">
-                                <Clock className="h-3.5 w-3.5" /> Documentos em análise · {uploadedDocCount} anexados
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] font-bold text-amber-800">
-                                <FileText className="h-3.5 w-3.5" /> Documentação em preenchimento · {uploadedDocCount} anexados
-                              </span>
-                            )}
+                    <div className="min-w-0 rounded-[22px] border border-[#5b4030]/8 bg-white/52 p-4 transition hover:border-[#b76a4d]/20 hover:bg-white/72 md:p-5">
+                      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="truncate text-base font-black text-[#201813]">{application.jobTitle || "Vaga"}</h3>
+                            <span className={`rounded-full border px-2.5 py-1 text-[9px] font-black ${statusStyle(currentStatus)}`}>
+                              {currentStatus}
+                            </span>
                           </div>
-                        )}
-                      </div>
+                          <p className="mt-1 text-sm font-medium text-stone-500">{application.companyName || "Empresa"}</p>
+                          <p className="mt-2 text-[11px] text-stone-400">
+                            {application.appliedAt
+                              ? `Candidatura enviada em ${new Date(application.appliedAt).toLocaleDateString("pt-BR")}`
+                              : "Candidatura registrada"}
+                          </p>
 
-                      <div className="flex flex-wrap gap-2 sm:max-w-[260px] sm:justify-end">
-                        {docStage && (
+                          {docStage && (
+                            <div className="mt-3">
+                              {hasRejectedDoc ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-xl bg-red-50 px-2.5 py-1.5 text-[10px] font-bold text-red-700">
+                                  <AlertTriangle className="h-3.5 w-3.5" /> Reenvio solicitado
+                                </span>
+                              ) : isSubmitted ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-xl bg-blue-50 px-2.5 py-1.5 text-[10px] font-bold text-blue-700">
+                                  <Clock className="h-3.5 w-3.5" /> Documentos em análise · {uploadedDocCount}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 rounded-xl bg-amber-50 px-2.5 py-1.5 text-[10px] font-bold text-amber-800">
+                                  <FileText className="h-3.5 w-3.5" /> Documentação em preenchimento · {uploadedDocCount}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 md:max-w-[275px] md:justify-end">
+                          {docStage && (
+                            <Link
+                              to={`/user/admissao/${application.id}`}
+                              className="rounded-xl bg-[#2b211c] px-3.5 py-2.5 text-[11px] font-black text-white transition hover:bg-[#3a2b24]"
+                            >
+                              {isSubmitted && !hasRejectedDoc ? "Ver documentos" : "Enviar documentos"}
+                            </Link>
+                          )}
                           <Link
-                            to={`/user/admissao/${application.id}`}
-                            className="rounded-xl bg-terracotta-600 px-3.5 py-2.5 text-xs font-bold text-white transition hover:bg-terracotta-700"
+                            to={`/user/vaga/${application.jobId}`}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[#5b4030]/10 bg-white/80 px-3.5 py-2.5 text-[11px] font-bold text-stone-700 transition hover:bg-white"
                           >
-                            {isSubmitted && !hasRejectedDoc ? "Ver documentos" : "Enviar documentos"}
+                            <Eye className="h-3.5 w-3.5" /> Ver vaga
                           </Link>
-                        )}
-                        <Link
-                          to={`/user/vaga/${application.jobId}`}
-                          className="rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-xs font-bold text-stone-700 transition hover:bg-stone-100"
-                        >
-                          Ver vaga
-                        </Link>
-                        {canWithdraw && (
-                          <button
-                            type="button"
-                            onClick={() => handleWithdraw(application.id)}
-                            className="rounded-xl px-3.5 py-2.5 text-xs font-bold text-red-600 transition hover:bg-red-50"
-                          >
-                            Desistir
-                          </button>
-                        )}
+                          {canWithdraw && (
+                            <button
+                              type="button"
+                              onClick={() => handleWithdraw(application.id)}
+                              className="rounded-xl px-3 py-2.5 text-[11px] font-bold text-red-600 transition hover:bg-red-50"
+                            >
+                              Desistir
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </article>
@@ -415,35 +534,38 @@ export function CandidateDashboard() {
           )}
         </div>
 
-        <aside className="space-y-5">
-          <section className={`rounded-[26px] border p-5 shadow-sm ${hasResume ? "border-stone-200 bg-white" : "border-terracotta-200 bg-terracotta-50"}`}>
-            <div className="flex items-start justify-between gap-3">
-              <span className={`flex h-11 w-11 items-center justify-center rounded-2xl ${hasResume ? "bg-stone-100 text-stone-600" : "bg-white text-terracotta-700 shadow-sm"}`}>
-                <FileText className="h-5 w-5" />
-              </span>
-              {hasResume ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
-                  <CheckCircle2 className="h-3 w-3" /> Pronto
+        <aside className="space-y-4">
+          <section className="relative overflow-hidden rounded-[30px] border border-[#5b4030]/10 bg-[#ead6c9] p-5 shadow-[0_22px_65px_rgba(65,39,26,.10)] md:p-6">
+            <div className="absolute -right-12 -top-12 h-36 w-36 rounded-full bg-white/55 blur-3xl" />
+            <div className="relative">
+              <div className="flex items-center justify-between">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#2b211c] text-[#f1c6af]">
+                  <FileText className="h-5 w-5" />
                 </span>
-              ) : (
-                <span className="rounded-full bg-terracotta-600 px-2.5 py-1 text-[10px] font-bold text-white">Comece aqui</span>
-              )}
-            </div>
-            <h2 className="mt-4 text-lg font-bold text-stone-950">Meu currículo</h2>
-            <p className="mt-1 text-sm leading-6 text-stone-500">
-              {hasResume
-                ? "Mantenha sua trajetória atualizada para candidaturas e convites de empresas."
-                : "Monte seu currículo profissional gratuitamente e deixe seu perfil pronto para oportunidades."}
-            </p>
+                {hasResume ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-emerald-700">
+                    <CheckCircle2 className="h-3 w-3" /> Pronto
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-[#a64f34] px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-white">Pendente</span>
+                )}
+              </div>
+              <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#7e594a]">Seu principal ativo</p>
+              <h2 className="mt-1 font-serif text-2xl font-bold text-[#2b211c]">Currículo profissional</h2>
+              <p className="mt-2 text-sm leading-6 text-[#6f5144]">
+                {hasResume
+                  ? "Sua história profissional já está estruturada. Atualize sempre que sua carreira avançar."
+                  : "Construa um currículo forte para liberar candidaturas e ser encontrado por empresas."}
+              </p>
 
-            <div className="mt-5 space-y-2">
               <Link
                 to="/user/curriculo"
-                className="flex w-full items-center justify-between rounded-xl bg-stone-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-stone-800"
+                className="mt-5 flex w-full items-center justify-between rounded-2xl bg-[#2b211c] px-4 py-3.5 text-sm font-black text-white shadow-sm transition hover:-translate-y-0.5"
               >
                 {hasResume ? "Editar currículo" : "Criar meu currículo"}
                 <ArrowRight className="h-4 w-4" />
               </Link>
+
               {hasUploadedResume && (
                 <button
                   type="button"
@@ -454,74 +576,84 @@ export function CandidateDashboard() {
                       `Meu_Currículo_${profile.socialName || profile.name || ""}`,
                     );
                   }}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-bold text-stone-600 transition hover:bg-stone-50"
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-[#684938]/12 bg-white/45 px-4 py-3 text-xs font-bold text-[#654738] transition hover:bg-white/70"
                 >
-                  <FileText className="h-4 w-4" /> Visualizar original
+                  <Eye className="h-4 w-4" /> Visualizar original
                 </button>
               )}
             </div>
           </section>
 
           {aiEnabled && (
-            <section className="rounded-[26px] border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-5 shadow-sm">
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
-                <Sparkles className="h-5 w-5" />
-              </span>
-              <h2 className="mt-4 text-lg font-bold text-stone-950">Vagas para o seu perfil</h2>
-              <p className="mt-1 text-sm leading-6 text-stone-500">
-                Cruze seu currículo com as vagas abertas e veja quais têm maior aderência ao seu histórico.
-              </p>
-              <button
-                type="button"
-                onClick={handleMatchAI}
-                disabled={matching}
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-violet-800 disabled:opacity-60"
-              >
-                {matching ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Analisando...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4" /> Encontrar combinações
-                  </>
-                )}
-              </button>
-              {matchError && (
-                <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{matchError}</p>
-              )}
+            <section className="relative overflow-hidden rounded-[30px] border border-violet-200/60 bg-gradient-to-br from-[#f4efff] via-[#faf7ff] to-[#fffaf7] p-5 shadow-[0_22px_60px_rgba(74,45,110,.09)] md:p-6">
+              <div className="absolute -right-10 -top-12 h-32 w-32 rounded-full bg-violet-300/25 blur-3xl" />
+              <div className="relative">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-700 text-white shadow-lg shadow-violet-700/15">
+                  <Sparkles className="h-5 w-5" />
+                </span>
+                <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.18em] text-violet-500">Assistente de carreira</p>
+                <h2 className="mt-1 font-serif text-2xl font-bold text-stone-950">Oportunidades com aderência</h2>
+                <p className="mt-2 text-sm leading-6 text-stone-500">Cruze seu histórico profissional com as vagas abertas e descubra onde seu perfil faz mais sentido.</p>
+
+                <button
+                  type="button"
+                  onClick={handleMatchAI}
+                  disabled={matching}
+                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-700 px-4 py-3.5 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-violet-800 disabled:opacity-60"
+                >
+                  {matching ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Analisando...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4" /> Descobrir combinações
+                    </>
+                  )}
+                </button>
+                {matchError && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{matchError}</p>}
+              </div>
             </section>
           )}
         </aside>
       </section>
 
       {aiEnabled && matchResults && matchResults.length > 0 && (
-        <section className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm md:p-6">
-          <div className="mb-5">
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-600">Inteligência Artificial</p>
-            <h2 className="mt-1 text-xl font-bold text-stone-950">Melhores combinações encontradas</h2>
+        <section className="user-glass user-elevated rounded-[30px] p-5 md:p-6">
+          <div className="flex flex-col gap-2 border-b border-[#5b4030]/8 pb-5 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-600">Curadoria inteligente</p>
+              <h2 className="mt-1 font-serif text-2xl font-bold text-[#201813]">Vagas que conversam com sua trajetória</h2>
+            </div>
+            <span className="text-xs font-medium text-stone-400">Baseado no seu currículo atual</span>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
+
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {matchResults.slice(0, 6).map((match, index) => {
               const job = jobsMap[match.jobId];
               if (!job) return null;
 
               return (
-                <article key={`${match.jobId}-${index}`} className="rounded-2xl border border-stone-200 bg-stone-50/60 p-4">
+                <article
+                  key={`${match.jobId}-${index}`}
+                  className="group rounded-[22px] border border-[#5b4030]/8 bg-white/55 p-4 transition hover:-translate-y-1 hover:border-violet-200 hover:bg-white/80 hover:shadow-[0_16px_45px_rgba(68,44,31,.08)]"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">{match.score}% de aderência</span>
-                      <h3 className="mt-2 truncate font-bold text-stone-950">{job.title}</h3>
-                      <p className="mt-0.5 text-xs font-medium text-terracotta-700">{job.companyName}</p>
+                      <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.1em] text-emerald-700">{match.score}% de aderência</span>
+                      <h3 className="mt-3 truncate text-base font-black text-[#201813]">{job.title}</h3>
+                      <p className="mt-0.5 truncate text-xs font-bold text-[#a55338]">{job.companyName}</p>
                     </div>
-                    <Briefcase className="h-5 w-5 shrink-0 text-stone-300" />
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                      <Sparkles className="h-4 w-4" />
+                    </span>
                   </div>
-                  <p className="mt-3 text-sm leading-6 text-stone-600">{match.reason}</p>
+                  <p className="mt-3 line-clamp-3 text-sm leading-6 text-stone-500">{match.reason}</p>
                   <Link
                     to={`/vagas?applyTo=${job.id}`}
-                    className="mt-4 inline-flex items-center gap-1 text-sm font-bold text-terracotta-700"
+                    className="mt-4 inline-flex items-center gap-1.5 text-xs font-black text-violet-700"
                   >
-                    Ver vaga <ArrowRight className="h-4 w-4" />
+                    Explorar vaga <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-1" />
                   </Link>
                 </article>
               );
