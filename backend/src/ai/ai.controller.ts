@@ -47,42 +47,29 @@ export class AiController {
     };
   }
 
-  private async invalidateResumeScore(userId: string) {
-    await this.usersRepository.update(
-      { id: userId },
-      { aiAnalysis: null, hasAiAnalyzed: false },
-    );
-  }
-
   @Post('analyze-resume')
   async analyzeResume(
-    @Req() req: any,
+    @Req() _req: any,
     @Body() body: { base64File: string; mimeType: string },
   ) {
     if (!body.base64File) {
       throw new BadRequestException('Nenhum arquivo de currículo enviado.');
     }
-    const result = await this.resumeImportService.importDocuments([
+    return this.resumeImportService.importDocuments([
       {
         base64File: body.base64File,
         mimeType: body.mimeType,
         fileName: 'curriculo',
       },
     ]);
-    await this.invalidateResumeScore(req.user.uid);
-    return result;
   }
 
   @Post('analyze-resume-documents')
   async analyzeResumeDocuments(
-    @Req() req: any,
+    @Req() _req: any,
     @Body() body: { documents?: ResumeSourceDocumentInput[] },
   ) {
-    const result = await this.resumeImportService.importDocuments(
-      body.documents || [],
-    );
-    await this.invalidateResumeScore(req.user.uid);
-    return result;
+    return this.resumeImportService.importDocuments(body.documents || []);
   }
 
   @Post('review-resume')
@@ -98,21 +85,28 @@ export class AiController {
       throw new ForbiddenException('Perfil de usuário não encontrado.');
     }
 
-    const paymentRequired =
-      (await this.settingsService.getValue(
-        'RESUME_SCORE_PAYMENT_REQUIRED',
-        'false',
-      )) === 'true';
-    if (paymentRequired && !user.resumeScoreUnlocked) {
+    const analysisCount = Number(user.aiAnalysisCount || 0);
+    const freeAnalysisLimit = user.aiAnalysisLimit ?? 1;
+    const hasSavedAnalysis = Boolean(user.aiAnalysis && user.hasAiAnalyzed);
+    const canRunNewAnalysis =
+      user.resumeScoreUnlocked || analysisCount < freeAnalysisLimit;
+
+    // A conta gratuita recebe uma análise real. Depois disso, nunca gastamos
+    // outro token por engano: devolvemos a análise persistida até que a
+    // reanálise seja desbloqueada pelo recurso premium.
+    if (!canRunNewAnalysis) {
+      if (hasSavedAnalysis) {
+        return user.aiAnalysis;
+      }
       throw new ForbiddenException(
-        'A pontuação detalhada do currículo é um recurso premium e ainda não está desbloqueada para esta conta.',
+        'Sua análise gratuita de currículo já foi utilizada. Uma nova análise requer desbloqueio do recurso premium.',
       );
     }
 
     const analysis = await this.resumeReviewService.review(body.profile);
     user.aiAnalysis = analysis as unknown as Record<string, unknown>;
     user.hasAiAnalyzed = true;
-    user.aiAnalysisCount = Number(user.aiAnalysisCount || 0) + 1;
+    user.aiAnalysisCount = analysisCount + 1;
     await this.usersRepository.save(user);
     return analysis;
   }
