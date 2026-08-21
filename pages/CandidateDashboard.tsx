@@ -1,19 +1,47 @@
-import React, { useState, useEffect } from "react";
-import { useAuth, getGreetingName } from "../contexts/AuthContext";
-import { api, asArray } from "../lib/api";
+import React, { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
-  Briefcase,
-  FileText,
-  Sparkles,
-  Loader2,
+  AlertTriangle,
   ArrowRight,
+  Briefcase,
   CheckCircle2,
   Clock,
-  AlertTriangle,
+  FileText,
+  Loader2,
+  Search,
+  Sparkles,
+  UserRoundSearch,
 } from "lucide-react";
+import { useAuth, getGreetingName } from "../contexts/AuthContext";
+import { api, asArray } from "../lib/api";
 import { openBase64InNewTab } from "../lib/fileViewer";
-import { Link } from "react-router-dom";
 import { useAiStatus } from "../hooks/useAiStatus";
+
+const isDocumentStage = (application: any) =>
+  application.documentsRequested ||
+  application.status === "Em Contratação" ||
+  application.status === "Aguardando Exame Médico" ||
+  Boolean(
+    application.status &&
+      (application.status.toLowerCase().includes("contrat") ||
+        application.status.toLowerCase().includes("documento") ||
+        application.status.toLowerCase().includes("exame") ||
+        application.status.toLowerCase().includes("admiss")),
+  );
+
+const statusLabel = (status?: string) => {
+  if (status === "Recusado") return "Não Classificado";
+  return status || "Enviado";
+};
+
+const statusStyle = (status: string) => {
+  if (status === "Aprovado") return "bg-emerald-50 text-emerald-700 border-emerald-100";
+  if (status === "Em Contratação") return "bg-blue-50 text-blue-700 border-blue-100";
+  if (status === "Aguardando Exame Médico") return "bg-violet-50 text-violet-700 border-violet-100";
+  if (status === "Não Classificado" || status === "Desistiu") return "bg-stone-100 text-stone-500 border-stone-200";
+  if (status === "Entrevista" || status === "Entrevista Agendada") return "bg-amber-50 text-amber-700 border-amber-100";
+  return "bg-stone-50 text-stone-700 border-stone-200";
+};
 
 export function CandidateDashboard() {
   const { user, profile } = useAuth();
@@ -21,66 +49,70 @@ export function CandidateDashboard() {
   const [myApplications, setMyApplications] = useState<any[]>([]);
   const [jobsMap, setJobsMap] = useState<Record<string, any>>({});
   const [talentInvites, setTalentInvites] = useState<any[]>([]);
-
   const [loadingApps, setLoadingApps] = useState(true);
-
   const [matching, setMatching] = useState(false);
   const [matchResults, setMatchResults] = useState<any[] | null>(null);
   const [matchError, setMatchError] = useState("");
 
   useEffect(() => {
     if (!user) return;
-    fetchDashboardData();
+    void fetchDashboardData();
   }, [user]);
 
   const fetchDashboardData = async () => {
     setLoadingApps(true);
     try {
       await fetchJobsMap();
-      const res = await api.get("/applications/me");
-      setMyApplications(asArray(res.data));
-      setTalentInvites(asArray((await api.get("/talent-invites/me")).data));
-    } catch (err) {
-      console.error("Error fetching applications:", err);
+      const [applicationsResponse, invitesResponse] = await Promise.all([
+        api.get("/applications/me"),
+        api.get("/talent-invites/me"),
+      ]);
+      setMyApplications(asArray(applicationsResponse.data));
+      setTalentInvites(asArray(invitesResponse.data));
+    } catch (error) {
+      console.error("Error fetching applications:", error);
     } finally {
       setLoadingApps(false);
-    }
-  };
-  const respondToInvite = async (
-    id: string,
-    decision: "accept" | "decline",
-  ) => {
-    await api.post(`/talent-invites/${id}/${decision}`);
-    fetchDashboardData();
-  };
-
-  const handleWithdraw = async (appId: string) => {
-    if (
-      confirm(
-        "Tem certeza que deseja desistir desta candidatura? Isso não pode ser desfeito.",
-      )
-    ) {
-      try {
-        await api.delete(`/applications/${appId}`);
-        alert("Candidatura cancelada com sucesso.");
-        fetchDashboardData();
-      } catch (e) {
-        console.error(e);
-        alert("Erro ao cancelar candidatura.");
-      }
     }
   };
 
   const fetchJobsMap = async () => {
     try {
-      const res = await api.get("/jobs");
+      const response = await api.get("/jobs");
       const map: Record<string, any> = {};
-      asArray<any>(res.data).forEach((job) => {
+      asArray<any>(response.data).forEach((job) => {
         map[job.id] = job;
       });
       setJobsMap(map);
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const respondToInvite = async (
+    id: string,
+    decision: "accept" | "decline",
+  ) => {
+    await api.post(`/talent-invites/${id}/${decision}`);
+    void fetchDashboardData();
+  };
+
+  const handleWithdraw = async (appId: string) => {
+    if (
+      !confirm(
+        "Tem certeza que deseja desistir desta candidatura? Isso não pode ser desfeito.",
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await api.delete(`/applications/${appId}`);
+      alert("Candidatura cancelada com sucesso.");
+      void fetchDashboardData();
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao cancelar candidatura.");
     }
   };
 
@@ -88,6 +120,7 @@ export function CandidateDashboard() {
     if (!user || !aiEnabled) return;
     setMatching(true);
     setMatchError("");
+
     try {
       const activeJobs = Object.values(jobsMap);
       if (activeJobs.length === 0) {
@@ -108,16 +141,17 @@ export function CandidateDashboard() {
         }),
       });
       const data = await response.json();
-      if (!response.ok)
+      if (!response.ok) {
         throw new Error(
           data.message || data.error || "Não foi possível gerar recomendações.",
         );
+      }
       setMatchResults(data.matches);
-    } catch (err: any) {
-      console.error(err);
+    } catch (error: any) {
+      console.error(error);
       setMatchError(
-        err.response?.data?.error ||
-          err.message ||
+        error.response?.data?.error ||
+          error.message ||
           "Erro ao processar as recomendações.",
       );
     } finally {
@@ -125,437 +159,375 @@ export function CandidateDashboard() {
     }
   };
 
-  return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-3xl font-serif font-bold text-stone-900">
-          Meu Painel
-        </h1>
-        <p className="text-stone-500 mt-1">
-          Bem-vindo, {getGreetingName(profile)}
-        </p>
-      </div>
+  const hasResumeData = Boolean(
+    profile?.bio ||
+      (profile?.experiences && profile.experiences.length > 0) ||
+      (profile?.skills && profile.skills.length > 0),
+  );
+  const hasUploadedResume = Boolean(profile?.resumeURL);
+  const hasResume = hasResumeData || hasUploadedResume;
 
-      {talentInvites.length > 0 && (
-        <section className="rounded-3xl border border-terracotta-200 bg-terracotta-50 p-6">
-          <h2 className="font-serif text-xl font-bold text-terracotta-950">
-            Convites para processos seletivos
-          </h2>
-          <div className="mt-4 space-y-3">
-            {talentInvites.map((invite) => (
-              <div
-                key={invite.id}
-                className="flex flex-col gap-3 rounded-xl bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <strong>{invite.job?.title || "Vaga"}</strong>
-                  <p className="text-sm text-stone-600">
-                    {invite.job?.companyName || "Empresa"} convidou você para
-                    participar deste processo.
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => respondToInvite(invite.id, "accept")}
-                    className="rounded-lg bg-terracotta-600 px-3 py-2 text-xs font-bold text-white"
-                  >
-                    Tenho interesse
-                  </button>
-                  <button
-                    onClick={() => respondToInvite(invite.id, "decline")}
-                    className="rounded-lg bg-stone-100 px-3 py-2 text-xs font-bold text-stone-700"
-                  >
-                    Recusar
-                  </button>
-                </div>
-              </div>
-            ))}
+  const documentApplications = useMemo(
+    () => myApplications.filter(isDocumentStage),
+    [myApplications],
+  );
+
+  const activeApplications = useMemo(
+    () =>
+      myApplications.filter((application) => {
+        const status = statusLabel(application.status);
+        return !["Não Classificado", "Desistiu", "Aprovado"].includes(status);
+      }).length,
+    [myApplications],
+  );
+
+  const recentApplications = useMemo(
+    () =>
+      [...myApplications].sort((a, b) => {
+        const aDate = new Date(a.appliedAt || a.createdAt || 0).getTime();
+        const bDate = new Date(b.appliedAt || b.createdAt || 0).getTime();
+        return bDate - aDate;
+      }),
+    [myApplications],
+  );
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-6 md:space-y-7">
+      <section className="overflow-hidden rounded-[30px] border border-stone-200 bg-white shadow-sm">
+        <div className="relative px-6 py-7 md:px-8 md:py-8">
+          <div className="absolute right-0 top-0 h-36 w-36 rounded-full bg-terracotta-100/60 blur-3xl" />
+          <div className="relative flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-terracotta-600">
+                Seu espaço de carreira
+              </p>
+              <h1 className="mt-2 font-serif text-3xl font-bold tracking-tight text-stone-950 md:text-4xl">
+                Olá, {getGreetingName(profile)}.
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500 md:text-base">
+                Acompanhe seus processos, mantenha o currículo pronto e encontre a próxima oportunidade sem transformar isso em trabalho administrativo.
+              </p>
+            </div>
+            <Link
+              to="/vagas"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-stone-950 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-stone-800 md:w-auto"
+            >
+              <Search className="h-4 w-4" />
+              Encontrar vagas
+            </Link>
           </div>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm md:p-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-stone-400">Candidaturas</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-stone-950">{myApplications.length}</p>
+          <p className="mt-1 text-xs text-stone-500">Total enviado</p>
+        </div>
+        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm md:p-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-stone-400">Em andamento</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-stone-950">{activeApplications}</p>
+          <p className="mt-1 text-xs text-stone-500">Processos ativos</p>
+        </div>
+        <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm md:p-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-stone-400">Convites</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-stone-950">{talentInvites.length}</p>
+          <p className="mt-1 text-xs text-stone-500">De empresas</p>
+        </div>
+        <div className={`rounded-2xl border p-4 shadow-sm md:p-5 ${hasResume ? "border-emerald-100 bg-emerald-50/60" : "border-amber-200 bg-amber-50"}`}>
+          <p className={`text-[11px] font-bold uppercase tracking-[0.16em] ${hasResume ? "text-emerald-700" : "text-amber-700"}`}>Currículo</p>
+          <p className="mt-2 text-xl font-bold text-stone-950">{hasResume ? "Pronto" : "Pendente"}</p>
+          <p className="mt-1 text-xs text-stone-500">{hasResume ? "Disponível para processos" : "Complete para se candidatar"}</p>
+        </div>
+      </section>
+
+      {(documentApplications.length > 0 || talentInvites.length > 0) && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-stone-400">Agora</p>
+              <h2 className="mt-1 text-xl font-bold text-stone-950">Requer sua atenção</h2>
+            </div>
+          </div>
+
+          {documentApplications.map((application) => (
+            <div
+              key={application.id}
+              className="flex flex-col gap-4 rounded-[24px] border border-stone-800 bg-stone-950 p-5 text-white shadow-sm md:flex-row md:items-center md:justify-between md:p-6"
+            >
+              <div className="min-w-0">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/20 bg-amber-300/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-amber-300">
+                  <AlertTriangle className="h-3 w-3" /> Ação necessária
+                </span>
+                <h3 className="mt-3 truncate text-lg font-bold md:text-xl">{application.jobTitle || "Processo seletivo"}</h3>
+                <p className="mt-1 text-sm text-white/55">
+                  {application.companyName || "A empresa"} aguarda documentos do seu processo de admissão.
+                </p>
+              </div>
+              <Link
+                to={`/user/admissao/${application.id}`}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-amber-300 px-4 py-3 text-sm font-bold text-stone-950 transition hover:bg-amber-200"
+              >
+                Ver documentos <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          ))}
+
+          {talentInvites.map((invite) => (
+            <div
+              key={invite.id}
+              className="flex flex-col gap-4 rounded-[24px] border border-terracotta-200 bg-terracotta-50 p-5 md:flex-row md:items-center md:justify-between md:p-6"
+            >
+              <div className="min-w-0">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-terracotta-700 shadow-sm">
+                  <UserRoundSearch className="h-3 w-3" /> Convite recebido
+                </span>
+                <h3 className="mt-3 truncate text-lg font-bold text-stone-950">{invite.job?.title || "Vaga"}</h3>
+                <p className="mt-1 text-sm text-stone-600">
+                  {invite.job?.companyName || "Empresa"} quer conversar com você sobre esta oportunidade.
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  onClick={() => respondToInvite(invite.id, "decline")}
+                  className="rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-bold text-stone-600 transition hover:bg-stone-50"
+                >
+                  Recusar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => respondToInvite(invite.id, "accept")}
+                  className="rounded-xl bg-terracotta-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-terracotta-700"
+                >
+                  Tenho interesse
+                </button>
+              </div>
+            </div>
+          ))}
         </section>
       )}
 
-      {/* PENDING DOCUMENTATION URGENT BANNER */}
-      {myApplications.some(
-        (a) =>
-          a.documentsRequested ||
-          a.status === "Em Contratação" ||
-          a.status === "Aguardando Exame Médico" ||
-          (a.status &&
-            (a.status.toLowerCase().includes("contrat") ||
-              a.status.toLowerCase().includes("documento") ||
-              a.status.toLowerCase().includes("exame") ||
-              a.status.toLowerCase().includes("admiss"))),
-      ) && (
-        <div className="bg-gradient-to-r from-blue-900 via-stone-900 to-blue-950 text-white p-6 md:p-8 rounded-3xl shadow-lg border border-blue-800 space-y-4 animate-in fade-in">
-          {myApplications
-            .filter(
-              (a) =>
-                a.documentsRequested ||
-                a.status === "Em Contratação" ||
-                a.status === "Aguardando Exame Médico" ||
-                (a.status &&
-                  (a.status.toLowerCase().includes("contrat") ||
-                    a.status.toLowerCase().includes("documento") ||
-                    a.status.toLowerCase().includes("exame") ||
-                    a.status.toLowerCase().includes("admiss"))),
-            )
-            .map((app) => (
-              <div
-                key={app.id}
-                className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-blue-800/50 last:border-0 pb-4 last:pb-0"
+      <section className="grid gap-5 xl:grid-cols-[1.55fr_0.75fr]">
+        <div className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm md:p-6">
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-stone-400">Seus processos</p>
+              <h2 className="mt-1 text-xl font-bold text-stone-950">Candidaturas</h2>
+            </div>
+            <Link to="/vagas" className="hidden items-center gap-1 text-sm font-bold text-terracotta-700 sm:flex">
+              Ver novas vagas <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          {loadingApps ? (
+            <div className="flex min-h-52 items-center justify-center">
+              <Loader2 className="h-7 w-7 animate-spin text-terracotta-600" />
+            </div>
+          ) : recentApplications.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 p-8 text-center">
+              <Briefcase className="mx-auto h-9 w-9 text-stone-300" />
+              <p className="mt-3 font-bold text-stone-800">Nenhuma candidatura ainda</p>
+              <p className="mt-1 text-sm text-stone-500">Quando você se candidatar, todo o andamento aparece aqui.</p>
+              <Link
+                to="/vagas"
+                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 py-2.5 text-sm font-bold text-white"
               >
-                <div className="space-y-1">
-                  <span className="bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider inline-flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5 text-amber-300" /> Ação
-                    Necessária: Envio de Documentos
-                  </span>
-                  <h2 className="text-xl md:text-2xl font-serif font-bold text-white mt-1">
-                    {app.jobTitle}
-                  </h2>
-                  <p className="text-stone-300 text-sm">
-                    A empresa{" "}
-                    <strong className="text-white">{app.companyName}</strong>{" "}
-                    iniciou seu processo de admissão e aguarda seus documentos.
-                  </p>
-                </div>
-
-                <Link
-                  to={`/dashboard/admissao/${app.id}`}
-                  className="bg-amber-400 hover:bg-amber-300 text-stone-900 font-bold px-6 py-3.5 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm shrink-0"
-                >
-                  Enviar Documentos de Admissão
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
-            ))}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {(() => {
-          const hasResumeData = !!(profile?.bio || (profile?.experiences && profile.experiences.length > 0) || (profile?.skills && profile.skills.length > 0));
-          const hasUploadedResume = !!profile?.resumeURL;
-
-          return (
-            <div className={`p-6 rounded-3xl border shadow-sm ${!hasResumeData && !hasUploadedResume ? "bg-gradient-to-br from-terracotta-50 to-amber-50 border-terracotta-200 ring-2 ring-terracotta-200/50" : "bg-white border-stone-200"}`}>
-              <div className="flex items-center gap-4 mb-4">
-                <div className={`p-3 rounded-full ${!hasResumeData && !hasUploadedResume ? "bg-terracotta-200 text-terracotta-700" : "bg-terracotta-100 text-terracotta-600"}`}>
-                  <FileText className="w-6 h-6" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <h2 className="font-bold text-lg">Meu Currículo</h2>
-                    {!hasResumeData && !hasUploadedResume && (
-                      <span className="bg-terracotta-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
-                        Comece aqui!
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-stone-500">
-                    {!hasResumeData && !hasUploadedResume
-                      ? "Crie seu currículo profissional gratuitamente!"
-                      : "Mantenha seu currículo atualizado"}
-                  </p>
-                </div>
-              </div>
-
-              {!hasResumeData && !hasUploadedResume ? (
-                <Link
-                  to="/dashboard/curriculo/gerador"
-                  className="w-full bg-terracotta-600 hover:bg-terracotta-700 text-white text-sm font-bold py-4 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all"
-                >
-                  <Sparkles className="w-5 h-5" />
-                  Criar Meu Currículo
-                </Link>
-              ) : (
-                <div className="flex flex-col sm:flex-row gap-3">
-                  {hasUploadedResume && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (profile?.resumeURL) {
-                          openBase64InNewTab(
-                            profile.resumeURL,
-                            `Meu_Currículo_${profile.socialName || profile.name || ""}`,
-                          );
-                        }
-                      }}
-                      className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200 text-xs font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-sm cursor-pointer transition-all"
-                    >
-                      <FileText className="w-4 h-4 text-stone-500" />
-                      Visualizar Original
-                    </button>
-                  )}
-                  <Link
-                    to="/dashboard/curriculo/gerador"
-                    className="flex-1 bg-terracotta-600 hover:bg-terracotta-700 text-white text-xs font-bold py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all"
-                  >
-                    <FileText className="w-4 h-4 text-white" />
-                    Gerador de PDF
-                  </Link>
-                </div>
-              )}
+                Encontrar vagas <ArrowRight className="h-4 w-4" />
+              </Link>
             </div>
-          );
-        })()}
-
-        <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-sm">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="bg-green-100 p-3 rounded-full text-green-600">
-              <Briefcase className="w-6 h-6" />
-            </div>
-            <div>
-              <h2 className="font-bold text-lg">Candidaturas</h2>
-              <p className="text-sm text-stone-500">Acompanhe seus processos</p>
-            </div>
-          </div>
-          <div className="text-3xl font-serif font-bold text-stone-900">
-            {myApplications.length}
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <h2 className="text-xl font-bold mb-4">Minhas Candidaturas</h2>
-        {loadingApps ? (
-          <div className="flex justify-center p-12">
-            <Loader2 className="w-8 h-8 animate-spin text-terracotta-500" />
-          </div>
-        ) : myApplications.length === 0 ? (
-          <div className="bg-stone-100/50 border border-stone-200 border-dashed rounded-3xl p-12 text-center">
-            <Briefcase className="w-12 h-12 text-stone-300 mx-auto mb-4" />
-            <p className="text-stone-500">
-              Você ainda não se candidatou a nenhuma vaga.
-            </p>
-          </div>
-        ) : (
-          <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-stone-200 bg-stone-50/80">
-                    <th className="px-5 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider">
-                      Vaga / Empresa
-                    </th>
-                    <th className="px-5 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider">
-                      Data de Inscrição
-                    </th>
-                    <th className="px-5 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-5 py-3.5 text-xs font-bold text-stone-500 uppercase tracking-wider text-right">
-                      Ações
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100">
-                  {myApplications.map((app) => {
-                    const statusText =
-                      app.status === "Recusado"
-                        ? "Não Classificado"
-                        : app.status || "Enviado";
-                    const canWithdraw =
-                      statusText !== "Não Classificado" &&
-                      statusText !== "Desistiu" &&
-                      statusText !== "Aprovado";
-
-                    const isDocStage =
-                      app.documentsRequested ||
-                      app.status === "Em Contratação" ||
-                      app.status === "Aguardando Exame Médico" ||
-                      (app.status &&
-                        (app.status.toLowerCase().includes("contrat") ||
-                          app.status.toLowerCase().includes("documento") ||
-                          app.status.toLowerCase().includes("exame") ||
-                          app.status.toLowerCase().includes("admiss")));
-                    const docs = app.onboardingDocs || {};
-                    const uploadedDocCount = Object.values(docs).filter(
-                      (d: any) => d.url,
-                    ).length;
-                    const hasRejectedDoc = Object.values(docs).some(
-                      (d: any) => d.status === "rejected",
-                    );
-                    const isSubmitted = app.submittedForReview === true;
-
-                    return (
-                      <tr
-                        key={app.id}
-                        className="hover:bg-stone-50/80 transition-colors"
-                      >
-                        <td className="px-5 py-4">
-                          <div className="font-bold text-stone-900">
-                            {app.jobTitle}
-                          </div>
-                          <div className="text-xs text-stone-500">
-                            {app.companyName}
-                          </div>
-                        </td>
-                        <td className="px-5 py-4 text-xs text-stone-600 font-medium">
-                          {app.appliedAt
-                            ? new Date(app.appliedAt).toLocaleDateString()
-                            : "-"}
-                        </td>
-                        <td className="px-5 py-4">
-                          <div className="space-y-1">
-                            <span
-                              className={`px-3 py-1 rounded-full text-xs font-bold inline-block ${
-                                statusText === "Aprovado"
-                                  ? "bg-green-100 text-green-800"
-                                  : statusText === "Em Contratação"
-                                    ? "bg-blue-100 text-blue-800"
-                                    : statusText === "Aguardando Exame Médico"
-                                      ? "bg-purple-100 text-purple-800"
-                                      : statusText === "Não Classificado"
-                                        ? "bg-stone-200 text-stone-600"
-                                        : statusText === "Entrevista" ||
-                                            statusText === "Entrevista Agendada"
-                                          ? "bg-amber-100 text-amber-800"
-                                          : "bg-stone-100 text-stone-700"
-                              }`}
-                            >
-                              {statusText}
-                            </span>
-
-                            {isDocStage && (
-                              <div className="text-[11px] font-semibold flex items-center gap-1.5 mt-1">
-                                {hasRejectedDoc ? (
-                                  <span className="text-red-600 flex items-center gap-1 bg-red-50 px-2 py-0.5 rounded">
-                                    <AlertTriangle className="w-3 h-3" />{" "}
-                                    Reenvio Solicitado
-                                  </span>
-                                ) : isSubmitted ? (
-                                  <span className="text-blue-700 flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded">
-                                    <Clock className="w-3 h-3" /> Doc. Em
-                                    Análise ({uploadedDocCount} anexados)
-                                  </span>
-                                ) : (
-                                  <span className="text-amber-800 flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded">
-                                    <FileText className="w-3 h-3" /> Em
-                                    Preenchimento ({uploadedDocCount} anexados)
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center justify-end gap-2">
-                            {isDocStage && (
-                              <Link
-                                to={`/dashboard/admissao/${app.id}`}
-                                className="bg-terracotta-600 text-white hover:bg-terracotta-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors animate-pulse flex items-center gap-1"
-                              >
-                                {isSubmitted && !hasRejectedDoc
-                                  ? "Ver Documentos"
-                                  : "Enviar Documentos"}
-                              </Link>
-                            )}
-                            <Link
-                              to={`/dashboard/vaga-detalhes/${app.jobId}`}
-                              className="bg-stone-100 hover:bg-stone-200 text-stone-700 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
-                            >
-                              Ver Vaga
-                            </Link>
-                            {canWithdraw && (
-                              <button
-                                onClick={() => handleWithdraw(app.id)}
-                                className="text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
-                              >
-                                Desistir
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {aiEnabled && (
-        <div className="bg-gradient-to-br from-terracotta-50 to-orange-50 p-6 md:p-8 rounded-3xl border border-terracotta-100">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-            <div>
-              <h2 className="text-2xl font-serif font-bold text-stone-900 flex items-center gap-2">
-                <Sparkles className="w-6 h-6 text-terracotta-600" />
-                Recomendações Inteligentes
-              </h2>
-              <p className="text-stone-600 mt-1">
-                Nossa Inteligência Artificial analisa seu currículo e sugere as
-                melhores vagas para o seu perfil.
-              </p>
-            </div>
-            <button
-              onClick={handleMatchAI}
-              disabled={matching}
-              className="shrink-0 bg-terracotta-600 hover:bg-terracotta-700 text-white font-bold py-3 px-6 rounded-xl flex items-center gap-2 transition-all shadow-md disabled:opacity-70"
-            >
-              {matching ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Analisando...
-                </>
-              ) : (
-                <>
-                  Descobrir Vagas Ideais
-                  <Sparkles className="w-5 h-5" />
-                </>
-              )}
-            </button>
-          </div>
-
-          {matchError && (
-            <div className="bg-red-50 text-red-600 p-4 rounded-xl border border-red-100 mb-6 text-sm">
-              {matchError}
-            </div>
-          )}
-
-          {matchResults && matchResults.length > 0 && (
-            <div className="space-y-4 mt-8 animate-in fade-in duration-500 slide-in-from-bottom-4">
-              {matchResults.slice(0, 5).map((match, idx) => {
-                const job = jobsMap[match.jobId];
-                if (!job) return null;
+          ) : (
+            <div className="divide-y divide-stone-100">
+              {recentApplications.map((application) => {
+                const currentStatus = statusLabel(application.status);
+                const canWithdraw = !["Não Classificado", "Desistiu", "Aprovado"].includes(currentStatus);
+                const docStage = isDocumentStage(application);
+                const docs = application.onboardingDocs || {};
+                const uploadedDocCount = Object.values(docs).filter((document: any) => document.url).length;
+                const hasRejectedDoc = Object.values(docs).some((document: any) => document.status === "rejected");
+                const isSubmitted = application.submittedForReview === true;
 
                 return (
-                  <div
-                    key={`${match.jobId}-${idx}`}
-                    className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm flex flex-col md:flex-row gap-6"
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full">
-                          {match.score}% Match
-                        </span>
-                        <h3 className="font-bold text-lg text-stone-900 line-clamp-1">
-                          {job.title}
-                        </h3>
+                  <article key={application.id} className="py-5 first:pt-0 last:pb-0">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="truncate font-bold text-stone-950">{application.jobTitle || "Vaga"}</h3>
+                          <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${statusStyle(currentStatus)}`}>
+                            {currentStatus}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm text-stone-500">{application.companyName || "Empresa"}</p>
+                        <p className="mt-2 text-xs text-stone-400">
+                          Candidatura enviada {application.appliedAt ? `em ${new Date(application.appliedAt).toLocaleDateString("pt-BR")}` : ""}
+                        </p>
+
+                        {docStage && (
+                          <div className="mt-3">
+                            {hasRejectedDoc ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-lg bg-red-50 px-2.5 py-1.5 text-[11px] font-bold text-red-700">
+                                <AlertTriangle className="h-3.5 w-3.5" /> Reenvio de documento solicitado
+                              </span>
+                            ) : isSubmitted ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1.5 text-[11px] font-bold text-blue-700">
+                                <Clock className="h-3.5 w-3.5" /> Documentos em análise · {uploadedDocCount} anexados
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] font-bold text-amber-800">
+                                <FileText className="h-3.5 w-3.5" /> Documentação em preenchimento · {uploadedDocCount} anexados
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <p className="text-terracotta-700 text-sm font-medium mb-3">
-                        {job.companyName}
-                      </p>
-                      <p className="text-stone-600 text-sm leading-relaxed">
-                        {match.reason}
-                      </p>
+
+                      <div className="flex flex-wrap gap-2 sm:max-w-[260px] sm:justify-end">
+                        {docStage && (
+                          <Link
+                            to={`/user/admissao/${application.id}`}
+                            className="rounded-xl bg-terracotta-600 px-3.5 py-2.5 text-xs font-bold text-white transition hover:bg-terracotta-700"
+                          >
+                            {isSubmitted && !hasRejectedDoc ? "Ver documentos" : "Enviar documentos"}
+                          </Link>
+                        )}
+                        <Link
+                          to={`/user/vaga/${application.jobId}`}
+                          className="rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-2.5 text-xs font-bold text-stone-700 transition hover:bg-stone-100"
+                        >
+                          Ver vaga
+                        </Link>
+                        {canWithdraw && (
+                          <button
+                            type="button"
+                            onClick={() => handleWithdraw(application.id)}
+                            className="rounded-xl px-3.5 py-2.5 text-xs font-bold text-red-600 transition hover:bg-red-50"
+                          >
+                            Desistir
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center justify-end md:items-center shrink-0">
-                      <Link
-                        to={`/?applyTo=${job.id}`}
-                        className="group flex items-center gap-2 text-terracotta-600 font-bold hover:text-terracotta-800 transition-colors"
-                      >
-                        Ver Vaga
-                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                      </Link>
-                    </div>
-                  </div>
+                  </article>
                 );
               })}
             </div>
           )}
         </div>
+
+        <aside className="space-y-5">
+          <section className={`rounded-[26px] border p-5 shadow-sm ${hasResume ? "border-stone-200 bg-white" : "border-terracotta-200 bg-terracotta-50"}`}>
+            <div className="flex items-start justify-between gap-3">
+              <span className={`flex h-11 w-11 items-center justify-center rounded-2xl ${hasResume ? "bg-stone-100 text-stone-600" : "bg-white text-terracotta-700 shadow-sm"}`}>
+                <FileText className="h-5 w-5" />
+              </span>
+              {hasResume ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
+                  <CheckCircle2 className="h-3 w-3" /> Pronto
+                </span>
+              ) : (
+                <span className="rounded-full bg-terracotta-600 px-2.5 py-1 text-[10px] font-bold text-white">Comece aqui</span>
+              )}
+            </div>
+            <h2 className="mt-4 text-lg font-bold text-stone-950">Meu currículo</h2>
+            <p className="mt-1 text-sm leading-6 text-stone-500">
+              {hasResume
+                ? "Mantenha sua trajetória atualizada para candidaturas e convites de empresas."
+                : "Monte seu currículo profissional gratuitamente e deixe seu perfil pronto para oportunidades."}
+            </p>
+
+            <div className="mt-5 space-y-2">
+              <Link
+                to="/user/curriculo"
+                className="flex w-full items-center justify-between rounded-xl bg-stone-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-stone-800"
+              >
+                {hasResume ? "Editar currículo" : "Criar meu currículo"}
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+              {hasUploadedResume && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!profile?.resumeURL) return;
+                    openBase64InNewTab(
+                      profile.resumeURL,
+                      `Meu_Currículo_${profile.socialName || profile.name || ""}`,
+                    );
+                  }}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-bold text-stone-600 transition hover:bg-stone-50"
+                >
+                  <FileText className="h-4 w-4" /> Visualizar original
+                </button>
+              )}
+            </div>
+          </section>
+
+          {aiEnabled && (
+            <section className="rounded-[26px] border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-5 shadow-sm">
+              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
+                <Sparkles className="h-5 w-5" />
+              </span>
+              <h2 className="mt-4 text-lg font-bold text-stone-950">Vagas para o seu perfil</h2>
+              <p className="mt-1 text-sm leading-6 text-stone-500">
+                Cruze seu currículo com as vagas abertas e veja quais têm maior aderência ao seu histórico.
+              </p>
+              <button
+                type="button"
+                onClick={handleMatchAI}
+                disabled={matching}
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-violet-800 disabled:opacity-60"
+              >
+                {matching ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Analisando...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" /> Encontrar combinações
+                  </>
+                )}
+              </button>
+              {matchError && (
+                <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{matchError}</p>
+              )}
+            </section>
+          )}
+        </aside>
+      </section>
+
+      {aiEnabled && matchResults && matchResults.length > 0 && (
+        <section className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm md:p-6">
+          <div className="mb-5">
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-600">Inteligência Artificial</p>
+            <h2 className="mt-1 text-xl font-bold text-stone-950">Melhores combinações encontradas</h2>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {matchResults.slice(0, 6).map((match, index) => {
+              const job = jobsMap[match.jobId];
+              if (!job) return null;
+
+              return (
+                <article key={`${match.jobId}-${index}`} className="rounded-2xl border border-stone-200 bg-stone-50/60 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">{match.score}% de aderência</span>
+                      <h3 className="mt-2 truncate font-bold text-stone-950">{job.title}</h3>
+                      <p className="mt-0.5 text-xs font-medium text-terracotta-700">{job.companyName}</p>
+                    </div>
+                    <Briefcase className="h-5 w-5 shrink-0 text-stone-300" />
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-stone-600">{match.reason}</p>
+                  <Link
+                    to={`/vagas?applyTo=${job.id}`}
+                    className="mt-4 inline-flex items-center gap-1 text-sm font-bold text-terracotta-700"
+                  >
+                    Ver vaga <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </article>
+              );
+            })}
+          </div>
+        </section>
       )}
     </div>
   );
