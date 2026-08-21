@@ -105,6 +105,40 @@
       border-color: #CC5843;
       box-shadow: 0 0 0 2px rgba(204, 88, 67, .14);
     }
+
+    /*
+      Currículo: a lista global de habilidades deve permanecer simples.
+      O vínculo habilidade x cada experiência/formação continua preservado nos
+      dados já importados, mas a matriz massiva de checkboxes não faz parte do
+      fluxo principal. A associação detalhada voltará em um editor compacto.
+    */
+    main .max-w-2xl .space-y-6 > .rounded-2xl.border.border-stone-200.bg-stone-50\/70.p-4 {
+      display: none !important;
+    }
+
+    /*
+      A conta gratuita possui uma única análise real. Depois que a pontuação
+      existe, o backend devolve o resultado salvo e não consome novos tokens.
+      Até o fluxo premium de reanálise ser lançado, não exibimos o botão que
+      sugeria uma nova chamada à IA.
+    */
+    #resume-builder-sidebar > .p-5 > section:first-child button.mt-4.inline-flex {
+      display: none !important;
+    }
+
+    #resume-builder-sidebar > .p-5 > section:first-child:not(.relative)::after {
+      content: '✓ Análise gratuita utilizada. Esta pontuação fica salva; novas análises serão um recurso premium.';
+      display: block;
+      margin-top: 0.75rem;
+      padding: 0.65rem 0.75rem;
+      border: 1px solid #ede9fe;
+      border-radius: 0.75rem;
+      background: rgba(245, 243, 255, 0.72);
+      color: #6d28d9;
+      font-size: 0.7rem;
+      line-height: 1.45;
+      font-weight: 600;
+    }
   </style>
   <script type="importmap">
 {
