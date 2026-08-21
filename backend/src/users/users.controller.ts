@@ -29,15 +29,14 @@ export class UsersController {
   private async exposeProfileForRuntime(profile: User) {
     const runtimeProfile = {
       ...profile,
-      // Compatibilidade temporária com telas antigas que ainda tratam
-      // CANDIDATE como sinônimo de perfil pessoal. Isto NÃO é persistido e
-      // NÃO deve ser usado como autorização. Usuário comum no banco é neutro.
       type: profile.type ?? UserType.CANDIDATE,
       experiences: this.usersService.normalizeExperienceDates(profile.experiences),
     };
     const aiEnabled =
       (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
-    if (aiEnabled) return runtimeProfile;
+    const canExposeResumeAnalysis = aiEnabled && profile.resumeScoreUnlocked;
+
+    if (canExposeResumeAnalysis) return runtimeProfile;
 
     const { aiAnalysis: _aiAnalysis, ...safeProfile } = runtimeProfile;
     return {
@@ -96,15 +95,14 @@ export class UsersController {
     if (
       updateData.type === UserType.ADMIN ||
       updateData.isCompanyAdmin !== undefined ||
-      updateData.companyId !== undefined
+      updateData.companyId !== undefined ||
+      updateData.resumeScoreUnlocked !== undefined
     ) {
       throw new BadRequestException(
-        'Campos de papel e vínculo corporativo são gerenciados exclusivamente pelo servidor.',
+        'Campos de papel, vínculo corporativo e recursos premium são gerenciados exclusivamente pelo servidor.',
       );
     }
 
-    // Clientes antigos ainda podem enviar CANDIDATE/COMPANY. O valor é
-    // ignorado por sanitizeSelfUpdate e nunca é persistido como autorização.
     if (typeof user.email === 'string' && user.email.trim()) {
       sanitized.email = user.email.trim().toLowerCase();
     } else if (!existing) {
