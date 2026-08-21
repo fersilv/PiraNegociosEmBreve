@@ -26,9 +26,6 @@ const SELF_MANAGED_FIELDS = [
   'courses',
   'education',
   'languages',
-  'aiAnalysis',
-  'hasAiAnalyzed',
-  'aiAnalysisCount',
   'savedDocs',
   'isOpenToWork',
 ] as const;
@@ -210,7 +207,6 @@ export class UsersService {
         ? existing.timeline
         : null;
 
-      // Telas novas enviam timeline explicitamente e têm autoridade sobre ela.
       if (incomingTimeline) {
         return {
           ...existing,
@@ -219,9 +215,6 @@ export class UsersService {
         };
       }
 
-      // Telas legadas ainda editam a experiência como um único cargo. Preserve
-      // a progressão rica já cadastrada para que uma edição antiga não apague
-      // promoções, descrições por etapa e vínculos de habilidades.
       if (existingTimeline && existingTimeline.length > 0) {
         if (existingTimeline.length === 1) {
           const onlyStage = this.asRecord(existingTimeline[0]);
