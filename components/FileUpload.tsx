@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { UploadCloud, X, FileText, CheckCircle2, AlertTriangle, Camera, Smartphone, QrCode } from 'lucide-react';
+import { UploadCloud, X, FileText, CheckCircle2, AlertTriangle, Camera, Smartphone, QrCode, Sparkles, Loader2 } from 'lucide-react';
+import { useAiStatus } from '../hooks/useAiStatus';
 
 interface FileUploadProps {
   label: string;
@@ -20,10 +21,13 @@ export function FileUpload({
   placeholder = 'Selecione ou arraste seu documento aqui',
   type = 'document'
 }: FileUploadProps) {
+  const { enabled: aiEnabled } = useAiStatus();
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [professionalizePhoto, setProfessionalizePhoto] = useState(false);
+  const [enhancingPhoto, setEnhancingPhoto] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -101,13 +105,60 @@ export function FileUpload({
     });
   };
 
+  const enhanceProfessionalPhoto = (dataUrl: string): Promise<string> => {
+    return new Promise((resolve) => {
+      if (!dataUrl.startsWith('data:image/')) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const img = new Image();
+      img.onload = () => {
+        const maxDimension = 1400;
+        const scale = Math.min(1, maxDimension / Math.max(img.width, img.height));
+        const width = Math.max(1, Math.round(img.width * scale));
+        const height = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(dataUrl);
+          return;
+        }
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.filter = 'brightness(1.05) contrast(1.06) saturate(0.96)';
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.9));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  };
+
+  const applyPhotoPreference = async (base64Data: string): Promise<string> => {
+    if (type !== 'avatar' || !aiEnabled || !professionalizePhoto) {
+      return base64Data;
+    }
+
+    setEnhancingPhoto(true);
+    try {
+      return await enhanceProfessionalPhoto(base64Data);
+    } finally {
+      setEnhancingPhoto(false);
+    }
+  };
+
   const processFile = async (file: File) => {
     setError(null);
     setUploading(true);
 
     try {
       // Automatic client-side image compression
-      const base64Data = await compressImageIfNeeded(file);
+      const compressedData = await compressImageIfNeeded(file);
+      const base64Data = await applyPhotoPreference(compressedData);
 
       // Estimate compressed size in KB (base64 length * 3/4 / 1024)
       const estimatedSizeKB = Math.round((base64Data.length * 3) / 4 / 1024);
@@ -124,6 +175,21 @@ export function FileUpload({
       setError('Ocorreu um erro ao processar o arquivo. Tente novamente.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleProfessionalToggle = async (checked: boolean) => {
+    setProfessionalizePhoto(checked);
+    if (!checked || !value?.startsWith('data:image/')) return;
+
+    setEnhancingPhoto(true);
+    try {
+      onChange(await enhanceProfessionalPhoto(value));
+    } catch (err) {
+      console.error(err);
+      setError('Não foi possível melhorar a foto agora. A imagem original foi mantida.');
+    } finally {
+      setEnhancingPhoto(false);
     }
   };
 
@@ -179,7 +245,7 @@ export function FileUpload({
         ref={cameraInputRef}
         type="file"
         accept="image/*"
-        capture="environment"
+        capture={type === 'avatar' ? 'user' : 'environment'}
         onChange={handleChange}
         className="hidden"
       />
@@ -190,6 +256,33 @@ export function FileUpload({
           Máx: {maxSizeKB >= 1024 ? `${(maxSizeKB/1024).toFixed(0)}MB` : `${maxSizeKB}KB`}
         </span>
       </div>
+
+      {type === 'avatar' && aiEnabled && (
+        <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-violet-100 bg-violet-50/60 p-3.5 text-left">
+          <input
+            type="checkbox"
+            checked={professionalizePhoto}
+            onChange={(e) => void handleProfessionalToggle(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-violet-300 text-violet-600 focus:ring-violet-500"
+          />
+          <span className="flex-1">
+            <strong className="flex items-center gap-1.5 text-sm text-violet-950">
+              <Sparkles className="h-4 w-4 text-violet-600" />
+              Deixar a foto mais profissional
+            </strong>
+            <span className="mt-0.5 block text-xs leading-relaxed text-violet-700">
+              Ajusta luz, contraste, definição e tamanho sem mudar seu rosto.
+            </span>
+          </span>
+        </label>
+      )}
+
+      {enhancingPhoto && (
+        <div className="flex items-center gap-2 rounded-xl bg-violet-50 px-3 py-2 text-xs font-medium text-violet-700">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Preparando uma versão mais profissional da foto...
+        </div>
+      )}
 
       {value ? (
         // Preview State
