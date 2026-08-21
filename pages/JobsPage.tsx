@@ -192,7 +192,7 @@ export default function JobsPage() {
       alert(
         "Para se candidatar, envie seu currículo no perfil. Você será direcionado agora.",
       );
-      navigate("/dashboard/perfil");
+      navigate("/user/perfil");
       return;
     }
     try {
