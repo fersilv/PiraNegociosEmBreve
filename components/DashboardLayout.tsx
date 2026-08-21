@@ -21,6 +21,10 @@ import {
   ChevronDown,
   LayoutDashboard,
   UserRoundSearch,
+  MoreHorizontal,
+  X,
+  ShieldCheck,
+  Activity,
 } from "lucide-react";
 import { auth } from "../lib/firebase";
 import { useAuth, getGreetingName } from "../contexts/AuthContext";
@@ -32,6 +36,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { profile } = useAuth();
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
 
   const isAdmin = profile?.type === "ADMIN";
   const hasCompany = Boolean(profile?.companyId);
@@ -75,8 +80,19 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const adminMoreActive =
+    location.pathname.startsWith("/dashboard/admin/vinculos") ||
+    location.pathname.startsWith("/dashboard/admin/publicidade") ||
+    location.pathname.startsWith("/dashboard/admin/api") ||
+    location.pathname.startsWith("/dashboard/admin/ai") ||
+    location.pathname === "/dashboard/perfil";
+
   return (
-    <div className="min-h-screen bg-stone-50 flex flex-col">
+    <div
+      className={`min-h-screen flex flex-col ${
+        isAdmin ? "admin-workspace bg-[#f4f3ef]" : "bg-stone-50"
+      }`}
+    >
       {auth.currentUser && !auth.currentUser.emailVerified && (
         <div className="bg-amber-100 text-amber-900 px-4 py-3 flex items-center justify-center gap-2 text-sm font-medium shrink-0">
           <MailWarning className="w-5 h-5 shrink-0" />
@@ -91,11 +107,19 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-[272px] bg-white border-r border-stone-200 flex-col hidden md:flex">
+        <aside
+          className={`w-[284px] flex-col hidden md:flex ${
+            isAdmin
+              ? "bg-[#171714] text-white border-r border-white/5"
+              : "bg-white border-r border-stone-200"
+          }`}
+        >
           <div className="px-5 pt-6 pb-5">
             <Link
               to="/"
-              className="font-serif font-bold text-xl text-terracotta-800"
+              className={`font-serif font-bold text-xl ${
+                isAdmin ? "text-white" : "text-terracotta-800"
+              }`}
             >
               PiraNegócios
             </Link>
@@ -166,13 +190,33 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             )}
 
             {isAdmin && (
-              <div className="mt-3 text-xs font-bold tracking-widest text-stone-400 uppercase">
-                Painel Administrador
+              <div className="mt-5 rounded-2xl border border-white/8 bg-white/[0.04] p-3.5">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-terracotta-500/15 text-terracotta-300 ring-1 ring-terracotta-400/20">
+                    <ShieldCheck className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">
+                      Central de operação
+                    </p>
+                    <p className="mt-0.5 truncate text-sm font-bold text-white">
+                      Administrador
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-2 rounded-xl bg-black/20 px-3 py-2 text-[11px] text-white/55">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.7)]" />
+                  Sistema operacional
+                </div>
               </div>
             )}
           </div>
 
-          <nav className="flex-1 px-4 pb-4 space-y-1 overflow-y-auto">
+          <nav
+            className={`flex-1 px-4 pb-4 space-y-1 overflow-y-auto ${
+              isAdmin ? "admin-sidebar-nav" : ""
+            }`}
+          >
             {isAdmin ? (
               <AdminNavigation />
             ) : isCompanyWorkspace ? (
@@ -182,10 +226,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             )}
           </nav>
 
-          <div className="p-4 border-t border-stone-100">
+          <div className={`p-4 ${isAdmin ? "border-t border-white/5" : "border-t border-stone-100"}`}>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-3 text-stone-500 hover:text-stone-900 w-full px-4 py-3 rounded-xl transition-colors font-medium"
+              className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-colors font-medium ${
+                isAdmin
+                  ? "text-white/45 hover:bg-white/[0.06] hover:text-white"
+                  : "text-stone-500 hover:text-stone-900"
+              }`}
             >
               <LogOut className="w-5 h-5" />
               Sair
@@ -194,7 +242,13 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
         </aside>
 
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <header className="relative bg-white/95 backdrop-blur border-b border-stone-200 px-4 md:px-6 py-3.5 flex justify-between items-center shrink-0 z-20">
+          <header
+            className={`relative px-4 md:px-6 py-3.5 flex justify-between items-center shrink-0 z-20 ${
+              isAdmin
+                ? "bg-[#f4f3ef]/95 backdrop-blur border-b border-stone-200/80"
+                : "bg-white/95 backdrop-blur border-b border-stone-200"
+            }`}
+          >
             <div className="flex min-w-0 items-center gap-3 md:gap-4">
               <Link
                 to="/"
@@ -254,37 +308,59 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 </div>
               )}
 
-              <div className="hidden md:block">
-                <h2 className="text-sm font-medium text-stone-500">
-                  {isCompanyWorkspace ? (
-                    <>
-                      Trabalhando em{" "}
-                      <span className="font-bold text-stone-900">{companyLabel}</span>
-                    </>
-                  ) : (
-                    <>
-                      Olá,{" "}
-                      <span className="font-bold text-stone-900">
-                        {getGreetingName(profile)}
-                      </span>
-                    </>
-                  )}
-                </h2>
-              </div>
+              {isAdmin ? (
+                <div className="flex items-center gap-3">
+                  <span className="hidden md:flex h-9 w-9 items-center justify-center rounded-xl bg-stone-900 text-white">
+                    <Activity className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-stone-400">
+                      Operação
+                    </p>
+                    <p className="text-sm font-bold text-stone-900">
+                      PiraNegócios Control Center
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="hidden md:block">
+                  <h2 className="text-sm font-medium text-stone-500">
+                    {isCompanyWorkspace ? (
+                      <>
+                        Trabalhando em{" "}
+                        <span className="font-bold text-stone-900">{companyLabel}</span>
+                      </>
+                    ) : (
+                      <>
+                        Olá,{" "}
+                        <span className="font-bold text-stone-900">
+                          {getGreetingName(profile)}
+                        </span>
+                      </>
+                    )}
+                  </h2>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2 md:gap-4">
+              {isAdmin && (
+                <div className="hidden lg:flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1.5 text-[11px] font-bold text-stone-600 shadow-sm">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                  Online
+                </div>
+              )}
               <NotificationCenter />
               <Link
                 to="/dashboard/perfil"
-                className="hidden md:flex h-9 w-9 items-center justify-center rounded-xl bg-stone-100 text-stone-600 hover:bg-stone-200"
+                className="hidden md:flex h-9 w-9 items-center justify-center rounded-xl bg-white border border-stone-200 text-stone-600 hover:bg-stone-50 shadow-sm"
                 title="Meu perfil"
               >
                 <User className="h-4 w-4" />
               </Link>
               <button
                 onClick={handleLogout}
-                className="p-2 rounded-xl text-stone-500 hover:bg-stone-100 hover:text-stone-900 transition-colors"
+                className="p-2 rounded-xl text-stone-500 hover:bg-white hover:text-stone-900 transition-colors"
                 title="Sair"
               >
                 <LogOut className="w-5 h-5" />
@@ -292,69 +368,78 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
             </div>
           </header>
 
-          <div className="flex-1 overflow-y-auto p-4 pb-24 sm:p-6 md:p-8 md:pb-8">
+          <div
+            className={`flex-1 overflow-y-auto p-4 pb-24 sm:p-6 md:p-8 md:pb-8 ${
+              isAdmin ? "admin-content" : ""
+            }`}
+          >
             {children}
           </div>
 
           {isAdmin ? (
-            <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-stone-200 px-2 py-2 flex items-center gap-1 overflow-x-auto shadow-[0_-8px_30px_rgba(0,0,0,0.04)]">
-              <MobileNavItem end to="/dashboard" icon={<Home className="w-5 h-5" />} label="Início" />
-              <MobileNavItem to="/dashboard/admin/empresas" icon={<Building2 className="w-5 h-5" />} label="Empresas" />
-              <MobileNavItem to="/dashboard/admin/vagas" icon={<Briefcase className="w-5 h-5" />} label="Vagas" />
-              <MobileNavItem to="/dashboard/admin/usuarios" icon={<Users className="w-5 h-5" />} label="Usuários" />
-              <MobileNavItem to="/dashboard/admin/vinculos" icon={<Link2 className="w-5 h-5" />} label="Vínculos" />
-              <MobileNavItem to="/dashboard/admin/publicidade" icon={<Megaphone className="w-5 h-5" />} label="Ads" />
-              <MobileNavItem to="/dashboard/admin/api" icon={<KeyRound className="w-5 h-5" />} label="API" />
-              <MobileNavItem to="/dashboard/admin/ai" icon={<Cpu className="w-5 h-5" />} label="IA" />
-            </nav>
+            <>
+              <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-[#171714]/98 backdrop-blur border-t border-white/5 px-2 py-2 flex items-center justify-around shadow-[0_-12px_36px_rgba(0,0,0,0.14)]">
+                <AdminMobileNavItem end to="/dashboard" icon={<Home className="w-5 h-5" />} label="Início" />
+                <AdminMobileNavItem to="/dashboard/admin/empresas" icon={<Building2 className="w-5 h-5" />} label="Empresas" />
+                <AdminMobileNavItem to="/dashboard/admin/vagas" icon={<Briefcase className="w-5 h-5" />} label="Vagas" />
+                <AdminMobileNavItem to="/dashboard/admin/usuarios" icon={<Users className="w-5 h-5" />} label="Usuários" />
+                <button
+                  type="button"
+                  onClick={() => setAdminMenuOpen(true)}
+                  className={`min-w-14 flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold ${
+                    adminMoreActive ? "text-terracotta-300" : "text-white/45"
+                  }`}
+                >
+                  <MoreHorizontal className="h-5 w-5" />
+                  <span>Mais</span>
+                </button>
+              </nav>
+
+              {adminMenuOpen && (
+                <div className="md:hidden fixed inset-0 z-50 flex items-end bg-black/45 backdrop-blur-sm" onClick={() => setAdminMenuOpen(false)}>
+                  <div
+                    className="w-full rounded-t-[28px] bg-[#1d1d19] p-4 pb-7 text-white shadow-2xl"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <div className="mb-4 flex items-center justify-between px-1">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/35">Administração</p>
+                        <h3 className="mt-1 text-lg font-bold">Mais ferramentas</h3>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAdminMenuOpen(false)}
+                        className="flex h-9 w-9 items-center justify-center rounded-full bg-white/8 text-white/60"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <AdminMobileMoreLink to="/dashboard/admin/vinculos" icon={<Link2 className="h-4 w-4" />} label="Vínculos" onClick={() => setAdminMenuOpen(false)} />
+                      <AdminMobileMoreLink to="/dashboard/admin/publicidade" icon={<Megaphone className="h-4 w-4" />} label="Publicidade" onClick={() => setAdminMenuOpen(false)} />
+                      <AdminMobileMoreLink to="/dashboard/admin/api" icon={<KeyRound className="h-4 w-4" />} label="API v1" onClick={() => setAdminMenuOpen(false)} />
+                      <AdminMobileMoreLink to="/dashboard/admin/ai" icon={<Cpu className="h-4 w-4" />} label="Inteligência Artificial" onClick={() => setAdminMenuOpen(false)} />
+                      <AdminMobileMoreLink to="/dashboard/perfil" icon={<User className="h-4 w-4" />} label="Meus dados" onClick={() => setAdminMenuOpen(false)} />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
             <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-stone-200 px-2 py-2 flex items-center justify-around shadow-[0_-8px_30px_rgba(0,0,0,0.04)]">
               {isCompanyWorkspace ? (
                 <>
-                  <MobileNavItem
-                    to="/dashboard/empresa/inicio"
-                    icon={<Home className="w-5 h-5" />}
-                    label="Início"
-                  />
-                  <MobileNavItem
-                    to="/dashboard/empresa/painel"
-                    icon={<Briefcase className="w-5 h-5" />}
-                    label="Vagas"
-                  />
-                  <MobileNavItem
-                    to="/dashboard/curriculos"
-                    icon={<UserRoundSearch className="w-5 h-5" />}
-                    label="Talentos"
-                  />
-                  <MobileNavItem
-                    end
-                    to="/dashboard/empresa"
-                    icon={<Building2 className="w-5 h-5" />}
-                    label="Empresa"
-                  />
+                  <MobileNavItem to="/dashboard/empresa/inicio" icon={<Home className="w-5 h-5" />} label="Início" />
+                  <MobileNavItem to="/dashboard/empresa/painel" icon={<Briefcase className="w-5 h-5" />} label="Vagas" />
+                  <MobileNavItem to="/dashboard/curriculos" icon={<UserRoundSearch className="w-5 h-5" />} label="Talentos" />
+                  <MobileNavItem end to="/dashboard/empresa" icon={<Building2 className="w-5 h-5" />} label="Empresa" />
                 </>
               ) : (
                 <>
-                  <MobileNavItem
-                    to="/dashboard/pessoal"
-                    icon={<Home className="w-5 h-5" />}
-                    label="Início"
-                  />
-                  <MobileNavItem
-                    to="/vagas"
-                    icon={<Briefcase className="w-5 h-5" />}
-                    label="Vagas"
-                  />
-                  <MobileNavItem
-                    to="/dashboard/curriculo/gerador"
-                    icon={<FileText className="w-5 h-5" />}
-                    label="Currículo"
-                  />
-                  <MobileNavItem
-                    to="/dashboard/perfil"
-                    icon={<User className="w-5 h-5" />}
-                    label="Perfil"
-                  />
+                  <MobileNavItem to="/dashboard/pessoal" icon={<Home className="w-5 h-5" />} label="Início" />
+                  <MobileNavItem to="/vagas" icon={<Briefcase className="w-5 h-5" />} label="Vagas" />
+                  <MobileNavItem to="/dashboard/curriculo/gerador" icon={<FileText className="w-5 h-5" />} label="Currículo" />
+                  <MobileNavItem to="/dashboard/perfil" icon={<User className="w-5 h-5" />} label="Perfil" />
                 </>
               )}
             </nav>
@@ -369,26 +454,10 @@ function PersonalNavigation({ hasCompany }: { hasCompany: boolean }) {
   return (
     <>
       <SectionLabel>Meu espaço</SectionLabel>
-      <NavItem
-        to="/dashboard/pessoal"
-        icon={<LayoutDashboard className="w-5 h-5" />}
-        label="Visão geral"
-      />
-      <NavItem
-        to="/vagas"
-        icon={<Briefcase className="w-5 h-5" />}
-        label="Encontrar vagas"
-      />
-      <NavItem
-        to="/dashboard/curriculo/gerador"
-        icon={<FileText className="w-5 h-5" />}
-        label="Meu currículo"
-      />
-      <NavItem
-        to="/dashboard/perfil"
-        icon={<User className="w-5 h-5" />}
-        label="Meu perfil"
-      />
+      <NavItem to="/dashboard/pessoal" icon={<LayoutDashboard className="w-5 h-5" />} label="Visão geral" />
+      <NavItem to="/vagas" icon={<Briefcase className="w-5 h-5" />} label="Encontrar vagas" />
+      <NavItem to="/dashboard/curriculo/gerador" icon={<FileText className="w-5 h-5" />} label="Meu currículo" />
+      <NavItem to="/dashboard/perfil" icon={<User className="w-5 h-5" />} label="Meu perfil" />
 
       {!hasCompany && (
         <div className="mt-5 border-t border-stone-100 pt-5">
@@ -409,32 +478,11 @@ function CompanyNavigation() {
   return (
     <>
       <SectionLabel>Empresa</SectionLabel>
-      <NavItem
-        to="/dashboard/empresa/inicio"
-        icon={<LayoutDashboard className="w-5 h-5" />}
-        label="Visão geral"
-      />
-      <NavItem
-        to="/dashboard/empresa/painel"
-        icon={<Briefcase className="w-5 h-5" />}
-        label="Vagas"
-      />
-      <NavItem
-        to="/dashboard/curriculos"
-        icon={<UserRoundSearch className="w-5 h-5" />}
-        label="Banco de talentos"
-      />
-      <NavItem
-        to="/dashboard/configuracao-contratacao"
-        icon={<FileText className="w-5 h-5" />}
-        label="Contratação"
-      />
-      <NavItem
-        end
-        to="/dashboard/empresa"
-        icon={<Building2 className="w-5 h-5" />}
-        label="Perfil da empresa"
-      />
+      <NavItem to="/dashboard/empresa/inicio" icon={<LayoutDashboard className="w-5 h-5" />} label="Visão geral" />
+      <NavItem to="/dashboard/empresa/painel" icon={<Briefcase className="w-5 h-5" />} label="Vagas" />
+      <NavItem to="/dashboard/curriculos" icon={<UserRoundSearch className="w-5 h-5" />} label="Banco de talentos" />
+      <NavItem to="/dashboard/configuracao-contratacao" icon={<FileText className="w-5 h-5" />} label="Contratação" />
+      <NavItem end to="/dashboard/empresa" icon={<Building2 className="w-5 h-5" />} label="Perfil da empresa" />
     </>
   );
 }
@@ -442,52 +490,22 @@ function CompanyNavigation() {
 function AdminNavigation() {
   return (
     <>
-      <NavItem
-        end
-        to="/dashboard"
-        icon={<Home className="w-5 h-5" />}
-        label="Dashboard"
-      />
-      <NavItem
-        to="/dashboard/admin/empresas"
-        icon={<Building2 className="w-5 h-5" />}
-        label="Empresas"
-      />
-      <NavItem
-        to="/dashboard/admin/vagas"
-        icon={<Briefcase className="w-5 h-5" />}
-        label="Vagas"
-      />
-      <NavItem
-        to="/dashboard/admin/usuarios"
-        icon={<Users className="w-5 h-5" />}
-        label="Usuários"
-      />
-      <NavItem
-        to="/dashboard/admin/vinculos"
-        icon={<Link2 className="w-5 h-5" />}
-        label="Vínculos"
-      />
-      <NavItem
-        to="/dashboard/admin/publicidade"
-        icon={<Megaphone className="w-5 h-5" />}
-        label="Publicidade"
-      />
-      <NavItem
-        to="/dashboard/admin/api"
-        icon={<KeyRound className="w-5 h-5" />}
-        label="API v1"
-      />
-      <NavItem
-        to="/dashboard/admin/ai"
-        icon={<Cpu className="w-5 h-5" />}
-        label="Inteligência Artificial"
-      />
-      <NavItem
-        to="/dashboard/perfil"
-        icon={<User className="w-5 h-5" />}
-        label="Meus dados"
-      />
+      <AdminSectionLabel>Visão geral</AdminSectionLabel>
+      <AdminNavItem end to="/dashboard" icon={<LayoutDashboard className="w-4 h-4" />} label="Dashboard" />
+
+      <AdminSectionLabel>Operação</AdminSectionLabel>
+      <AdminNavItem to="/dashboard/admin/empresas" icon={<Building2 className="w-4 h-4" />} label="Empresas" />
+      <AdminNavItem to="/dashboard/admin/vagas" icon={<Briefcase className="w-4 h-4" />} label="Vagas" />
+      <AdminNavItem to="/dashboard/admin/usuarios" icon={<Users className="w-4 h-4" />} label="Usuários" />
+      <AdminNavItem to="/dashboard/admin/vinculos" icon={<Link2 className="w-4 h-4" />} label="Vínculos" />
+
+      <AdminSectionLabel>Plataforma</AdminSectionLabel>
+      <AdminNavItem to="/dashboard/admin/publicidade" icon={<Megaphone className="w-4 h-4" />} label="Publicidade" />
+      <AdminNavItem to="/dashboard/admin/api" icon={<KeyRound className="w-4 h-4" />} label="API v1" />
+      <AdminNavItem to="/dashboard/admin/ai" icon={<Cpu className="w-4 h-4" />} label="Inteligência Artificial" />
+
+      <AdminSectionLabel>Conta</AdminSectionLabel>
+      <AdminNavItem to="/dashboard/perfil" icon={<User className="w-4 h-4" />} label="Meus dados" />
     </>
   );
 }
@@ -495,6 +513,14 @@ function AdminNavigation() {
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="px-4 pb-2 pt-2 text-[10px] font-bold uppercase tracking-[0.18em] text-stone-400">
+      {children}
+    </div>
+  );
+}
+
+function AdminSectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-3 pb-2 pt-5 text-[9px] font-bold uppercase tracking-[0.22em] text-white/25 first:pt-1">
       {children}
     </div>
   );
@@ -529,6 +555,37 @@ function NavItem({
   );
 }
 
+function AdminNavItem({
+  to,
+  icon,
+  label,
+  end = false,
+}: {
+  to: string;
+  icon: React.ReactNode;
+  label: string;
+  end?: boolean;
+}) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        `group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+          isActive
+            ? "bg-white text-stone-950 shadow-[0_8px_30px_rgba(0,0,0,.18)]"
+            : "text-white/50 hover:bg-white/[0.055] hover:text-white"
+        }`
+      }
+    >
+      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.055] group-hover:bg-white/[0.08]">
+        {icon}
+      </span>
+      <span className="truncate">{label}</span>
+    </NavLink>
+  );
+}
+
 function MobileNavItem({
   to,
   icon,
@@ -553,5 +610,57 @@ function MobileNavItem({
       {icon}
       <span>{label}</span>
     </NavLink>
+  );
+}
+
+function AdminMobileNavItem({
+  to,
+  icon,
+  label,
+  end = false,
+}: {
+  to: string;
+  icon: React.ReactNode;
+  label: string;
+  end?: boolean;
+}) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        `min-w-14 flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold transition ${
+          isActive ? "text-terracotta-300" : "text-white/45"
+        }`
+      }
+    >
+      {icon}
+      <span>{label}</span>
+    </NavLink>
+  );
+}
+
+function AdminMobileMoreLink({
+  to,
+  icon,
+  label,
+  onClick,
+}: {
+  to: string;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Link
+      to={to}
+      onClick={onClick}
+      className="flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.045] px-3 py-3 text-sm font-semibold text-white/75 hover:bg-white/[0.08] hover:text-white"
+    >
+      <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.06] text-terracotta-300">
+        {icon}
+      </span>
+      <span className="min-w-0 truncate">{label}</span>
+    </Link>
   );
 }
