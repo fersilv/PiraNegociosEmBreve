@@ -38,6 +38,7 @@ function AdminPage({ children }: { children: React.ReactNode }) {
 function AdminRoutes() {
   return (
     <Routes>
+      <Route path="onboarding" element={<Onboarding />} />
       <Route
         index
         element={
