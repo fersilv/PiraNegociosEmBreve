@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Activity,
@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { auth } from "../lib/firebase";
+import { api, asArray } from "../lib/api";
 import { NotificationCenter } from "./NotificationCenter";
 import { AdminTheme } from "./AdminTheme";
 
@@ -89,28 +90,112 @@ const adminGroups = [
   },
 ] as const;
 
-const pageLabels: Array<{ test: (path: string) => boolean; label: string; eyebrow: string }> = [
-  { test: (path) => path === "/dashboard", label: "Dashboard", eyebrow: "Visão geral" },
-  { test: (path) => path.startsWith("/dashboard/admin/empresas"), label: "Empresas", eyebrow: "Operação" },
-  { test: (path) => path.startsWith("/dashboard/admin/vagas"), label: "Vagas", eyebrow: "Operação" },
-  { test: (path) => path.startsWith("/dashboard/admin/usuarios"), label: "Usuários", eyebrow: "Operação" },
-  { test: (path) => path.startsWith("/dashboard/admin/vinculos"), label: "Vínculos", eyebrow: "Operação" },
-  { test: (path) => path.startsWith("/dashboard/admin/publicidade"), label: "Publicidade", eyebrow: "Plataforma" },
-  { test: (path) => path.startsWith("/dashboard/admin/api"), label: "API v1", eyebrow: "Plataforma" },
-  { test: (path) => path.startsWith("/dashboard/admin/ai"), label: "Inteligência Artificial", eyebrow: "Plataforma" },
-  { test: (path) => path === "/dashboard/perfil", label: "Meus dados", eyebrow: "Conta" },
-  { test: (path) => path.includes("/onboarding"), label: "Completar cadastro", eyebrow: "Conta" },
+const pageLabels: Array<{
+  test: (path: string) => boolean;
+  label: string;
+  eyebrow: string;
+}> = [
+  {
+    test: (path) => path === "/dashboard",
+    label: "Dashboard",
+    eyebrow: "Visão geral",
+  },
+  {
+    test: (path) => path.startsWith("/dashboard/admin/empresas"),
+    label: "Empresas",
+    eyebrow: "Operação",
+  },
+  {
+    test: (path) => path.startsWith("/dashboard/admin/vagas"),
+    label: "Vagas",
+    eyebrow: "Operação",
+  },
+  {
+    test: (path) => path.startsWith("/dashboard/admin/usuarios"),
+    label: "Usuários",
+    eyebrow: "Operação",
+  },
+  {
+    test: (path) => path.startsWith("/dashboard/admin/vinculos"),
+    label: "Vínculos",
+    eyebrow: "Operação",
+  },
+  {
+    test: (path) => path.startsWith("/dashboard/admin/publicidade"),
+    label: "Publicidade",
+    eyebrow: "Plataforma",
+  },
+  {
+    test: (path) => path.startsWith("/dashboard/admin/api"),
+    label: "API v1",
+    eyebrow: "Plataforma",
+  },
+  {
+    test: (path) => path.startsWith("/dashboard/admin/ai"),
+    label: "Inteligência Artificial",
+    eyebrow: "Plataforma",
+  },
+  {
+    test: (path) => path === "/dashboard/perfil",
+    label: "Meus dados",
+    eyebrow: "Conta",
+  },
+  {
+    test: (path) => path.includes("/onboarding"),
+    label: "Completar cadastro",
+    eyebrow: "Conta",
+  },
 ];
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [queueBadges, setQueueBadges] = useState<Record<string, number>>({});
 
   const handleLogout = () => {
     auth.signOut();
     navigate("/");
   };
+
+  useEffect(() => {
+    let active = true;
+
+    const loadQueueBadges = async () => {
+      const [summaryResult, jobsResult, accessResult] = await Promise.allSettled([
+        api.get("/admin/summary"),
+        api.get("/admin/jobs", {
+          params: { page: 1, pageSize: 10, status: "PENDING" },
+        }),
+        api.get("/admin/company-access-requests"),
+      ]);
+
+      if (!active) return;
+
+      setQueueBadges({
+        "/dashboard/admin/empresas":
+          summaryResult.status === "fulfilled"
+            ? Number(summaryResult.value.data?.pendingCompanies || 0)
+            : 0,
+        "/dashboard/admin/vagas":
+          jobsResult.status === "fulfilled"
+            ? Number(jobsResult.value.data?.pagination?.total || 0)
+            : 0,
+        "/dashboard/admin/vinculos":
+          accessResult.status === "fulfilled"
+            ? asArray(accessResult.value.data).length
+            : 0,
+      });
+    };
+
+    void loadQueueBadges();
+    const interval = window.setInterval(() => void loadQueueBadges(), 30000);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, []);
 
   const currentPage = useMemo(
     () =>
@@ -127,6 +212,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     location.pathname.startsWith("/dashboard/admin/api") ||
     location.pathname.startsWith("/dashboard/admin/ai") ||
     location.pathname === "/dashboard/perfil";
+
+  const moreBadge = queueBadges["/dashboard/admin/vinculos"] || 0;
 
   return (
     <div className="admin-workspace min-h-screen bg-[#f4f3ef] text-stone-900">
@@ -167,7 +254,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                 </div>
                 <div className="space-y-1">
                   {group.items.map((item) => (
-                    <AdminNavLink key={item.to} {...item} />
+                    <AdminNavLink
+                      key={item.to}
+                      {...item}
+                      badge={queueBadges[item.to] || 0}
+                    />
                   ))}
                 </div>
               </div>
@@ -189,7 +280,10 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         <div className="flex min-h-screen min-w-0 flex-1 flex-col md:pl-[286px]">
           <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between border-b border-stone-200/80 bg-[#f4f3ef]/92 px-4 backdrop-blur-xl md:px-7">
             <div className="flex min-w-0 items-center gap-3">
-              <Link to="/" className="font-serif text-lg font-bold text-terracotta-800 md:hidden">
+              <Link
+                to="/"
+                className="font-serif text-lg font-bold text-terracotta-800 md:hidden"
+              >
                 PiraNegócios
               </Link>
               <span className="hidden h-9 w-9 items-center justify-center rounded-xl bg-stone-900 text-white md:flex">
@@ -236,19 +330,39 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-white/[0.05] bg-[#171714]/98 px-2 py-2 text-white shadow-[0_-12px_36px_rgba(0,0,0,.14)] backdrop-blur md:hidden">
-        <AdminMobileLink end to="/dashboard" icon={<LayoutDashboard className="h-5 w-5" />} label="Início" />
-        <AdminMobileLink to="/dashboard/admin/empresas" icon={<Building2 className="h-5 w-5" />} label="Empresas" />
-        <AdminMobileLink to="/dashboard/admin/vagas" icon={<Briefcase className="h-5 w-5" />} label="Vagas" />
-        <AdminMobileLink to="/dashboard/admin/usuarios" icon={<Users className="h-5 w-5" />} label="Usuários" />
+        <AdminMobileLink
+          end
+          to="/dashboard"
+          icon={<LayoutDashboard className="h-5 w-5" />}
+          label="Início"
+        />
+        <AdminMobileLink
+          to="/dashboard/admin/empresas"
+          icon={<Building2 className="h-5 w-5" />}
+          label="Empresas"
+          badge={queueBadges["/dashboard/admin/empresas"] || 0}
+        />
+        <AdminMobileLink
+          to="/dashboard/admin/vagas"
+          icon={<Briefcase className="h-5 w-5" />}
+          label="Vagas"
+          badge={queueBadges["/dashboard/admin/vagas"] || 0}
+        />
+        <AdminMobileLink
+          to="/dashboard/admin/usuarios"
+          icon={<Users className="h-5 w-5" />}
+          label="Usuários"
+        />
         <button
           type="button"
           onClick={() => setMoreOpen(true)}
-          className={`flex min-w-14 flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold ${
+          className={`relative flex min-w-14 flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold ${
             moreActive ? "text-terracotta-300" : "text-white/45"
           }`}
         >
           <MoreHorizontal className="h-5 w-5" />
           <span>Mais</span>
+          {moreBadge > 0 && <MobileBadge value={moreBadge} />}
         </button>
       </nav>
 
@@ -277,11 +391,37 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <MoreLink to="/dashboard/admin/vinculos" icon={<Link2 className="h-4 w-4" />} label="Vínculos" close={() => setMoreOpen(false)} />
-              <MoreLink to="/dashboard/admin/publicidade" icon={<Megaphone className="h-4 w-4" />} label="Publicidade" close={() => setMoreOpen(false)} />
-              <MoreLink to="/dashboard/admin/api" icon={<KeyRound className="h-4 w-4" />} label="API v1" close={() => setMoreOpen(false)} />
-              <MoreLink to="/dashboard/admin/ai" icon={<Cpu className="h-4 w-4" />} label="Inteligência Artificial" close={() => setMoreOpen(false)} />
-              <MoreLink to="/dashboard/perfil" icon={<User className="h-4 w-4" />} label="Meus dados" close={() => setMoreOpen(false)} />
+              <MoreLink
+                to="/dashboard/admin/vinculos"
+                icon={<Link2 className="h-4 w-4" />}
+                label="Vínculos"
+                badge={queueBadges["/dashboard/admin/vinculos"] || 0}
+                close={() => setMoreOpen(false)}
+              />
+              <MoreLink
+                to="/dashboard/admin/publicidade"
+                icon={<Megaphone className="h-4 w-4" />}
+                label="Publicidade"
+                close={() => setMoreOpen(false)}
+              />
+              <MoreLink
+                to="/dashboard/admin/api"
+                icon={<KeyRound className="h-4 w-4" />}
+                label="API v1"
+                close={() => setMoreOpen(false)}
+              />
+              <MoreLink
+                to="/dashboard/admin/ai"
+                icon={<Cpu className="h-4 w-4" />}
+                label="Inteligência Artificial"
+                close={() => setMoreOpen(false)}
+              />
+              <MoreLink
+                to="/dashboard/perfil"
+                icon={<User className="h-4 w-4" />}
+                label="Meus dados"
+                close={() => setMoreOpen(false)}
+              />
             </div>
           </div>
         </div>
@@ -295,11 +435,13 @@ function AdminNavLink({
   label,
   icon,
   end = false,
+  badge = 0,
 }: {
   to: string;
   label: string;
   icon: React.ReactNode;
   end?: boolean;
+  badge?: number;
 }) {
   return (
     <NavLink
@@ -316,7 +458,12 @@ function AdminNavLink({
       <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.055] group-hover:bg-white/[0.08]">
         {icon}
       </span>
-      <span className="truncate">{label}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {badge > 0 && (
+        <span className="min-w-6 rounded-full bg-terracotta-500 px-1.5 py-0.5 text-center text-[10px] font-bold text-white shadow-sm">
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
     </NavLink>
   );
 }
@@ -326,25 +473,36 @@ function AdminMobileLink({
   label,
   icon,
   end = false,
+  badge = 0,
 }: {
   to: string;
   label: string;
   icon: React.ReactNode;
   end?: boolean;
+  badge?: number;
 }) {
   return (
     <NavLink
       to={to}
       end={end}
       className={({ isActive }) =>
-        `flex min-w-14 flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold transition ${
+        `relative flex min-w-14 flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold transition ${
           isActive ? "text-terracotta-300" : "text-white/45"
         }`
       }
     >
       {icon}
       <span>{label}</span>
+      {badge > 0 && <MobileBadge value={badge} />}
     </NavLink>
+  );
+}
+
+function MobileBadge({ value }: { value: number }) {
+  return (
+    <span className="absolute right-1 top-0 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-terracotta-500 px-1 text-[8px] font-black leading-none text-white shadow-sm">
+      {value > 99 ? "99+" : value}
+    </span>
   );
 }
 
@@ -353,11 +511,13 @@ function MoreLink({
   icon,
   label,
   close,
+  badge = 0,
 }: {
   to: string;
   icon: React.ReactNode;
   label: string;
   close: () => void;
+  badge?: number;
 }) {
   return (
     <Link
@@ -368,7 +528,12 @@ function MoreLink({
       <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.06] text-terracotta-300">
         {icon}
       </span>
-      <span className="min-w-0 truncate">{label}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {badge > 0 && (
+        <span className="rounded-full bg-terracotta-500 px-2 py-0.5 text-[9px] font-bold text-white">
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
     </Link>
   );
 }
