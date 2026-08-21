@@ -45,65 +45,97 @@ type PublicJob = {
   applicationWhatsApp?: string;
   company: PublicCompany | null;
   isExternalListing?: boolean;
+  isConfidential?: boolean;
   sourceName?: string | null;
   sourceUrl?: string | null;
   isTalentPool?: boolean;
   updatedAt?: string;
+  views?: number;
 };
 
 const siteUrl = window.location.origin;
 
 export default function PublicJobPage() {
   const { slug } = useParams();
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [job, setJob] = useState<PublicJob | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [views, setViews] = useState(0);
   const [activeViewers, setActiveViewers] = useState(0);
+  const isAdmin = profile?.type === "ADMIN";
 
   useEffect(() => {
     if (!slug) return;
     api
       .get(`/public/jobs/${encodeURIComponent(slug)}`)
-      .then((response) => setJob(response.data))
+      .then((response) => {
+        const nextJob = response.data as PublicJob;
+        setJob(nextJob);
+        setViews(Number(nextJob.views || 0));
+      })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
   }, [slug]);
 
+  // A visualização total é persistida por HTTP. Ela não depende do WebSocket
+  // estar corretamente encaminhado pelo proxy e só é registrada uma vez neste
+  // navegador para cada vaga, mantendo o comportamento anterior.
   useEffect(() => {
-    if (!job) return;
+    if (!job || authLoading || isAdmin) return;
 
-    // Fallback para api URL caso front e back estejam em portas separadas no dev
-    const socketUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : window.location.origin;
-    
+    const viewedKey = `viewed_job_${job.id}`;
+    if (localStorage.getItem(viewedKey)) return;
+
+    let cancelled = false;
+    api
+      .post(`/public/jobs/${job.id}/view`)
+      .then((response) => {
+        if (cancelled) return;
+        setViews(Number(response.data?.views || 0));
+        localStorage.setItem(viewedKey, "true");
+      })
+      .catch((error) => {
+        console.warn("Não foi possível registrar visualização da vaga.", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [job?.id, authLoading, isAdmin]);
+
+  // O socket fica responsável apenas pela presença em tempo real. Mesmo se ele
+  // estiver indisponível, o total de visualizações continua sendo contabilizado.
+  useEffect(() => {
+    if (!job || authLoading || isAdmin) return;
+
+    const socketUrl = import.meta.env.VITE_API_URL
+      ? import.meta.env.VITE_API_URL.replace("/api", "")
+      : window.location.origin;
+
     const socket: Socket = io(socketUrl, {
       path: "/socket.io",
       transports: ["websocket", "polling"],
     });
 
-    const viewedKey = `viewed_job_${job.id}`;
-    const alreadyViewed = localStorage.getItem(viewedKey);
-    const incrementView = !alreadyViewed;
-
     socket.on("connect", () => {
-      socket.emit("join-job", { jobId: job.id, incrementView });
-      if (incrementView) {
-        localStorage.setItem(viewedKey, "true");
-      }
+      socket.emit("join-job", { jobId: job.id, incrementView: false });
     });
 
-    socket.on("job-stats-updated", (data: { views: number; activeViewers: number }) => {
-      setViews(data.views);
-      setActiveViewers(data.activeViewers);
-    });
+    socket.on(
+      "job-stats-updated",
+      (data: { views: number; activeViewers: number }) => {
+        setViews(data.views);
+        setActiveViewers(data.activeViewers);
+      },
+    );
 
     return () => {
       socket.emit("leave-job", { jobId: job.id });
       socket.disconnect();
     };
-  }, [job]);
+  }, [job?.id, authLoading, isAdmin]);
 
   const canonical = `${siteUrl}/vagas/${job?.slug || slug || ""}`;
   const structuredData = useMemo(() => {
