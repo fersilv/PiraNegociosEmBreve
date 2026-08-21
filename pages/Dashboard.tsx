@@ -9,6 +9,7 @@ import { CompanyHomePage } from "./CompanyHomePage";
 import { CandidateDashboard } from "./CandidateDashboard";
 import { AdminDashboard, ApiV1Panel } from "./AdminDashboard";
 import { AdminOverview } from "./AdminOverview";
+import { AdminAccountPage } from "./AdminAccountPage";
 import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
 import { ResumeDatabase } from "./ResumeDatabase";
 import { ProfilePage } from "./ProfilePage";
@@ -130,7 +131,7 @@ function AdminRoutes() {
         path="perfil"
         element={
           <AdminPage>
-            <ProfilePageWithoutLegacyResumeAi />
+            <AdminAccountPage />
           </AdminPage>
         }
       />
