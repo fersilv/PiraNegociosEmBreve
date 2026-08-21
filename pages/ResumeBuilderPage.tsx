@@ -180,7 +180,7 @@ function normalizeStage(stage: ExperienceTimelineEntry): ExperienceTimelineEntry
   return {
     ...stage,
     id: stage.id || makeId("stage"),
-    role: String(stage.role || "").trim(),
+    role: String(stage.role || ""),
     startDate: normalizeMonthYear(stage.startDate),
     endDate: stage.current ? "Atual" : normalizeMonthYear(stage.endDate),
     description: String(stage.description || ""),
@@ -214,7 +214,7 @@ function syncExperience(exp: ProfessionalExperience): ProfessionalExperience {
   return {
     ...exp,
     id: exp.id || makeId("exp"),
-    company: String(exp.company || "").trim(),
+    company: String(exp.company || ""),
     role: latest?.role || exp.role || "",
     startDate: first?.startDate || normalizeMonthYear(exp.startDate),
     endDate: latest?.current ? "Atual" : latest?.endDate || normalizeMonthYear(exp.endDate),
@@ -223,6 +223,20 @@ function syncExperience(exp: ProfessionalExperience): ProfessionalExperience {
     skills: allSkills,
     timeline,
   };
+}
+
+function prepareExperienceForSave(exp: ProfessionalExperience): ProfessionalExperience {
+  const synced = syncExperience(exp);
+  return syncExperience({
+    ...synced,
+    company: synced.company.trim(),
+    description: String(synced.description || "").trim(),
+    timeline: (synced.timeline || []).map((stage) => ({
+      ...stage,
+      role: String(stage.role || "").trim(),
+      description: String(stage.description || "").trim(),
+    })),
+  });
 }
 
 function mergeExperiencesByCompany(value: unknown): ProfessionalExperience[] {
@@ -412,7 +426,7 @@ export function ResumeBuilderPage() {
   const saveProgress = async () => {
     setSaving(true);
     try {
-      const normalizedExperiences = formExperiences.map(syncExperience);
+      const normalizedExperiences = formExperiences.map(prepareExperienceForSave);
       setFormExperiences(normalizedExperiences);
       await api.patch("/users/me", {
         fullName: formName,
