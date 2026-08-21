@@ -328,8 +328,66 @@ function ResumeStudioTheme() {
       }
 
       @media print {
-        .resume-studio-header { display: none !important; }
-        .resume-studio { background: white !important; }
+        @page {
+          size: 210mm 297mm;
+          margin: 0;
+        }
+
+        html,
+        body {
+          width: 210mm !important;
+          min-width: 210mm !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: white !important;
+          overflow: visible !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+
+        .resume-studio-header,
+        .resume-studio-body #resume-builder-sidebar {
+          display: none !important;
+        }
+
+        .resume-studio,
+        .resume-studio-body,
+        .resume-studio-body #resume-builder-root,
+        .resume-studio-body #resume-preview-area {
+          display: block !important;
+          width: 210mm !important;
+          min-width: 210mm !important;
+          max-width: 210mm !important;
+          min-height: 0 !important;
+          height: auto !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          border: 0 !important;
+          background: white !important;
+          overflow: visible !important;
+          box-shadow: none !important;
+        }
+
+        .resume-studio-body #resume-preview-area > div {
+          width: 210mm !important;
+          min-width: 210mm !important;
+          max-width: 210mm !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          transform: none !important;
+          transform-origin: top left !important;
+          filter: none !important;
+        }
+
+        .resume-studio-body #resume-preview-area > div > div {
+          width: 210mm !important;
+          max-width: 210mm !important;
+          min-height: 297mm !important;
+          margin: 0 !important;
+          border: 0 !important;
+          box-shadow: none !important;
+          box-sizing: border-box !important;
+        }
       }
     `}</style>
   );
