@@ -9,6 +9,7 @@ export interface Job {
   salary?: string;
   type: string;
   workModel?: string;
+  skills?: string[];
   isSponsored?: boolean;
   postedAt: string;
   description: string;
