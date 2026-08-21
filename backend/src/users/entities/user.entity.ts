@@ -14,7 +14,7 @@ export enum UserType {
 
 @Entity('users')
 export class User {
-  @PrimaryColumn() // Firebase UID
+  @PrimaryColumn()
   id: string;
 
   @Column({ type: 'enum', enum: UserType, nullable: true })
@@ -30,13 +30,13 @@ export class User {
   photoURL: string;
 
   @Column({ type: 'varchar', nullable: true })
-  companyId: string | null; // If user belongs to a company
+  companyId: string | null;
 
   @Column({ default: false })
   isCompanyAdmin: boolean;
 
   @Column({ nullable: true })
-  status: string; // ex: 'INVITED', 'ACTIVE'
+  status: string;
 
   @Column({ nullable: true })
   fullName: string;
@@ -121,6 +121,9 @@ export class User {
 
   @Column({ type: 'text', nullable: true })
   resumePhotoURL: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  resumePreferences: Record<string, unknown> | null;
 
   @Column({ type: 'varchar', nullable: true })
   fcmToken: string | null;
