@@ -311,7 +311,7 @@ function mergeUniqueStrings(current: string[], incoming: unknown): string[] {
 
 export function ResumeBuilderPage() {
   const { profile, loading, refreshProfile } = useAuth();
-  const { enabled: aiEnabled } = useAiStatus();
+  const { enabled: aiEnabled, resumeScorePaymentRequired } = useAiStatus();
   const [step, setStep] = useState(-1);
   const [isFirstJob, setIsFirstJob] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -364,7 +364,11 @@ export function ResumeBuilderPage() {
     setFormSkills(profile.skills || []);
     setFormCourses(normalizeCourses(profile.courses || []));
     setFormLanguages(profile.languages || []);
-    setFormAiAnalysis(profile.resumeScoreUnlocked ? profile.aiAnalysis : undefined);
+    setFormAiAnalysis(
+      profile.resumeScoreUnlocked || !resumeScorePaymentRequired
+        ? profile.aiAnalysis || undefined
+        : undefined,
+    );
     setPreferences({
       ...DEFAULT_RESUME_PREFERENCES,
       ...(profile.resumePreferences || {}),
@@ -374,7 +378,7 @@ export function ResumeBuilderPage() {
       initialProfileHydratedRef.current = true;
       if (profileHasData(profile)) setStep(99);
     }
-  }, [profile]);
+  }, [profile, resumeScorePaymentRequired]);
 
   const recalcScale = useCallback(() => {
     if (!previewRef.current) return;
@@ -419,7 +423,10 @@ export function ResumeBuilderPage() {
     skills: formSkills,
     courses: formCourses,
     languages: formLanguages,
-    aiAnalysis: profile.resumeScoreUnlocked ? formAiAnalysis : undefined,
+    aiAnalysis:
+      profile.resumeScoreUnlocked || !resumeScorePaymentRequired
+        ? formAiAnalysis
+        : undefined,
     resumePreferences: preferences,
   };
 
@@ -463,7 +470,7 @@ export function ResumeBuilderPage() {
   };
   const finishBuilder = async () => {
     await saveProgress();
-    if (aiEnabled && !profile.resumeScoreUnlocked) {
+    if (aiEnabled && !formAiAnalysis) {
       setScoreOfferMessage("");
       setScoreOfferOpen(true);
       return;
@@ -473,7 +480,7 @@ export function ResumeBuilderPage() {
 
   const reviewResume = async (candidateProfile: UserProfile = previewProfile) => {
     if (!aiEnabled) return undefined;
-    if (!profile.resumeScoreUnlocked) {
+    if (resumeScorePaymentRequired && !profile.resumeScoreUnlocked) {
       setScoreOfferMessage("");
       setScoreOfferOpen(true);
       return undefined;
@@ -498,8 +505,9 @@ export function ResumeBuilderPage() {
   };
 
   const handleScoreInterest = () => {
-    if (profile.resumeScoreUnlocked) {
+    if (!resumeScorePaymentRequired || profile.resumeScoreUnlocked) {
       setScoreOfferOpen(false);
+      setScoreOfferMessage("");
       setStep(99);
       void reviewResume();
       return;
@@ -843,7 +851,7 @@ export function ResumeBuilderPage() {
               {aiEnabled && (
                 <ResumeScoreCard
                   analysis={formAiAnalysis}
-                  unlocked={Boolean(profile.resumeScoreUnlocked)}
+                  unlocked={Boolean(formAiAnalysis || profile.resumeScoreUnlocked)}
                   reviewing={reviewing}
                   onReview={() => void reviewResume()}
                   onUpgrade={() => {
