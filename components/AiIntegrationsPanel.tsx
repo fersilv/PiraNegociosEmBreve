@@ -360,10 +360,13 @@ export function AiIntegrationsPanel() {
         });
         return;
       }
-      if (!selectedModel) {
+      if (
+        !selectedModel ||
+        !models.some((model) => model.id === selectedModel)
+      ) {
         setMessage({
           type: "error",
-          text: "Teste a conexão primeiro e escolha o modelo que será usado pelo sistema.",
+          text: "Teste a conexão, carregue os modelos atuais e selecione um modelo validado antes de habilitar a IA.",
         });
         return;
       }
