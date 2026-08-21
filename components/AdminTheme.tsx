@@ -141,6 +141,7 @@ export function AdminTheme() {
         padding-bottom: .9rem !important;
         font-size: .67rem !important;
         letter-spacing: .085em !important;
+        white-space: nowrap;
       }
 
       .admin-workspace .admin-page-shell tbody tr {
@@ -149,6 +150,10 @@ export function AdminTheme() {
 
       .admin-workspace .admin-page-shell tbody tr:hover {
         background: rgba(166,63,45,.035);
+      }
+
+      .admin-workspace .admin-page-shell tbody td {
+        border-color: #eeeae3 !important;
       }
 
       .admin-workspace .admin-page-shell input:not([type='checkbox']):not([type='radio']),
@@ -170,12 +175,18 @@ export function AdminTheme() {
 
       .admin-workspace .admin-page-shell button,
       .admin-workspace .admin-page-shell a {
-        transition: transform .16s ease, box-shadow .16s ease, background-color .16s ease, color .16s ease;
+        transition: transform .16s ease, box-shadow .16s ease, background-color .16s ease, color .16s ease, border-color .16s ease;
       }
 
       .admin-workspace .admin-page-shell button:active,
       .admin-workspace .admin-page-shell a:active {
         transform: translateY(1px);
+      }
+
+      .admin-workspace .admin-page-shell button:focus-visible,
+      .admin-workspace .admin-page-shell a:focus-visible {
+        outline: 3px solid rgba(184,77,57,.18);
+        outline-offset: 2px;
       }
 
       .admin-workspace .admin-ai-page > div.space-y-6 > section,
@@ -200,10 +211,35 @@ export function AdminTheme() {
         box-shadow: inset 0 1px rgba(255,255,255,.04);
       }
 
+      .admin-workspace .admin-page-shell [role='dialog'] {
+        backdrop-filter: blur(7px);
+      }
+
       .admin-workspace .admin-page-shell [role='dialog'] > div {
+        width: min(920px, calc(100vw - 2rem));
+        max-width: 920px !important;
         border: 1px solid rgba(255,255,255,.15);
         border-radius: 24px !important;
         box-shadow: 0 28px 90px rgba(0,0,0,.24) !important;
+      }
+
+      .admin-workspace .admin-page-shell [role='dialog'] > div > div:first-child {
+        z-index: 5;
+        backdrop-filter: blur(14px);
+      }
+
+      .admin-workspace .admin-page-shell .overflow-x-auto {
+        scrollbar-width: thin;
+        scrollbar-color: #cfc8bd transparent;
+      }
+
+      .admin-workspace .admin-page-shell .overflow-x-auto::-webkit-scrollbar {
+        height: 8px;
+      }
+
+      .admin-workspace .admin-page-shell .overflow-x-auto::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: #cfc8bd;
       }
 
       .admin-workspace .admin-page-shell .bg-stone-50 {
@@ -216,6 +252,22 @@ export function AdminTheme() {
 
       .admin-workspace .admin-page-shell .text-stone-900 {
         color: #211f1c;
+      }
+
+      .admin-workspace .admin-page-shell .divide-y > * + * {
+        border-color: #ebe6de;
+      }
+
+      .admin-workspace .admin-page-shell code:not(pre code) {
+        border-radius: 6px;
+        background: #f0ede7;
+        padding: .1rem .32rem;
+        color: #514b43;
+      }
+
+      .admin-workspace .admin-page-shell .admin-overview-hero code {
+        background: rgba(255,255,255,.08);
+        color: white;
       }
 
       @keyframes admin-enter {
@@ -241,12 +293,40 @@ export function AdminTheme() {
           font-size: 1.65rem !important;
         }
 
+        .admin-workspace .admin-page-shell > .max-w-7xl > header > div:last-child,
+        .admin-workspace .admin-standalone-page > header > div:last-child {
+          width: 100%;
+        }
+
+        .admin-workspace .admin-page-shell > .max-w-7xl > header button,
+        .admin-workspace .admin-page-shell > .max-w-7xl > header a {
+          min-height: 42px;
+        }
+
         .admin-workspace .admin-page-shell .overflow-x-auto {
+          margin-left: -.1rem;
+          margin-right: -.1rem;
+          padding-bottom: .25rem;
           scrollbar-width: thin;
         }
 
         .admin-workspace .admin-page-shell > .max-w-7xl > section.grid > section {
           min-height: 112px;
+        }
+
+        .admin-workspace .admin-page-shell [role='dialog'] {
+          align-items: flex-end !important;
+          padding: 0 !important;
+        }
+
+        .admin-workspace .admin-page-shell [role='dialog'] > div {
+          width: 100% !important;
+          max-height: 94vh !important;
+          border-radius: 26px 26px 0 0 !important;
+        }
+
+        .admin-workspace .admin-page-shell table {
+          font-size: .78rem;
         }
       }
     `}</style>
