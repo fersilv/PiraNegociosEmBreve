@@ -13,7 +13,7 @@ const Dashboard = lazy(() =>
   import("./pages/Dashboard").then((module) => ({ default: module.Dashboard })),
 );
 const Terms = lazy(() => import("./pages/Terms"));
-const JobsPage = lazy(() => import("./pages/JobsPage"));
+const JobsEntryPage = lazy(() => import("./pages/JobsEntryPage"));
 const PublicJobPage = lazy(() => import("./pages/PublicJobPage"));
 const PublicCompanyPage = lazy(() => import("./pages/PublicCompanyPage"));
 const EmbedJobsWidget = lazy(() => import("./pages/EmbedJobsWidget"));
@@ -39,7 +39,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/termos" element={<Terms />} />
-            <Route path="/vagas" element={<JobsPage />} />
+            <Route path="/vagas" element={<JobsEntryPage />} />
             <Route path="/vagas/:slug" element={<PublicJobPage />} />
             <Route path="/embed/vagas" element={<EmbedJobsWidget />} />
             <Route path="/login" element={<Login />} />
