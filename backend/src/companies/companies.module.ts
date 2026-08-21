@@ -14,6 +14,7 @@ import { Job } from '../jobs/entities/job.entity';
 import { Application } from '../applications/entities/application.entity';
 import { TalentInvitesController } from './talent-invites.controller';
 import { CompanySlugAlias } from './entities/company-slug-alias.entity';
+import { CompanyHiringConfigController } from './company-hiring-config.controller';
 
 @Module({
   imports: [
@@ -32,6 +33,10 @@ import { CompanySlugAlias } from './entities/company-slug-alias.entity';
     ]),
   ],
   providers: [CompaniesService],
-  controllers: [CompaniesController, TalentInvitesController],
+  controllers: [
+    CompaniesController,
+    TalentInvitesController,
+    CompanyHiringConfigController,
+  ],
 })
 export class CompaniesModule {}
