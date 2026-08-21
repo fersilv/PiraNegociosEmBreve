@@ -1,9 +1,14 @@
 /* PWA application shell + Firebase Cloud Messaging background handler. */
-const CACHE_NAME = 'piranegocios-shell-v1';
+const CACHE_NAME = 'piranegocios-shell-v2';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/apple-touch-icon.svg'];
 
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches
+      .open(CACHE_NAME)
+      .then(cache => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener('activate', event => {
@@ -25,10 +30,20 @@ self.addEventListener('fetch', event => {
       fetch(request)
         .then(response => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put('/index.html', copy));
+          void caches.open(CACHE_NAME).then(cache => cache.put('/index.html', copy));
           return response;
         })
-        .catch(() => caches.match('/index.html')),
+        .catch(async () => {
+          const cached = await caches.match('/index.html');
+          if (cached) return cached;
+          return new Response(
+            '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PiraNegócios</title></head><body><main style="font-family:sans-serif;padding:24px"><h1>Sem conexão</h1><p>Não foi possível carregar o PiraNegócios agora. Verifique sua conexão e tente novamente.</p></main></body></html>',
+            {
+              status: 503,
+              headers: { 'Content-Type': 'text/html; charset=utf-8' },
+            },
+          );
+        }),
     );
     return;
   }
@@ -37,7 +52,7 @@ self.addEventListener('fetch', event => {
     caches.match(request).then(cached => cached || fetch(request).then(response => {
       if (response.ok && (url.pathname.startsWith('/assets/') || url.pathname.endsWith('.svg'))) {
         const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+        void caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
       }
       return response;
     })),
