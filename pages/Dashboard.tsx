@@ -30,6 +30,10 @@ function ProfilePageWithoutLegacyResumeAi() {
   );
 }
 
+function AdminPage({ children }: { children: React.ReactNode }) {
+  return <div className="admin-page-shell">{children}</div>;
+}
+
 export function Dashboard() {
   const { user, profile, loading } = useAuth();
   const location = useLocation();
@@ -63,6 +67,9 @@ export function Dashboard() {
   const companyOnly = (element: React.ReactNode) =>
     profile?.companyId ? element : <Navigate to="/dashboard/empresa" replace />;
 
+  const adminOnly = (element: React.ReactNode) =>
+    profile?.type === "ADMIN" ? <AdminPage>{element}</AdminPage> : <Navigate to="/dashboard" />;
+
   return (
     <DashboardLayout>
       <Routes>
@@ -72,7 +79,7 @@ export function Dashboard() {
           index
           element={
             profile?.type === "ADMIN" ? (
-              <AdminDashboard mode="dashboard" />
+              <AdminPage><AdminDashboard mode="dashboard" /></AdminPage>
             ) : profile?.companyId ? (
               <Navigate to="empresa/inicio" replace />
             ) : (
@@ -82,10 +89,7 @@ export function Dashboard() {
         />
 
         <Route path="pessoal" element={<CandidateDashboard />} />
-        <Route
-          path="empresa/inicio"
-          element={companyOnly(<CompanyHomePage />)}
-        />
+        <Route path="empresa/inicio" element={companyOnly(<CompanyHomePage />)} />
         <Route path="empresa/painel" element={<CompanyDashboard />} />
         <Route path="vaga/:jobId" element={companyOnly(<CompanyJobPage />)} />
 
@@ -100,103 +104,45 @@ export function Dashboard() {
           }
         />
 
-        <Route
-          path="admin/empresas"
-          element={
-            profile?.type === "ADMIN" ? (
-              <AdminDashboard mode="moderation" section="companies" />
-            ) : (
-              <Navigate to="/dashboard" />
-            )
-          }
-        />
-        <Route
-          path="admin/vagas"
-          element={
-            profile?.type === "ADMIN" ? (
-              <AdminDashboard mode="moderation" section="jobs" />
-            ) : (
-              <Navigate to="/dashboard" />
-            )
-          }
-        />
-        <Route
-          path="admin/usuarios"
-          element={
-            profile?.type === "ADMIN" ? (
-              <AdminDashboard mode="moderation" section="users" />
-            ) : (
-              <Navigate to="/dashboard" />
-            )
-          }
-        />
-        <Route
-          path="admin/vinculos"
-          element={
-            profile?.type === "ADMIN" ? (
-              <AdminDashboard mode="moderation" section="access" />
-            ) : (
-              <Navigate to="/dashboard" />
-            )
-          }
-        />
-        <Route
-          path="admin/publicidade"
-          element={
-            profile?.type === "ADMIN" ? (
-              <AdminDashboard mode="moderation" section="advertising" />
-            ) : (
-              <Navigate to="/dashboard" />
-            )
-          }
-        />
+        <Route path="admin/empresas" element={adminOnly(<AdminDashboard mode="moderation" section="companies" />)} />
+        <Route path="admin/vagas" element={adminOnly(<AdminDashboard mode="moderation" section="jobs" />)} />
+        <Route path="admin/usuarios" element={adminOnly(<AdminDashboard mode="moderation" section="users" />)} />
+        <Route path="admin/vinculos" element={adminOnly(<AdminDashboard mode="moderation" section="access" />)} />
+        <Route path="admin/publicidade" element={adminOnly(<AdminDashboard mode="moderation" section="advertising" />)} />
+
         <Route
           path="admin/api"
-          element={
-            profile?.type === "ADMIN" ? (
-              <div className="mx-auto max-w-7xl space-y-6">
-                <header>
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-terracotta-600">
-                    Integrações da plataforma
-                  </p>
-                  <h1 className="mt-1 text-3xl font-serif font-bold text-stone-900">
-                    API v1
-                  </h1>
-                  <p className="mt-1 text-stone-500">
-                    Gerencie chaves, origens, auditoria e a documentação da API
-                    de vagas.
-                  </p>
-                </header>
-                <section className="rounded-2xl border border-stone-200 bg-white shadow-sm">
-                  <ApiV1Panel />
-                </section>
-              </div>
-            ) : (
-              <Navigate to="/dashboard" />
-            )
-          }
+          element={adminOnly(
+            <div className="mx-auto max-w-7xl space-y-6 admin-standalone-page">
+              <header>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-terracotta-600">
+                  Infraestrutura · Integrações
+                </p>
+                <h1 className="mt-1 text-3xl font-serif font-bold text-stone-900">API v1</h1>
+                <p className="mt-1 max-w-3xl text-stone-500">
+                  Gerencie chaves, origens, auditoria e a documentação da API de vagas.
+                </p>
+              </header>
+              <section className="rounded-2xl border border-stone-200 bg-white shadow-sm admin-primary-surface">
+                <ApiV1Panel />
+              </section>
+            </div>,
+          )}
         />
 
         <Route
           path="admin/ai"
-          element={
-            profile?.type === "ADMIN" ? (
-              <div className="mx-auto max-w-7xl space-y-6">
-                <AiIntegrationsPanel />
-              </div>
-            ) : (
-              <Navigate to="/dashboard" />
-            )
-          }
+          element={adminOnly(
+            <div className="mx-auto max-w-7xl space-y-6 admin-standalone-page admin-ai-page">
+              <AiIntegrationsPanel />
+            </div>,
+          )}
         />
 
         <Route path="curriculos" element={companyOnly(<ResumeDatabase />)} />
         <Route path="perfil" element={<ProfilePageWithoutLegacyResumeAi />} />
         <Route path="empresa" element={<CompanyProfilePage />} />
-        <Route
-          path="configuracao-contratacao"
-          element={companyOnly(<CompanyHiringConfig />)}
-        />
+        <Route path="configuracao-contratacao" element={companyOnly(<CompanyHiringConfig />)} />
         <Route path="admissao/:appId" element={<CandidateOnboardingPage />} />
         <Route path="vaga-detalhes/:jobId" element={<CandidateJobViewPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
