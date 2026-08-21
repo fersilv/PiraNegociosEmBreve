@@ -1,7 +1,6 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { useAiStatus } from "../hooks/useAiStatus";
 import { Onboarding } from "./Onboarding";
 import { DashboardLayout } from "../components/DashboardLayout";
 import { CompanyDashboard } from "./CompanyDashboard";
@@ -18,39 +17,14 @@ import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
 import { CandidateJobViewPage } from "./CandidateJobViewPage";
 import { ResumeBuilderPage } from "./ResumeBuilderPage";
 
-function ProfilePageWithAiAvailability() {
-  const { profile } = useAuth();
-  const { enabled: aiEnabled, loading: aiStatusLoading } = useAiStatus();
-  const hideAiAssistant =
-    profile?.type !== "ADMIN" && (aiStatusLoading || !aiEnabled);
-
-  useEffect(() => {
-    const originalFetch = window.fetch;
-    window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
-      if (typeof input === "string") {
-        if (input === "/api/gemini/analyze-resume") {
-          input = "/api/ai/analyze-resume";
-        } else if (input === "/api/gemini/job-match") {
-          input = "/api/ai/job-match";
-        }
-      }
-      return originalFetch.call(window, input, init);
-    }) as typeof window.fetch;
-
-    return () => {
-      window.fetch = originalFetch;
-    };
-  }, []);
-
+function ProfilePageWithoutLegacyResumeAi() {
   return (
-    <div className={hideAiAssistant ? "profile-ai-disabled" : undefined}>
-      {hideAiAssistant && (
-        <style>{`
-          .profile-ai-disabled div.bg-gradient-to-br.from-stone-900.to-stone-950.text-white.rounded-3xl {
-            display: none !important;
-          }
-        `}</style>
-      )}
+    <div className="profile-legacy-ai-hidden">
+      <style>{`
+        .profile-legacy-ai-hidden div.bg-gradient-to-br.from-stone-900.to-stone-950.text-white.rounded-3xl {
+          display: none !important;
+        }
+      `}</style>
       <ProfilePage />
     </div>
   );
@@ -217,7 +191,7 @@ export function Dashboard() {
         />
 
         <Route path="curriculos" element={companyOnly(<ResumeDatabase />)} />
-        <Route path="perfil" element={<ProfilePageWithAiAvailability />} />
+        <Route path="perfil" element={<ProfilePageWithoutLegacyResumeAi />} />
         <Route path="empresa" element={<CompanyProfilePage />} />
         <Route
           path="configuracao-contratacao"
