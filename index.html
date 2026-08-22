@@ -18,8 +18,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
+  <link rel="icon" href="/brand/favicon-32.png" sizes="32x32" type="image/png" />
+  <link rel="apple-touch-icon" href="/brand/pwa-192.png" />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -103,6 +103,75 @@
       background-color: #F5F2EB;
       color: #66261B;
       overflow-x: hidden;
+    }
+
+    html,
+    body,
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: #b96345 #eee4dc;
+    }
+
+    *::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    *::-webkit-scrollbar-track {
+      background: #eee4dc;
+      border-radius: 999px;
+    }
+
+    *::-webkit-scrollbar-thumb {
+      background: #b96345;
+      border: 2px solid #eee4dc;
+      border-radius: 999px;
+    }
+
+    *::-webkit-scrollbar-thumb:hover {
+      background: #91452f;
+    }
+
+    .admin-workspace,
+    .admin-workspace * {
+      scrollbar-color: #78675e #211f1b;
+    }
+
+    .admin-workspace *::-webkit-scrollbar-track {
+      background: #211f1b;
+    }
+
+    .admin-workspace *::-webkit-scrollbar-thumb {
+      background: #78675e;
+      border-color: #211f1b;
+    }
+
+    .fixed.inset-0.z-50 {
+      z-index: 12000 !important;
+    }
+
+    .fixed.inset-0.z-50 > [class*="max-w-4xl"] {
+      max-height: calc(100dvh - 2rem) !important;
+      margin-top: env(safe-area-inset-top);
+      margin-bottom: env(safe-area-inset-bottom);
+    }
+
+    .fixed.inset-0.z-50 button[title="Fechar"] {
+      z-index: 30;
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: 0 4px 18px rgba(45, 33, 28, 0.12);
+    }
+
+    footer span.h-9.w-9.font-serif.font-black {
+      font-size: 0 !important;
+      background: transparent url('/brand/symbol-white.png') center / contain no-repeat !important;
+      box-shadow: none !important;
+    }
+
+    aside span.h-10.w-10.font-serif.text-lg.font-black {
+      font-size: 0 !important;
+      background: transparent url('/brand/app-icon-burgundy.png') center / contain no-repeat !important;
+      box-shadow: none !important;
     }
 
     .noise-bg {
