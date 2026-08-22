@@ -59,7 +59,7 @@ export class JobsController {
 
   @Get()
   findAll() {
-    return this.jobsService.findAll(); // Rota pública
+    return this.jobsService.findAll();
   }
 
   @Get('me')
@@ -70,7 +70,7 @@ export class JobsController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.jobsService.findOne(id); // Rota pública
+    return this.jobsService.findOne(id);
   }
 
   @Post(':id/reports')
@@ -153,6 +153,8 @@ export class JobsController {
     }
     this.validateApplicationFields(createJobDto);
     this.normalizeJobSkills(createJobDto);
+    this.normalizePcdMode(createJobDto);
+    this.normalizeLocation(createJobDto);
     const company = await this.assertCanManageCompany(
       req.user.uid,
       createJobDto.companyId,
@@ -188,6 +190,8 @@ export class JobsController {
     }
     this.validateApplicationFields(updateJobDto);
     this.normalizeJobSkills(updateJobDto);
+    this.normalizePcdMode(updateJobDto);
+    this.normalizeLocation(updateJobDto);
     return this.jobsService.update(req.user.uid, id, updateJobDto, true);
   }
 
@@ -265,6 +269,30 @@ export class JobsController {
       );
     }
     data.skills = normalized;
+  }
+
+  private normalizePcdMode(data: Partial<Job>) {
+    if (data.pcdMode === undefined) return;
+    if (typeof data.pcdMode !== 'string')
+      throw new BadRequestException('A classificação PCD da vaga é inválida.');
+    const value = data.pcdMode.trim().toUpperCase();
+    if (!['GENERAL', 'INCLUSIVE', 'EXCLUSIVE'].includes(value))
+      throw new BadRequestException(
+        'pcdMode deve ser GENERAL, INCLUSIVE ou EXCLUSIVE.',
+      );
+    data.pcdMode = value;
+  }
+
+  private normalizeLocation(data: Partial<Job>) {
+    if (typeof data.city === 'string') data.city = data.city.trim();
+    if (typeof data.state === 'string') data.state = data.state.trim().toUpperCase().slice(0, 2);
+    if (typeof data.location !== 'string') return;
+    data.location = data.location.trim();
+    if (data.city && data.state) return;
+    const match = data.location.match(/^(.+?),\s*([A-Za-z]{2})$/);
+    if (!match) return;
+    data.city = match[1].trim();
+    data.state = match[2].toUpperCase();
   }
 
   @Put(':id')
