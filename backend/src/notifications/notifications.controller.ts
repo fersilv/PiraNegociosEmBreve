@@ -30,8 +30,8 @@ export class NotificationsController {
   @Post('new-job')
   async notifyNewJob(@Req() req: any, @Body() jobData: any) {
     const user = await this.usersRepository.findOne({ where: { id: req.user.uid } });
-    if (!user || ![UserType.COMPANY, UserType.ADMIN].includes(user.type)) {
-      throw new ForbiddenException('Apenas empresas podem publicar alertas de vaga.');
+    if (!user || (user.type !== UserType.ADMIN && !user.companyId)) {
+      throw new ForbiddenException('Apenas usuários vinculados a uma empresa podem publicar alertas de vaga.');
     }
     if (!jobData?.jobId || !jobData?.jobTitle) throw new BadRequestException('Dados da vaga inválidos.');
     return this.notifsService.notifyNewJob(jobData);
