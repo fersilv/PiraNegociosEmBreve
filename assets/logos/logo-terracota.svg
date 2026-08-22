@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 330">
-  <g transform="translate(20 0)">
-    <path fill="#A63F2D" fill-rule="evenodd" d="M190 20a150 150 0 1 0 0 300 150 150 0 0 0 0-300Zm0 95a55 55 0 1 1 0 110 55 55 0 0 1 0-110Z"/>
-    <path fill="#A63F2D" d="M112 232 190 330 268 232Z"/>
-  </g>
-  <text x="430" y="220" font-family="Plus Jakarta Sans,Arial,sans-serif" font-size="170" font-weight="700" fill="#A63F2D">Pira</text>
-  <text x="740" y="220" font-family="Plus Jakarta Sans,Arial,sans-serif" font-size="170" font-weight="400" fill="#A63F2D">Negócios</text>
-</svg>
