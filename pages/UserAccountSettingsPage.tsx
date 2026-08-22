@@ -49,32 +49,30 @@ export function UserAccountSettingsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <header className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+    <div className="mx-auto max-w-5xl space-y-4 sm:space-y-6">
+      <header className="grid gap-3 sm:gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[.19em] text-terracotta-600">Conta · Configurações</p>
-          <h1 className="mt-1 font-serif text-3xl font-bold text-stone-950 sm:text-4xl">Configurações do perfil</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">
-            Dados de identificação e contato da sua conta. Seu histórico profissional e suas preferências de trabalho ficam em áreas separadas.
-          </p>
+          <p className="text-[9px] font-black uppercase tracking-[.18em] text-terracotta-600 sm:text-[10px]">Conta · Configurações</p>
+          <h1 className="mt-1 font-serif text-[32px] font-bold leading-[1.02] tracking-[-.025em] text-stone-950 sm:text-4xl">Configurações do perfil</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Identificação, foto e canais de contato da sua conta.</p>
         </div>
-        <div className="rounded-2xl border border-[#5b4030]/10 bg-white/70 px-4 py-3 text-xs text-stone-500 shadow-sm">
+        <div className="hidden rounded-2xl border border-[#5b4030]/10 bg-white/70 px-4 py-3 text-xs text-stone-500 shadow-sm sm:block">
           <span className="inline-flex items-center gap-2 font-bold text-stone-700"><ShieldCheck className="h-4 w-4 text-terracotta-600" /> Conta protegida</span>
         </div>
       </header>
 
-      <form onSubmit={save} className="overflow-hidden rounded-[30px] border border-[#ddcfc3] bg-[#fffdfa] shadow-[0_22px_60px_rgba(66,43,28,.07)]">
-        <div className="border-b border-[#eadfd6] bg-[#2b211c] px-5 py-5 text-white sm:px-6">
+      <form onSubmit={save} className="overflow-hidden rounded-[26px] border border-[#ddcfc3] bg-[#fffdfa] shadow-[0_18px_50px_rgba(66,43,28,.06)] sm:rounded-[30px]">
+        <div className="border-b border-[#eadfd6] bg-[#2b211c] px-4 py-4 text-white sm:px-6 sm:py-5">
           <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-[#f0b99d]"><Settings2 className="h-5 w-5" /></span>
-            <div><h2 className="font-serif text-2xl font-bold">Sua conta</h2><p className="mt-1 text-xs text-white/45">Identificação, foto e canais de contato.</p></div>
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-[#f0b99d] sm:h-11 sm:w-11"><Settings2 className="h-5 w-5" /></span>
+            <div><h2 className="font-serif text-xl font-bold sm:text-2xl">Sua conta</h2><p className="mt-1 text-[11px] text-white/45 sm:text-xs">Dados pessoais separados do seu perfil profissional.</p></div>
           </div>
         </div>
 
-        <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="grid gap-5 p-4 sm:p-6 lg:grid-cols-[280px_minmax(0,1fr)]">
           <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
             <FileUpload label="Foto do perfil" accept="image/*" value={photoURL} onChange={setPhotoURL} type="avatar" placeholder="Selecione ou arraste sua foto" />
-            <p className="mt-3 text-xs leading-5 text-stone-500">Essa imagem representa sua conta e pode aparecer nas áreas profissionais do sistema.</p>
+            <p className="mt-3 text-xs leading-5 text-stone-500">Essa imagem representa sua conta nas áreas profissionais do sistema.</p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -97,7 +95,7 @@ export function UserAccountSettingsPage() {
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3 border-t border-[#eadfd6] bg-[#fbf7f2] px-5 py-4 sm:px-6">
+        <div className="flex items-center justify-end gap-3 border-t border-[#eadfd6] bg-[#fbf7f2] px-4 py-4 sm:px-6">
           {saved && <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Salvo</span>}
           <button disabled={saving || !displayName.trim() || !phone.trim()} className="inline-flex items-center gap-2 rounded-xl bg-[#2b211c] px-5 py-3 text-sm font-bold text-white hover:bg-[#3a2b24] disabled:opacity-50">
             {saving && <Loader2 className="h-4 w-4 animate-spin" />} Salvar configurações
