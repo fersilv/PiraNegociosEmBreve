@@ -116,6 +116,12 @@ export class Job {
   @Column({ type: 'varchar', length: 24, nullable: true })
   applicationWhatsApp: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  applicationUrl: string | null;
+
+  @Column({ type: 'varchar', length: 180, nullable: true })
+  applicationUrlTitle: string | null;
+
   @Column({ type: 'date', nullable: true })
   deadlineDate: string | null;
 
