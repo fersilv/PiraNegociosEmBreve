@@ -66,6 +66,14 @@ export interface ResumePreferences {
   color?: string;
 }
 
+export interface UploadedResumeFile {
+  name: string;
+  mimeType: string;
+  size: number;
+  dataUrl: string;
+  uploadedAt: string;
+}
+
 export interface Language {
   name: string;
   level: string;
@@ -113,6 +121,9 @@ export interface UserProfile {
   photoURL?: string;
   bio?: string;
   resumeURL?: string;
+  resumeStatus?: "DRAFT" | "PUBLISHED";
+  resumePublishedAt?: string;
+  uploadedResumeFile?: UploadedResumeFile | null;
   isOpenToWork?: boolean;
   isVerified?: boolean;
   acceptedTerms?: boolean;
@@ -187,22 +198,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshProfile = async () => {
-    if (auth.currentUser) {
-      await fetchProfile(auth.currentUser);
-    }
+    if (auth.currentUser) await fetchProfile(auth.currentUser);
   };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
-      if (user) {
-        await fetchProfile(user);
-      } else {
-        setProfile(null);
-      }
+      if (user) await fetchProfile(user);
+      else setProfile(null);
       setLoading(false);
     });
-
     return unsubscribe;
   }, []);
 
