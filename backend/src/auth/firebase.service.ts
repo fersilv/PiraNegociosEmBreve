@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getAuth, Auth } from 'firebase-admin/auth';
+import { getMessaging, Messaging } from 'firebase-admin/messaging';
 import { ConfigService } from '@nestjs/config';
 import { readFileSync } from 'fs';
 
@@ -30,5 +31,9 @@ export class FirebaseService implements OnModuleInit {
 
   getAuth(): Auth {
     return getAuth();
+  }
+
+  getMessaging(): Messaging {
+    return getMessaging();
   }
 }
