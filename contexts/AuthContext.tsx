@@ -74,33 +74,6 @@ export interface UploadedResumeFile {
   uploadedAt: string;
 }
 
-export interface PublishedResumeSnapshot {
-  version?: number;
-  publishedAt?: string;
-  fullName?: string;
-  socialName?: string;
-  phone?: string;
-  email?: string;
-  city?: string;
-  state?: string;
-  address?: string;
-  bio?: string;
-  experiences?: ProfessionalExperience[];
-  education?: AcademicEducation[];
-  skills?: string[];
-  courses?: ExtraCourse[];
-  languages?: Language[];
-  salaryExpectation?: string;
-  resumePhotoURL?: string;
-  resumePreferences?: ResumePreferences;
-  score?: number | null;
-}
-
-export interface Language {
-  name: string;
-  level: string;
-}
-
 export interface WorkLocationPreference {
   city: string;
   state: string;
@@ -123,6 +96,34 @@ export interface JobPreferences {
   pcdDeclaration?: PcdDeclaration;
   pcdDocumentationStatus?: PcdDocumentationStatus;
   pcdDataConsent?: boolean;
+}
+
+export interface PublishedResumeSnapshot {
+  version?: number;
+  publishedAt?: string;
+  fullName?: string;
+  socialName?: string;
+  phone?: string;
+  email?: string;
+  city?: string;
+  state?: string;
+  address?: string;
+  bio?: string;
+  experiences?: ProfessionalExperience[];
+  education?: AcademicEducation[];
+  skills?: string[];
+  courses?: ExtraCourse[];
+  languages?: Language[];
+  salaryExpectation?: string;
+  jobPreferences?: JobPreferences;
+  resumePhotoURL?: string;
+  resumePreferences?: ResumePreferences;
+  score?: number | null;
+}
+
+export interface Language {
+  name: string;
+  level: string;
 }
 
 export interface UserProfile {
