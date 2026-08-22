@@ -3,13 +3,21 @@ import {
   Accessibility,
   Car,
   Check,
+  FileCheck2,
   Loader2,
   MapPin,
   Plus,
+  ShieldCheck,
   Trash2,
 } from "lucide-react";
 import { CityStateSelector } from "./CityStateSelector";
-import { JobPreferences, WorkLocationPreference, useAuth } from "../contexts/AuthContext";
+import { useAuth } from "../contexts/AuthContext";
+import type {
+  JobPreferences,
+  PcdDeclaration,
+  PcdDocumentationStatus,
+  WorkLocationPreference,
+} from "../contexts/AuthContext";
 import { api } from "../lib/api";
 
 const LICENSE_CATEGORIES = ["ACC", "A", "B", "C", "D", "E"];
@@ -42,6 +50,9 @@ export function CandidateWorkPreferencesCard() {
   const [hasOwnVehicle, setHasOwnVehicle] = useState<boolean | null>(null);
   const [ownVehicles, setOwnVehicles] = useState<string[]>([]);
   const [includeExclusivePcdJobs, setIncludeExclusivePcdJobs] = useState(false);
+  const [pcdDeclaration, setPcdDeclaration] = useState<PcdDeclaration>("NOT_INFORMED");
+  const [pcdDocumentationStatus, setPcdDocumentationStatus] = useState<PcdDocumentationStatus>("NOT_INFORMED");
+  const [pcdDataConsent, setPcdDataConsent] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -58,6 +69,9 @@ export function CandidateWorkPreferencesCard() {
     setHasOwnVehicle(preferences.hasOwnVehicle ?? null);
     setOwnVehicles(preferences.ownVehicles || []);
     setIncludeExclusivePcdJobs(Boolean(preferences.includeExclusivePcdJobs));
+    setPcdDeclaration(preferences.pcdDeclaration || "NOT_INFORMED");
+    setPcdDocumentationStatus(preferences.pcdDocumentationStatus || "NOT_INFORMED");
+    setPcdDataConsent(Boolean(preferences.pcdDataConsent));
   }, [profile]);
 
   const home = useMemo(() => parseLocation(homeLocation), [homeLocation]);
@@ -83,12 +97,29 @@ export function CandidateWorkPreferencesCard() {
     setter(current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
   };
 
+  const changePcdDeclaration = (value: PcdDeclaration) => {
+    setPcdDeclaration(value);
+    setPcdDataConsent(false);
+    if (value !== "YES") {
+      setPcdDocumentationStatus("NOT_INFORMED");
+      setIncludeExclusivePcdJobs(false);
+    }
+    if (value === "NOT_INFORMED") {
+      setPcdDataConsent(false);
+    }
+  };
+
   const save = async () => {
     const parsedHome = parseLocation(homeLocation);
     if (!parsedHome) {
       alert("Informe a cidade onde você mora.");
       return;
     }
+    if (pcdDeclaration !== "NOT_INFORMED" && !pcdDataConsent) {
+      alert("Para salvar a autodeclaração PCD, confirme o consentimento destacado sobre o tratamento desse dado sensível.");
+      return;
+    }
+
     setSaving(true);
     setSaved(false);
     try {
@@ -98,7 +129,12 @@ export function CandidateWorkPreferencesCard() {
         driverLicenseCategories: hasDriverLicense ? driverLicenseCategories : [],
         hasOwnVehicle,
         ownVehicles: hasOwnVehicle ? ownVehicles : [],
-        includeExclusivePcdJobs,
+        includeExclusivePcdJobs:
+          pcdDeclaration === "YES" ? includeExclusivePcdJobs : false,
+        pcdDeclaration,
+        pcdDocumentationStatus:
+          pcdDeclaration === "YES" ? pcdDocumentationStatus : "NOT_INFORMED",
+        pcdDataConsent: pcdDeclaration === "NOT_INFORMED" ? false : pcdDataConsent,
       };
       await api.patch("/users/me", {
         city: parsedHome.city,
@@ -127,7 +163,7 @@ export function CandidateWorkPreferencesCard() {
             <p className="text-[10px] font-bold uppercase tracking-[.19em] text-[#f0b99d]">Preferências profissionais</p>
             <h2 className="mt-1 font-serif text-2xl font-bold">Mobilidade e disponibilidade</h2>
             <p className="mt-1 max-w-2xl text-sm leading-relaxed text-white/55">
-              Esses dados deixam os matches mais realistas e ajudam empresas a encontrar pessoas disponíveis na região certa.
+              Esses dados deixam os matches mais realistas e ajudam o sistema a respeitar onde e como você pode trabalhar.
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs text-white/55">
@@ -205,15 +241,89 @@ export function CandidateWorkPreferencesCard() {
             )}
           </PreferenceQuestion>
 
-          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-violet-200 bg-violet-50/60 p-4">
-            <input type="checkbox" checked={includeExclusivePcdJobs} onChange={(event) => setIncludeExclusivePcdJobs(event.target.checked)} className="mt-1 h-4 w-4 rounded border-violet-300" />
-            <div>
-              <div className="flex items-center gap-2 font-bold text-violet-950"><Accessibility className="h-4 w-4" /> Incluir vagas exclusivas para PCD</div>
-              <p className="mt-1 text-xs leading-relaxed text-violet-700">
-                Opção voluntária. Não pedimos diagnóstico nem detalhes médicos; ela apenas controla quais oportunidades aparecem nas recomendações.
+          <div className="overflow-hidden rounded-2xl border border-violet-200 bg-violet-50/45">
+            <div className="border-b border-violet-100 p-4">
+              <div className="flex items-start gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+                  <Accessibility className="h-4 w-4" />
+                </span>
+                <div>
+                  <h3 className="font-bold text-violet-950">Inclusão PCD</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-violet-700">
+                    Informação opcional e sensível. Ela não aparece no seu currículo nem é enviada ao banco de talentos das empresas.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4 p-4">
+              <div>
+                <p className="text-sm font-bold text-stone-900">Você se declara pessoa com deficiência (PcD)?</p>
+                <p className="mt-1 text-xs text-stone-500">Você pode escolher não informar e alterar esta resposta quando quiser.</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <PcdChoice active={pcdDeclaration === "YES"} onClick={() => changePcdDeclaration("YES")} label="Sim" />
+                  <PcdChoice active={pcdDeclaration === "NO"} onClick={() => changePcdDeclaration("NO")} label="Não" />
+                  <PcdChoice active={pcdDeclaration === "NOT_INFORMED"} onClick={() => changePcdDeclaration("NOT_INFORMED")} label="Prefiro não informar" />
+                </div>
+              </div>
+
+              {pcdDeclaration === "YES" && (
+                <div className="rounded-xl border border-violet-100 bg-white/80 p-4">
+                  <div className="flex items-start gap-2">
+                    <FileCheck2 className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-stone-900">Você possui laudo ou documentação comprobatória?</p>
+                      <p className="mt-1 text-xs leading-relaxed text-stone-500">
+                        Não pedimos upload, diagnóstico ou CID. Este status não bloqueia candidatura e serve apenas para organizar sua própria disponibilidade para vagas PCD.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <DocumentChoice active={pcdDocumentationStatus === "HAS_REPORT"} onClick={() => setPcdDocumentationStatus("HAS_REPORT")} label="Sim, possuo" />
+                    <DocumentChoice active={pcdDocumentationStatus === "NO_REPORT"} onClick={() => setPcdDocumentationStatus("NO_REPORT")} label="Ainda não possuo" />
+                    <DocumentChoice active={pcdDocumentationStatus === "IN_PROGRESS"} onClick={() => setPcdDocumentationStatus("IN_PROGRESS")} label="Está em processo" />
+                    <DocumentChoice active={pcdDocumentationStatus === "NOT_INFORMED"} onClick={() => setPcdDocumentationStatus("NOT_INFORMED")} label="Prefiro não informar" />
+                  </div>
+
+                  <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-violet-100 bg-violet-50/70 p-3">
+                    <input
+                      type="checkbox"
+                      checked={includeExclusivePcdJobs}
+                      onChange={(event) => setIncludeExclusivePcdJobs(event.target.checked)}
+                      className="mt-0.5 h-4 w-4 accent-violet-700"
+                    />
+                    <div>
+                      <p className="text-xs font-bold text-violet-950">Quero receber vagas exclusivas para PCD nas recomendações</p>
+                      <p className="mt-1 text-[11px] leading-5 text-violet-700">A falta de laudo cadastrado não reduz seu match e não impede que a vaga apareça.</p>
+                    </div>
+                  </label>
+                </div>
+              )}
+
+              {pcdDeclaration !== "NOT_INFORMED" && (
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border-2 border-violet-200 bg-white p-3.5">
+                  <input
+                    type="checkbox"
+                    checked={pcdDataConsent}
+                    onChange={(event) => setPcdDataConsent(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-violet-700"
+                  />
+                  <div>
+                    <p className="flex items-center gap-1.5 text-xs font-black text-violet-950">
+                      <ShieldCheck className="h-3.5 w-3.5" /> Consentimento para dado sensível
+                    </p>
+                    <p className="mt-1 text-[11px] leading-5 text-stone-600">
+                      Autorizo o PiraNegócios a armazenar e tratar esta autodeclaração e o status da documentação para personalizar oportunidades PCD. Posso retirar essa autorização escolhendo “Prefiro não informar”.
+                    </p>
+                  </div>
+                </label>
+              )}
+
+              <p className="text-[10px] leading-5 text-stone-500">
+                Empresas podem solicitar comprovação em etapa adequada de um processo seletivo PCD. O PiraNegócios não armazena seu laudo neste campo e não usa a informação para reduzir sua visibilidade em vagas gerais.
               </p>
             </div>
-          </label>
+          </div>
         </div>
       </div>
 
@@ -250,5 +360,29 @@ function ChipSelector({ values, selected, onToggle }: { values: string[]; select
         </button>
       ))}
     </div>
+  );
+}
+
+function PcdChoice({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border px-3 py-2.5 text-xs font-bold transition ${active ? "border-violet-400 bg-violet-100 text-violet-900 ring-2 ring-violet-100" : "border-stone-200 bg-white text-stone-600 hover:border-violet-200"}`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function DocumentChoice({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border px-3 py-2.5 text-left text-xs font-bold transition ${active ? "border-violet-300 bg-violet-50 text-violet-900" : "border-stone-200 bg-white text-stone-600"}`}
+    >
+      {label}
+    </button>
   );
 }
