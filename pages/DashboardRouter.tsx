@@ -16,6 +16,7 @@ import { UserAccountSettingsPage } from "./UserAccountSettingsPage";
 import { AdminDashboard, ApiV1Panel } from "./AdminDashboard";
 import { AdminOverview } from "./AdminOverview";
 import { AdminAccountPage } from "./AdminAccountPage";
+import { AdminJobDetailsPage } from "./AdminJobDetailsPage";
 import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
 import { CompanyProfilePage } from "./CompanyProfilePage";
 import { CompanyJobPage } from "./CompanyJobPage";
@@ -35,6 +36,7 @@ function AdminRoutes() {
       <Route index element={<AdminPage><AdminOverview /></AdminPage>} />
       <Route path="empresas" element={<AdminPage><AdminDashboard mode="moderation" section="companies" /></AdminPage>} />
       <Route path="vagas" element={<AdminPage><AdminDashboard mode="moderation" section="jobs" /></AdminPage>} />
+      <Route path="vagas/:jobId" element={<AdminPage><AdminJobDetailsPage /></AdminPage>} />
       <Route path="usuarios" element={<AdminPage><AdminDashboard mode="moderation" section="users" /></AdminPage>} />
       <Route path="vinculos" element={<AdminPage><AdminDashboard mode="moderation" section="access" /></AdminPage>} />
       <Route path="publicidade" element={<AdminPage><AdminDashboard mode="moderation" section="advertising" /></AdminPage>} />
