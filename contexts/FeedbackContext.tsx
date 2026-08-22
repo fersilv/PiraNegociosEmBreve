@@ -15,6 +15,7 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dialog, setDialog] = useState<(ConfirmOptions & { resolve: (value: boolean) => void }) | null>(null);
   const idRef = useRef(0);
+  const legacyConfirmBypassRef = useRef(false);
 
   const toast = useCallback((message: string, type: ToastType = "info") => {
     if (!message) return;
@@ -30,9 +31,52 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const originalAlert = window.alert;
+    const originalConfirm = window.confirm;
+
     window.alert = (message?: unknown) => toast(String(message ?? ""), "info");
-    return () => { window.alert = originalAlert; };
-  }, [toast]);
+    window.confirm = (message?: string) => {
+      if (legacyConfirmBypassRef.current) {
+        legacyConfirmBypassRef.current = false;
+        return true;
+      }
+
+      const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      void confirm({
+        title: "Confirmar ação",
+        message: String(message ?? "Deseja continuar?"),
+        confirmText: "Confirmar",
+        cancelText: "Cancelar",
+        destructive: /excluir|remover|apagar|deletar|permanent/i.test(String(message ?? "")),
+      }).then((approved) => {
+        if (!approved || !activeElement?.isConnected) return;
+        legacyConfirmBypassRef.current = true;
+        activeElement.click();
+      });
+      return false;
+    };
+
+    return () => {
+      window.alert = originalAlert;
+      window.confirm = originalConfirm;
+    };
+  }, [confirm, toast]);
+
+  useEffect(() => {
+    if (!dialog) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const resolve = dialog.resolve;
+      setDialog(null);
+      resolve(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [dialog]);
 
   const api = useMemo(() => ({ toast, confirm }), [toast, confirm]);
   const closeDialog = (value: boolean) => {
@@ -46,7 +90,7 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
     <FeedbackContext.Provider value={api}>
       {children}
 
-      <div className="pointer-events-none fixed inset-x-0 top-3 z-[9999] flex flex-col items-center gap-2 px-3 sm:items-end sm:pl-6 sm:pr-4" aria-live="polite">
+      <div className="pointer-events-none fixed inset-x-0 top-3 z-[13000] flex flex-col items-center gap-2 px-3 sm:items-end sm:pl-6 sm:pr-4" aria-live="polite">
         {toasts.map((item) => {
           const Icon = item.type === "success" ? CheckCircle2 : item.type === "error" ? XCircle : item.type === "warning" ? AlertTriangle : Info;
           const tone = item.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : item.type === "error" ? "border-red-200 bg-red-50 text-red-900" : item.type === "warning" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-stone-200 bg-white text-stone-800";
@@ -61,7 +105,7 @@ export function FeedbackProvider({ children }: { children: React.ReactNode }) {
       </div>
 
       {dialog && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/45 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDialog(false); }}>
+        <div className="fixed inset-0 z-[14000] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDialog(false); }}>
           <div className="w-full max-w-md rounded-[26px] border border-stone-200 bg-[#fffdfa] p-5 shadow-[0_28px_90px_rgba(0,0,0,.28)]" role="dialog" aria-modal="true" aria-labelledby="feedback-dialog-title">
             <div className="flex items-start gap-3">
               <span className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${dialog.destructive ? "bg-red-100 text-red-700" : "bg-stone-900 text-white"}`}><AlertTriangle className="h-5 w-5" /></span>
