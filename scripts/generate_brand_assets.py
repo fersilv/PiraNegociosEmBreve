@@ -101,3 +101,5 @@ readme = '''# Logos PiraNegócios\n\nTodos os PNGs desta pasta são exportados c
 (OUT / 'README.md').write_text(readme, encoding='utf-8')
 
 print(f'Gerados {len(list(OUT.glob("*.png")))} PNGs transparentes em {OUT}')
+
+# trigger: regenerate transparent brand exports
