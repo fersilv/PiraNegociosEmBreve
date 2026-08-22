@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { AdminGuard } from '../admin/admin.guard';
 import { JobMatchAdminService } from './job-match-admin.service';
@@ -31,6 +31,11 @@ export class AdminJobMatchController {
   @Get('overview')
   overview() {
     return this.adminMatch.overview();
+  }
+
+  @Patch('config')
+  updateConfig(@Body() body: { durationDays?: unknown }) {
+    return this.adminMatch.updateConfig(body || {});
   }
 
   @Post('backfill')
