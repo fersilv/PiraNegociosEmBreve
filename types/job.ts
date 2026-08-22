@@ -34,6 +34,7 @@ export interface Job {
   lastVerifiedAt?: string | null;
   sourcePublishedAt?: string | null;
   acceptsPlatformApplications?: boolean;
+  requiresResumeFile?: boolean;
   externalApplicationInstructions?: string;
   applicationEmail?: string;
   applicationWhatsApp?: string;
