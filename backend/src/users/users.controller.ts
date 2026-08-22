@@ -6,11 +6,6 @@ import { SettingsService } from '../admin/settings.service';
 import { User, UserType } from './entities/user.entity';
 import { AnalyticsService } from '../analytics/analytics.service';
 
-const RESUME_CONTENT_FIELDS = new Set([
-  'fullName', 'socialName', 'birthDate', 'phone', 'address', 'city', 'state',
-  'resumePhotoURL', 'bio', 'salaryExpectation', 'experiences', 'education',
-  'skills', 'courses', 'languages', 'resumePreferences', 'uploadedResumeFile',
-]);
 const STRUCTURED_RESUME_MARKER = 'structured://published';
 const STORED_RESUME_MARKER = 'stored://uploaded';
 
@@ -56,6 +51,9 @@ export class UsersController {
     if (updateData.resumeStatus !== undefined && !['DRAFT', 'PUBLISHED'].includes(updateData.resumeStatus)) {
       throw new BadRequestException('Status do currículo inválido.');
     }
+    if (updateData.publishedResumeSnapshot !== undefined) {
+      throw new BadRequestException('A versão publicada do currículo é gerenciada exclusivamente pelo servidor.');
+    }
     if (updateData.uploadedResumeFile !== undefined && updateData.uploadedResumeFile !== null) {
       const file = updateData.uploadedResumeFile;
       if (!file.name?.trim() || !file.dataUrl?.startsWith('data:')) throw new BadRequestException('Arquivo-base do currículo inválido.');
@@ -72,6 +70,33 @@ export class UsersController {
       mimeType: file.mimeType,
       size: file.size,
       uploadedAt: file.uploadedAt,
+    };
+  }
+
+  private buildPublishedResumeSnapshot(profile: User, publishedAt: Date): Record<string, unknown> {
+    const aiScore = profile.aiAnalysis && typeof profile.aiAnalysis === 'object'
+      ? Number((profile.aiAnalysis as Record<string, unknown>).score)
+      : Number.NaN;
+    return {
+      version: 1,
+      publishedAt: publishedAt.toISOString(),
+      fullName: profile.fullName,
+      socialName: profile.socialName,
+      phone: profile.phone,
+      email: profile.email,
+      city: profile.city,
+      state: profile.state,
+      address: profile.address,
+      bio: profile.bio,
+      experiences: this.usersService.normalizeExperienceDates(profile.experiences) || [],
+      education: Array.isArray(profile.education) ? profile.education : [],
+      skills: Array.isArray(profile.skills) ? profile.skills : [],
+      courses: Array.isArray(profile.courses) ? profile.courses : [],
+      languages: Array.isArray(profile.languages) ? profile.languages : [],
+      salaryExpectation: profile.salaryExpectation,
+      resumePhotoURL: profile.resumePhotoURL,
+      resumePreferences: profile.resumePreferences || {},
+      score: Number.isFinite(aiScore) ? Math.max(0, Math.min(100, Math.round(aiScore))) : null,
     };
   }
 
@@ -130,15 +155,13 @@ export class UsersController {
     this.validateResumePublication(updateData);
     const sanitized = this.usersService.sanitizeSelfUpdate(updateData, existing);
 
-    if (updateData.type === UserType.ADMIN || updateData.isCompanyAdmin !== undefined || updateData.companyId !== undefined || updateData.resumeScoreUnlocked !== undefined) {
+    if (
+      updateData.type === UserType.ADMIN ||
+      updateData.isCompanyAdmin !== undefined ||
+      updateData.companyId !== undefined ||
+      updateData.resumeScoreUnlocked !== undefined
+    ) {
       throw new BadRequestException('Campos de papel, vínculo corporativo e recursos premium são gerenciados exclusivamente pelo servidor.');
-    }
-
-    const touchesResume = Object.keys(updateData).some((key) => RESUME_CONTENT_FIELDS.has(key));
-    if (touchesResume && updateData.resumeStatus !== 'PUBLISHED') {
-      sanitized.resumeStatus = 'DRAFT';
-      sanitized.resumePublishedAt = null;
-      if (existing?.resumeURL === STRUCTURED_RESUME_MARKER) sanitized.resumeURL = '';
     }
 
     if (updateData.uploadedResumeFile !== undefined) {
@@ -147,7 +170,7 @@ export class UsersController {
           sanitized.resumeURL = STORED_RESUME_MARKER;
         }
       } else if (existing?.resumeURL === STORED_RESUME_MARKER) {
-        sanitized.resumeURL = '';
+        sanitized.resumeURL = existing.publishedResumeSnapshot ? STRUCTURED_RESUME_MARKER : '';
       }
     }
 
@@ -159,18 +182,28 @@ export class UsersController {
         (Array.isArray(merged.education) && merged.education.length) ||
         (Array.isArray(merged.skills) && merged.skills.length),
       );
-      if (!hasStructuredResume) throw new BadRequestException('Complete ao menos o resumo, experiências, formação ou habilidades antes de publicar o currículo.');
+      if (!hasStructuredResume) {
+        throw new BadRequestException('Complete ao menos o resumo, experiências, formação ou habilidades antes de publicar o currículo.');
+      }
+      const publishedAt = new Date();
       sanitized.resumeStatus = 'PUBLISHED';
-      sanitized.resumePublishedAt = new Date();
+      sanitized.resumePublishedAt = publishedAt;
+      sanitized.publishedResumeSnapshot = this.buildPublishedResumeSnapshot(merged, publishedAt);
       const resumeUrl = sanitized.resumeURL ?? existing?.resumeURL;
-      if (!resumeUrl?.trim() || resumeUrl === STRUCTURED_RESUME_MARKER) {
+      if (!resumeUrl?.trim() || resumeUrl === STRUCTURED_RESUME_MARKER || resumeUrl === STORED_RESUME_MARKER) {
         sanitized.resumeURL = merged.uploadedResumeFile ? STORED_RESUME_MARKER : STRUCTURED_RESUME_MARKER;
       }
-    }
-    if (updateData.resumeStatus === 'DRAFT') {
+    } else if (updateData.resumeStatus === 'DRAFT') {
+      // DRAFT explícito significa tirar a versão publicada do ar. O conteúdo editável permanece intacto.
       sanitized.resumeStatus = 'DRAFT';
       sanitized.resumePublishedAt = null;
-      if (existing?.resumeURL === STRUCTURED_RESUME_MARKER && !existing.uploadedResumeFile) sanitized.resumeURL = '';
+      sanitized.publishedResumeSnapshot = null;
+      sanitized.resumeURL = existing?.uploadedResumeFile ? STORED_RESUME_MARKER : '';
+    } else if (existing?.resumeStatus === 'PUBLISHED') {
+      // Editar o rascunho não derruba nem altera a versão já publicada.
+      sanitized.resumeStatus = 'PUBLISHED';
+      sanitized.resumePublishedAt = existing.resumePublishedAt;
+      sanitized.publishedResumeSnapshot = existing.publishedResumeSnapshot;
     }
 
     if (typeof user.email === 'string' && user.email.trim()) sanitized.email = user.email.trim().toLowerCase();
