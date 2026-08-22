@@ -20,15 +20,17 @@ import { CompanyHiringConfig } from "./CompanyHiringConfig";
 import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
 import { CandidateJobViewPage } from "./CandidateJobViewPage";
 import { ResumeBuilderStudio } from "./ResumeBuilderStudio";
+import { CandidateWorkPreferencesCard } from "../components/CandidateWorkPreferencesCard";
 
 function ProfilePageWithoutLegacyResumeAi() {
   return (
-    <div className="profile-legacy-ai-hidden">
+    <div className="profile-legacy-ai-hidden space-y-6">
       <style>{`
         .profile-legacy-ai-hidden div.bg-gradient-to-br.from-stone-900.to-stone-950.text-white.rounded-3xl {
           display: none !important;
         }
       `}</style>
+      <CandidateWorkPreferencesCard />
       <ProfilePage />
     </div>
   );
