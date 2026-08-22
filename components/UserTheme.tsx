@@ -48,8 +48,6 @@ export function UserTheme() {
           0 20px 60px rgba(64, 42, 28, 0.09);
       }
 
-      /* Reinterpreta superfícies legadas dentro do workspace pessoal sem mexer
-         em regras ou componentes compartilhados com empresa/admin. */
       .user-workspace .user-content .bg-white {
         background-color: rgba(255, 253, 249, 0.82) !important;
         backdrop-filter: blur(16px);
@@ -102,8 +100,53 @@ export function UserTheme() {
       }
 
       @media (max-width: 767px) {
+        .user-workspace {
+          background:
+            radial-gradient(circle at 18% 4%, rgba(204, 112, 74, 0.10), transparent 19rem),
+            linear-gradient(180deg, #f8f3ed 0%, #f4eee7 100%);
+        }
+
+        .user-workspace .user-content {
+          padding: 14px 14px calc(92px + env(safe-area-inset-bottom)) !important;
+        }
+
         .user-workspace .user-content::before {
           inset-inline: 0;
+          height: 112px;
+          opacity: .62;
+        }
+
+        .user-workspace > div > header.sticky {
+          min-height: 64px;
+          height: 64px;
+          padding-inline: 14px;
+        }
+
+        .user-workspace > nav.fixed.inset-x-0.bottom-0 {
+          background: rgba(43, 33, 28, .985) !important;
+          border-color: rgba(255,255,255,.08) !important;
+          padding-top: 8px;
+          padding-bottom: calc(8px + env(safe-area-inset-bottom));
+          backdrop-filter: blur(20px);
+        }
+
+        .user-workspace > nav.fixed.inset-x-0.bottom-0 a:not([aria-current="page"]) {
+          color: rgba(255,255,255,.56) !important;
+        }
+
+        .user-workspace > nav.fixed.inset-x-0.bottom-0 a[aria-current="page"] {
+          color: #f2c5ad !important;
+          background: rgba(255,255,255,.07) !important;
+        }
+
+        .user-workspace > nav.fixed.inset-x-0.bottom-0 a svg {
+          width: 19px;
+          height: 19px;
+        }
+
+        .user-workspace > nav.fixed.inset-x-0.bottom-0 a span {
+          font-size: 10px;
+          line-height: 1.15;
         }
       }
 
