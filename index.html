@@ -162,13 +162,24 @@
       box-shadow: 0 4px 18px rgba(45, 33, 28, 0.12);
     }
 
-    footer span.h-9.w-9.font-serif.font-black {
-      font-size: 0 !important;
-      background: transparent url('/brand/symbol-white.png') center / contain no-repeat !important;
-      box-shadow: none !important;
+    footer > div:first-child > div:first-child > div:first-child {
+      width: min(240px, 70vw);
+      height: 46px;
+      background: transparent url('/brand/logo-horizontal-white.png') left center / contain no-repeat;
+    }
+
+    footer > div:first-child > div:first-child > div:first-child > span,
+    footer > div:first-child > div:first-child > div:first-child > div {
+      display: none !important;
     }
 
     aside span.h-10.w-10.font-serif.text-lg.font-black {
+      font-size: 0 !important;
+      background: transparent url('/brand/app-icon-burgundy.png') center / contain no-repeat !important;
+      box-shadow: none !important;
+    }
+
+    a[href="/"] > span.h-11.w-11.font-serif.text-xl.font-black {
       font-size: 0 !important;
       background: transparent url('/brand/app-icon-burgundy.png') center / contain no-repeat !important;
       box-shadow: none !important;
