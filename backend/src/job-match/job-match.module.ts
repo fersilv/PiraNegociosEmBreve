@@ -8,11 +8,12 @@ import { User } from '../users/entities/user.entity';
 import { JobMatchAiService } from './job-match-ai.service';
 import { AdminJobMatchController, JobMatchController } from './job-match.controller';
 import { JobMatchService } from './job-match.service';
+import { JobMatchSubscriber } from './job-match.subscriber';
 
 @Module({
   imports: [AdminModule, PaymentsModule, TypeOrmModule.forFeature([Job, User])],
   controllers: [JobMatchController, AdminJobMatchController],
-  providers: [AdminGuard, JobMatchAiService, JobMatchService],
+  providers: [AdminGuard, JobMatchAiService, JobMatchService, JobMatchSubscriber],
   exports: [JobMatchService],
 })
 export class JobMatchModule {}
