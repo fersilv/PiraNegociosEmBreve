@@ -88,6 +88,88 @@ function companyPlace(company: any) {
   return "";
 }
 
+function parseLocationParts(job: any) {
+  const raw = String(job?.location || "").trim();
+  const parts = raw.split(",").map((part) => part.trim()).filter(Boolean);
+  const postalCode = raw.match(/\b\d{5}-?\d{3}\b/)?.[0] || null;
+  const explicitState = typeof job?.state === "string" ? job.state.trim().toUpperCase().slice(0, 2) : "";
+  const stateFromText = [...parts].reverse().find((part) => /^[A-Za-z]{2}$/.test(part))?.toUpperCase() || raw.match(/\/\s*([A-Za-z]{2})(?:\s|$)/)?.[1]?.toUpperCase() || "";
+  const state = explicitState || stateFromText || null;
+  const explicitCity = typeof job?.city === "string" ? job.city.trim() : "";
+  let city = explicitCity;
+  if (!city && parts.length) {
+    const cleanParts = parts.filter((part) => !/^[A-Za-z]{2}$/.test(part) && !/^\d{5}-?\d{3}$/.test(part));
+    city = cleanParts.length > 1 ? cleanParts[cleanParts.length - 1] : cleanParts[0] || "";
+  }
+  if (!city && raw.includes("/")) city = raw.split("/")[0].trim();
+
+  const streetPrefix = /^(?:Rua|R\.?|Avenida|Av\.?|Alameda|Travessa|Praça|Praca|Rodovia|Estrada|Marginal)\b/i;
+  let streetAddress: string | null = null;
+  if (parts[0] && streetPrefix.test(parts[0])) {
+    const first = parts[0];
+    const second = parts[1] && !/^[A-Za-z]{2}$/.test(parts[1]) && !/^\d{5}-?\d{3}$/.test(parts[1]) && parts[1] !== city
+      ? parts[1]
+      : "";
+    streetAddress = [first, second].filter(Boolean).join(", ") || null;
+  }
+
+  return { raw, city: city || null, state, postalCode, streetAddress };
+}
+
+function buildPostalAddress(job: any): Record<string, unknown> | null {
+  const parts = parseLocationParts(job);
+  if (!parts.city && !parts.state && !parts.streetAddress && !parts.postalCode) return null;
+  return {
+    "@type": "PostalAddress",
+    ...(parts.streetAddress ? { streetAddress: parts.streetAddress } : {}),
+    ...(parts.city ? { addressLocality: parts.city } : {}),
+    ...(parts.state ? { addressRegion: parts.state } : {}),
+    ...(parts.postalCode ? { postalCode: parts.postalCode } : {}),
+    addressCountry: "BR",
+  };
+}
+
+function parseBrazilianMoney(value: string) {
+  const normalized = value.replace(/\./g, "").replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function buildBaseSalary(value: unknown): Record<string, unknown> | null {
+  const text = String(value || "").trim();
+  if (!text || !/(?:R\$|\bBRL\b)/i.test(text)) return null;
+
+  const unitText = /(?:por\s+|\/\s*)hora|hor[áa]rio/i.test(text)
+    ? "HOUR"
+    : /(?:por\s+|\/\s*)dia|di[áa]ri[oa]/i.test(text)
+      ? "DAY"
+      : /(?:por\s+|\/\s*)semana|semanal/i.test(text)
+        ? "WEEK"
+        : /(?:por\s+|\/\s*)ano|anual/i.test(text)
+          ? "YEAR"
+          : /(?:por\s+|\/\s*)m[eê]s|mensal/i.test(text)
+            ? "MONTH"
+            : null;
+  if (!unitText) return null;
+
+  const values = Array.from(text.matchAll(/(?:R\$|\bBRL\b)\s*([\d.]+(?:,\d{1,2})?)/gi))
+    .map((match) => parseBrazilianMoney(match[1]))
+    .filter((amount): amount is number => amount !== null);
+  if (!values.length) return null;
+  const quantitativeValue: Record<string, unknown> = { "@type": "QuantitativeValue", unitText };
+  if (values.length >= 2) {
+    quantitativeValue.minValue = Math.min(values[0], values[1]);
+    quantitativeValue.maxValue = Math.max(values[0], values[1]);
+  } else {
+    quantitativeValue.value = values[0];
+  }
+  return {
+    "@type": "MonetaryAmount",
+    currency: "BRL",
+    value: quantitativeValue,
+  };
+}
+
 function renderJobLinks(jobs: any[], limit = 60) {
   return (jobs || [])
     .filter((job) => job?.slug && job?.title)
@@ -148,7 +230,8 @@ export function registerSeoRoutes({ app, publicSiteUrl, getPublicData, sendSpa }
 
   app.get("/sitemap.xml", async (_req, res) => {
     try {
-      const response = await fetch(`${process.env.PUBLIC_API_ORIGIN || "http://127.0.0.1:3888/api"}/seo/sitemap`, {
+      const publicApiOrigin = (process.env.PUBLIC_API_ORIGIN || "http://127.0.0.1:3888/api").replace(/\/$/, "");
+      const response = await fetch(`${publicApiOrigin}/seo/sitemap`, {
         headers: { accept: "application/xml" },
       });
       if (!response.ok) return res.status(502).type("text/plain").send("Sitemap temporarily unavailable");
@@ -319,6 +402,8 @@ export function registerSeoRoutes({ app, publicSiteUrl, getPublicData, sendSpa }
     const datePosted = datePostedValue && !Number.isNaN(new Date(datePostedValue).getTime())
       ? new Date(datePostedValue).toISOString()
       : undefined;
+    const postalAddress = buildPostalAddress(job);
+    const baseSalary = buildBaseSalary(job.salary);
     const jobPosting: Record<string, unknown> = {
       "@type": "JobPosting",
       title: job.title,
@@ -332,6 +417,7 @@ export function registerSeoRoutes({ app, publicSiteUrl, getPublicData, sendSpa }
       identifier: { "@type": "PropertyValue", name: "PiraNegócios", value: job.id },
       ...(datePosted ? { datePosted } : {}),
       ...(job.type ? { employmentType: job.type } : {}),
+      ...(baseSalary ? { baseSalary } : {}),
       hiringOrganization: {
         "@type": "Organization",
         name: companyName,
@@ -343,15 +429,10 @@ export function registerSeoRoutes({ app, publicSiteUrl, getPublicData, sendSpa }
     if (remote) {
       jobPosting.jobLocationType = "TELECOMMUTE";
       jobPosting.applicantLocationRequirements = { "@type": "Country", name: "BR" };
-    } else if (place) {
+    } else if (postalAddress) {
       jobPosting.jobLocation = {
         "@type": "Place",
-        address: {
-          "@type": "PostalAddress",
-          addressLocality: job.city || place,
-          ...(job.state ? { addressRegion: job.state } : {}),
-          addressCountry: "BR",
-        },
+        address: postalAddress,
       };
     }
     const graph = {
@@ -371,7 +452,7 @@ export function registerSeoRoutes({ app, publicSiteUrl, getPublicData, sendSpa }
       ],
     };
     const logo = safeUrl(job.company?.logoURL);
-    const body = `<div class="breadcrumbs"><a href="/">Início</a> › <a href="/vagas">Vagas</a>${job.city ? ` › <a href="/vagas-em/${String(job.city).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}">${escapeHtml(job.city)}</a>` : ""} › ${escapeHtml(job.title)}</div><article class="card"><div class="head">${logo ? `<img class="logo" src="${escapeHtml(logo)}" alt="Logo ${escapeHtml(companyName)}">` : ""}<div><p class="eyebrow">${escapeHtml(locationTitle)}</p><h1>${escapeHtml(job.title)}</h1><p class="company">${escapeHtml(companyName)}</p></div></div><div class="meta">${place ? `<span>📍 ${escapeHtml(place)}</span>` : ""}${job.type ? `<span>💼 ${escapeHtml(job.type)}</span>` : ""}${job.workModel ? `<span>💻 ${escapeHtml(job.workModel)}</span>` : ""}<span>💰 ${escapeHtml(job.salary || "Salário a combinar")}</span></div><h2>Sobre a vaga</h2><div>${String(job.description || "").split(/\n+/).filter(Boolean).map((part) => `<p>${escapeHtml(part)}</p>`).join("")}</div>${job.requirements ? `<h2>Requisitos</h2><div>${String(job.requirements).split(/\n+/).filter(Boolean).map((part) => `<p>${escapeHtml(part)}</p>`).join("")}</div>` : ""}<hr style="border:0;border-top:1px solid #eee;margin:28px 0"><h2>Como se candidatar</h2>${job.acceptsPlatformApplications === false ? `<p>${escapeHtml(job.externalApplicationInstructions || "Consulte a publicação original para se candidatar.")}</p>` : `<a class="button" href="/vagas?applyTo=${encodeURIComponent(job.id)}">Candidatar-se à vaga</a>`}</article>`;
+    const body = `<div class="breadcrumbs"><a href="/">Início</a> › <a href="/vagas">Vagas</a>${job.city ? ` › <a href="/vagas-em/${String(job.city).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}">${escapeHtml(job.city)}</a>` : ""} › ${escapeHtml(job.title)}</div><article class="card"><div class="head">${logo ? `<img class="logo" src="${escapeHtml(logo)}" alt="Logo ${escapeHtml(companyName)}">` : ""}<div><p class="eyebrow">${escapeHtml(locationTitle)}</p><h1>${escapeHtml(job.title)}</h1><p class="company">${escapeHtml(companyName)}</p></div></div><div class="meta">${place ? `<span>📍 ${escapeHtml(place)}</span>` : ""}${job.type ? `<span>💼 ${escapeHtml(job.type)}</span>` : ""}${job.workModel ? `<span>💻 ${escapeHtml(job.workModel)}</span>` : ""}<span>💰 ${escapeHtml(job.salary || "Salário a combinar")}</span>${job.deadlineDate ? `<span>📅 Candidaturas até ${escapeHtml(job.deadlineDate)}</span>` : ""}</div><h2>Sobre a vaga</h2><div>${String(job.description || "").split(/\n+/).filter(Boolean).map((part) => `<p>${escapeHtml(part)}</p>`).join("")}</div>${job.requirements ? `<h2>Requisitos</h2><div>${String(job.requirements).split(/\n+/).filter(Boolean).map((part) => `<p>${escapeHtml(part)}</p>`).join("")}</div>` : ""}<hr style="border:0;border-top:1px solid #eee;margin:28px 0"><h2>Como se candidatar</h2>${job.acceptsPlatformApplications === false ? `<p>${escapeHtml(job.externalApplicationInstructions || "Consulte a publicação original para se candidatar.")}</p>` : `<a class="button" href="/vagas?applyTo=${encodeURIComponent(job.id)}">Candidatar-se à vaga</a>`}</article>`;
     return res.type("html").send(pageHtml({
       title: `${job.title}${companyText} | ${locationTitle} | PiraNegócios`,
       description: `${job.title}${companyText}${place ? ` em ${place}` : remote ? " para trabalho remoto" : ""}. Veja requisitos, detalhes e como se candidatar pelo PiraNegócios.`,
