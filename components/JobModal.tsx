@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   FileCheck2,
   FileText,
+  Info,
 } from "lucide-react";
 import { Job } from "../types/job";
 import { JobReportForm } from "./JobReportForm";
@@ -38,13 +39,14 @@ function safeSourceHref(value?: string | null) {
 
 export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
   const sourceHref = safeSourceHref(job.sourceUrl);
+  const estimateSourceHref = safeSourceHref(job.estimatedSalarySourceUrl);
   const pcdMode = job.pcdMode || "GENERAL";
   const { profile } = useAuth();
   const navigate = useNavigate();
-  const hasStoredFile = Boolean(
-    profile?.uploadedResumeFile ||
-    (profile?.resumeURL && (/^https?:\/\//i.test(profile.resumeURL) || profile.resumeURL.startsWith("data:"))),
-  );
+  const hasRealSalary = Boolean(job.salary?.trim());
+  const salaryIsEstimate = !hasRealSalary && Boolean(job.estimatedSalary?.trim());
+  const displayedSalary = hasRealSalary ? job.salary : job.estimatedSalary;
+  const hasStoredFile = Boolean(profile?.uploadedResumeFile || (profile?.resumeURL && (/^https?:\/\//i.test(profile.resumeURL) || profile.resumeURL.startsWith("data:"))));
   const hasPublishedStructuredResume = profile?.resumeStatus === "PUBLISHED";
   const resumeIssue = job.requiresResumeFile
     ? (!hasStoredFile ? "Esta empresa exige um arquivo de currículo. Importe um PDF, Word ou outro documento antes de se candidatar." : "")
@@ -82,9 +84,26 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
             <Meta icon={<MapPin className="w-4 h-4 text-terracotta-500" />} value={job.location} />
             <Meta icon={<Briefcase className="w-4 h-4 text-terracotta-500" />} value={job.type} />
             <Meta icon={<Laptop className="w-4 h-4 text-terracotta-500" />} value={job.workModel || "Presencial"} />
-            {job.salary && <Meta icon={<DollarSign className="w-4 h-4 text-terracotta-500" />} value={job.salary} />}
+            {displayedSalary && <Meta icon={<DollarSign className="w-4 h-4 text-terracotta-500" />} value={salaryIsEstimate ? `Média estimada: ${displayedSalary}` : displayedSalary} />}
             <Meta icon={<Clock className="w-4 h-4 text-terracotta-500" />} value={job.postedAt} />
           </div>
+
+          {salaryIsEstimate && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex gap-3">
+                <Info className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+                <div>
+                  <p className="text-sm font-bold text-amber-950">Sobre a média salarial</p>
+                  <p className="mt-1 text-xs leading-5 text-amber-900">Este valor é uma estimativa de mercado para o cargo, considerando referências salariais e o recorte regional disponível. Não é o salário informado pela empresa e o valor efetivamente oferecido pode ser maior ou menor.</p>
+                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-amber-900">
+                    {job.estimatedSalarySource && <span><strong>Fonte:</strong> {job.estimatedSalarySource}</span>}
+                    {job.estimatedSalaryRegion && <span><strong>Região:</strong> {job.estimatedSalaryRegion}</span>}
+                    {estimateSourceHref && <a href={estimateSourceHref} target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-2">Consultar referência</a>}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div><h3 className="font-semibold text-stone-900 mb-3">Sobre a vaga</h3><p className="text-stone-600 whitespace-pre-line leading-relaxed">{job.description}</p></div>
           {job.requirements && <div><h3 className="font-semibold text-stone-900 mb-3">Requisitos</h3><p className="text-stone-600 whitespace-pre-line leading-relaxed">{job.requirements}</p></div>}
@@ -112,6 +131,6 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
   );
 }
 
-function Meta({ icon, value }: { icon: React.ReactNode; value?: string }) {
+function Meta({ icon, value }: { icon: React.ReactNode; value?: string | null }) {
   return <div className="flex items-center gap-2 text-sm text-stone-600"><div className="bg-white p-2 rounded-lg shadow-sm">{icon}</div>{value || "Não informado"}</div>;
 }
