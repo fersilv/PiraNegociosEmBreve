@@ -148,7 +148,7 @@ export class JobsController {
       !this.hasExternalApplicationChannel(createJobDto)
     ) {
       throw new BadRequestException(
-        'Informe ao menos WhatsApp, e-mail ou instruções para a candidatura externa.',
+        'Informe ao menos link, WhatsApp, e-mail ou instruções para a candidatura externa.',
       );
     }
     this.validateApplicationFields(createJobDto);
@@ -185,7 +185,7 @@ export class JobsController {
       !this.hasExternalApplicationChannel(updateJobDto, job)
     ) {
       throw new BadRequestException(
-        'Informe ao menos WhatsApp, e-mail ou instruções para a candidatura externa.',
+        'Informe ao menos link, WhatsApp, e-mail ou instruções para a candidatura externa.',
       );
     }
     this.validateApplicationFields(updateJobDto);
@@ -214,7 +214,13 @@ export class JobsController {
           ? data.applicationWhatsApp.trim()
           : ''
         : current?.applicationWhatsApp?.trim();
-    return Boolean(instructions || email || whatsapp);
+    const applicationUrl =
+      data.applicationUrl !== undefined
+        ? typeof data.applicationUrl === 'string'
+          ? data.applicationUrl.trim()
+          : ''
+        : current?.applicationUrl?.trim();
+    return Boolean(instructions || email || whatsapp || applicationUrl);
   }
 
   private validateApplicationFields(data: Partial<Job>) {
@@ -241,6 +247,31 @@ export class JobsController {
       throw new BadRequestException(
         'Informe o WhatsApp com DDD e número, com DDI opcional.',
       );
+
+    if (
+      data.applicationUrl !== undefined &&
+      data.applicationUrl !== null &&
+      typeof data.applicationUrl !== 'string'
+    )
+      throw new BadRequestException('O link de candidatura deve ser texto.');
+    if (typeof data.applicationUrl === 'string') {
+      const applicationUrl = data.applicationUrl.trim();
+      if (applicationUrl && !/^https?:\/\//i.test(applicationUrl))
+        throw new BadRequestException(
+          'O link de candidatura deve começar com http:// ou https://.',
+        );
+      data.applicationUrl = applicationUrl || null;
+    }
+
+    if (
+      data.applicationUrlTitle !== undefined &&
+      data.applicationUrlTitle !== null &&
+      typeof data.applicationUrlTitle !== 'string'
+    )
+      throw new BadRequestException('O título do link de candidatura deve ser texto.');
+    if (typeof data.applicationUrlTitle === 'string') {
+      data.applicationUrlTitle = data.applicationUrlTitle.trim().slice(0, 180) || null;
+    }
   }
 
   private normalizeJobSkills(data: Partial<Job>) {
