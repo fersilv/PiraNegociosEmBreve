@@ -105,6 +105,7 @@ export class UsersController {
       courses: Array.isArray(profile.courses) ? profile.courses : [],
       languages: Array.isArray(profile.languages) ? profile.languages : [],
       salaryExpectation: profile.salaryExpectation,
+      jobPreferences: profile.jobPreferences || {},
       resumePhotoURL: profile.resumePhotoURL,
       resumePreferences: profile.resumePreferences || {},
       score: Number.isFinite(aiScore) ? Math.max(0, Math.min(100, Math.round(aiScore))) : null,
