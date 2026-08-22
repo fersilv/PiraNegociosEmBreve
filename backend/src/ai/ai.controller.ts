@@ -66,7 +66,6 @@ export class AiController {
     const resumeReanalysisPaymentRequired =
       Boolean(reanalysisProduct.enabled) &&
       Number(reanalysisProduct.effectivePriceCents || 0) > 0 &&
-      !user?.resumeScoreUnlocked &&
       !freeResumeAnalysisAvailable &&
       Number(credits.RESUME_REANALYSIS || 0) <= 0;
 
@@ -107,7 +106,7 @@ export class AiController {
         import: importProduct,
       },
       availability: {
-        reanalysis: freeResumeAnalysisAvailable || reanalysisFreeNow || Number(credits.RESUME_REANALYSIS || 0) > 0 || Boolean(user?.resumeScoreUnlocked) || Boolean(reanalysisProduct.enabled),
+        reanalysis: freeResumeAnalysisAvailable || reanalysisFreeNow || Number(credits.RESUME_REANALYSIS || 0) > 0 || Boolean(reanalysisProduct.enabled),
         improvement: improvementFreeNow || Number(credits.RESUME_AI_IMPROVEMENT || 0) > 0 || Boolean(improvementProduct.enabled),
         import: freeResumeImportAvailable || importFreeNow || Number(credits.RESUME_AI_IMPORT || 0) > 0 || Boolean(importProduct.enabled),
       },
@@ -200,7 +199,7 @@ export class AiController {
     const freeAvailable = analysisCount < freeAnalysisLimit;
     const freeNow = Boolean(product.enabled) && Number(product.effectivePriceCents || 0) === 0;
     const paidCreditAvailable = Number(credits.RESUME_REANALYSIS || 0) > 0;
-    const canRunNewAnalysis = user.resumeScoreUnlocked || freeAvailable || freeNow || paidCreditAvailable;
+    const canRunNewAnalysis = freeAvailable || freeNow || paidCreditAvailable;
 
     if (!canRunNewAnalysis) {
       if (!product.enabled) {
@@ -218,7 +217,7 @@ export class AiController {
     }
 
     let consumed = false;
-    if (!user.resumeScoreUnlocked && !freeAvailable && !freeNow && paidCreditAvailable) {
+    if (!freeAvailable && !freeNow && paidCreditAvailable) {
       await this.paymentsService.consumeCredit(req.user.uid, 'RESUME_REANALYSIS');
       consumed = true;
     }
@@ -308,9 +307,9 @@ export class AiController {
 
     let analysis: any = null;
     let analysisError: string | null = null;
-    const hasIncludedCredit = await this.paymentsService.hasCredit(req.user.uid, 'RESUME_REANALYSIS');
-    if (hasIncludedCredit) await this.paymentsService.consumeCredit(req.user.uid, 'RESUME_REANALYSIS');
     try {
+      // A reanálise é parte integrante do produto de otimização. Ela não usa nem
+      // altera o saldo de reanálises compradas separadamente pelo usuário.
       const profileForReview = {
         ...user,
         uploadedResumeFile: undefined,
@@ -329,7 +328,6 @@ export class AiController {
       );
     } catch (error: any) {
       analysisError = error?.message || 'As melhorias foram aplicadas, mas a nova análise não pôde ser concluída agora.';
-      if (hasIncludedCredit) await this.paymentsService.grantCredit(req.user.uid, 'RESUME_REANALYSIS', 1).catch(() => undefined);
     }
 
     return {
