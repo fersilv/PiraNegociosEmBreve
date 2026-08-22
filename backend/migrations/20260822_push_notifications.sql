@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- Legado mantido temporariamente para clientes antigos. Novos clientes usam FID.
+-- Compatibilidade temporária com clientes antigos que gravavam um único token no usuário.
 ALTER TABLE "users"
   ADD COLUMN IF NOT EXISTS "fcmToken" varchar;
 
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS "push_installations" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "userId" varchar NOT NULL,
   "installationId" varchar(255) NOT NULL,
+  "token" text NULL,
   "platform" varchar(120) NULL,
   "userAgent" varchar(512) NULL,
   "active" boolean NOT NULL DEFAULT true,
@@ -39,6 +40,10 @@ CREATE TABLE IF NOT EXISTS "push_installations" (
   "createdAt" timestamptz NOT NULL DEFAULT now(),
   "updatedAt" timestamptz NOT NULL DEFAULT now()
 );
+
+-- Permite aplicar novamente a migration caso a versão anterior baseada em FID já tenha sido executada.
+ALTER TABLE "push_installations"
+  ADD COLUMN IF NOT EXISTS "token" text;
 
 CREATE UNIQUE INDEX IF NOT EXISTS "UQ_push_installations_installation_id"
   ON "push_installations" ("installationId");
