@@ -1,15 +1,24 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Notification } from './entities/notification.entity';
+import { PushInstallation } from './entities/push-installation.entity';
 import { User, UserType } from '../users/entities/user.entity';
 import { FirebaseService } from '../auth/firebase.service';
+
+export type PushInstallationInput = {
+  installationId: string;
+  platform?: string | null;
+  userAgent?: string | null;
+};
 
 @Injectable()
 export class NotificationsService {
   constructor(
     @InjectRepository(Notification)
     private notifRepo: Repository<Notification>,
+    @InjectRepository(PushInstallation)
+    private pushInstallationRepo: Repository<PushInstallation>,
     @InjectRepository(User)
     private userRepo: Repository<User>,
     private firebaseService: FirebaseService,
@@ -39,6 +48,61 @@ export class NotificationsService {
     await this.notifRepo.remove(notif);
   }
 
+  async registerPushInstallation(userId: string, input: PushInstallationInput) {
+    const installationId = input.installationId.trim();
+    let installation = await this.pushInstallationRepo.findOne({ where: { installationId } });
+
+    if (!installation) {
+      installation = this.pushInstallationRepo.create({
+        userId,
+        installationId,
+        platform: input.platform?.trim().slice(0, 120) || null,
+        userAgent: input.userAgent?.trim().slice(0, 512) || null,
+        active: true,
+        lastSeenAt: new Date(),
+      });
+    } else {
+      installation.userId = userId;
+      installation.platform = input.platform?.trim().slice(0, 120) || installation.platform || null;
+      installation.userAgent = input.userAgent?.trim().slice(0, 512) || installation.userAgent || null;
+      installation.active = true;
+      installation.lastSeenAt = new Date();
+    }
+
+    await this.pushInstallationRepo.save(installation);
+
+    // O token legado não é mais necessário após a primeira sincronização por FID.
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (user?.fcmToken) {
+      user.fcmToken = null;
+      await this.userRepo.save(user).catch(() => undefined);
+    }
+
+    return {
+      registered: true,
+      installationId: installation.installationId,
+      active: installation.active,
+      lastSeenAt: installation.lastSeenAt,
+    };
+  }
+
+  async unregisterPushInstallation(userId: string, installationId: string) {
+    const installation = await this.pushInstallationRepo.findOne({
+      where: { userId, installationId },
+    });
+    if (!installation) return { unregistered: true };
+    installation.active = false;
+    await this.pushInstallationRepo.save(installation);
+    return { unregistered: true };
+  }
+
+  async pushStatus(userId: string) {
+    const activeInstallations = await this.pushInstallationRepo.count({
+      where: { userId, active: true },
+    });
+    return { enabled: activeInstallations > 0, activeInstallations };
+  }
+
   private notificationUrl(notif: Partial<Notification>): string {
     if (notif.link) return notif.link;
     if (notif.appId) return `/user/admissao/${notif.appId}`;
@@ -46,39 +110,91 @@ export class NotificationsService {
     return '/user';
   }
 
-  private async pushToUser(user: User | null, notif: Notification): Promise<void> {
-    const token = user?.fcmToken?.trim();
-    if (!token) return;
+  private isPermanentRegistrationError(error: any): boolean {
+    const code = String(error?.code || error?.errorInfo?.code || '').toLowerCase();
+    return (
+      code.includes('registration-token-not-registered') ||
+      code.includes('invalid-registration-token') ||
+      code.includes('invalid-argument') ||
+      code.includes('not-found') ||
+      code.includes('unregistered')
+    );
+  }
 
+  private async disableInstallations(ids: string[]) {
+    if (!ids.length) return;
+    await this.pushInstallationRepo.update(
+      { installationId: In(ids) },
+      { active: false },
+    );
+  }
+
+  private async pushToUser(user: User | null, notif: Notification): Promise<void> {
+    if (!user) return;
+
+    const installations = await this.pushInstallationRepo.find({
+      where: { userId: user.id, active: true },
+      order: { updatedAt: 'DESC' },
+    });
+    const fids = Array.from(new Set(installations.map((item) => item.installationId).filter(Boolean)));
+    const url = this.notificationUrl(notif);
+
+    if (fids.length) {
+      for (let offset = 0; offset < fids.length; offset += 500) {
+        const batch = fids.slice(offset, offset + 500);
+        try {
+          const result = await this.firebaseService.getMessaging().sendEachForMulticast({
+            fids: batch,
+            notification: {
+              title: notif.title,
+              body: notif.message,
+            },
+            data: {
+              url,
+              notificationId: String(notif.id || ''),
+              type: String(notif.type || ''),
+              jobId: String(notif.jobId || ''),
+              appId: String(notif.appId || ''),
+            },
+            webpush: {
+              fcmOptions: { link: url },
+              notification: {
+                icon: '/icon.svg',
+                badge: '/icon.svg',
+              },
+            },
+          });
+
+          const invalidFids = result.responses
+            .map((response, index) => (!response.success && this.isPermanentRegistrationError(response.error) ? batch[index] : null))
+            .filter((value): value is string => Boolean(value));
+          await this.disableInstallations(invalidFids);
+        } catch (error: any) {
+          console.warn(`FCM push failed for user ${user.id}:`, error?.code || error?.message || error);
+        }
+      }
+      return;
+    }
+
+    // Compatibilidade temporária com navegadores cadastrados antes da migração para FID.
+    const legacyToken = user.fcmToken?.trim();
+    if (!legacyToken) return;
     try {
       await this.firebaseService.getMessaging().send({
-        token,
-        notification: {
-          title: notif.title,
-          body: notif.message,
-        },
+        token: legacyToken,
+        notification: { title: notif.title, body: notif.message },
         data: {
-          url: this.notificationUrl(notif),
+          url,
           notificationId: String(notif.id || ''),
           type: String(notif.type || ''),
           jobId: String(notif.jobId || ''),
           appId: String(notif.appId || ''),
         },
-        webpush: {
-          fcmOptions: {
-            link: this.notificationUrl(notif),
-          },
-        },
+        webpush: { fcmOptions: { link: url } },
       });
     } catch (error: any) {
-      const code = String(error?.code || error?.errorInfo?.code || '');
-      console.warn(`FCM push failed for user ${user?.id || 'unknown'}:`, code || error?.message || error);
-      if (
-        user &&
-        (code.includes('registration-token-not-registered') ||
-          code.includes('invalid-registration-token') ||
-          code.includes('invalid-argument'))
-      ) {
+      console.warn(`Legacy FCM push failed for user ${user.id}:`, error?.code || error?.message || error);
+      if (this.isPermanentRegistrationError(error)) {
         user.fcmToken = null;
         await this.userRepo.save(user).catch(() => undefined);
       }
@@ -93,6 +209,15 @@ export class NotificationsService {
       : null;
     await this.pushToUser(user, saved);
     return saved;
+  }
+
+  async sendTestPush(userId: string): Promise<Notification> {
+    return this.notifyUser(userId, {
+      title: 'Push ativado 🔔',
+      message: 'As notificações do PiraNegócios estão funcionando neste dispositivo.',
+      type: 'push_test',
+      link: '/user',
+    });
   }
 
   async notifyUser(userId: string, data: Partial<Notification>): Promise<Notification> {
