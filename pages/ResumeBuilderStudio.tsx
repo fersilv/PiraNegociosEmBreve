@@ -1,10 +1,26 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, FileText, ShieldCheck, WandSparkles } from "lucide-react";
 import { ResumeBuilderPage } from "./ResumeBuilderPage";
 
 export function ResumeBuilderStudio() {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const interceptLegacyReanalysis = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest("button");
+      if (!button) return;
+      if (!button.textContent?.includes("Reavaliar currículo")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      navigate("/user/curriculo/evolucao");
+    };
+
+    document.addEventListener("click", interceptLegacyReanalysis, true);
+    return () => document.removeEventListener("click", interceptLegacyReanalysis, true);
+  }, [navigate]);
+
   return (
     <div className="resume-studio">
       <ResumeStudioTheme />
