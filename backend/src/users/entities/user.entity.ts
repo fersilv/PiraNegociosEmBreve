@@ -128,6 +128,12 @@ export class User {
   @Column({ type: 'int', nullable: true })
   aiAnalysisLimit: number | null;
 
+  @Column({ type: 'int', default: 0 })
+  aiImportCount: number;
+
+  @Column({ type: 'int', nullable: true })
+  aiImportLimit: number | null;
+
   @Column({ type: 'jsonb', nullable: true })
   savedDocs: Record<string, string> | null;
 
