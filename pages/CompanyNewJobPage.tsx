@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Accessibility,
   ArrowLeft,
-  BriefcaseBusiness,
+  Briefcase,
   Check,
   Loader2,
   Plus,
@@ -14,7 +14,8 @@ import { useAuth } from "../contexts/AuthContext";
 import { api } from "../lib/api";
 import { CityStateSelector } from "../components/CityStateSelector";
 import { notifyCandidatesOfNewJob } from "../lib/notifications";
-import { JobPcdMode } from "../types/job";
+import { useAiStatus } from "../hooks/useAiStatus";
+import type { JobPcdMode } from "../types/job";
 
 const TYPES = ["CLT", "PJ", "Estágio", "Aprendiz", "Temporário", "Autônomo"];
 const WORK_MODELS = ["Presencial", "Híbrido", "Remoto"];
@@ -22,9 +23,11 @@ const WORK_MODELS = ["Presencial", "Híbrido", "Remoto"];
 export function CompanyNewJobPage() {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
+  const { enabled: aiEnabled } = useAiStatus();
   const [company, setCompany] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [suggestingSkills, setSuggestingSkills] = useState(false);
   const [title, setTitle] = useState("");
   const [location, setLocation] = useState("");
   const [salary, setSalary] = useState("");
@@ -52,18 +55,76 @@ export function CompanyNewJobPage() {
     return () => { active = false; };
   }, []);
 
+  const normalizeSkill = (value: string) => value.trim().replace(/\s+/g, " ").slice(0, 80);
+
+  const mergeSkills = (incoming: unknown) => {
+    if (!Array.isArray(incoming)) return;
+    setSkills((current) => {
+      const seen = new Set(current.map((item) => item.toLocaleLowerCase("pt-BR")));
+      const next = [...current];
+      for (const raw of incoming) {
+        if (typeof raw !== "string") continue;
+        const value = normalizeSkill(raw);
+        const key = value.toLocaleLowerCase("pt-BR");
+        if (!value || seen.has(key)) continue;
+        seen.add(key);
+        next.push(value);
+        if (next.length >= 10) break;
+      }
+      return next;
+    });
+  };
+
   const addSkill = () => {
-    const value = newSkill.trim().replace(/\s+/g, " ").slice(0, 80);
+    const value = normalizeSkill(newSkill);
     if (!value || skills.length >= 10 || skills.some((item) => item.localeCompare(value, "pt-BR", { sensitivity: "base" }) === 0)) return;
     setSkills((current) => [...current, value]);
     setNewSkill("");
   };
 
+  const suggestSkills = async () => {
+    if (!aiEnabled || suggestingSkills) return;
+    if (title.trim().length < 3 || description.trim().length < 40) {
+      alert("Preencha o cargo e uma descrição mais detalhada antes de pedir sugestões à IA.");
+      return;
+    }
+    setSuggestingSkills(true);
+    try {
+      const response = await api.post("/ai/suggest-job-skills", {
+        title: title.trim(),
+        description: description.trim(),
+        requirements: requirements.trim(),
+      });
+      mergeSkills(response.data?.skills);
+    } catch (error: any) {
+      console.error("Erro ao sugerir habilidades:", error);
+      alert(error?.response?.data?.message || "Não foi possível sugerir habilidades agora.");
+    } finally {
+      setSuggestingSkills(false);
+    }
+  };
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!user || !company?.id) return;
-    if (!location && workModel !== "Remoto") return alert("Informe a cidade da vaga.");
-    if (!acceptsPlatformApplications && !externalApplicationInstructions.trim()) return alert("Informe como a pessoa deve se candidatar fora da plataforma.");
+
+    const hasRequiredCompanyInfo = Boolean(
+      company?.name?.trim?.() && company?.address?.trim?.() && company?.phone?.trim?.(),
+    );
+    if (!hasRequiredCompanyInfo) {
+      alert("Antes de publicar, complete Nome, Endereço e Telefone no perfil da empresa.");
+      navigate("/company/perfil");
+      return;
+    }
+    if (!location && workModel !== "Remoto") {
+      alert("Informe a cidade da vaga.");
+      return;
+    }
+    if (!acceptsPlatformApplications && !externalApplicationInstructions.trim()) {
+      alert("Informe como a pessoa deve se candidatar fora da plataforma.");
+      return;
+    }
+
     setSaving(true);
     try {
       const response = await api.post("/jobs", {
@@ -142,8 +203,18 @@ export function CompanyNewJobPage() {
             <Field label="Descrição *"><textarea required rows={6} value={description} onChange={(e) => setDescription(e.target.value)} className="field resize-y" placeholder="Atividades, rotina, benefícios e contexto da posição." /></Field>
             <Field label="Requisitos"><textarea rows={4} value={requirements} onChange={(e) => setRequirements(e.target.value)} className="field resize-y" placeholder="Experiência, conhecimentos, escolaridade, CNH, veículo, disponibilidade..." /></Field>
             <Field label="Habilidades estruturadas">
-              <div className="flex gap-2"><input value={newSkill} onChange={(e) => setNewSkill(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addSkill(); } }} className="field" placeholder="Ex.: Excel" /><button type="button" onClick={addSkill} className="rounded-xl bg-stone-900 px-4 text-white"><Plus className="h-4 w-4" /></button></div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input value={newSkill} onChange={(e) => setNewSkill(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addSkill(); } }} className="field" placeholder="Ex.: Excel" />
+                <button type="button" onClick={addSkill} className="inline-flex items-center justify-center rounded-xl bg-stone-900 px-4 py-3 text-white"><Plus className="h-4 w-4" /></button>
+                {aiEnabled && (
+                  <button type="button" onClick={() => void suggestSkills()} disabled={suggestingSkills} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-xs font-bold text-violet-800 disabled:opacity-50">
+                    {suggestingSkills ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    Sugerir com IA
+                  </button>
+                )}
+              </div>
               {skills.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{skills.map((skill) => <span key={skill} className="inline-flex items-center gap-1.5 rounded-full bg-stone-100 px-3 py-1.5 text-xs font-bold text-stone-700">{skill}<button type="button" onClick={() => setSkills((current) => current.filter((item) => item !== skill))}><X className="h-3 w-3" /></button></span>)}</div>}
+              <p className="mt-2 text-[11px] text-stone-400">Até 10 habilidades. Elas alimentam o matching estruturado sem exigir IA a cada consulta.</p>
             </Field>
           </div>
         </section>
@@ -161,7 +232,7 @@ export function CompanyNewJobPage() {
           </div>
         </section>
 
-        <div className="flex justify-end"><button disabled={saving} type="submit" className="inline-flex min-w-48 items-center justify-center gap-2 rounded-2xl bg-terracotta-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-terracotta-600/15 hover:bg-terracotta-700 disabled:opacity-60">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <BriefcaseBusiness className="h-4 w-4" />} Publicar vaga</button></div>
+        <div className="flex justify-end"><button disabled={saving} type="submit" className="inline-flex min-w-48 items-center justify-center gap-2 rounded-2xl bg-terracotta-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-terracotta-600/15 hover:bg-terracotta-700 disabled:opacity-60">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Briefcase className="h-4 w-4" />} Publicar vaga</button></div>
       </form>
 
       <style>{`.field{width:100%;border:1px solid #e7e5e4;border-radius:14px;background:#fff;padding:12px 14px;font-size:14px;outline:none}.field:focus{border-color:#c66a4b;box-shadow:0 0 0 3px rgba(198,106,75,.09)}`}</style>
