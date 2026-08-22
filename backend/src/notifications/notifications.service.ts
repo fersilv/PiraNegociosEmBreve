@@ -101,8 +101,7 @@ export class NotificationsService {
 
   async notifyCompany(companyId: string | null | undefined, data: Partial<Notification>): Promise<void> {
     if (!companyId) return;
-    const users = await this.userRepo.find({ where: { companyId } });
-    const recipients = users.filter((user) => user.isCompanyAdmin || user.type === UserType.COMPANY);
+    const recipients = await this.userRepo.find({ where: { companyId } });
     await Promise.all(recipients.map((user) => this.notifyUser(user.id, data)));
   }
 
