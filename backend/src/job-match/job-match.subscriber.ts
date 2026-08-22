@@ -17,12 +17,20 @@ export class JobMatchSubscriber implements EntitySubscriberInterface<Job> {
     return Job;
   }
 
+  private async safelyAnalyze(job: Job | undefined) {
+    if (!job?.active) return;
+    try {
+      await this.jobMatch.analyzeActiveJob(job);
+    } catch (error) {
+      console.error(`Não foi possível preparar a vaga ${job.id} para o Match Inteligente:`, error);
+    }
+  }
+
   async afterInsert(event: InsertEvent<Job>) {
-    if (event.entity?.active) await this.jobMatch.analyzeActiveJob(event.entity);
+    await this.safelyAnalyze(event.entity);
   }
 
   async afterUpdate(event: UpdateEvent<Job>) {
-    const job = event.entity as Job | undefined;
-    if (job?.active) await this.jobMatch.analyzeActiveJob(job);
+    await this.safelyAnalyze(event.entity as Job | undefined);
   }
 }
