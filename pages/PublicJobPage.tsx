@@ -354,41 +354,42 @@ export default function PublicJobPage() {
           </div>
 
           {hasEstimatedSalary && (
-            <section className="mt-5 rounded-2xl border border-amber-200 bg-amber-50/80 p-5 text-amber-950">
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 rounded-xl bg-white p-2 text-amber-700 shadow-sm ring-1 ring-amber-100">
-                  <Info className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-black uppercase tracking-[.14em] text-amber-700">Média salarial estimada</p>
-                  <p className="mt-1 text-xl font-black text-stone-900">{job.estimatedSalary}</p>
-                  <p className="mt-2 text-sm leading-6 text-amber-900">
-                    Este valor é uma referência de mercado para o cargo e região e não foi informado pela empresa responsável pela vaga. A remuneração real oferecida pode ser maior ou menor, de acordo com experiência, jornada, benefícios, convenção coletiva e outros critérios da contratação.
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-amber-900">
-                    {job.estimatedSalarySource && (
-                      <span><strong>Fonte:</strong> {job.estimatedSalarySource}</span>
-                    )}
-                    {job.estimatedSalaryRegion && (
-                      <span><strong>Região considerada:</strong> {job.estimatedSalaryRegion}</span>
-                    )}
-                    {job.estimatedSalaryUpdatedAt && (
-                      <span><strong>Referência consultada em:</strong> {new Date(job.estimatedSalaryUpdatedAt).toLocaleDateString("pt-BR")}</span>
-                    )}
-                  </div>
-                  {estimateSourceHref && (
-                    <a
-                      href={estimateSourceHref}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-3 inline-flex items-center gap-1.5 text-xs font-black text-amber-800 underline decoration-amber-300 underline-offset-4 hover:text-amber-950"
-                    >
-                      Consultar fonte da média <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
+            <details className="group mt-4 rounded-xl border border-amber-200 bg-amber-50/70 text-amber-950">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-bold marker:content-none">
+                <span className="flex min-w-0 items-center gap-2">
+                  <Info className="h-4 w-4 shrink-0 text-amber-700" />
+                  <span className="truncate">Média salarial estimada: {job.estimatedSalary}</span>
+                </span>
+                <span className="shrink-0 text-xs text-amber-700 group-open:hidden">Ver detalhes</span>
+                <span className="hidden shrink-0 text-xs text-amber-700 group-open:inline">Ocultar detalhes</span>
+              </summary>
+              <div className="border-t border-amber-200 px-4 pb-4 pt-3">
+                <p className="text-sm leading-6 text-amber-900">
+                  Este valor é uma referência de mercado para o cargo e região e não foi informado pela empresa responsável pela vaga. A remuneração real oferecida pode ser maior ou menor, de acordo com experiência, jornada, benefícios, convenção coletiva e outros critérios da contratação.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-amber-900">
+                  {job.estimatedSalarySource && (
+                    <span><strong>Fonte:</strong> {job.estimatedSalarySource}</span>
+                  )}
+                  {job.estimatedSalaryRegion && (
+                    <span><strong>Região considerada:</strong> {job.estimatedSalaryRegion}</span>
+                  )}
+                  {job.estimatedSalaryUpdatedAt && (
+                    <span><strong>Referência consultada em:</strong> {new Date(job.estimatedSalaryUpdatedAt).toLocaleDateString("pt-BR")}</span>
                   )}
                 </div>
+                {estimateSourceHref && (
+                  <a
+                    href={estimateSourceHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-black text-amber-800 underline decoration-amber-300 underline-offset-4 hover:text-amber-950"
+                  >
+                    Consultar fonte da média <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                )}
               </div>
-            </section>
+            </details>
           )}
 
           <ShareJobButtons 
