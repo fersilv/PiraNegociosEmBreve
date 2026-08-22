@@ -1,22 +1,27 @@
-import React, { useState, useEffect, useMemo } from "react";
-import { Link, useNavigate, useLocation } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  Search,
-  MapPin,
-  Briefcase,
+  Accessibility,
+  ArrowRight,
+  BriefcaseBusiness,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  DollarSign,
+  ExternalLink,
+  MapPin,
+  Search,
+  SlidersHorizontal,
   X,
-  Loader2,
 } from "lucide-react";
-import { api, asArray } from "../lib/api";
-import { useAuth } from "../contexts/AuthContext";
-import { Job } from "../types/job";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { JobCard } from "../components/JobCard";
 import { JobModal } from "../components/JobModal";
 import { Navbar } from "../components/Navbar";
+import { SeoHead } from "../components/SeoHead";
+import { api, asArray } from "../lib/api";
+import type { Job } from "../types/job";
 
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE = 12;
 const STOP_WORDS = new Set([
   "a",
   "o",
@@ -31,22 +36,33 @@ const STOP_WORDS = new Set([
   "para",
   "com",
   "e",
+  "um",
+  "uma",
+  "no",
+  "na",
+  "por",
 ]);
+
+type PcdFilter = "TODOS" | "PCD" | "INCLUSIVE" | "EXCLUSIVE";
+type SourceFilter = "TODOS" | "PLATAFORMA" | "EXTERNA" | "COM_FONTE";
+
 const normalizeSearch = (value: unknown) =>
   String(value || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^a-z0-9+#.]+/g, " ")
     .trim();
+
 const words = (value: unknown) =>
   normalizeSearch(value)
     .split(" ")
     .filter((word) => word.length > 1 && !STOP_WORDS.has(word));
-const stem = (word: string) =>
-  word.replace(/(oes|aes|ais)$/, "ao").replace(/s$/, "");
+
+const stem = (word: string) => word.replace(/(oes|aes|ais)$/, "ao").replace(/s$/, "");
+
 const distance = (a: string, b: string) => {
-  const row = Array.from({ length: a.length + 1 }, (_, i) => i);
+  const row = Array.from({ length: a.length + 1 }, (_, index) => index);
   for (let col = 1; col <= b.length; col += 1) {
     let diagonal = row[0];
     row[0] = col;
@@ -62,12 +78,28 @@ const distance = (a: string, b: string) => {
   }
   return row[a.length];
 };
+
 const relevance = (job: Job, search: string) => {
   const query = normalizeSearch(search);
   if (!query) return 1;
   const title = normalizeSearch(job.title);
-  const searchable = `${title} ${normalizeSearch([job.companyName, job.description, job.requirements, job.location, job.type, job.workModel, job.sourceName].join(" "))}`;
+  const searchable = normalizeSearch(
+    [
+      job.title,
+      job.companyName,
+      job.sourceName,
+      job.description,
+      job.requirements,
+      job.location,
+      job.city,
+      job.state,
+      job.type,
+      job.workModel,
+      ...(job.skills || []),
+    ].join(" "),
+  );
   if (title.includes(query)) return 1000;
+
   const haystack = words(searchable);
   const queryWords = words(search);
   let hits = 0;
@@ -83,9 +115,7 @@ const relevance = (job: Job, search: string) => {
       !exact &&
       token.length >= 5 &&
       haystack.some(
-        (word) =>
-          Math.abs(word.length - token.length) <= 1 &&
-          distance(word, token) <= 1,
+        (word) => Math.abs(word.length - token.length) <= 1 && distance(word, token) <= 1,
       );
     if (exact || fuzzy) {
       hits += 1;
@@ -95,406 +125,511 @@ const relevance = (job: Job, search: string) => {
   return hits >= Math.max(1, Math.ceil(queryWords.length * 0.6)) ? score : 0;
 };
 
+const locationLabel = (job: Job) =>
+  job.city && job.state ? `${job.city}, ${job.state}` : job.location || "";
+
+const jobDate = (job: Job) =>
+  new Date(
+    job.sourcePublishedAt || job.postedAt || job.createdAt || job.updatedAt || 0,
+  ).getTime();
+
 export default function JobsPage() {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [myApplications, setMyApplications] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-
-  // Filters state
-  const [searchTerm, setSearchTerm] = useState("");
-  const [locationFilter, setLocationFilter] = useState("TODOS");
-  const [workModelFilter, setWorkModelFilter] = useState<
-    "TODOS" | "Presencial" | "Híbrido" | "Remoto"
-  >("TODOS");
-  const [typeFilter, setTypeFilter] = useState<
-    "TODOS" | "CLT" | "PJ" | "Estágio" | "Freelancer" | "Temporário"
-  >("TODOS");
-  const [sortBy, setSortBy] = useState<"recentes" | "antigas">("recentes");
-
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-
-  const { user, profile } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const initialParams = useMemo(() => new URLSearchParams(location.search), []);
 
-  const availableLocations = useMemo(() => {
-    const locs = new Set<string>();
-    jobs.forEach((job) => {
-      if (job.location) locs.add(job.location);
-    });
-    return Array.from(locs).sort();
-  }, [jobs]);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [searchTerm, setSearchTerm] = useState(initialParams.get("q") || "");
+  const [locationFilter, setLocationFilter] = useState(initialParams.get("cidade") || "TODOS");
+  const [workModelFilter, setWorkModelFilter] = useState("TODOS");
+  const [typeFilter, setTypeFilter] = useState("TODOS");
+  const [pcdFilter, setPcdFilter] = useState<PcdFilter>("TODOS");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("TODOS");
+  const [salaryOnly, setSalaryOnly] = useState(false);
+  const [sortBy, setSortBy] = useState<"recentes" | "antigas">("recentes");
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
-    const fetchJobs = async () => {
-      try {
-        const res = await api.get("/jobs");
-        const fetchedJobs = asArray<Job>(res.data).filter(
-          (job) => job.active !== false,
-        );
-        setJobs(fetchedJobs);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
+    let active = true;
+    api
+      .get("/jobs")
+      .then((response) => {
+        if (!active) return;
+        setJobs(asArray<Job>(response.data).filter((job) => job.active !== false));
+      })
+      .catch((error) => console.error("Erro ao carregar vagas:", error))
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
     };
-    fetchJobs();
   }, []);
 
-  useEffect(() => {
-    if (user && profile?.type === "CANDIDATE") {
-      const fetchMyApps = async () => {
-        try {
-          const res = await api.get("/applications/me");
-          setMyApplications(asArray<any>(res.data).map((app) => app.jobId));
-        } catch (e) {
-          console.error(e);
-        }
-      };
-      fetchMyApps();
-    }
-  }, [user, profile]);
+  const availableLocations = useMemo(
+    () =>
+      Array.from(new Set(jobs.map(locationLabel).filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b, "pt-BR"),
+      ),
+    [jobs],
+  );
 
-  useEffect(() => {
-    if (!loading && user && profile?.type === "CANDIDATE") {
-      const applyTo = new URLSearchParams(location.search).get("applyTo");
-      if (applyTo) {
-        const job = jobs.find((j) => j.id === applyTo);
-        if (job) {
-          setSelectedJob(job);
-          window.history.replaceState({}, "", location.pathname);
-        }
-      }
-    }
-  }, [loading, user, profile, jobs, location.search, location.pathname]);
+  const availableTypes = useMemo(
+    () =>
+      Array.from(new Set(jobs.map((job) => job.type).filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b, "pt-BR"),
+      ),
+    [jobs],
+  );
 
-  const handleApply = async (job: Job) => {
-    if (!user) {
-      navigate(
-        `/login?returnTo=${encodeURIComponent("/vagas?applyTo=" + job.id)}`,
-      );
-      return;
-    }
-    if (profile?.type !== "CANDIDATE") {
-      alert(
-        "Apenas candidatos podem se candidatar às vagas. Mude seu perfil ou crie uma conta de candidato.",
-      );
-      return;
-    }
-    if (myApplications.includes(job.id)) {
-      alert("Você já se candidatou a esta vaga.");
-      return;
-    }
-    if (!profile.resumeURL?.trim()) {
-      alert(
-        "Para se candidatar, envie seu currículo no perfil. Você será direcionado agora.",
-      );
-      navigate("/user/perfil");
-      return;
-    }
-    try {
-      await api.post("/applications", {
-        jobId: job.id,
-        jobTitle: job.title,
-        companyName: job.isConfidential
-          ? "Empresa Confidencial"
-          : job.companyName,
-        candidateId: user.uid,
-        companyId: job.ownerId,
-        status: "Enviado",
-        appliedAt: new Date().toISOString(),
-        resumeURL: profile.resumeURL,
-      });
-      alert("Candidatura enviada com sucesso!");
-      setMyApplications((prev) => [...prev, job.id]);
-      setSelectedJob(null);
-    } catch (e) {
-      console.error(e);
-      alert("Erro ao enviar candidatura");
-    }
-  };
+  const cityCount = availableLocations.length;
+  const pcdCount = jobs.filter(
+    (job) => job.pcdMode === "INCLUSIVE" || job.pcdMode === "EXCLUSIVE",
+  ).length;
 
   const filteredAndSortedJobs = useMemo(() => {
     let result = [...jobs];
 
-    // Filter by search
     if (searchTerm.trim()) {
       result = result
         .map((job) => ({ job, score: relevance(job, searchTerm) }))
-        .filter((item) => item.score > 0)
+        .filter(({ score }) => score > 0)
         .sort((a, b) => b.score - a.score)
-        .map((item) => item.job);
+        .map(({ job }) => job);
     }
 
-    // Filter by work model
     if (workModelFilter !== "TODOS") {
-      result = result.filter((job) => {
-        const model = job.workModel || "Presencial";
-        return model.toLowerCase() === workModelFilter.toLowerCase();
-      });
-    }
-
-    // Filter by location
-    if (locationFilter !== "TODOS") {
-      result = result.filter((job) => job.location === locationFilter);
-    }
-
-    // Filter by job type
-    if (typeFilter !== "TODOS") {
       result = result.filter(
-        (job) => (job.type || "").toLowerCase() === typeFilter.toLowerCase(),
+        (job) => normalizeSearch(job.workModel || "Presencial") === normalizeSearch(workModelFilter),
       );
     }
 
-    // Sort by date
-    if (!searchTerm.trim())
-      result.sort((a, b) => {
-        const dateA = new Date(a.postedAt).getTime();
-        const dateB = new Date(b.postedAt).getTime();
-        return sortBy === "recentes" ? dateB - dateA : dateA - dateB;
-      });
+    if (locationFilter !== "TODOS") {
+      result = result.filter(
+        (job) => normalizeSearch(locationLabel(job)) === normalizeSearch(locationFilter),
+      );
+    }
 
-    // Sort sponsored jobs to the top
-    result.sort((a, b) => {
-      if (a.isSponsored && !b.isSponsored) return -1;
-      if (!a.isSponsored && b.isSponsored) return 1;
-      return 0;
-    });
+    if (typeFilter !== "TODOS") {
+      result = result.filter(
+        (job) => normalizeSearch(job.type) === normalizeSearch(typeFilter),
+      );
+    }
 
+    if (pcdFilter === "PCD") {
+      result = result.filter(
+        (job) => job.pcdMode === "INCLUSIVE" || job.pcdMode === "EXCLUSIVE",
+      );
+    } else if (pcdFilter === "INCLUSIVE") {
+      result = result.filter((job) => job.pcdMode === "INCLUSIVE");
+    } else if (pcdFilter === "EXCLUSIVE") {
+      result = result.filter((job) => job.pcdMode === "EXCLUSIVE");
+    }
+
+    if (sourceFilter === "PLATAFORMA") {
+      result = result.filter((job) => !job.isExternalListing);
+    } else if (sourceFilter === "EXTERNA") {
+      result = result.filter((job) => job.isExternalListing === true);
+    } else if (sourceFilter === "COM_FONTE") {
+      result = result.filter((job) => Boolean(job.sourceUrl));
+    }
+
+    if (salaryOnly) result = result.filter((job) => Boolean(job.salary?.trim()));
+
+    if (!searchTerm.trim()) {
+      result.sort((a, b) =>
+        sortBy === "recentes" ? jobDate(b) - jobDate(a) : jobDate(a) - jobDate(b),
+      );
+    }
+
+    result.sort((a, b) => Number(Boolean(b.isSponsored)) - Number(Boolean(a.isSponsored)));
     return result;
-  }, [jobs, searchTerm, workModelFilter, typeFilter, sortBy]);
+  }, [
+    jobs,
+    searchTerm,
+    locationFilter,
+    workModelFilter,
+    typeFilter,
+    pcdFilter,
+    sourceFilter,
+    salaryOnly,
+    sortBy,
+  ]);
 
-  // Reset page to 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, workModelFilter, typeFilter, sortBy, locationFilter]);
+  }, [
+    searchTerm,
+    locationFilter,
+    workModelFilter,
+    typeFilter,
+    pcdFilter,
+    sourceFilter,
+    salaryOnly,
+    sortBy,
+  ]);
 
-  const totalPages =
-    Math.ceil(filteredAndSortedJobs.length / ITEMS_PER_PAGE) || 1;
+  const filterCount = [
+    locationFilter !== "TODOS",
+    workModelFilter !== "TODOS",
+    typeFilter !== "TODOS",
+    pcdFilter !== "TODOS",
+    sourceFilter !== "TODOS",
+    salaryOnly,
+  ].filter(Boolean).length;
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedJobs.length / ITEMS_PER_PAGE));
+  const safePage = Math.min(currentPage, totalPages);
   const currentJobs = filteredAndSortedJobs.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE,
+    (safePage - 1) * ITEMS_PER_PAGE,
+    safePage * ITEMS_PER_PAGE,
   );
 
+  const clearFilters = () => {
+    setSearchTerm("");
+    setLocationFilter("TODOS");
+    setWorkModelFilter("TODOS");
+    setTypeFilter("TODOS");
+    setPcdFilter("TODOS");
+    setSourceFilter("TODOS");
+    setSalaryOnly(false);
+    setSortBy("recentes");
+  };
+
+  const openJob = (job: Job) => {
+    if (job.slug) navigate(`/vagas/${job.slug}`);
+    else setSelectedJob(job);
+  };
+
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="min-h-screen bg-[#fffaf5] text-[#2d211c]">
+      <SeoHead
+        title="Vagas em Pirassununga e região | PiraNegócios"
+        description="Pesquise vagas por cidade, modalidade, contrato e oportunidades PCD em Pirassununga e região."
+        canonical={`${window.location.origin}/vagas`}
+      />
       <Navbar />
 
-      <main className="max-w-7xl mx-auto px-4 py-8 md:py-12 mt-16">
-        {/* Header Section */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-          <div>
-            <h1 className="font-serif text-3xl md:text-5xl font-bold text-stone-900 mb-2">
-              Todas as Vagas
-            </h1>
-            <p className="text-stone-600">
-              Encontre a sua próxima oportunidade em Pirassununga e Região.
-            </p>
-          </div>
-        </div>
+      <main>
+        <section className="relative overflow-hidden border-b border-[#4b3328]/10 bg-[#f2e7dd]">
+          <div className="pointer-events-none absolute right-[-90px] top-[-120px] h-80 w-80 rounded-full border-[54px] border-[#c96847]/8" />
+          <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+            <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[.2em] text-[#b96345]">
+                  Radar de oportunidades
+                </p>
+                <h1 className="mt-2 max-w-4xl font-serif text-4xl font-bold tracking-[-.035em] text-[#2d211c] sm:text-5xl lg:text-6xl">
+                  Encontre trabalho sem precisar procurar em vinte lugares diferentes.
+                </h1>
+                <p className="mt-4 max-w-2xl text-sm leading-7 text-[#735f54] sm:text-base">
+                  Vagas de empresas, PATs, agências e fontes públicas reunidas com cidade, modalidade, PCD e origem identificados.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 lg:max-w-sm lg:justify-end">
+                <Metric value={jobs.length} label="vagas abertas" />
+                <Metric value={cityCount} label="localidades" />
+                <Metric value={pcdCount} label="vagas PCD" />
+              </div>
+            </div>
 
-        {/* Filters and Search Section */}
-        <div className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 mb-8 space-y-6">
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 w-5 h-5" />
-            <input
-              type="text"
-              placeholder="Buscar por cargo, empresa, localização ou palavra-chave..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-4 py-4 rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-terracotta-500 focus:border-transparent transition-all"
-            />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm("")}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
-            <div className="flex flex-col gap-2">
-              <span className="text-xs font-bold tracking-widest text-stone-500 uppercase">
-                Regime
-              </span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {(["TODOS", "Presencial", "Híbrido", "Remoto"] as const).map(
-                  (m) => (
+            <div className="mt-8 rounded-[26px] border border-[#4b3328]/10 bg-[#fffaf5] p-2.5 shadow-[0_18px_55px_rgba(69,44,32,.09)]">
+              <div className="grid gap-2 md:grid-cols-[1.5fr_.85fr_auto]">
+                <label className="relative">
+                  <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#a1887b]" />
+                  <input
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    placeholder="Cargo, empresa, habilidade ou palavra-chave"
+                    className="h-12 w-full rounded-2xl border-0 bg-white pl-11 pr-10 text-sm font-medium outline-none ring-1 ring-[#4b3328]/10 placeholder:text-[#af9e95] focus:ring-2 focus:ring-[#c96847]/30"
+                  />
+                  {searchTerm && (
                     <button
-                      key={m}
-                      onClick={() => setWorkModelFilter(m)}
-                      className={`px-3 py-1.5 rounded-xl text-sm font-medium transition-all ${
-                        workModelFilter === m
-                          ? "bg-terracotta-100 text-terracotta-800 shadow-sm"
-                          : "bg-stone-100 text-stone-600 hover:bg-stone-200"
-                      }`}
+                      type="button"
+                      onClick={() => setSearchTerm("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-[#a18d82] hover:bg-[#f4ece6]"
+                      aria-label="Limpar busca"
                     >
-                      {m === "TODOS" ? "Todos" : m}
+                      <X className="h-4 w-4" />
                     </button>
-                  ),
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <span className="text-xs font-bold tracking-widest text-stone-500 uppercase">
-                Localização
-              </span>
-              <select
-                value={locationFilter}
-                onChange={(e) => setLocationFilter(e.target.value)}
-                className="bg-stone-100 border-none rounded-xl px-4 py-1.5 h-8 text-sm font-medium text-stone-700 focus:ring-2 focus:ring-terracotta-500 cursor-pointer"
-              >
-                <option value="TODOS">Todas</option>
-                {availableLocations.map((loc) => (
-                  <option key={loc} value={loc}>
-                    {loc}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <span className="text-xs font-bold tracking-widest text-stone-500 uppercase">
-                Contrato
-              </span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {(
-                  [
-                    "TODOS",
-                    "CLT",
-                    "PJ",
-                    "Estágio",
-                    "Freelancer",
-                    "Temporário",
-                  ] as const
-                ).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setTypeFilter(m)}
-                    className={`px-3 py-1.5 rounded-xl text-sm font-medium transition-all ${
-                      typeFilter === m
-                        ? "bg-terracotta-100 text-terracotta-800 shadow-sm"
-                        : "bg-stone-100 text-stone-600 hover:bg-stone-200"
-                    }`}
+                  )}
+                </label>
+                <label className="relative">
+                  <MapPin className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#a1887b]" />
+                  <select
+                    value={locationFilter}
+                    onChange={(event) => setLocationFilter(event.target.value)}
+                    className="h-12 w-full appearance-none rounded-2xl border-0 bg-white pl-11 pr-4 text-sm font-bold text-[#574238] outline-none ring-1 ring-[#4b3328]/10 focus:ring-2 focus:ring-[#c96847]/30"
                   >
-                    {m === "TODOS" ? "Todos" : m}
-                  </button>
-                ))}
+                    <option value="TODOS">Toda a região</option>
+                    {availableLocations.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(1)}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#2d211c] px-6 text-sm font-black text-white transition hover:bg-[#1f1714]"
+                >
+                  Buscar <ArrowRight className="h-4 w-4" />
+                </button>
               </div>
             </div>
+          </div>
+        </section>
 
-            <div className="flex flex-col gap-2 ml-auto">
-              <span className="text-xs font-bold tracking-widest text-stone-500 uppercase">
-                Ordenar por
-              </span>
-              <select
-                value={sortBy}
-                onChange={(e) =>
-                  setSortBy(e.target.value as "recentes" | "antigas")
-                }
-                className="bg-stone-100 border-none rounded-xl px-4 py-1.5 text-sm font-medium text-stone-700 focus:ring-2 focus:ring-terracotta-500 cursor-pointer"
-              >
-                <option value="recentes">Mais Recentes</option>
-                <option value="antigas">Mais Antigas</option>
-              </select>
+        <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+          <div className="grid gap-7 lg:grid-cols-[278px_minmax(0,1fr)]">
+            <aside className="self-start lg:sticky lg:top-24">
+              <div className="rounded-[26px] border border-[#4b3328]/10 bg-white p-5 shadow-[0_10px_35px_rgba(66,43,31,.04)]">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <SlidersHorizontal className="h-4 w-4 text-[#c96847]" />
+                    <h2 className="text-sm font-black text-[#33251f]">Filtros</h2>
+                    {filterCount > 0 && (
+                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#c96847] px-1.5 text-[9px] font-black text-white">
+                        {filterCount}
+                      </span>
+                    )}
+                  </div>
+                  {filterCount > 0 && (
+                    <button onClick={clearFilters} className="text-[10px] font-bold text-[#a25a42] hover:underline">
+                      Limpar
+                    </button>
+                  )}
+                </div>
+
+                <FilterGroup title="Modelo de trabalho">
+                  <ChoiceList
+                    value={workModelFilter}
+                    onChange={setWorkModelFilter}
+                    options={["TODOS", "Presencial", "Híbrido", "Remoto"]}
+                    allLabel="Todos"
+                  />
+                </FilterGroup>
+
+                <FilterGroup title="Contrato">
+                  <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="filter-select">
+                    <option value="TODOS">Todos os contratos</option>
+                    {availableTypes.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </FilterGroup>
+
+                <FilterGroup title="Oportunidades PCD">
+                  <ChoiceList
+                    value={pcdFilter}
+                    onChange={(value) => setPcdFilter(value as PcdFilter)}
+                    options={["TODOS", "PCD", "INCLUSIVE", "EXCLUSIVE"]}
+                    labels={{ TODOS: "Todas", PCD: "Abertas a PCD", INCLUSIVE: "Também para PCD", EXCLUSIVE: "Exclusivas PCD" }}
+                    icon={<Accessibility className="h-3.5 w-3.5" />}
+                  />
+                </FilterGroup>
+
+                <FilterGroup title="Origem da vaga">
+                  <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value as SourceFilter)} className="filter-select">
+                    <option value="TODOS">Todas as origens</option>
+                    <option value="PLATAFORMA">Publicadas no PiraNegócios</option>
+                    <option value="EXTERNA">Fontes externas</option>
+                    <option value="COM_FONTE">Com link da fonte</option>
+                  </select>
+                </FilterGroup>
+
+                <FilterGroup title="Remuneração">
+                  <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-[#4b3328]/8 bg-[#faf6f2] p-3">
+                    <input
+                      type="checkbox"
+                      checked={salaryOnly}
+                      onChange={(event) => setSalaryOnly(event.target.checked)}
+                      className="h-4 w-4 accent-[#c96847]"
+                    />
+                    <span className="flex items-center gap-2 text-xs font-bold text-[#5d493f]">
+                      <DollarSign className="h-3.5 w-3.5 text-[#c96847]" /> Somente com salário informado
+                    </span>
+                  </label>
+                </FilterGroup>
+
+                <div className="mt-5 rounded-2xl bg-[#2d211c] p-4 text-white">
+                  <p className="text-[9px] font-black uppercase tracking-[.16em] text-[#e7a283]">Quer aparecer para empresas?</p>
+                  <p className="mt-2 text-sm font-bold">Crie seu currículo gratuito.</p>
+                  <p className="mt-1 text-[11px] leading-5 text-white/45">Seu perfil pode entrar no banco de talentos de empresas verificadas.</p>
+                  <Link to="/login?returnTo=%2Fuser%2Fcurriculo" className="mt-4 inline-flex items-center gap-1.5 text-xs font-black text-[#f0bf9f] hover:text-white">
+                    Começar agora <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+              </div>
+            </aside>
+
+            <div className="min-w-0">
+              <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm text-[#7c685d]">
+                    <strong className="font-black text-[#2d211c]">{filteredAndSortedJobs.length}</strong>{" "}
+                    {filteredAndSortedJobs.length === 1 ? "oportunidade encontrada" : "oportunidades encontradas"}
+                  </p>
+                  {searchTerm && (
+                    <p className="mt-1 text-xs text-[#a08c81]">Resultados para “{searchTerm}”</p>
+                  )}
+                </div>
+                <select
+                  value={sortBy}
+                  onChange={(event) => setSortBy(event.target.value as "recentes" | "antigas")}
+                  className="self-start rounded-xl border border-[#4b3328]/10 bg-white px-3.5 py-2.5 text-xs font-bold text-[#5d493f] outline-none sm:self-auto"
+                >
+                  <option value="recentes">Mais recentes</option>
+                  <option value="antigas">Mais antigas</option>
+                </select>
+              </div>
+
+              {loading ? (
+                <div className="space-y-4">
+                  {[0, 1, 2, 3].map((item) => (
+                    <div key={item} className="h-52 animate-pulse rounded-[24px] border border-[#4b3328]/8 bg-white" />
+                  ))}
+                </div>
+              ) : currentJobs.length > 0 ? (
+                <div className="space-y-4">
+                  {currentJobs.map((job) => (
+                    <JobCard key={job.id} job={job} onClick={() => openJob(job)} />
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-[30px] border border-dashed border-[#4b3328]/20 bg-white/60 p-10 text-center sm:p-14">
+                  <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#f1e4da] text-[#bd6547]">
+                    <Search className="h-5 w-5" />
+                  </span>
+                  <h3 className="mt-4 font-serif text-2xl font-bold text-[#2d211c]">Nenhuma vaga passou por todos esses filtros.</h3>
+                  <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#7b685e]">Tente ampliar a cidade, remover algum filtro ou pesquisar por um termo mais geral.</p>
+                  <button onClick={clearFilters} className="mt-5 rounded-xl bg-[#2d211c] px-5 py-2.5 text-xs font-black text-white">Limpar filtros</button>
+                </div>
+              )}
+
+              {totalPages > 1 && (
+                <div className="mt-8 flex items-center justify-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                    disabled={safePage === 1}
+                    className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#4b3328]/10 bg-white text-[#604b40] disabled:opacity-30"
+                    aria-label="Página anterior"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="px-3 text-xs font-bold text-[#756156]">
+                    Página {safePage} de {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                    disabled={safePage === totalPages}
+                    className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#4b3328]/10 bg-white text-[#604b40] disabled:opacity-30"
+                    aria-label="Próxima página"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* Results Section */}
-        <div className="mb-4">
-          <h2 className="text-sm font-bold text-stone-500">
-            {filteredAndSortedJobs.length}{" "}
-            {filteredAndSortedJobs.length === 1
-              ? "vaga encontrada"
-              : "vagas encontradas"}
-          </h2>
-        </div>
-
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <Loader2 className="w-10 h-10 animate-spin text-terracotta-600" />
-          </div>
-        ) : filteredAndSortedJobs.length === 0 ? (
-          <div className="bg-white rounded-3xl p-12 text-center border border-stone-200">
-            <div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Search className="w-8 h-8 text-stone-400" />
+        <section className="border-t border-[#4b3328]/8 bg-[#f2e7dd]">
+          <div className="mx-auto grid max-w-7xl gap-5 px-4 py-10 sm:px-6 md:grid-cols-2 lg:px-8">
+            <div className="rounded-[26px] border border-[#4b3328]/10 bg-white p-6">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#f0ded3] text-[#b76042]"><CheckCircle2 className="h-5 w-5" /></div>
+              <h3 className="mt-4 font-serif text-2xl font-bold">Encontrou uma vaga em outro lugar?</h3>
+              <p className="mt-2 text-xs leading-6 text-[#79665b]">Quando a oportunidade é coletada de uma fonte pública, procuramos manter a publicação original vinculada para você conferir os dados.</p>
+              <div className="mt-4 inline-flex items-center gap-2 text-xs font-bold text-[#a35a42]"><ExternalLink className="h-3.5 w-3.5" /> Procure o selo de origem nos cards e detalhes.</div>
             </div>
-            <h3 className="text-xl font-bold text-stone-900 mb-2">
-              Nenhuma vaga encontrada
-            </h3>
-            <p className="text-stone-500">
-              Não encontramos vagas que correspondam aos seus filtros. Tente
-              remover alguns filtros ou buscar por termos diferentes.
-            </p>
-            <button
-              onClick={() => {
-                setSearchTerm("");
-                setWorkModelFilter("TODOS");
-                setTypeFilter("TODOS");
-                setLocationFilter("TODOS");
-              }}
-              className="mt-6 text-terracotta-600 font-bold hover:text-terracotta-700"
-            >
-              Limpar todos os filtros
-            </button>
+            <div className="rounded-[26px] bg-[#c96847] p-6 text-white">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/12"><BriefcaseBusiness className="h-5 w-5" /></div>
+              <h3 className="mt-4 font-serif text-2xl font-bold">Está contratando?</h3>
+              <p className="mt-2 text-xs leading-6 text-white/70">Publique sua vaga com cidade, PCD, habilidades e candidatura estruturados e encontre talentos da própria região.</p>
+              <Link to="/company" className="mt-4 inline-flex items-center gap-2 text-xs font-black text-white">Acessar área da empresa <ArrowRight className="h-3.5 w-3.5" /></Link>
+            </div>
           </div>
-        ) : (
-          <div className="space-y-4">
-            {currentJobs.map((job) => (
-              <JobCard
-                key={job.id}
-                job={job}
-                hasApplied={myApplications.includes(job.id)}
-                onClick={() =>
-                  job.slug
-                    ? navigate(`/vagas/${job.slug}`)
-                    : setSelectedJob(job)
-                }
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Pagination */}
-        {filteredAndSortedJobs.length > 0 && (
-          <div className="flex items-center justify-between mt-8 bg-white p-4 rounded-2xl border border-stone-200">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4" /> Anterior
-            </button>
-            <span className="text-sm font-bold text-stone-600">
-              Página {currentPage} de {totalPages}
-            </span>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              Próxima <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        )}
+        </section>
       </main>
 
-      {/* Job Details Modal */}
+      <footer className="border-t border-[#4b3328]/10 bg-[#2d211c] px-4 py-7 text-center text-[11px] text-white/30">
+        © 2026 PiraNegócios · Vagas, currículos e talentos da região.
+      </footer>
+
       {selectedJob && (
         <JobModal
           job={selectedJob}
-          hasApplied={myApplications.includes(selectedJob.id)}
           onClose={() => setSelectedJob(null)}
-          onApply={() => handleApply(selectedJob)}
+          onApply={() =>
+            navigate(
+              `/login?returnTo=${encodeURIComponent(`/vagas?applyTo=${selectedJob.id}`)}`,
+            )
+          }
         />
       )}
+
+      <style>{`
+        .filter-select{width:100%;border:1px solid rgba(75,51,40,.10);border-radius:12px;background:#faf6f2;padding:10px 11px;font-size:12px;font-weight:700;color:#5d493f;outline:none}.filter-select:focus{border-color:rgba(201,104,71,.45);box-shadow:0 0 0 3px rgba(201,104,71,.08)}
+      `}</style>
+    </div>
+  );
+}
+
+function Metric({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="min-w-[104px] rounded-2xl border border-[#4b3328]/10 bg-white/65 px-4 py-3 backdrop-blur-sm">
+      <p className="font-serif text-2xl font-bold text-[#2d211c]">{value.toLocaleString("pt-BR")}</p>
+      <p className="mt-0.5 text-[9px] font-black uppercase tracking-[.12em] text-[#947e72]">{label}</p>
+    </div>
+  );
+}
+
+function FilterGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mt-5 border-t border-[#4b3328]/8 pt-4">
+      <p className="mb-2.5 text-[10px] font-black uppercase tracking-[.13em] text-[#927d72]">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function ChoiceList({
+  value,
+  onChange,
+  options,
+  allLabel,
+  labels,
+  icon,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  allLabel?: string;
+  labels?: Record<string, string>;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((option) => {
+        const label = labels?.[option] || (option === "TODOS" ? allLabel || "Todos" : option);
+        const active = value === option;
+        return (
+          <button
+            key={option}
+            type="button"
+            onClick={() => onChange(option)}
+            className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-[11px] font-bold transition ${
+              active
+                ? "bg-[#2d211c] text-white shadow-sm"
+                : "bg-[#faf6f2] text-[#715c51] ring-1 ring-[#4b3328]/8 hover:bg-[#f2e8df]"
+            }`}
+          >
+            {option !== "TODOS" && icon}
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }
