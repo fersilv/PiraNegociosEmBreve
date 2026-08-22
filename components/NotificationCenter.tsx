@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, BellOff, Check, Trash2, ShieldCheck, Sparkles, AlertCircle } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
-import { 
-  isNotificationSupported, 
-  requestNotificationPermission 
+import {
+  isNotificationSupported,
+  requestNotificationPermission,
+  setupForegroundFCMListener,
 } from '../lib/notifications';
 
 export function NotificationCenter() {
@@ -20,11 +21,8 @@ export function NotificationCenter() {
     if (!user) return;
     try {
       const res = await api.get('/notifications');
-      if (Array.isArray(res.data)) {
-        setNotifications(res.data);
-      } else {
-        setNotifications([]);
-      }
+      if (Array.isArray(res.data)) setNotifications(res.data);
+      else setNotifications([]);
     } catch (err) {
       console.error(err);
       setNotifications([]);
@@ -33,21 +31,29 @@ export function NotificationCenter() {
 
   useEffect(() => {
     if (!user) return;
+    let disposed = false;
 
-    // Check if notification permission is already granted
-    if (isNotificationSupported() && Notification.permission === 'granted') {
-      setIsPushEnabled(true);
-    }
+    const refreshPushToken = async () => {
+      if (!isNotificationSupported() || Notification.permission !== 'granted') return;
+      const token = await requestNotificationPermission(user.uid);
+      if (!disposed) setIsPushEnabled(Boolean(token));
+    };
 
-    fetchNotifications();
+    void refreshPushToken();
+    void fetchNotifications();
 
-    // Set up polling for real-time notifications
-    const intervalId = setInterval(fetchNotifications, 10000); // 10 seconds
+    const intervalId = window.setInterval(() => void fetchNotifications(), 10000);
+    const unsubscribeForeground = setupForegroundFCMListener(() => {
+      void fetchNotifications();
+    });
 
-    return () => clearInterval(intervalId);
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+      unsubscribeForeground();
+    };
   }, [user]);
 
-  // Click outside to close
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -67,7 +73,7 @@ export function NotificationCenter() {
       setIsPushEnabled(true);
       alert('Notificações push ativadas com sucesso neste dispositivo!');
     } else {
-      alert('Não foi possível ativar as notificações push. Verifique as permissões de notificação do seu navegador.');
+      alert('Não foi possível ativar o push. Confirme a permissão do navegador e a configuração VAPID do Firebase.');
     }
   };
 
@@ -102,8 +108,7 @@ export function NotificationCenter() {
 
   return (
     <div className="relative z-40" ref={dropdownRef}>
-      {/* Trigger Button */}
-      <button 
+      <button
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2 rounded-xl text-stone-600 hover:bg-stone-100 hover:text-stone-900 transition-all focus:outline-none flex items-center justify-center"
         aria-label="Notificações"
@@ -114,11 +119,8 @@ export function NotificationCenter() {
         )}
       </button>
 
-      {/* Dropdown Card */}
       {isOpen && (
         <div className="absolute right-0 mt-3 w-80 md:w-96 bg-white rounded-3xl border border-stone-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-3 duration-200">
-          
-          {/* Header */}
           <div className="p-4 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
             <div>
               <h3 className="font-bold text-stone-900 flex items-center gap-2">
@@ -132,7 +134,7 @@ export function NotificationCenter() {
               <p className="text-xs text-stone-500 mt-0.5">Alertas de vagas e processos</p>
             </div>
             {unreadCount > 0 && (
-              <button 
+              <button
                 onClick={handleMarkAllAsRead}
                 className="text-xs text-terracotta-600 hover:text-terracotta-800 font-bold transition-colors flex items-center gap-1"
               >
@@ -142,16 +144,15 @@ export function NotificationCenter() {
             )}
           </div>
 
-          {/* Push Permission Prompt */}
           {!isPushEnabled && isNotificationSupported() && (
             <div className="p-3 bg-amber-50/70 border-b border-amber-100/50 flex items-center justify-between gap-3">
               <div className="flex gap-2 items-start">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <p className="text-[11px] text-amber-800 font-medium leading-normal">
-                  Ative as notificações push para receber alertas mesmo offline!
+                  Ative o push para receber solicitações de documentos, mudanças de processo e novas vagas mesmo fora do site.
                 </p>
               </div>
-              <button 
+              <button
                 onClick={handleRequestPush}
                 className="bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold px-2 py-1 rounded-lg shrink-0 transition-all shadow-sm"
               >
@@ -160,7 +161,6 @@ export function NotificationCenter() {
             </div>
           )}
 
-          {/* Notifications List */}
           <div className="max-h-[350px] overflow-y-auto divide-y divide-stone-100">
             {notifications.length === 0 ? (
               <div className="p-8 text-center text-stone-500">
@@ -170,42 +170,29 @@ export function NotificationCenter() {
               </div>
             ) : (
               notifications.map(notif => (
-                <div 
+                <div
                   key={notif.id}
                   onClick={() => {
-                    handleMarkAsRead(notif.id);
+                    void handleMarkAsRead(notif.id);
                     if (notif.link) {
                       navigate(notif.link);
-                      setIsOpen(false);
                     } else if (notif.appId) {
-                      navigate(`/dashboard/admissao/${notif.appId}`);
-                      setIsOpen(false);
+                      navigate(`/user/admissao/${notif.appId}`);
                     } else if (notif.jobId) {
-                      navigate(`/dashboard/vaga-detalhes/${notif.jobId}`);
-                      setIsOpen(false);
+                      navigate(`/user/vaga/${notif.jobId}`);
                     }
+                    setIsOpen(false);
                   }}
-                  className={`p-4 hover:bg-stone-50 transition-colors cursor-pointer flex gap-3 relative group ${
-                    !notif.read ? 'bg-terracotta-50/20' : ''
-                  }`}
+                  className={`p-4 hover:bg-stone-50 transition-colors cursor-pointer flex gap-3 relative group ${!notif.read ? 'bg-terracotta-50/20' : ''}`}
                 >
-                  {/* Status Indicator */}
                   {!notif.read && (
                     <div className="absolute left-2.5 top-5 w-1.5 h-1.5 bg-terracotta-600 rounded-full" />
                   )}
 
-                  {/* Icon Column */}
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                    notif.type === 'status_update' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-                  }`}>
-                    {notif.type === 'status_update' ? (
-                      <ShieldCheck className="w-4 h-4" />
-                    ) : (
-                      <Sparkles className="w-4 h-4" />
-                    )}
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${notif.type === 'status_update' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                    {notif.type === 'status_update' ? <ShieldCheck className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
                   </div>
 
-                  {/* Content Column */}
                   <div className="flex-1 min-w-0 pr-4">
                     <p className={`text-xs font-bold text-stone-900 ${!notif.read ? 'font-extrabold' : ''}`}>
                       {notif.title}
@@ -214,13 +201,12 @@ export function NotificationCenter() {
                       {notif.message}
                     </p>
                     <p className="text-[10px] text-stone-400 mt-1.5">
-                      {notif.createdAt ? new Date(notif.createdAt).toLocaleString() : 'Recent'}
+                      {notif.createdAt ? new Date(notif.createdAt).toLocaleString() : 'Recente'}
                     </p>
                   </div>
 
-                  {/* Actions Column */}
                   <div className="opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-center shrink-0">
-                    <button 
+                    <button
                       onClick={(e) => handleDeleteNotification(notif.id, e)}
                       className="p-1 text-stone-400 hover:text-red-600 rounded-lg hover:bg-stone-100 transition-colors"
                       title="Excluir"
@@ -233,11 +219,9 @@ export function NotificationCenter() {
             )}
           </div>
 
-          {/* Footer */}
           <div className="p-3 border-t border-stone-100 text-center bg-stone-50/50">
             <span className="text-[10px] text-stone-400 font-medium">PiraNegócios Alertas e Vagas</span>
           </div>
-
         </div>
       )}
     </div>
