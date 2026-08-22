@@ -1,17 +1,6 @@
 import React, { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import {
-  ArrowLeft,
-  ArrowRight,
-  BriefcaseBusiness,
-  Check,
-  Eye,
-  EyeOff,
-  FileText,
-  Loader2,
-  MapPin,
-  Sparkles,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, BriefcaseBusiness, Eye, EyeOff, FileText, Loader2, MapPin, Sparkles } from "lucide-react";
 import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
@@ -24,6 +13,17 @@ import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 
 type Mode = "login" | "register";
+
+function firebaseMessage(error: any): string {
+  const code = String(error?.code || "");
+  if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) return "E-mail ou senha incorretos.";
+  if (code.includes("email-already-in-use")) return "Este e-mail já possui uma conta. Tente entrar.";
+  if (code.includes("weak-password")) return "Escolha uma senha com pelo menos 6 caracteres.";
+  if (code.includes("invalid-email")) return "Informe um e-mail válido.";
+  if (code.includes("popup-closed-by-user")) return "A entrada com Google foi cancelada.";
+  if (code.includes("too-many-requests")) return "Muitas tentativas seguidas. Aguarde um pouco e tente novamente.";
+  return error?.response?.data?.message || error?.message || "Não foi possível concluir agora. Tente novamente.";
+}
 
 export function Login() {
   const [searchParams] = useSearchParams();
@@ -41,7 +41,6 @@ export function Login() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const { refreshProfile } = useAuth();
-
   const isRegister = mode === "register";
 
   const destinationFor = (profile: any) => {
@@ -72,16 +71,15 @@ export function Login() {
     setError("");
     try {
       const result = await signInWithPopup(auth, new GoogleAuthProvider());
-      const firebaseUser = result.user;
-      const runtime = await loadRuntimeProfile();
+      let runtime = await loadRuntimeProfile();
       if (isRegister && !runtime?.acceptedTerms) {
         await api.patch("/users/me", {
           acceptedTerms: true,
-          displayName: runtime?.displayName || firebaseUser.displayName || undefined,
-          fullName: runtime?.fullName || firebaseUser.displayName || undefined,
+          displayName: runtime?.displayName || result.user.displayName || undefined,
+          fullName: runtime?.fullName || result.user.displayName || undefined,
         });
+        runtime = await loadRuntimeProfile();
       }
-      await refreshProfile();
       navigate(destinationFor(runtime));
     } catch (loginError: any) {
       console.error(loginError);
@@ -132,10 +130,7 @@ export function Login() {
       <section className="relative hidden min-h-screen overflow-hidden bg-[#2b211c] p-10 text-white lg:flex lg:flex-col lg:justify-between xl:p-14">
         <div className="absolute -left-24 top-24 h-72 w-72 rounded-full bg-[#d98765]/20 blur-3xl" />
         <div className="absolute -bottom-20 right-0 h-80 w-80 rounded-full bg-[#f0c2a9]/10 blur-3xl" />
-        <div className="relative">
-          <Link to="/" className="inline-flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f1cfbd] font-serif text-xl font-black text-[#302019]">P</span><span><strong className="block font-serif text-xl">PiraNegócios</strong><span className="text-[9px] font-bold uppercase tracking-[.24em] text-white/35">Carreira local, de verdade</span></span></Link>
-        </div>
-
+        <Link to="/" className="relative inline-flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f1cfbd] font-serif text-xl font-black text-[#302019]">P</span><span><strong className="block font-serif text-xl">PiraNegócios</strong><span className="text-[9px] font-bold uppercase tracking-[.24em] text-white/35">Carreira local, de verdade</span></span></Link>
         <div className="relative max-w-xl py-12">
           <p className="text-[10px] font-black uppercase tracking-[.22em] text-[#efb89c]">Seu espaço profissional</p>
           <h1 className="mt-4 font-serif text-5xl font-bold leading-[1.05] xl:text-6xl">Sua próxima oportunidade começa antes do botão “candidatar”.</h1>
@@ -146,58 +141,30 @@ export function Login() {
             <Benefit icon={<BriefcaseBusiness className="h-4 w-4" />} title="Processo acompanhado" text="Candidaturas, documentos e atualizações em um único lugar." />
           </div>
         </div>
-
         <p className="relative text-[11px] leading-5 text-white/30">PiraNegócios · Pirassununga e região · tecnologia para aproximar pessoas e oportunidades.</p>
       </section>
 
       <section className="flex min-h-screen items-center justify-center px-4 py-8 sm:px-7 lg:px-12">
         <div className="w-full max-w-[540px]">
-          <div className="mb-7 flex items-center justify-between">
-            <Link to="/" className="inline-flex items-center gap-2 text-xs font-bold text-stone-500 hover:text-stone-900"><ArrowLeft className="h-4 w-4" /> Voltar</Link>
-            <span className="font-serif text-lg font-black lg:hidden">PiraNegócios</span>
-          </div>
-
+          <div className="mb-7 flex items-center justify-between"><Link to="/" className="inline-flex items-center gap-2 text-xs font-bold text-stone-500 hover:text-stone-900"><ArrowLeft className="h-4 w-4" /> Voltar</Link><span className="font-serif text-lg font-black lg:hidden">PiraNegócios</span></div>
           <div className="rounded-[32px] border border-[#ddcfc3] bg-[#fffdfa] p-5 shadow-[0_30px_90px_rgba(73,45,28,.10)] sm:p-8">
-            <div className="grid grid-cols-2 rounded-2xl bg-[#f2ebe4] p-1">
-              <button type="button" onClick={() => changeMode("login")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${!isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>Entrar</button>
-              <button type="button" onClick={() => changeMode("register")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>Criar conta</button>
-            </div>
-
-            <div className="mt-7">
-              <p className="text-[10px] font-black uppercase tracking-[.16em] text-terracotta-600">{isRegister ? "Comece seu perfil" : "Bem-vindo de volta"}</p>
-              <h2 className="mt-1 font-serif text-3xl font-bold text-stone-950">{isRegister ? "Crie sua conta profissional." : "Entre no seu espaço."}</h2>
-              <p className="mt-2 text-sm leading-6 text-stone-500">{isRegister ? "Leva poucos minutos. Seu currículo pode continuar depois como rascunho." : "Suas vagas, currículo, processos e empresa continuam exatamente de onde você parou."}</p>
-            </div>
-
+            <div className="grid grid-cols-2 rounded-2xl bg-[#f2ebe4] p-1"><button type="button" onClick={() => changeMode("login")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${!isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>Entrar</button><button type="button" onClick={() => changeMode("register")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>Criar conta</button></div>
+            <div className="mt-7"><p className="text-[10px] font-black uppercase tracking-[.16em] text-terracotta-600">{isRegister ? "Comece seu perfil" : "Bem-vindo de volta"}</p><h2 className="mt-1 font-serif text-3xl font-bold text-stone-950">{isRegister ? "Crie sua conta profissional." : "Entre no seu espaço."}</h2><p className="mt-2 text-sm leading-6 text-stone-500">{isRegister ? "Leva poucos minutos. Seu currículo pode continuar depois como rascunho." : "Suas vagas, currículo, processos e empresa continuam exatamente de onde você parou."}</p></div>
             {error && <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm font-semibold text-red-700">{error}</div>}
-
             <button type="button" onClick={() => void handleGoogle()} disabled={loading || (isRegister && !acceptedTerms)} className="mt-6 flex h-12 w-full items-center justify-center gap-3 rounded-2xl border border-stone-200 bg-white text-sm font-bold text-stone-800 transition hover:bg-stone-50 disabled:opacity-45"><GoogleIcon /> Continuar com Google</button>
-
             <div className="my-5 flex items-center gap-3"><span className="h-px flex-1 bg-stone-200" /><span className="text-[9px] font-black uppercase tracking-[.16em] text-stone-400">ou use seu e-mail</span><span className="h-px flex-1 bg-stone-200" /></div>
-
             <form onSubmit={handleSubmit} className="space-y-4">
-              {isRegister && (
-                <>
-                  <div className="grid gap-4 sm:grid-cols-2"><Field label="Nome completo *"><input required value={name} onChange={(event) => setName(event.target.value)} className="auth-field" autoComplete="name" placeholder="Seu nome" /></Field><Field label="Telefone / WhatsApp *"><input required value={phone} onChange={(event) => setPhone(event.target.value)} className="auth-field" autoComplete="tel" placeholder="(19) 99999-9999" /></Field></div>
-                  <div className="grid gap-4 sm:grid-cols-2"><Field label="Nome social"><input value={socialName} onChange={(event) => setSocialName(event.target.value)} className="auth-field" placeholder="Opcional" /></Field><Field label="Como prefere ser tratado"><select value={treatment} onChange={(event) => setTreatment(event.target.value)} className="auth-field"><option value="ela/dela">Ela/Dela</option><option value="ele/dele">Ele/Dele</option><option value="elu/delu">Elu/Delu</option></select></Field></div>
-                </>
-              )}
-
+              {isRegister && <><div className="grid gap-4 sm:grid-cols-2"><Field label="Nome completo *"><input required value={name} onChange={(event) => setName(event.target.value)} className="auth-field" autoComplete="name" placeholder="Seu nome" /></Field><Field label="Telefone / WhatsApp *"><input required value={phone} onChange={(event) => setPhone(event.target.value)} className="auth-field" autoComplete="tel" placeholder="(19) 99999-9999" /></Field></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Nome social"><input value={socialName} onChange={(event) => setSocialName(event.target.value)} className="auth-field" placeholder="Opcional" /></Field><Field label="Como prefere ser tratado"><select value={treatment} onChange={(event) => setTreatment(event.target.value)} className="auth-field"><option value="ela/dela">Ela/Dela</option><option value="ele/dele">Ele/Dele</option><option value="elu/delu">Elu/Delu</option></select></Field></div></>}
               <Field label="E-mail *"><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="auth-field" autoComplete="email" placeholder="voce@email.com" /></Field>
               <Field label="Senha *"><div className="relative"><input required type={showPassword ? "text" : "password"} minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} className="auth-field pr-12" autoComplete={isRegister ? "new-password" : "current-password"} placeholder={isRegister ? "Mínimo 6 caracteres" : "Sua senha"} /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-stone-400 hover:bg-stone-100" aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></Field>
-
               {isRegister && <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50/60 p-3.5"><input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500" /><span className="text-xs leading-5 text-stone-600">Li e concordo com os <Link to="/termos" target="_blank" className="font-bold text-terracotta-700 hover:underline">Termos de Uso e Política de Privacidade</Link>.</span></label>}
-
-              <button type="submit" disabled={loading || (isRegister && !acceptedTerms)} className="flex h-13 w-full items-center justify-center gap-2 rounded-2xl bg-terracotta-600 px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-terracotta-600/15 transition hover:bg-terracotta-700 disabled:opacity-45">{loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <>{isRegister ? "Criar minha conta" : "Entrar"}<ArrowRight className="h-4 w-4" /></>}</button>
+              <button type="submit" disabled={loading || (isRegister && !acceptedTerms)} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-terracotta-600 px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-terracotta-600/15 transition hover:bg-terracotta-700 disabled:opacity-45">{loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <>{isRegister ? "Criar minha conta" : "Entrar"}<ArrowRight className="h-4 w-4" /></>}</button>
             </form>
-
             <p className="mt-6 text-center text-xs text-stone-400">{isRegister ? "Já tem conta?" : "Ainda não tem conta?"} <button type="button" onClick={() => changeMode(isRegister ? "login" : "register")} className="font-black text-terracotta-700">{isRegister ? "Entrar" : "Criar agora"}</button></p>
           </div>
-
           <div className="mt-5 flex items-center justify-center gap-2 text-[10px] font-bold text-stone-400"><Sparkles className="h-3.5 w-3.5 text-terracotta-500" /> Um cadastro para carreira e, quando precisar, para o workspace da sua empresa.</div>
         </div>
       </section>
-
       <style>{`.auth-field{width:100%;border:1px solid #ddd6d0;border-radius:14px;background:#fff;padding:12px 14px;font-size:14px;color:#292524;outline:none;transition:.2s}.auth-field:focus{border-color:#c66a4b;box-shadow:0 0 0 3px rgba(198,106,75,.10)}`}</style>
     </main>
   );
