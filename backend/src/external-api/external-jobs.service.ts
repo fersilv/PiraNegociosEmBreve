@@ -23,6 +23,7 @@ export type ExternalJobInput = {
   type?: unknown;
   workModel?: unknown;
   salary?: unknown;
+  pcdMode?: unknown;
   applicationEmail?: unknown;
   applicationWhatsApp?: unknown;
   externalApplicationInstructions?: unknown;
@@ -53,6 +54,7 @@ type SanitizedExternalJob = {
   type: string;
   workModel: string;
   salary: string | null;
+  pcdMode: string;
   applicationEmail: string | null;
   applicationWhatsApp: string | null;
   externalApplicationInstructions: string | null;
@@ -81,6 +83,7 @@ export type JobCatalogQuery = {
   type?: string;
   workModel?: string;
   companyId?: string;
+  pcdMode?: string;
 };
 
 type CatalogFilters = {
@@ -92,6 +95,7 @@ type CatalogFilters = {
   type: string;
   workModel: string;
   companyId: string;
+  pcdMode: string;
 };
 
 @Injectable()
@@ -233,6 +237,7 @@ export class ExternalJobsService {
       type: input.type !== undefined ? input.type : job.type,
       workModel: input.workModel !== undefined ? input.workModel : job.workModel,
       salary: input.salary !== undefined ? input.salary : job.salary,
+      pcdMode: input.pcdMode !== undefined ? input.pcdMode : job.pcdMode,
       applicationEmail: input.applicationEmail !== undefined ? input.applicationEmail : job.applicationEmail,
       applicationWhatsApp: input.applicationWhatsApp !== undefined ? input.applicationWhatsApp : job.applicationWhatsApp,
       externalApplicationInstructions: input.externalApplicationInstructions !== undefined ? input.externalApplicationInstructions : job.externalApplicationInstructions,
@@ -303,9 +308,10 @@ export class ExternalJobsService {
     if (filters.type) builder.andWhere('LOWER(job.type) = LOWER(:type)', { type: filters.type });
     if (filters.workModel) builder.andWhere('LOWER(job."workModel") = LOWER(:workModel)', { workModel: filters.workModel });
     if (filters.companyId) builder.andWhere('job."companyId" = :companyId', { companyId: filters.companyId });
+    if (filters.pcdMode) builder.andWhere('job."pcdMode" = :pcdMode', { pcdMode: filters.pcdMode });
 
     const searchTokens = this.normalize(filters.q).split(' ').filter((token) => token.length > 1).slice(0, 12);
-    const searchable = `translate(lower(concat_ws(' ', job.title, job."companyName", job."sourceName", job.description, job.requirements, job.location, job.city, job.state, job.type, job."workModel", job.salary)), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc')`;
+    const searchable = `translate(lower(concat_ws(' ', job.title, job."companyName", job."sourceName", job.description, job.requirements, job.location, job.city, job.state, job.type, job."workModel", job.salary, job."pcdMode")), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc')`;
     searchTokens.forEach((token, index) => builder.andWhere(`${searchable} LIKE :searchToken${index}`, { [`searchToken${index}`]: `%${token}%` }));
     const rows = await builder.getMany();
     const hasMore = rows.length > limit;
@@ -328,6 +334,8 @@ export class ExternalJobsService {
     const sourceUrl = this.optionalText(input.sourceUrl, 'sourceUrl', 2_000);
     if (sourceUrl && !/^https?:\/\//i.test(sourceUrl)) throw new BadRequestException('sourceUrl deve começar com http:// ou https://.');
     const sourceExternalId = this.optionalText(input.sourceExternalId, 'sourceExternalId', 120);
+    const pcdMode = (this.optionalText(input.pcdMode, 'pcdMode', 16) || 'GENERAL').toUpperCase();
+    if (!['GENERAL', 'INCLUSIVE', 'EXCLUSIVE'].includes(pcdMode)) throw new BadRequestException('pcdMode deve ser GENERAL, INCLUSIVE ou EXCLUSIVE.');
     const applicationEmail = this.optionalText(input.applicationEmail, 'applicationEmail', 254)?.toLowerCase() || null;
     if (applicationEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(applicationEmail)) throw new BadRequestException('applicationEmail inválido.');
     const whatsappInput = this.optionalText(input.applicationWhatsApp, 'applicationWhatsApp', 30);
@@ -340,7 +348,7 @@ export class ExternalJobsService {
       requirements: this.optionalText(input.requirements, 'requirements', 20_000),
       type: this.optionalText(input.type, 'type', 40) || 'Não informado',
       workModel: this.optionalText(input.workModel, 'workModel', 40) || 'Não informado',
-      salary: this.optionalText(input.salary, 'salary', 80), applicationEmail, applicationWhatsApp,
+      salary: this.optionalText(input.salary, 'salary', 80), pcdMode, applicationEmail, applicationWhatsApp,
       externalApplicationInstructions: this.optionalText(input.externalApplicationInstructions, 'externalApplicationInstructions', 5_000),
       deadlineDate,
       isTalentPool: this.optionalBoolean(input.isTalentPool, 'isTalentPool') || false,
@@ -363,7 +371,23 @@ export class ExternalJobsService {
   private normalize(value: unknown) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
   private tokens(value: unknown) { return new Set(this.normalize(value).split(' ').filter((token) => token.length > 2)); }
   private similarity(left: unknown, right: unknown) { const a = this.tokens(left); const b = this.tokens(right); if (!a.size || !b.size) return 0; const intersection = [...a].filter((value) => b.has(value)).length; return intersection / (a.size + b.size - intersection); }
-  private catalogFilters(query: JobCatalogQuery): CatalogFilters { const state = this.queryText(query.state, 'state', 2).toUpperCase(); if (state && !this.validStates.has(state)) throw new BadRequestException('state deve ser uma UF brasileira válida.'); return { q: this.queryText(query.q, 'q', 300), active: this.queryBoolean(query.active, 'active'), external: this.queryBoolean(query.external, 'external'), city: this.queryText(query.city, 'city', 120), state, type: this.queryText(query.type, 'type', 40), workModel: this.queryText(query.workModel, 'workModel', 40), companyId: this.queryText(query.companyId, 'companyId', 100) }; }
+  private catalogFilters(query: JobCatalogQuery): CatalogFilters {
+    const state = this.queryText(query.state, 'state', 2).toUpperCase();
+    if (state && !this.validStates.has(state)) throw new BadRequestException('state deve ser uma UF brasileira válida.');
+    const pcdMode = this.queryText(query.pcdMode, 'pcdMode', 16).toUpperCase();
+    if (pcdMode && !['GENERAL', 'INCLUSIVE', 'EXCLUSIVE'].includes(pcdMode)) throw new BadRequestException('pcdMode deve ser GENERAL, INCLUSIVE ou EXCLUSIVE.');
+    return {
+      q: this.queryText(query.q, 'q', 300),
+      active: this.queryBoolean(query.active, 'active'),
+      external: this.queryBoolean(query.external, 'external'),
+      city: this.queryText(query.city, 'city', 120),
+      state,
+      type: this.queryText(query.type, 'type', 40),
+      workModel: this.queryText(query.workModel, 'workModel', 40),
+      companyId: this.queryText(query.companyId, 'companyId', 100),
+      pcdMode,
+    };
+  }
   private queryText(value: unknown, field: string, maxLength: number) { if (value === undefined || value === null || value === '') return ''; if (typeof value !== 'string') throw new BadRequestException(`${field} deve ser informado uma única vez.`); return value.trim().slice(0, maxLength); }
   private queryBoolean(value: unknown, field: string): boolean | null { if (value === undefined || value === null || value === '') return null; if (value === 'true') return true; if (value === 'false') return false; throw new BadRequestException(`${field} deve ser true ou false.`); }
   private encodeCursor(createdAt: Date, id: string, filterHash: string, client: ExternalApiClient) { const payload = { version: 1, createdAt: createdAt.toISOString(), id, filterHash }; const signature = this.cursorSignature(payload, client); return Buffer.from(JSON.stringify({ ...payload, signature })).toString('base64url'); }
@@ -375,7 +399,7 @@ export class ExternalJobsService {
       id: job.id, slug: job.slug, title: job.title, description: job.description, requirements: job.requirements,
       companyId: job.companyId, companyName: job.companyName, isExternalListing: job.isExternalListing,
       sourceName: job.sourceName, sourceUrl: job.sourceUrl, city: job.city, state: job.state, location: job.location,
-      type: job.type, workModel: job.workModel, salary: job.salary, deadlineDate: job.deadlineDate,
+      type: job.type, workModel: job.workModel, salary: job.salary, pcdMode: job.pcdMode, deadlineDate: job.deadlineDate,
       acceptsPlatformApplications: job.acceptsPlatformApplications,
       externalApplicationInstructions: job.externalApplicationInstructions, applicationEmail: job.applicationEmail,
       applicationWhatsApp: job.applicationWhatsApp, isConfidential: job.isConfidential, isTalentPool: job.isTalentPool,
