@@ -71,16 +71,112 @@ export function TemplateWrapper({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      className="bg-white mx-auto shadow-sm border border-stone-200 print:border-none print:shadow-none"
-      style={{
-        width: "210mm",
-        minHeight: "297mm",
-        boxSizing: "border-box",
-        pageBreakAfter: "auto",
-      }}
-    >
+    <div className="resume-a4-document bg-white mx-auto shadow-sm border border-stone-200 print:border-none print:shadow-none">
+      <style>{`
+        .resume-a4-document {
+          position: relative;
+          width: 210mm;
+          min-height: 297mm;
+          box-sizing: border-box;
+          padding-bottom: 13mm;
+          overflow: visible;
+        }
+
+        .resume-a4-document section,
+        .resume-a4-document .break-inside-avoid,
+        .resume-a4-document li {
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+
+        .resume-a4-document h1,
+        .resume-a4-document h2,
+        .resume-a4-document h3 {
+          break-after: avoid;
+          page-break-after: avoid;
+        }
+
+        .resume-a4-document p {
+          orphans: 3;
+          widows: 3;
+        }
+
+        .resume-brand-footer {
+          position: absolute;
+          left: 10mm;
+          right: 10mm;
+          bottom: 4mm;
+          z-index: 20;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 5px;
+          min-height: 6mm;
+          border-top: 1px solid rgba(87, 72, 64, .10);
+          padding-top: 2mm;
+          color: rgba(87, 72, 64, .48);
+          font-family: Arial, sans-serif;
+          font-size: 8px;
+          font-weight: 600;
+          letter-spacing: .02em;
+          line-height: 1;
+        }
+
+        .resume-brand-footer img {
+          width: 10px;
+          height: 10px;
+          object-fit: contain;
+          opacity: .62;
+        }
+
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 9mm 9mm 15mm !important;
+          }
+
+          .resume-a4-document {
+            width: auto !important;
+            min-width: 0 !important;
+            max-width: none !important;
+            min-height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: 0 !important;
+            box-shadow: none !important;
+            overflow: visible !important;
+          }
+
+          .resume-a4-document section,
+          .resume-a4-document .break-inside-avoid,
+          .resume-a4-document li,
+          .resume-a4-document article {
+            break-inside: avoid-page !important;
+            page-break-inside: avoid !important;
+          }
+
+          .resume-a4-document h1,
+          .resume-a4-document h2,
+          .resume-a4-document h3 {
+            break-after: avoid-page !important;
+            page-break-after: avoid !important;
+          }
+
+          .resume-brand-footer {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: -10mm;
+            border-top-color: rgba(87, 72, 64, .12);
+            background: white;
+          }
+        }
+      `}</style>
       {children}
+      <div className="resume-brand-footer" aria-label="Currículo criado no PiraNegócios">
+        <img src="/brand/symbol-terracotta.png" alt="" aria-hidden="true" />
+        <span>Currículo criado em piranegocios.com.br</span>
+      </div>
     </div>
   );
 }
