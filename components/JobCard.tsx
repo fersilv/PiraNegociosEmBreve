@@ -11,6 +11,7 @@ import {
   MapPin,
 } from "lucide-react";
 import type { Job } from "../types/job";
+import { applicationUrlLabel, safeApplicationUrl } from "../lib/jobApplication";
 
 interface JobCardProps {
   key?: React.Key;
@@ -77,6 +78,7 @@ export function JobCard({ job, onClick, hasApplied = false }: JobCardProps) {
   const externalSource = job.isExternalListing && job.sourceName;
   const safeSourceUrl =
     job.sourceUrl && /^https?:\/\//i.test(job.sourceUrl) ? job.sourceUrl : null;
+  const applicationHref = safeApplicationUrl(job.applicationUrl);
   const description = cardDescription(job.description);
   const location = locationLabel(job);
 
@@ -154,6 +156,21 @@ export function JobCard({ job, onClick, hasApplied = false }: JobCardProps) {
         <p className="mt-4 line-clamp-2 max-w-4xl text-sm leading-6 text-[#6f5c52]">
           {description}
         </p>
+      )}
+
+      {applicationHref && (
+        <div className="mt-4">
+          <a
+            href={applicationHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            className="inline-flex items-center gap-2 rounded-xl bg-[#c96847] px-4 py-2.5 text-xs font-black text-white shadow-sm transition hover:bg-[#b85c3d]"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            {applicationUrlLabel(job.applicationUrlTitle)}
+          </a>
+        </div>
       )}
 
       {job.skills && job.skills.length > 0 && (
