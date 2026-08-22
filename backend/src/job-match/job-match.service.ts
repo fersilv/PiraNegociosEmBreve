@@ -249,6 +249,24 @@ export class JobMatchService {
     return result;
   }
 
+  private rankCompanyExposure<T extends { score: number; boosted: boolean }>(eligible: T[]): T[] {
+    const organic = eligible.filter((item) => !item.boosted).sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+    const boosted = eligible.filter((item) => item.boosted).sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+    const ranked: T[] = [];
+
+    // O primeiro resultado orgânico permanece protegido. Depois disso, o impulso
+    // compra exposição real: 1 slot de destaque, 2 orgânicos, 1 destaque, etc.
+    if (organic.length > 0) ranked.push(organic.shift()!);
+    while (organic.length > 0 || boosted.length > 0) {
+      if (boosted.length > 0) ranked.push(boosted.shift()!);
+      for (let i = 0; i < 2 && organic.length > 0; i += 1) ranked.push(organic.shift()!);
+      if (organic.length === 0 && boosted.length > 0 && ranked.length > 0) {
+        while (boosted.length > 0) ranked.push(boosted.shift()!);
+      }
+    }
+    return ranked;
+  }
+
   async getStatus(userId: string) {
     const [product, entitlementRows, lifetimeFree] = await Promise.all([
       this.payments.findProduct('JOB_MATCH_30D', true),
@@ -306,7 +324,7 @@ export class JobMatchService {
     );
     const jobProfile = profileRows[0];
     if (!jobProfile?.profile) {
-      return { jobId, preparing: true, minimumScore: 55, candidates: [] };
+      return { jobId, preparing: true, candidates: [] };
     }
 
     const candidates = await this.users.createQueryBuilder('user')
@@ -316,7 +334,7 @@ export class JobMatchService {
       .orderBy('user."updatedAt"', 'DESC')
       .take(500)
       .getMany();
-    if (!candidates.length) return { jobId, preparing: false, minimumScore: 55, candidates: [] };
+    if (!candidates.length) return { jobId, preparing: false, candidates: [] };
 
     const candidateIds = candidates.map((candidate) => candidate.id);
     const [cachedRows, boostRows] = await Promise.all([
@@ -325,45 +343,37 @@ export class JobMatchService {
         [jobId, candidateIds],
       ),
       this.dataSource.query(
-        `SELECT "userId", "expiresAt" FROM user_feature_entitlements
+        `SELECT "userId" FROM user_feature_entitlements
          WHERE feature = 'RESUME_BOOST' AND "expiresAt" > now() AND "userId" = ANY($1::varchar[])`,
         [candidateIds],
       ),
     ]);
     const cacheMap = new Map(cachedRows.map((row: any) => [row.userId, row]));
-    const boosts = new Map(boostRows.map((row: any) => [row.userId, row.expiresAt]));
-    const ranked: any[] = [];
+    const boosts = new Set(boostRows.map((row: any) => row.userId));
+    const eligible: Array<{ candidateId: string; score: number; boosted: boolean }> = [];
 
     for (const candidate of candidates) {
       const result = await this.cachedScoreForUserJob(candidate, job, jobProfile, cacheMap.get(candidate.id));
       if (Number(result.score || 0) < 55) continue;
-      ranked.push({
+      eligible.push({
         candidateId: candidate.id,
-        score: result.score,
-        reason: result.reason,
-        evidence: result.evidence,
-        missingRequirements: result.missingRequirements,
-        confidence: result.confidence,
+        score: Number(result.score || 0),
         boosted: boosts.has(candidate.id),
-        boostExpiresAt: boosts.get(candidate.id) || null,
-        compatibilityBand: Number(result.score) >= 75 ? 'STRONG' : 'GOOD',
       });
     }
 
-    ranked.sort((a, b) => {
-      const bandA = a.compatibilityBand === 'STRONG' ? 2 : 1;
-      const bandB = b.compatibilityBand === 'STRONG' ? 2 : 1;
-      if (bandA !== bandB) return bandB - bandA;
-      if (a.boosted !== b.boosted) return Number(b.boosted) - Number(a.boosted);
-      return Number(b.score || 0) - Number(a.score || 0);
-    });
+    const ranked = this.rankCompanyExposure(eligible);
 
+    // A empresa recebe apenas a ordem final e a sinalização comercial. A nota de
+    // compatibilidade continua privada, disponível somente ao próprio candidato.
     return {
       jobId,
       preparing: false,
-      minimumScore: 55,
-      rankingRule: 'compatibility_band_then_boost_then_score',
-      candidates: ranked,
+      rankingRule: 'organic_top_then_sponsored_slots',
+      candidates: ranked.map((item) => ({
+        candidateId: item.candidateId,
+        boosted: item.boosted,
+      })),
     };
   }
 }
