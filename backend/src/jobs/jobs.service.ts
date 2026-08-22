@@ -19,6 +19,7 @@ const JOB_MUTABLE_FIELDS = [
   'type',
   'workModel',
   'salary',
+  'pcdMode',
   'isConfidential',
   'isTalentPool',
   'active',
