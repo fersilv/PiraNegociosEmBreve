@@ -7,12 +7,14 @@ import {
   TemplateWrapper,
 } from "./TemplateWrapper";
 import { Mail, Phone, MapPin, Linkedin } from "lucide-react";
+import { getResumePersonalDetails } from "./ResumePersonalDetails";
 
 export function ClassicTemplate({ profile, color = "#292524", showPhoto, address }: TemplateProps) {
   const nameToUse = getResumeDisplayName(profile);
   const headline = getResumeHeadline(profile);
   const displayAddress = address || profile.address;
   const photoUrl = profile.resumePhotoURL || profile.photoURL;
+  const personalDetails = getResumePersonalDetails(profile);
 
   return (
     <TemplateWrapper>
@@ -29,6 +31,11 @@ export function ClassicTemplate({ profile, color = "#292524", showPhoto, address
             {displayAddress && <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> {displayAddress}</span>}
             {profile.linkedinURL && <span className="flex items-center gap-1.5"><Linkedin className="w-3.5 h-3.5" /> {profile.linkedinURL.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, "")}</span>}
           </div>
+          {personalDetails.length > 0 && (
+            <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs font-semibold text-stone-500">
+              {personalDetails.map((detail) => <span key={detail}>• {detail}</span>)}
+            </div>
+          )}
         </header>
 
         {profile.bio && (
