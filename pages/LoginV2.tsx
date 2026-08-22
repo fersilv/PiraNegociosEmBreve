@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, BriefcaseBusiness, Eye, EyeOff, FileText, Loader2, MapPin, Sparkles } from "lucide-react";
 import {
@@ -11,6 +11,8 @@ import {
 import { auth } from "../lib/firebase";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
+import { CityStateSelector } from "../components/CityStateSelector";
+import type { VisitorLocationHint } from "../lib/locationPersonalization";
 
 type Mode = "login" | "register";
 
@@ -25,6 +27,11 @@ function firebaseMessage(error: any): string {
   return error?.response?.data?.message || error?.message || "Não foi possível concluir agora. Tente novamente.";
 }
 
+function parseLocation(value: string) {
+  const [city = "", state = ""] = value.split(",").map((item) => item.trim());
+  return { city, state: state.toUpperCase().slice(0, 2) };
+}
+
 export function Login() {
   const [searchParams] = useSearchParams();
   const returnTo = searchParams.get("returnTo");
@@ -36,12 +43,29 @@ export function Login() {
   const [socialName, setSocialName] = useState("");
   const [treatment, setTreatment] = useState("ela/dela");
   const [phone, setPhone] = useState("");
+  const [registrationLocation, setRegistrationLocation] = useState("");
+  const [locationWasSuggested, setLocationWasSuggested] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const { refreshProfile } = useAuth();
   const isRegister = mode === "register";
+
+  useEffect(() => {
+    let active = true;
+    api.get("/public/location-hint")
+      .then((response) => {
+        if (!active) return;
+        const hint = response.data as VisitorLocationHint;
+        if (hint?.city && hint?.state) {
+          setRegistrationLocation((current) => current || `${hint.city}, ${hint.state}`);
+          setLocationWasSuggested(true);
+        }
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
 
   const destinationFor = (profile: any) => {
     if (returnTo) return returnTo;
@@ -62,6 +86,13 @@ export function Login() {
     if (next === "login") setAcceptedTerms(false);
   };
 
+  const locationPayload = () => {
+    const parsed = parseLocation(registrationLocation);
+    return parsed.city && parsed.state
+      ? { city: parsed.city, state: parsed.state, address: `${parsed.city}, ${parsed.state}` }
+      : {};
+  };
+
   const handleGoogle = async () => {
     if (isRegister && !acceptedTerms) {
       setError("Para criar sua conta, confirme que leu os Termos de Uso e a Política de Privacidade.");
@@ -77,6 +108,7 @@ export function Login() {
           acceptedTerms: true,
           displayName: runtime?.displayName || result.user.displayName || undefined,
           fullName: runtime?.fullName || result.user.displayName || undefined,
+          ...locationPayload(),
         });
         runtime = await loadRuntimeProfile();
       }
@@ -114,6 +146,7 @@ export function Login() {
         treatment,
         phone: phone.trim(),
         acceptedTerms: true,
+        ...locationPayload(),
       });
       const runtime = await loadRuntimeProfile();
       navigate(destinationFor(runtime));
@@ -154,7 +187,7 @@ export function Login() {
             <button type="button" onClick={() => void handleGoogle()} disabled={loading || (isRegister && !acceptedTerms)} className="mt-6 flex h-12 w-full items-center justify-center gap-3 rounded-2xl border border-stone-200 bg-white text-sm font-bold text-stone-800 transition hover:bg-stone-50 disabled:opacity-45"><GoogleIcon /> Continuar com Google</button>
             <div className="my-5 flex items-center gap-3"><span className="h-px flex-1 bg-stone-200" /><span className="text-[9px] font-black uppercase tracking-[.16em] text-stone-400">ou use seu e-mail</span><span className="h-px flex-1 bg-stone-200" /></div>
             <form onSubmit={handleSubmit} className="space-y-4">
-              {isRegister && <><div className="grid gap-4 sm:grid-cols-2"><Field label="Nome completo *"><input required value={name} onChange={(event) => setName(event.target.value)} className="auth-field" autoComplete="name" placeholder="Seu nome" /></Field><Field label="Telefone / WhatsApp *"><input required value={phone} onChange={(event) => setPhone(event.target.value)} className="auth-field" autoComplete="tel" placeholder="(19) 99999-9999" /></Field></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Nome social"><input value={socialName} onChange={(event) => setSocialName(event.target.value)} className="auth-field" placeholder="Opcional" /></Field><Field label="Como prefere ser tratado"><select value={treatment} onChange={(event) => setTreatment(event.target.value)} className="auth-field"><option value="ela/dela">Ela/Dela</option><option value="ele/dele">Ele/Dele</option><option value="elu/delu">Elu/Delu</option></select></Field></div></>}
+              {isRegister && <><div className="grid gap-4 sm:grid-cols-2"><Field label="Nome completo *"><input required value={name} onChange={(event) => setName(event.target.value)} className="auth-field" autoComplete="name" placeholder="Seu nome" /></Field><Field label="Telefone / WhatsApp *"><input required value={phone} onChange={(event) => setPhone(event.target.value)} className="auth-field" autoComplete="tel" placeholder="(19) 99999-9999" /></Field></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Nome social"><input value={socialName} onChange={(event) => setSocialName(event.target.value)} className="auth-field" placeholder="Opcional" /></Field><Field label="Como prefere ser tratado"><select value={treatment} onChange={(event) => setTreatment(event.target.value)} className="auth-field"><option value="ela/dela">Ela/Dela</option><option value="ele/dele">Ele/Dele</option><option value="elu/delu">Elu/Delu</option></select></Field></div><Field label="Cidade onde você mora *"><CityStateSelector initialValue={registrationLocation} onLocationChange={(value) => { setRegistrationLocation(value); setLocationWasSuggested(false); }} /><p className="mt-1.5 flex items-center gap-1.5 text-[10px] leading-4 text-stone-400"><MapPin className="h-3 w-3 text-terracotta-500" />{locationWasSuggested ? "Sugerimos esta cidade pela sua região de acesso. Confira e altere se necessário." : "Usamos sua cidade para priorizar vagas e matches realmente viáveis."}</p></Field></>}
               <Field label="E-mail *"><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="auth-field" autoComplete="email" placeholder="voce@email.com" /></Field>
               <Field label="Senha *"><div className="relative"><input required type={showPassword ? "text" : "password"} minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} className="auth-field pr-12" autoComplete={isRegister ? "new-password" : "current-password"} placeholder={isRegister ? "Mínimo 6 caracteres" : "Sua senha"} /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-stone-400 hover:bg-stone-100" aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></Field>
               {isRegister && <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50/60 p-3.5"><input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500" /><span className="text-xs leading-5 text-stone-600">Li e concordo com os <Link to="/termos" target="_blank" className="font-bold text-terracotta-700 hover:underline">Termos de Uso e Política de Privacidade</Link>.</span></label>}
