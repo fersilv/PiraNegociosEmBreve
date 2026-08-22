@@ -1,34 +1,59 @@
-import { getMessaging, getToken, onMessage } from 'firebase/messaging';
+import {
+  getMessaging,
+  onMessage,
+  onRegistered,
+  register as registerMessaging,
+} from 'firebase/messaging';
 import { app } from './firebase';
 import { api } from './api';
+
+const DEFAULT_VAPID_KEY = 'BIM7-GieuppzyimIzQu9EWFUuK80-O3OGeJLzXz3RhumaANEpkCfeWSNP_sOj62HHbeNhfdnwW_MBezFOjVjiGA';
 
 export const isNotificationSupported = () => {
   return typeof window !== 'undefined' && 'Notification' in window && 'serviceWorker' in navigator;
 };
 
-const getVapidKey = () => String(import.meta.env.VITE_FCM_VAPID_KEY || '').trim();
+const getVapidKey = () => String(import.meta.env.VITE_FCM_VAPID_KEY || DEFAULT_VAPID_KEY).trim();
 
 export const getMessagingInstance = () => {
   try {
-    if (isNotificationSupported()) {
-      return getMessaging(app);
-    }
+    if (isNotificationSupported()) return getMessaging(app);
   } catch (e) {
     console.warn('FCM não pôde ser inicializado neste navegador:', e);
   }
   return null;
 };
 
-export const saveTokenToFirestore = async (userId: string, token: string) => {
-  try {
-    await api.put(`/users/${userId}/fcm-token`, { token });
-  } catch (err) {
-    console.error('Erro ao salvar token FCM:', err);
-    throw err;
-  }
+const browserPlatform = () => {
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  return nav.userAgentData?.platform || nav.platform || null;
 };
 
-export const requestNotificationPermission = async (userId: string): Promise<string | null> => {
+export const saveInstallationToServer = async (installationId: string) => {
+  await api.put('/notifications/push-installation', {
+    installationId,
+    platform: browserPlatform(),
+    userAgent: navigator.userAgent || null,
+  });
+};
+
+const getMessagingServiceWorker = async () => {
+  const existing = await navigator.serviceWorker.getRegistration('/');
+  if (existing && existing.active?.scriptURL.includes('/firebase-messaging-sw.js')) return existing;
+
+  const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+    scope: '/',
+    updateViaCache: 'none',
+  });
+  await navigator.serviceWorker.ready;
+  return registration;
+};
+
+/**
+ * Solicita permissão, registra esta instalação no Firebase Cloud Messaging e
+ * sincroniza seu Firebase Installation ID (FID) com o backend do PiraNegócios.
+ */
+export const requestNotificationPermission = async (_userId?: string): Promise<string | null> => {
   if (!isNotificationSupported()) {
     console.warn('Notificações push não são suportadas neste navegador.');
     return null;
@@ -36,7 +61,7 @@ export const requestNotificationPermission = async (userId: string): Promise<str
 
   const vapidKey = getVapidKey();
   if (!vapidKey) {
-    console.error('VITE_FCM_VAPID_KEY não está configurada. O push web não pode gerar token sem a chave pública VAPID do Firebase.');
+    console.error('A chave pública VAPID do Firebase não está configurada.');
     return null;
   }
 
@@ -48,31 +73,65 @@ export const requestNotificationPermission = async (userId: string): Promise<str
 
     const messaging = getMessagingInstance();
     if (!messaging) return null;
+    const serviceWorkerRegistration = await getMessagingServiceWorker();
 
-    const serviceWorkerRegistration =
-      await navigator.serviceWorker.getRegistration('/') ||
-      await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
+    const installationPromise = new Promise<string>((resolve, reject) => {
+      let settled = false;
+      let unsubscribe: (() => void) | undefined;
+      const timeoutId = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        unsubscribe?.();
+        reject(new Error('O Firebase não retornou o identificador desta instalação a tempo.'));
+      }, 10000);
 
-    const token = await getToken(messaging, {
+      unsubscribe = onRegistered(messaging, async (installationId) => {
+        if (settled) return;
+        try {
+          await saveInstallationToServer(installationId);
+          settled = true;
+          window.clearTimeout(timeoutId);
+          unsubscribe?.();
+          resolve(installationId);
+        } catch (error) {
+          settled = true;
+          window.clearTimeout(timeoutId);
+          unsubscribe?.();
+          reject(error);
+        }
+      });
+    });
+
+    await registerMessaging(messaging, {
       vapidKey,
       serviceWorkerRegistration,
     });
 
-    if (!token) {
-      console.warn('Firebase não retornou token FCM para este dispositivo.');
-      return null;
-    }
-
-    await saveTokenToFirestore(userId, token);
-    return token;
+    return await installationPromise;
   } catch (err) {
     console.error('Erro ao ativar notificações push:', err);
     return null;
   }
 };
 
+export const getPushStatus = async (): Promise<{ enabled: boolean; activeInstallations: number }> => {
+  try {
+    const response = await api.get('/notifications/push-status');
+    return {
+      enabled: Boolean(response.data?.enabled),
+      activeInstallations: Number(response.data?.activeInstallations || 0),
+    };
+  } catch {
+    return { enabled: false, activeInstallations: 0 };
+  }
+};
+
+export const sendPushTest = async () => {
+  return api.post('/notifications/push-test');
+};
+
 // Legado: notificações de processo entre empresa e candidato agora nascem no
-// backend de ApplicationsService, onde a autorização e o push são confiáveis.
+// backend, onde autorização, persistência e push são confiáveis.
 export const sendNotificationToUser = async (
   userId: string,
   title: string,
