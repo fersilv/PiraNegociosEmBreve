@@ -71,8 +71,8 @@ export function UserAccountSettingsPage() {
 
         <div className="grid gap-5 p-4 sm:p-6 lg:grid-cols-[280px_minmax(0,1fr)]">
           <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
-            <FileUpload label="Foto do perfil" accept="image/*" value={photoURL} onChange={setPhotoURL} type="avatar" placeholder="Selecione ou arraste sua foto" />
-            <p className="mt-3 text-xs leading-5 text-stone-500">Essa imagem representa sua conta nas áreas profissionais do sistema.</p>
+            <FileUpload label="Foto do perfil" accept="image/*" value={photoURL} onChange={setPhotoURL} type="avatar" maxSizeKB={20480} placeholder="Selecione ou arraste sua foto" />
+            <p className="mt-3 text-xs leading-5 text-stone-500">Essa imagem representa sua conta nas áreas profissionais do sistema. Limite: 20 MB.</p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
