@@ -6,6 +6,7 @@ import { Job } from '../jobs/entities/job.entity';
 
 type AiProvider = 'GEMINI' | 'OPENAI' | 'ANTHROPIC';
 type RuntimeConfig = { provider: AiProvider; model: string; apiKey: string };
+const GENERIC_OCCUPATION_WORDS = new Set(['operador','operadora','auxiliar','assistente','analista','ajudante','tecnico','tecnica','profissional','colaborador','colaboradora']);
 
 export type WeightedJobRequirement = {
   label: string;
@@ -112,6 +113,13 @@ export class JobMatchAiService {
     }).slice(0, limit);
   }
 
+  private specificOccupationKeywords(value: unknown) {
+    return this.strings(value, 12).filter((item) => {
+      const tokens = item.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/\s+/).filter(Boolean);
+      return tokens.some((token) => !GENERIC_OCCUPATION_WORDS.has(token) && token.length > 2);
+    });
+  }
+
   private weight(value: unknown, fallback = 1) {
     const n = Number(value);
     return Number.isFinite(n) ? Math.max(0.1, Math.min(5, n)) : fallback;
@@ -137,7 +145,7 @@ export class JobMatchAiService {
     return {
       canonicalRole: String(raw?.canonicalRole || '').trim().slice(0, 160),
       occupationalFamily: String(raw?.occupationalFamily || '').trim().slice(0, 180),
-      occupationKeywords: this.strings(raw?.occupationKeywords, 12),
+      occupationKeywords: this.specificOccupationKeywords(raw?.occupationKeywords),
       technicalSkills,
       requirements,
       softSkills: this.strings(raw?.softSkills, 10),
@@ -151,7 +159,7 @@ export class JobMatchAiService {
       'Você é um especialista brasileiro em classificação ocupacional e requisitos de vagas.',
       'Sua tarefa é estruturar a vaga para um motor de compatibilidade. Não avalie nenhum candidato.',
       'Não invente requisito, certificação, experiência, licença ou habilidade que não esteja sustentada pelo título, descrição, requisitos ou skills fornecidos.',
-      'Palavras genéricas de cargo como operador, auxiliar, assistente, analista, ajudante e técnico NÃO definem família ocupacional sozinhas.',
+      'Palavras genéricas de cargo como operador, auxiliar, assistente, analista, ajudante e técnico NÃO definem família ocupacional sozinhas e nunca devem aparecer isoladas em occupationKeywords.',
       'Diferencie competências técnicas de soft skills. Requisitos obrigatórios devem ser marcados required=true apenas quando a fonte sustentar isso.',
       'evidenceTerms deve conter expressões profissionais específicas que poderiam aparecer num currículo como evidência real daquele item.',
       'Responda exclusivamente JSON válido.',
