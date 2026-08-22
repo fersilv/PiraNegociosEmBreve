@@ -70,8 +70,30 @@ export interface UploadedResumeFile {
   name: string;
   mimeType: string;
   size: number;
-  dataUrl: string;
+  dataUrl?: string;
   uploadedAt: string;
+}
+
+export interface PublishedResumeSnapshot {
+  version?: number;
+  publishedAt?: string;
+  fullName?: string;
+  socialName?: string;
+  phone?: string;
+  email?: string;
+  city?: string;
+  state?: string;
+  address?: string;
+  bio?: string;
+  experiences?: ProfessionalExperience[];
+  education?: AcademicEducation[];
+  skills?: string[];
+  courses?: ExtraCourse[];
+  languages?: Language[];
+  salaryExpectation?: string;
+  resumePhotoURL?: string;
+  resumePreferences?: ResumePreferences;
+  score?: number | null;
 }
 
 export interface Language {
@@ -123,6 +145,7 @@ export interface UserProfile {
   resumeURL?: string;
   resumeStatus?: "DRAFT" | "PUBLISHED";
   resumePublishedAt?: string;
+  publishedResumeSnapshot?: PublishedResumeSnapshot | null;
   uploadedResumeFile?: UploadedResumeFile | null;
   isOpenToWork?: boolean;
   isVerified?: boolean;
