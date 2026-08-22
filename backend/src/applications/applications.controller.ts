@@ -7,6 +7,8 @@ import { Application, ApplicationStatus } from './entities/application.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { User, UserType } from '../users/entities/user.entity';
 
+const STRUCTURED_RESUME_MARKER = 'structured://published';
+
 @Controller('applications')
 @UseGuards(FirebaseAuthGuard)
 export class ApplicationsController {
@@ -113,8 +115,13 @@ export class ApplicationsController {
 
     const legacyResumeUrl = createData.resumeURL || createData.resumeUrl || candidate.resumeURL || undefined;
     const hasUploadedResumeFile = Boolean(candidate.uploadedResumeFile?.dataUrl?.startsWith('data:'));
+    const hasLegacyResumeFile = Boolean(
+      legacyResumeUrl?.trim() &&
+      legacyResumeUrl !== STRUCTURED_RESUME_MARKER &&
+      (/^https?:\/\//i.test(legacyResumeUrl) || legacyResumeUrl.startsWith('data:')),
+    );
 
-    if (job.requiresResumeFile && !hasUploadedResumeFile && !legacyResumeUrl?.trim()) {
+    if (job.requiresResumeFile && !hasUploadedResumeFile && !hasLegacyResumeFile) {
       throw new BadRequestException(
         'Esta empresa exige um arquivo de currículo. Importe ou anexe seu currículo antes de se candidatar.',
       );
@@ -132,7 +139,7 @@ export class ApplicationsController {
     return this.appsService.create(
       req.user.uid,
       job,
-      legacyResumeUrl?.startsWith('http') ? legacyResumeUrl : undefined,
+      legacyResumeUrl && /^https?:\/\//i.test(legacyResumeUrl) ? legacyResumeUrl : undefined,
       snapshot,
     );
   }
