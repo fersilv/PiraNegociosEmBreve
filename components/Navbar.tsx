@@ -19,9 +19,12 @@ export function Navbar() {
     <header className="sticky top-0 z-50 border-b border-[#4b3328]/10 bg-[#fffaf5]/90 backdrop-blur-2xl">
       <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link to="/" className="group flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#2d211c] font-serif text-lg font-black text-white shadow-[0_10px_30px_rgba(54,35,26,.18)] transition group-hover:-translate-y-0.5">
-            P
-          </span>
+          <img
+            src="/brand/symbol-terracotta.png"
+            alt=""
+            aria-hidden="true"
+            className="h-10 w-10 shrink-0 object-contain transition duration-200 group-hover:-translate-y-0.5 group-hover:scale-[1.03]"
+          />
           <span>
             <span className="block font-serif text-xl font-bold leading-none text-[#2d211c]">
               PiraNegócios
