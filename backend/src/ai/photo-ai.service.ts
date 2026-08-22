@@ -6,10 +6,10 @@ import {
 } from '@nestjs/common';
 import { SettingsService } from '../admin/settings.service';
 
-type AiProvider = 'GEMINI' | 'OPENAI' | 'ANTHROPIC';
+type ImageAiProvider = 'GEMINI' | 'OPENAI';
 
 interface PhotoRuntimeConfig {
-  provider: AiProvider;
+  provider: ImageAiProvider;
   model: string;
   apiKey: string;
 }
@@ -23,27 +23,87 @@ No text, logos, watermarks, accessories that were not present, dramatic makeup o
 export class PhotoAiService {
   constructor(private readonly settingsService: SettingsService) {}
 
-  private isProvider(value: unknown): value is AiProvider {
-    return ['GEMINI', 'OPENAI', 'ANTHROPIC'].includes(value as string);
+  private isProvider(value: unknown): value is ImageAiProvider {
+    return ['GEMINI', 'OPENAI'].includes(value as string);
+  }
+
+  private isOpenAiEditableImageModel(model: string): boolean {
+    return /^(gpt-image-|chatgpt-image-)/i.test(model);
+  }
+
+  private isGeminiImageModel(model: string): boolean {
+    return /^gemini-/i.test(model) && /image/i.test(model);
+  }
+
+  async getStatus() {
+    const [globalEnabledRaw, imageEnabledRaw, rawProvider, rawModel] =
+      await Promise.all([
+        this.settingsService.getValue('AI_ENABLED', 'false'),
+        this.settingsService.getValue('AI_IMAGE_ENABLED', 'false'),
+        this.settingsService.getValue('AI_IMAGE_PROVIDER'),
+        this.settingsService.getValue('AI_IMAGE_MODEL'),
+      ]);
+
+    const provider = this.isProvider(rawProvider) ? rawProvider : null;
+    const model = String(rawModel || '').trim() || null;
+    const settingKey = provider ? `${provider}_API_KEY` : '';
+    const apiKey = provider
+      ? String(
+          (await this.settingsService.getValue(settingKey)) ||
+            process.env[settingKey] ||
+            '',
+        ).trim()
+      : '';
+    const modelCompatible = Boolean(
+      provider &&
+        model &&
+        (provider === 'OPENAI'
+          ? this.isOpenAiEditableImageModel(model)
+          : this.isGeminiImageModel(model)),
+    );
+
+    const enabled =
+      globalEnabledRaw === 'true' &&
+      imageEnabledRaw === 'true' &&
+      Boolean(provider && model && apiKey && modelCompatible);
+
+    return {
+      enabled,
+      provider: enabled ? provider : null,
+      model: enabled ? model : null,
+    };
   }
 
   private async getRuntimeConfig(): Promise<PhotoRuntimeConfig> {
-    const enabled =
+    const globalEnabled =
       (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
-    const provider = await this.settingsService.getValue('AI_PROVIDER');
+    const imageEnabled =
+      (await this.settingsService.getValue('AI_IMAGE_ENABLED', 'false')) ===
+      'true';
+    const provider = await this.settingsService.getValue('AI_IMAGE_PROVIDER');
     const model = String(
-      (await this.settingsService.getValue('AI_MODEL')) || '',
+      (await this.settingsService.getValue('AI_IMAGE_MODEL')) || '',
     ).trim();
 
-    if (!enabled || !this.isProvider(provider) || !model) {
+    if (!globalEnabled) {
       throw new ServiceUnavailableException(
         'Os recursos de inteligência artificial estão desabilitados no momento.',
       );
     }
 
-    if (provider === 'ANTHROPIC') {
+    if (!imageEnabled || !this.isProvider(provider) || !model) {
       throw new ServiceUnavailableException(
-        'O provedor de IA ativo não oferece geração de imagem. Escolha um provedor compatível para usar o aprimoramento de foto.',
+        'O aprimoramento de imagem está desabilitado no momento.',
+      );
+    }
+
+    const compatible =
+      provider === 'OPENAI'
+        ? this.isOpenAiEditableImageModel(model)
+        : this.isGeminiImageModel(model);
+    if (!compatible) {
+      throw new ServiceUnavailableException(
+        'O modelo configurado para aprimoramento não oferece edição/geração de imagem. Selecione outro modelo no administrador.',
       );
     }
 
@@ -56,7 +116,7 @@ export class PhotoAiService {
 
     if (!apiKey) {
       throw new ServiceUnavailableException(
-        'O provedor de inteligência artificial ativo não possui uma chave configurada.',
+        'O provedor de imagem ativo não possui uma chave configurada.',
       );
     }
 
@@ -163,7 +223,7 @@ export class PhotoAiService {
     const generated = this.findBase64Image(data);
     if (!generated) {
       throw new ServiceUnavailableException(
-        `O modelo ${config.model} não devolveu uma imagem. Escolha no administrador um modelo Gemini com geração de imagem para usar este recurso.`,
+        `O modelo ${config.model} não devolveu uma imagem. Escolha no administrador outro modelo Gemini compatível com geração de imagem.`,
       );
     }
 
@@ -179,32 +239,19 @@ export class PhotoAiService {
     mimeType: string,
     base64: string,
   ) {
-    const imageUrl = `data:${mimeType};base64,${base64}`;
-    const response = await fetch('https://api.openai.com/v1/responses', {
+    const bytes = new Uint8Array(Buffer.from(base64, 'base64'));
+    const form = new FormData();
+    form.append('model', config.model);
+    form.append('prompt', PHOTO_PROMPT);
+    form.append('size', '1024x1024');
+    form.append('image', new Blob([bytes], { type: mimeType }), 'photo.png');
+
+    const response = await fetch('https://api.openai.com/v1/images/edits', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
-        'content-type': 'application/json',
       },
-      body: JSON.stringify({
-        model: config.model,
-        input: [
-          {
-            role: 'user',
-            content: [
-              { type: 'input_text', text: PHOTO_PROMPT },
-              { type: 'input_image', image_url: imageUrl, detail: 'high' },
-            ],
-          },
-        ],
-        tools: [
-          {
-            type: 'image_generation',
-            size: '1024x1024',
-            quality: 'medium',
-          },
-        ],
-      }),
+      body: form,
     });
 
     const raw = await response.text();
@@ -225,7 +272,7 @@ export class PhotoAiService {
     const generated = this.findBase64Image(data);
     if (!generated) {
       throw new ServiceUnavailableException(
-        `O modelo ${config.model} não conseguiu gerar a versão profissional da foto. Escolha no administrador um modelo OpenAI compatível com geração de imagem.`,
+        `O modelo ${config.model} não devolveu uma imagem editada. Escolha no administrador outro modelo OpenAI compatível com edição de imagem.`,
       );
     }
 
