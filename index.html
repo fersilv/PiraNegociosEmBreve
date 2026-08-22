@@ -233,6 +233,123 @@
       line-height: 1.45;
       font-weight: 600;
     }
+
+    /* Currículo: uma única navegação, sem faixa redundante de rascunho. */
+    .resume-workflow:has(.resume-studio) > .resume-workflow-nav {
+      display: none !important;
+    }
+
+    .resume-workflow:has(.resume-studio) > .resume-workflow-nav + div {
+      display: none !important;
+    }
+
+    /* Documento-base é ferramenta secundária e fica por último no sidebar. */
+    #resume-builder-sidebar > .p-5 {
+      display: flex !important;
+      flex-direction: column !important;
+    }
+
+    #resume-builder-sidebar > .p-5 > section:first-child {
+      order: 999 !important;
+      margin-top: 0.5rem !important;
+    }
+
+    /* Preview e impressão do currículo. */
+    @media print {
+      @page {
+        size: A4 portrait;
+        margin: 10mm !important;
+      }
+
+      .resume-workflow > .resume-workflow-nav,
+      .resume-workflow:has(.resume-studio) > .resume-workflow-nav + div,
+      .resume-studio-header,
+      #resume-builder-sidebar,
+      .resume-import-modal,
+      .resume-publish-modal {
+        display: none !important;
+      }
+
+      html,
+      body,
+      .resume-workflow,
+      .resume-studio,
+      .resume-studio-body,
+      #resume-builder-root,
+      #resume-preview-area {
+        width: auto !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+        overflow: visible !important;
+        box-shadow: none !important;
+      }
+
+      #resume-preview-area > div,
+      #resume-preview-area > div > .resume-a4-document,
+      .resume-a4-document {
+        width: 190mm !important;
+        min-width: 190mm !important;
+        max-width: 190mm !important;
+        min-height: 277mm !important;
+        margin: 0 auto !important;
+        padding-bottom: 12mm !important;
+        transform: none !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        filter: none !important;
+        overflow: visible !important;
+        box-sizing: border-box !important;
+      }
+
+      .resume-a4-document::after {
+        display: none !important;
+      }
+
+      .resume-a4-document section,
+      .resume-a4-document article,
+      .resume-a4-document .break-inside-avoid {
+        break-inside: auto !important;
+        page-break-inside: auto !important;
+      }
+
+      .resume-a4-document li,
+      .resume-a4-document h1,
+      .resume-a4-document h2,
+      .resume-a4-document h3,
+      .resume-a4-document h4 {
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+      }
+
+      .resume-a4-document p {
+        orphans: 3 !important;
+        widows: 3 !important;
+      }
+
+      .resume-brand-footer {
+        position: absolute !important;
+        top: auto !important;
+        bottom: 2mm !important;
+        left: 8mm !important;
+        right: 8mm !important;
+        z-index: 10 !important;
+        min-height: 5mm !important;
+        padding-top: 1.5mm !important;
+        background: transparent !important;
+        font-size: 7px !important;
+        opacity: .72 !important;
+      }
+
+      .resume-brand-footer img {
+        width: 9px !important;
+        height: 9px !important;
+      }
+    }
   </style>
   <script type="importmap">
 {
