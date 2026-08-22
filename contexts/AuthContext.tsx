@@ -76,6 +76,13 @@ export interface WorkLocationPreference {
   state: string;
 }
 
+export type PcdDeclaration = "NOT_INFORMED" | "YES" | "NO";
+export type PcdDocumentationStatus =
+  | "NOT_INFORMED"
+  | "HAS_REPORT"
+  | "NO_REPORT"
+  | "IN_PROGRESS";
+
 export interface JobPreferences {
   preferredLocations?: WorkLocationPreference[];
   hasDriverLicense?: boolean | null;
@@ -83,6 +90,9 @@ export interface JobPreferences {
   hasOwnVehicle?: boolean | null;
   ownVehicles?: string[];
   includeExclusivePcdJobs?: boolean;
+  pcdDeclaration?: PcdDeclaration;
+  pcdDocumentationStatus?: PcdDocumentationStatus;
+  pcdDataConsent?: boolean;
 }
 
 export interface UserProfile {
