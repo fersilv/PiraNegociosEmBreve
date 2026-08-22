@@ -154,16 +154,24 @@ export function TemplateWrapper({
             margin: 9mm 9mm 15mm !important;
           }
 
+          #resume-preview-area > div > .resume-a4-document,
           .resume-a4-document {
-            width: auto !important;
-            min-width: 0 !important;
-            max-width: none !important;
-            min-height: 0 !important;
+            width: 192mm !important;
+            min-width: 192mm !important;
+            max-width: 192mm !important;
+            min-height: 273mm !important;
             margin: 0 !important;
             padding: 0 !important;
             border: 0 !important;
             box-shadow: none !important;
             overflow: visible !important;
+            box-sizing: border-box !important;
+          }
+
+          #resume-preview-area > div {
+            width: 192mm !important;
+            min-width: 192mm !important;
+            max-width: 192mm !important;
           }
 
           .resume-a4-document::after {
