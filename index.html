@@ -4,19 +4,45 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PiraNegócios | Vagas, empresas e serviços em Pirassununga</title>
+  <title>PiraNegócios | Vagas e empregos em Pirassununga e região</title>
   <meta name="description"
-    content="Encontre vagas, empresas e oportunidades em Pirassununga e região no PiraNegócios." />
+    content="PiraNegócios, também buscado como Pira Negócios ou Pira Negócio: encontre vagas de emprego, empresas e oportunidades em Pirassununga e cidades da região." />
   <meta name="robots" content="index, follow, max-image-preview:large" />
+  <link rel="canonical" href="https://piranegocios.com.br/" />
   <meta property="og:site_name" content="PiraNegócios" />
   <meta property="og:locale" content="pt_BR" />
   <meta property="og:type" content="website" />
+  <meta property="og:title" content="PiraNegócios | Vagas e empregos em Pirassununga e região" />
+  <meta property="og:description" content="Encontre vagas de emprego, empresas e oportunidades locais no PiraNegócios." />
   <meta name="theme-color" content="#A63F2D" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.svg" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://piranegocios.com.br/#organization",
+        "name": "PiraNegócios",
+        "alternateName": ["Pira Negócios", "Pira Negócio"],
+        "url": "https://piranegocios.com.br/"
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://piranegocios.com.br/#website",
+        "name": "PiraNegócios",
+        "alternateName": ["Pira Negócios", "Pira Negócio"],
+        "url": "https://piranegocios.com.br/",
+        "publisher": { "@id": "https://piranegocios.com.br/#organization" },
+        "inLanguage": "pt-BR"
+      }
+    ]
+  }
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <link
     href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;700&display=swap"
@@ -34,7 +60,7 @@
               200: '#F3D1CC',
               300: '#EAB2AA',
               400: '#DF887D',
-              500: '#CC5843', // Main Terracotta
+              500: '#CC5843',
               600: '#A63F2D',
               700: '#853224',
               800: '#66261B',
@@ -106,22 +132,10 @@
       box-shadow: 0 0 0 2px rgba(204, 88, 67, .14);
     }
 
-    /*
-      Currículo: a lista global de habilidades deve permanecer simples.
-      O vínculo habilidade x cada experiência/formação continua preservado nos
-      dados já importados, mas a matriz massiva de checkboxes não faz parte do
-      fluxo principal. A associação detalhada voltará em um editor compacto.
-    */
     main .max-w-2xl .space-y-6 > .rounded-2xl.border.border-stone-200.bg-stone-50\/70.p-4 {
       display: none !important;
     }
 
-    /*
-      A conta gratuita possui uma única análise real. Depois que a pontuação
-      existe, o backend devolve o resultado salvo e não consome novos tokens.
-      Até o fluxo premium de reanálise ser lançado, não exibimos o botão que
-      sugeria uma nova chamada à IA.
-    */
     #resume-builder-sidebar > .p-5 > section:first-child.border-violet-200 button.mt-4.inline-flex {
       display: none !important;
     }
