@@ -8,6 +8,18 @@ import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { SettingsService } from '../admin/settings.service';
 
+const WordExtractor = require('word-extractor') as {
+  new (): {
+    extract(input: Buffer): Promise<{
+      getBody(): string;
+      getTextboxes?(options?: {
+        includeHeadersAndFooters?: boolean;
+        includeBody?: boolean;
+      }): string;
+    }>;
+  };
+};
+
 type AiProvider = 'GEMINI' | 'OPENAI' | 'ANTHROPIC';
 
 type RuntimeConfig = {
@@ -22,15 +34,27 @@ export interface ResumeSourceDocumentInput {
   fileName?: string;
 }
 
-type CleanDocument = {
-  data: string;
-  mimeType: 'application/pdf' | 'image/png' | 'image/jpeg';
-  fileName: string;
-};
+type BinaryMimeType = 'application/pdf' | 'image/png' | 'image/jpeg';
+
+type CleanDocument =
+  | {
+      kind: 'binary';
+      data: string;
+      mimeType: BinaryMimeType;
+      fileName: string;
+      sourceBytes: number;
+    }
+  | {
+      kind: 'text';
+      text: string;
+      mimeType: 'text/plain';
+      fileName: string;
+      sourceBytes: number;
+    };
 
 const IMPORT_SYSTEM_INSTRUCTION = `Você organiza informações profissionais a partir de documentos enviados pelo próprio usuário. Sua tarefa é somente EXTRAIR, CRUZAR e ESTRUTURAR fatos presentes nas fontes. Não avalie a qualidade do currículo, não dê nota, não ofereça sugestões de melhoria e não invente atividades, competências, cargos, datas ou formações. Quando fontes divergirem, registre a divergência em conflicts em vez de escolher silenciosamente.`;
 
-const IMPORT_PROMPT = `Analise em conjunto todos os documentos anexados. Eles podem ser currículo, foto/print de currículo, páginas ou prints da Carteira de Trabalho, extrato da Carteira de Trabalho Digital, certificados, comprovantes de curso ou outros documentos profissionais.
+const IMPORT_PROMPT = `Analise em conjunto todos os documentos anexados. Eles podem ser currículo, arquivo Word, texto, RTF, foto/print de currículo, páginas ou prints da Carteira de Trabalho, extrato da Carteira de Trabalho Digital, certificados, comprovantes de curso ou outros documentos profissionais.
 
 Cruze as fontes e consolide a trajetória. Quando houver vários cargos na mesma empresa, prefira UMA experiência com timeline de evolução de cargos. Preserve datas e nomes como aparecem nas fontes. Não gere resumo profissional novo: só preencha bio se existir texto equivalente em algum documento. Não faça avaliação do currículo e não gere sugestões.
 
@@ -135,54 +159,174 @@ export class ResumeImportService {
     return { provider, model, apiKey };
   }
 
-  private cleanDocument(
+  private extension(fileName: string): string {
+    const match = fileName.toLowerCase().match(/\.([a-z0-9]+)$/);
+    return match?.[1] || '';
+  }
+
+  private normalizedMimeType(input: ResumeSourceDocumentInput): string {
+    const fileName = String(input?.fileName || '');
+    const extension = this.extension(fileName);
+    const mimeType = String(input?.mimeType || '').trim().toLowerCase();
+    if (extension === 'doc') return 'application/msword';
+    if (extension === 'docx') {
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    }
+    if (extension === 'txt') return 'text/plain';
+    if (extension === 'rtf') return 'application/rtf';
+    if (extension === 'pdf') return 'application/pdf';
+    if (extension === 'png') return 'image/png';
+    if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
+    return mimeType;
+  }
+
+  private decodeRtf(buffer: Buffer): string {
+    return buffer
+      .toString('latin1')
+      .replace(/\\par[d]?\b/g, '\n')
+      .replace(/\\line\b/g, '\n')
+      .replace(/\\tab\b/g, '\t')
+      .replace(/\\'([0-9a-fA-F]{2})/g, (_match, hex: string) =>
+        Buffer.from([parseInt(hex, 16)]).toString('latin1'),
+      )
+      .replace(/\\[a-zA-Z]+-?\d* ?/g, '')
+      .replace(/\\[{}\\]/g, '')
+      .replace(/[{}]/g, '')
+      .replace(/\r/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  private async extractWordText(buffer: Buffer): Promise<string> {
+    const extractor = new WordExtractor();
+    const document = await extractor.extract(buffer);
+    const body = String(document.getBody?.() || '');
+    const textboxes = document.getTextboxes
+      ? String(
+          document.getTextboxes({
+            includeHeadersAndFooters: true,
+            includeBody: true,
+          }) || '',
+        )
+      : '';
+    return [body, textboxes]
+      .filter(Boolean)
+      .join('\n')
+      .replace(/\u0000/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  private async cleanDocument(
     input: ResumeSourceDocumentInput,
     index: number,
-  ): CleanDocument {
+  ): Promise<CleanDocument> {
     let data = String(input?.base64File || '');
-    let mimeType = String(input?.mimeType || '').trim();
+    let mimeType = this.normalizedMimeType(input);
     if (data.startsWith('data:')) {
       const parts = data.split(';base64,');
       if (parts.length === 2) {
-        mimeType = parts[0].split(':')[1] || mimeType;
+        if (!mimeType) mimeType = parts[0].split(':')[1] || '';
         data = parts[1];
       }
     }
 
-    const allowed = new Set(['application/pdf', 'image/png', 'image/jpeg']);
-    if (!allowed.has(mimeType)) {
-      throw new BadRequestException(
-        `O arquivo ${input?.fileName || index + 1} precisa ser PDF, PNG ou JPEG.`,
-      );
-    }
     if (!data) {
       throw new BadRequestException(`O arquivo ${index + 1} está vazio.`);
     }
-    if (data.length > 14 * 1024 * 1024) {
+
+    const fileName = String(input?.fileName || `documento-${index + 1}`).slice(
+      0,
+      180,
+    );
+    const buffer = Buffer.from(data, 'base64');
+    const sourceBytes = buffer.length;
+    if (sourceBytes > 20 * 1024 * 1024) {
       throw new BadRequestException(
-        `O arquivo ${input?.fileName || index + 1} é muito grande.`,
+        `O arquivo ${fileName} excede o limite de 20 MB.`,
       );
     }
 
-    return {
-      data,
-      mimeType: mimeType as CleanDocument['mimeType'],
-      fileName: String(input?.fileName || `documento-${index + 1}`).slice(0, 180),
-    };
+    const binaryAllowed = new Set<BinaryMimeType>([
+      'application/pdf',
+      'image/png',
+      'image/jpeg',
+    ]);
+    if (binaryAllowed.has(mimeType as BinaryMimeType)) {
+      return {
+        kind: 'binary',
+        data,
+        mimeType: mimeType as BinaryMimeType,
+        fileName,
+        sourceBytes,
+      };
+    }
+
+    const isWord =
+      mimeType === 'application/msword' ||
+      mimeType ===
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (isWord) {
+      try {
+        const text = await this.extractWordText(buffer);
+        if (!text) {
+          throw new Error('Nenhum texto foi encontrado no arquivo Word.');
+        }
+        return {
+          kind: 'text',
+          text: text.slice(0, 300000),
+          mimeType: 'text/plain',
+          fileName,
+          sourceBytes,
+        };
+      } catch (error: any) {
+        throw new BadRequestException(
+          `Não foi possível ler ${fileName} como documento Word: ${error?.message || 'arquivo inválido'}.`,
+        );
+      }
+    }
+
+    if (mimeType === 'text/plain' || mimeType === 'application/rtf' || mimeType === 'text/rtf') {
+      const text =
+        mimeType === 'application/rtf' || mimeType === 'text/rtf'
+          ? this.decodeRtf(buffer)
+          : buffer.toString('utf8').replace(/\u0000/g, '').trim();
+      if (!text) {
+        throw new BadRequestException(`O arquivo ${fileName} não contém texto legível.`);
+      }
+      return {
+        kind: 'text',
+        text: text.slice(0, 300000),
+        mimeType: 'text/plain',
+        fileName,
+        sourceBytes,
+      };
+    }
+
+    throw new BadRequestException(
+      `O arquivo ${fileName} precisa ser PDF, DOC, DOCX, TXT, RTF, PNG ou JPEG.`,
+    );
   }
 
-  private prepareDocuments(inputs: ResumeSourceDocumentInput[]): CleanDocument[] {
+  private async prepareDocuments(
+    inputs: ResumeSourceDocumentInput[],
+  ): Promise<CleanDocument[]> {
     if (!Array.isArray(inputs) || inputs.length === 0) {
       throw new BadRequestException('Envie pelo menos um documento profissional.');
     }
     if (inputs.length > 8) {
       throw new BadRequestException('Envie no máximo 8 documentos por análise.');
     }
-    const documents = inputs.map((item, index) => this.cleanDocument(item, index));
-    const totalSize = documents.reduce((sum, item) => sum + item.data.length, 0);
+    const documents = await Promise.all(
+      inputs.map((item, index) => this.cleanDocument(item, index)),
+    );
+    const totalSize = documents.reduce(
+      (sum, item) => sum + item.sourceBytes,
+      0,
+    );
     if (totalSize > 36 * 1024 * 1024) {
       throw new BadRequestException(
-        'O conjunto de documentos é muito grande. Reduza a quantidade ou o tamanho das imagens.',
+        'O conjunto de documentos excede 36 MB. Reduza a quantidade ou o tamanho dos arquivos.',
       );
     }
     return documents;
@@ -237,11 +381,18 @@ export class ResumeImportService {
     documents: CleanDocument[],
     systemInstruction: string,
   ) {
-    const parts = documents.flatMap((document, index) => [
-      { text: `FONTE ${index + 1}: ${document.fileName}` },
-      { inlineData: { data: document.data, mimeType: document.mimeType } },
-    ]);
-    parts.push({ text: IMPORT_PROMPT } as never);
+    const parts: any[] = [];
+    documents.forEach((document, index) => {
+      parts.push({ text: `FONTE ${index + 1}: ${document.fileName}` });
+      if (document.kind === 'text') {
+        parts.push({ text: document.text });
+      } else {
+        parts.push({
+          inlineData: { data: document.data, mimeType: document.mimeType },
+        });
+      }
+    });
+    parts.push({ text: IMPORT_PROMPT });
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:generateContent?key=${encodeURIComponent(config.apiKey)}`,
@@ -281,9 +432,15 @@ export class ResumeImportService {
     systemInstruction: string,
   ) {
     const openai = new OpenAI({ apiKey: config.apiKey });
-    const content = documents.flatMap((document) => {
+    const content: any[] = [];
+    documents.forEach((document) => {
+      content.push({ type: 'input_text', text: `FONTE: ${document.fileName}` });
+      if (document.kind === 'text') {
+        content.push({ type: 'input_text', text: document.text });
+        return;
+      }
       const dataUrl = `data:${document.mimeType};base64,${document.data}`;
-      const part =
+      content.push(
         document.mimeType === 'application/pdf'
           ? {
               type: 'input_file',
@@ -292,11 +449,8 @@ export class ResumeImportService {
                 : `${document.fileName}.pdf`,
               file_data: dataUrl,
             }
-          : { type: 'input_image', image_url: dataUrl, detail: 'auto' };
-      return [
-        { type: 'input_text', text: `FONTE: ${document.fileName}` },
-        part,
-      ];
+          : { type: 'input_image', image_url: dataUrl, detail: 'auto' },
+      );
     });
     content.push({ type: 'input_text', text: IMPORT_PROMPT });
     const response = await openai.responses.create({
@@ -314,8 +468,14 @@ export class ResumeImportService {
     systemInstruction: string,
   ) {
     const anthropic = new Anthropic({ apiKey: config.apiKey });
-    const content = documents.flatMap((document) => {
-      const part =
+    const content: any[] = [];
+    documents.forEach((document) => {
+      content.push({ type: 'text', text: `FONTE: ${document.fileName}` });
+      if (document.kind === 'text') {
+        content.push({ type: 'text', text: document.text });
+        return;
+      }
+      content.push(
         document.mimeType === 'application/pdf'
           ? {
               type: 'document',
@@ -332,11 +492,8 @@ export class ResumeImportService {
                 media_type: document.mimeType,
                 data: document.data,
               },
-            };
-      return [
-        { type: 'text', text: `FONTE: ${document.fileName}` },
-        part,
-      ];
+            },
+      );
     });
     content.push({ type: 'text', text: IMPORT_PROMPT });
     const response = await anthropic.messages.create({
@@ -353,7 +510,7 @@ export class ResumeImportService {
   }
 
   async importDocuments(inputs: ResumeSourceDocumentInput[]) {
-    const documents = this.prepareDocuments(inputs);
+    const documents = await this.prepareDocuments(inputs);
     const config = await this.getRuntimeConfig();
     const systemInstruction = await this.buildSystemInstruction(documents);
     try {
