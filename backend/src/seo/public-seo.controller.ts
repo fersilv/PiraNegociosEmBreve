@@ -34,19 +34,22 @@ export class PublicSeoController {
       const value = req.headers?.[name];
       return Array.isArray(value) ? value[0] : typeof value === 'string' ? value.trim() : '';
     };
-    const latitude = Number(readHeader('cf-iplatitude'));
-    const longitude = Number(readHeader('cf-iplongitude'));
+    const latitudeHeader = readHeader('cf-iplatitude');
+    const longitudeHeader = readHeader('cf-iplongitude');
+    const latitude = latitudeHeader ? Number(latitudeHeader) : Number.NaN;
+    const longitude = longitudeHeader ? Number(longitudeHeader) : Number.NaN;
     const city = readHeader('cf-ipcity');
     const state = readHeader('cf-region-code');
     const country = readHeader('cf-ipcountry');
+    const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
 
     return {
       city: city || null,
       state: state || null,
       country: country || null,
-      latitude: Number.isFinite(latitude) ? latitude : null,
-      longitude: Number.isFinite(longitude) ? longitude : null,
-      source: city || Number.isFinite(latitude) ? 'cloudflare' : null,
+      latitude: hasCoordinates ? latitude : null,
+      longitude: hasCoordinates ? longitude : null,
+      source: city || hasCoordinates ? 'cloudflare' : null,
     };
   }
 
