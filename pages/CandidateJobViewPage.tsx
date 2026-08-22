@@ -35,7 +35,6 @@ export function CandidateJobViewPage() {
     setLoading(true);
     setErrorMsg('');
     try {
-      // Fetch Job
       const jobRes = await api.get(`/jobs/${jobId}`).catch(() => null);
       if (!jobRes || !jobRes.data) {
         setErrorMsg('Vaga não encontrada.');
@@ -44,7 +43,6 @@ export function CandidateJobViewPage() {
       }
       setJob(jobRes.data);
 
-      // Fetch candidate application if logged in
       if (user) {
         const appRes = await api.get('/applications/me').catch(() => null);
         if (appRes && Array.isArray(appRes.data)) {
@@ -132,10 +130,14 @@ export function CandidateJobViewPage() {
     );
   }
 
-  // Access control for inactive jobs:
-  // If job is inactive, candidate MUST have an active application to view it.
   const isJobActive = job.active !== false;
   const isCandidateActive = application && application.status !== 'Não Classificado' && application.status !== 'Desistiu';
+  const hasOfficialSalary = Boolean(job.salary?.trim());
+  const hasEstimatedSalary = !hasOfficialSalary && Boolean(job.estimatedSalary?.trim());
+  const estimateSourceHref =
+    hasEstimatedSalary && job.estimatedSalarySourceUrl && /^https?:\/\//i.test(job.estimatedSalarySourceUrl)
+      ? job.estimatedSalarySourceUrl
+      : null;
 
   if (!isJobActive && !isCandidateActive) {
     return (
@@ -163,7 +165,6 @@ export function CandidateJobViewPage() {
         <span className="text-stone-500 text-sm font-medium">Voltar para candidaturas</span>
       </div>
 
-      {/* HIRING / DOCUMENTATION CALLOUT BANNER */}
       {(application?.status === 'Em Contratação' || application?.status === 'Aguardando Exame Médico' || (application?.status && (application.status.toLowerCase().includes('contrat') || application.status.toLowerCase().includes('exame') || application.status.toLowerCase().includes('documento')))) && (
         <div className="bg-gradient-to-r from-blue-900 via-stone-900 to-blue-950 text-white p-6 md:p-8 rounded-3xl shadow-lg border border-blue-800 space-y-4 animate-in fade-in">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -189,7 +190,6 @@ export function CandidateJobViewPage() {
         </div>
       )}
 
-      {/* Main Card */}
       <div className="bg-white p-6 md:p-8 rounded-3xl border border-stone-200 shadow-sm space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-stone-100 pb-6">
           <div>
@@ -214,7 +214,6 @@ export function CandidateJobViewPage() {
             </p>
           </div>
 
-          {/* Action button */}
           <div className="w-full md:w-auto">
             {application ? (
               <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200 flex flex-col gap-2">
@@ -269,7 +268,6 @@ export function CandidateJobViewPage() {
           </div>
         </div>
 
-        {/* Details grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-stone-50 p-4 rounded-2xl border border-stone-100">
           <div className="flex items-center gap-3">
             <MapPin className="w-5 h-5 text-stone-400 shrink-0" />
@@ -286,10 +284,16 @@ export function CandidateJobViewPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <DollarSign className="w-5 h-5 text-stone-400 shrink-0" />
+            <DollarSign className={`w-5 h-5 shrink-0 ${hasEstimatedSalary ? 'text-amber-600' : 'text-stone-400'}`} />
             <div>
               <p className="text-[10px] font-bold uppercase text-stone-400">Salário / Remuneração</p>
-              <p className="text-sm font-bold text-stone-800">{job.salary || 'A combinar'}</p>
+              <p className={`text-sm font-bold ${hasEstimatedSalary ? 'text-amber-800' : 'text-stone-800'}`}>
+                {hasOfficialSalary
+                  ? job.salary
+                  : hasEstimatedSalary
+                    ? `Média estimada: ${job.estimatedSalary}`
+                    : 'Não informado'}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -303,7 +307,38 @@ export function CandidateJobViewPage() {
           </div>
         </div>
 
-        {/* Job Deadline if present */}
+        {hasEstimatedSalary && (
+          <details className="group rounded-xl border border-amber-200 bg-amber-50/70 text-amber-950">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-bold marker:content-none">
+              <span className="min-w-0 truncate">💰 Média salarial estimada: {job.estimatedSalary}</span>
+              <span className="shrink-0 text-xs text-amber-700 group-open:hidden">Ver detalhes</span>
+              <span className="hidden shrink-0 text-xs text-amber-700 group-open:inline">Ocultar detalhes</span>
+            </summary>
+            <div className="border-t border-amber-200 px-4 pb-4 pt-3">
+              <p className="text-sm leading-6 text-amber-900">
+                Este valor é uma referência de mercado para o cargo e região e não foi informado pela empresa responsável pela vaga. A remuneração real oferecida pode ser maior ou menor, de acordo com experiência, jornada, benefícios, convenção coletiva e outros critérios da contratação.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-amber-900">
+                {job.estimatedSalarySource && <span><strong>Fonte:</strong> {job.estimatedSalarySource}</span>}
+                {job.estimatedSalaryRegion && <span><strong>Região considerada:</strong> {job.estimatedSalaryRegion}</span>}
+                {job.estimatedSalaryUpdatedAt && (
+                  <span><strong>Referência consultada em:</strong> {new Date(job.estimatedSalaryUpdatedAt).toLocaleDateString('pt-BR')}</span>
+                )}
+              </div>
+              {estimateSourceHref && (
+                <a
+                  href={estimateSourceHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-block text-xs font-black text-amber-800 underline decoration-amber-300 underline-offset-4 hover:text-amber-950"
+                >
+                  Consultar fonte da média ↗
+                </a>
+              )}
+            </div>
+          </details>
+        )}
+
         {job.deadlineDate && (
           <div className="bg-amber-50 p-4 rounded-2xl border border-amber-200/60 flex items-center gap-3 text-amber-900 text-sm">
             <Clock className="w-5 h-5 text-amber-600 shrink-0" />
@@ -311,7 +346,6 @@ export function CandidateJobViewPage() {
           </div>
         )}
 
-        {/* Description */}
         <div>
           <h2 className="text-lg font-bold text-stone-900 mb-3">Descrição da Vaga</h2>
           <div className="text-stone-700 leading-relaxed whitespace-pre-wrap text-sm md:text-base">
