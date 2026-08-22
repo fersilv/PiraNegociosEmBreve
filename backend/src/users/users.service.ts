@@ -14,6 +14,9 @@ const SELF_MANAGED_FIELDS = [
   'phone',
   'bio',
   'resumeURL',
+  'resumeStatus',
+  'resumePublishedAt',
+  'uploadedResumeFile',
   'resumePhotoURL',
   'resumePreferences',
   'address',
@@ -44,9 +47,7 @@ export class UsersService {
 
   async findOne(id: string): Promise<User> {
     const user = await this.usersRepository.findOne({ where: { id } });
-    if (!user) {
-      throw new NotFoundException(`User with ID ${id} not found`);
-    }
+    if (!user) throw new NotFoundException(`User with ID ${id} not found`);
     return user;
   }
 
@@ -61,10 +62,7 @@ export class UsersService {
   }
 
   private normalizeKey(value: unknown): string {
-    return String(value || '')
-      .trim()
-      .replace(/\s+/g, ' ')
-      .toLocaleLowerCase('pt-BR');
+    return String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('pt-BR');
   }
 
   private normalizeMonthYear(value: unknown): string {
@@ -75,51 +73,27 @@ export class UsersService {
     let match = raw.match(/^(\d{4})-(\d{1,2})(?:-\d{1,2})?$/);
     if (match) {
       const month = Number(match[2]);
-      if (month >= 1 && month <= 12) {
-        return `${String(month).padStart(2, '0')}/${match[1]}`;
-      }
+      if (month >= 1 && month <= 12) return `${String(month).padStart(2, '0')}/${match[1]}`;
     }
-
     match = raw.match(/^\d{1,2}[/-](\d{1,2})[/-](\d{4})$/);
     if (match) {
       const month = Number(match[1]);
-      if (month >= 1 && month <= 12) {
-        return `${String(month).padStart(2, '0')}/${match[2]}`;
-      }
+      if (month >= 1 && month <= 12) return `${String(month).padStart(2, '0')}/${match[2]}`;
     }
-
     match = raw.match(/^(\d{1,2})[/-](\d{4})$/);
     if (match) {
       const month = Number(match[1]);
-      if (month >= 1 && month <= 12) {
-        return `${String(month).padStart(2, '0')}/${match[2]}`;
-      }
+      if (month >= 1 && month <= 12) return `${String(month).padStart(2, '0')}/${match[2]}`;
     }
 
     const months: Record<string, string> = {
-      jan: '01', janeiro: '01', january: '01',
-      fev: '02', fevereiro: '02', feb: '02', february: '02',
-      mar: '03', março: '03', marco: '03', march: '03',
-      abr: '04', abril: '04', apr: '04', april: '04',
-      mai: '05', maio: '05', may: '05',
-      jun: '06', junho: '06', june: '06',
-      jul: '07', julho: '07', july: '07',
-      ago: '08', agosto: '08', aug: '08', august: '08',
-      set: '09', setembro: '09', sep: '09', sept: '09', september: '09',
-      out: '10', outubro: '10', oct: '10', october: '10',
-      nov: '11', novembro: '11', november: '11',
-      dez: '12', dezembro: '12', dec: '12', december: '12',
+      jan: '01', janeiro: '01', january: '01', fev: '02', fevereiro: '02', feb: '02', february: '02', mar: '03', março: '03', marco: '03', march: '03', abr: '04', abril: '04', apr: '04', april: '04', mai: '05', maio: '05', may: '05', jun: '06', junho: '06', june: '06', jul: '07', julho: '07', july: '07', ago: '08', agosto: '08', aug: '08', august: '08', set: '09', setembro: '09', sep: '09', sept: '09', september: '09', out: '10', outubro: '10', oct: '10', october: '10', nov: '11', novembro: '11', november: '11', dez: '12', dezembro: '12', dec: '12', december: '12',
     };
-    const textual = raw
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .match(/^([a-z]+)[\s/-]+(\d{4})$/);
+    const textual = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().match(/^([a-z]+)[\s/-]+(\d{4})$/);
     if (textual) {
       const month = months[textual[1]];
       if (month) return `${month}/${textual[2]}`;
     }
-
     if (/^\d{4}$/.test(raw)) return raw;
     return raw;
   }
@@ -130,11 +104,7 @@ export class UsersService {
       const stage = this.asRecord(item);
       if (!stage) return item;
       const current = stage.current === true;
-      return {
-        ...stage,
-        startDate: this.normalizeMonthYear(stage.startDate),
-        endDate: current ? 'Atual' : this.normalizeMonthYear(stage.endDate),
-      };
+      return { ...stage, startDate: this.normalizeMonthYear(stage.startDate), endDate: current ? 'Atual' : this.normalizeMonthYear(stage.endDate) };
     });
   }
 
@@ -147,194 +117,103 @@ export class UsersService {
       return {
         ...experience,
         startDate: this.normalizeMonthYear(experience.startDate),
-        endDate: current
-          ? 'Atual'
-          : this.normalizeMonthYear(experience.endDate),
+        endDate: current ? 'Atual' : this.normalizeMonthYear(experience.endDate),
         timeline: this.normalizeTimeline(experience.timeline),
       };
     });
   }
 
-  private findExistingResumeItem(
-    incoming: Record<string, unknown>,
-    existingItems: unknown[],
-    semanticFields: string[],
-  ): Record<string, unknown> | null {
+  private findExistingResumeItem(incoming: Record<string, unknown>, existingItems: unknown[], semanticFields: string[]): Record<string, unknown> | null {
     const incomingId = this.normalizeKey(incoming.id);
     if (incomingId) {
-      const byId = existingItems
-        .map((item) => this.asRecord(item))
-        .find((item) => item && this.normalizeKey(item.id) === incomingId);
+      const byId = existingItems.map((item) => this.asRecord(item)).find((item) => item && this.normalizeKey(item.id) === incomingId);
       if (byId) return byId;
     }
-
-    const semanticKey = semanticFields
-      .map((field) => this.normalizeKey(incoming[field]))
-      .join('|');
+    const semanticKey = semanticFields.map((field) => this.normalizeKey(incoming[field])).join('|');
     if (!semanticKey.replace(/\|/g, '')) return null;
-
-    return (
-      existingItems
-        .map((item) => this.asRecord(item))
-        .find(
-          (item) =>
-            item &&
-            semanticFields
-              .map((field) => this.normalizeKey(item[field]))
-              .join('|') === semanticKey,
-        ) || null
-    );
+    return existingItems.map((item) => this.asRecord(item)).find((item) => item && semanticFields.map((field) => this.normalizeKey(item[field])).join('|') === semanticKey) || null;
   }
 
-  private preserveExperienceStructure(
-    incomingValue: unknown,
-    existingValue: unknown,
-  ): unknown {
+  private preserveExperienceStructure(incomingValue: unknown, existingValue: unknown): unknown {
     if (!Array.isArray(incomingValue)) return incomingValue;
     const existingItems = Array.isArray(existingValue) ? existingValue : [];
-
     return incomingValue.map((item) => {
       const incoming = this.asRecord(item);
       if (!incoming) return item;
-      const existing = this.findExistingResumeItem(
-        incoming,
-        existingItems,
-        ['company'],
-      );
+      const existing = this.findExistingResumeItem(incoming, existingItems, ['company']);
       if (!existing) return incoming;
-
-      const incomingTimeline = Array.isArray(incoming.timeline)
-        ? incoming.timeline
-        : null;
-      const existingTimeline = Array.isArray(existing.timeline)
-        ? existing.timeline
-        : null;
-
-      if (incomingTimeline) {
-        return {
-          ...existing,
-          ...incoming,
-          timeline: incomingTimeline,
-        };
-      }
-
+      const incomingTimeline = Array.isArray(incoming.timeline) ? incoming.timeline : null;
+      const existingTimeline = Array.isArray(existing.timeline) ? existing.timeline : null;
+      if (incomingTimeline) return { ...existing, ...incoming, timeline: incomingTimeline };
       if (existingTimeline && existingTimeline.length > 0) {
         if (existingTimeline.length === 1) {
           const onlyStage = this.asRecord(existingTimeline[0]);
-          const mergedStage = onlyStage
-            ? {
-                ...onlyStage,
-                role: incoming.role ?? onlyStage.role,
-                startDate: incoming.startDate ?? onlyStage.startDate,
-                endDate: incoming.endDate ?? onlyStage.endDate,
-                current: incoming.current ?? onlyStage.current,
-                description: incoming.description ?? onlyStage.description,
-                skills: incoming.skills ?? onlyStage.skills,
-              }
-            : existingTimeline[0];
-          return {
-            ...existing,
-            ...incoming,
-            timeline: [mergedStage],
-          };
+          const mergedStage = onlyStage ? {
+            ...onlyStage,
+            role: incoming.role ?? onlyStage.role,
+            startDate: incoming.startDate ?? onlyStage.startDate,
+            endDate: incoming.endDate ?? onlyStage.endDate,
+            current: incoming.current ?? onlyStage.current,
+            description: incoming.description ?? onlyStage.description,
+            skills: incoming.skills ?? onlyStage.skills,
+          } : existingTimeline[0];
+          return { ...existing, ...incoming, timeline: [mergedStage] };
         }
-
-        return {
-          ...existing,
-          ...incoming,
-          id: incoming.id ?? existing.id,
-          skills: incoming.skills ?? existing.skills,
-          timeline: existingTimeline,
-        };
+        return { ...existing, ...incoming, id: incoming.id ?? existing.id, skills: incoming.skills ?? existing.skills, timeline: existingTimeline };
       }
-
       return { ...existing, ...incoming };
     });
   }
 
-  private preserveStructuredArray(
-    incomingValue: unknown,
-    existingValue: unknown,
-    semanticFields: string[],
-  ): unknown {
+  private preserveStructuredArray(incomingValue: unknown, existingValue: unknown, semanticFields: string[]): unknown {
     if (!Array.isArray(incomingValue)) return incomingValue;
     const existingItems = Array.isArray(existingValue) ? existingValue : [];
     return incomingValue.map((item) => {
       const incoming = this.asRecord(item);
       if (!incoming) return item;
-      const existing = this.findExistingResumeItem(
-        incoming,
-        existingItems,
-        semanticFields,
-      );
+      const existing = this.findExistingResumeItem(incoming, existingItems, semanticFields);
       return existing ? { ...existing, ...incoming } : incoming;
     });
   }
 
-  sanitizeSelfUpdate(
-    data: Partial<User>,
-    existing: User | null,
-  ): Partial<User> {
+  sanitizeSelfUpdate(data: Partial<User>, existing: User | null): Partial<User> {
     const sanitized: Partial<User> = {};
     for (const field of SELF_MANAGED_FIELDS) {
-      if (data[field] !== undefined) {
-        (sanitized as Record<string, unknown>)[field] = data[field];
-      }
+      if (data[field] !== undefined) (sanitized as Record<string, unknown>)[field] = data[field];
     }
-
     if (data.experiences !== undefined) {
-      const preserved = this.preserveExperienceStructure(
-        data.experiences,
-        existing?.experiences,
-      );
+      const preserved = this.preserveExperienceStructure(data.experiences, existing?.experiences);
       sanitized.experiences = this.normalizeExperienceDates(preserved) as unknown[];
     }
-
     if (data.education !== undefined) {
-      sanitized.education = this.preserveStructuredArray(
-        data.education,
-        existing?.education,
-        ['institution', 'degree', 'fieldOfStudy'],
-      ) as unknown[];
+      sanitized.education = this.preserveStructuredArray(data.education, existing?.education, ['institution', 'degree', 'fieldOfStudy']) as unknown[];
     }
-
     if (data.courses !== undefined) {
-      sanitized.courses = this.preserveStructuredArray(
-        data.courses,
-        existing?.courses,
-        ['name', 'institution'],
-      ) as unknown[];
+      sanitized.courses = this.preserveStructuredArray(data.courses, existing?.courses, ['name', 'institution']) as unknown[];
     }
-
     return sanitized;
   }
 
   async createOrUpdate(id: string, data: Partial<User>): Promise<User> {
     const existingUser = await this.usersRepository.findOne({ where: { id } });
-
     if (existingUser) {
       Object.assign(existingUser, data);
       return this.usersRepository.save(existingUser);
     }
-
     const email = data.email?.trim().toLowerCase();
-    const invitation = email
-      ? await this.invitationsRepository.findOne({ where: { email } })
-      : null;
+    const invitation = email ? await this.invitationsRepository.findOne({ where: { email } }) : null;
     const newUser = this.usersRepository.create({
       id,
       ...data,
       email,
       isOpenToWork: data.isOpenToWork ?? true,
-      ...(invitation
-        ? {
-            companyId: invitation.companyId,
-            isCompanyAdmin: invitation.isCompanyAdmin,
-            status: 'ACTIVE',
-            displayName: data.displayName || invitation.name,
-            fullName: data.fullName || invitation.name,
-          }
-        : {}),
+      ...(invitation ? {
+        companyId: invitation.companyId,
+        isCompanyAdmin: invitation.isCompanyAdmin,
+        status: 'ACTIVE',
+        displayName: data.displayName || invitation.name,
+        fullName: data.fullName || invitation.name,
+      } : {}),
     });
     const saved = await this.usersRepository.save(newUser);
     if (invitation) await this.invitationsRepository.remove(invitation);
