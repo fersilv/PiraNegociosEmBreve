@@ -92,6 +92,7 @@ export function TalentSearchPage() {
   }, [inviteJobId]);
 
   const rankingMap = useMemo(() => new Map(jobRanking.map((item, index) => [item.candidateId, { ...item, rank: index + 1 }])), [jobRanking]);
+  const selectedJobTitle = useMemo(() => companyJobs.find((job) => job.id === inviteJobId)?.title || "", [companyJobs, inviteJobId]);
 
   const availableHomeCities = useMemo(
     () => Array.from(new Set<string>(candidates.map((candidate) => candidate.city && candidate.state ? `${candidate.city}, ${candidate.state}` : "").filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b, "pt-BR")),
@@ -190,7 +191,7 @@ export function TalentSearchPage() {
 
       {inviteJobId && (
         <section className="rounded-2xl border border-violet-200 bg-violet-50 p-4 text-xs leading-5 text-violet-800">
-          <div className="flex items-start gap-2"><Sparkles className="mt-0.5 h-4 w-4 shrink-0" /><div><strong>Ordem inteligente para esta vaga.</strong> {rankingLoading ? "Organizando os currículos..." : `${jobRanking.length} currículo(s) aderentes foram priorizados.`} A compatibilidade é usada somente pelo sistema para organizar os resultados e não é exibida para a empresa. Currículos com <strong>Em destaque</strong> ocupam posições promocionais entre os perfis aderentes.</div></div>
+          <div className="flex items-start gap-2"><Sparkles className="mt-0.5 h-4 w-4 shrink-0" /><div><strong>Ordem inteligente para esta vaga.</strong> {rankingLoading ? "Organizando os currículos..." : `${jobRanking.length} currículo(s) aderentes foram priorizados.`} A nota não aparece na listagem. Abra o perfil para consultar o analytics detalhado de compatibilidade. Currículos com <strong>Em destaque</strong> ocupam posições promocionais entre os perfis aderentes.</div></div>
         </section>
       )}
 
@@ -201,7 +202,13 @@ export function TalentSearchPage() {
       </section>
       {filtered.length === 0 && <div className="rounded-3xl border border-dashed border-stone-300 bg-white/60 p-12 text-center text-sm text-stone-500">Nenhum candidato corresponde aos filtros atuais.</div>}
 
-      <CandidateProfileModal candidate={selectedCandidate} isOpen={Boolean(selectedCandidate)} onClose={() => setSelectedCandidate(null)} />
+      <CandidateProfileModal
+        candidate={selectedCandidate}
+        compatibility={selectedCandidate ? rankingMap.get(selectedCandidate.id) || null : null}
+        compatibilityJobTitle={selectedJobTitle}
+        isOpen={Boolean(selectedCandidate)}
+        onClose={() => setSelectedCandidate(null)}
+      />
       <style>{`.filter-field{width:100%;border:1px solid #e7e5e4;border-radius:12px;background:white;padding:11px 12px;font-size:13px;outline:none}.filter-field:focus{border-color:#c66a4b}`}</style>
     </div>
   );
