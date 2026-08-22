@@ -254,8 +254,6 @@ export class JobMatchService {
     const boosted = eligible.filter((item) => item.boosted).sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
     const ranked: T[] = [];
 
-    // O primeiro resultado orgânico permanece protegido. Depois disso, o impulso
-    // compra exposição real: 1 slot de destaque, 2 orgânicos, 1 destaque, etc.
     if (organic.length > 0) ranked.push(organic.shift()!);
     while (organic.length > 0 || boosted.length > 0) {
       if (boosted.length > 0) ranked.push(boosted.shift()!);
@@ -350,7 +348,20 @@ export class JobMatchService {
     ]);
     const cacheMap = new Map(cachedRows.map((row: any) => [row.userId, row]));
     const boosts = new Set(boostRows.map((row: any) => row.userId));
-    const eligible: Array<{ candidateId: string; score: number; boosted: boolean }> = [];
+    const eligible: Array<{
+      candidateId: string;
+      score: number;
+      boosted: boolean;
+      reason: string;
+      evidence: string[];
+      missingRequirements: string[];
+      confidence: string;
+      occupationalScore: number;
+      technicalScore: number;
+      experienceScore: number;
+      educationScore: number;
+      preferenceScore: number;
+    }> = [];
 
     for (const candidate of candidates) {
       const result = await this.cachedScoreForUserJob(candidate, job, jobProfile, cacheMap.get(candidate.id));
@@ -359,21 +370,25 @@ export class JobMatchService {
         candidateId: candidate.id,
         score: Number(result.score || 0),
         boosted: boosts.has(candidate.id),
+        reason: String(result.reason || ''),
+        evidence: Array.isArray(result.evidence) ? result.evidence : [],
+        missingRequirements: Array.isArray(result.missingRequirements) ? result.missingRequirements : [],
+        confidence: String(result.confidence || 'LOW'),
+        occupationalScore: Number(result.occupationalScore || 0),
+        technicalScore: Number(result.technicalScore || 0),
+        experienceScore: Number(result.experienceScore || 0),
+        educationScore: Number(result.educationScore || 0),
+        preferenceScore: Number(result.preferenceScore || 0),
       });
     }
 
     const ranked = this.rankCompanyExposure(eligible);
 
-    // A empresa recebe apenas a ordem final e a sinalização comercial. A nota de
-    // compatibilidade continua privada, disponível somente ao próprio candidato.
     return {
       jobId,
       preparing: false,
       rankingRule: 'organic_top_then_sponsored_slots',
-      candidates: ranked.map((item) => ({
-        candidateId: item.candidateId,
-        boosted: item.boosted,
-      })),
+      candidates: ranked,
     };
   }
 }
