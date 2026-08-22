@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash } from 'crypto';
 import { DataSource, Repository } from 'typeorm';
 import { Job } from '../jobs/entities/job.entity';
-import { User } from '../users/entities/user.entity';
+import { User, UserType } from '../users/entities/user.entity';
 import { PaymentsService } from '../payments/payments.service';
+import { BillingSupportService } from '../payments/billing-support.service';
 import { JobMatchAiService, type JobMatchProfile, type WeightedJobRequirement } from './job-match-ai.service';
 
 export const JOB_MATCH_ALGORITHM_VERSION = 'job-match-v2';
@@ -19,6 +20,7 @@ export class JobMatchService {
     private readonly dataSource: DataSource,
     private readonly ai: JobMatchAiService,
     private readonly payments: PaymentsService,
+    private readonly billingSupport: BillingSupportService,
   ) {}
 
   private normalize(value: unknown) {
@@ -230,17 +232,36 @@ export class JobMatchService {
     };
   }
 
-  async getStatus(userId: string) {
-    const productPromise = this.payments.findProduct('JOB_MATCH_30D', true);
-    const entitlementPromise = this.dataSource.query(
-      `SELECT "startsAt", "expiresAt", "paymentId", ("expiresAt" > now()) AS active
-       FROM user_feature_entitlements
-       WHERE "userId" = $1 AND feature = 'JOB_MATCH_PREMIUM' LIMIT 1`,
-      [userId],
+  private async cachedScoreForUserJob(user: User, job: Job, jobProfile: any, existing?: any) {
+    const resumeFingerprint = this.resumeFingerprint(user);
+    const cacheValid = existing && existing.resumeFingerprint === resumeFingerprint && existing.jobProfileFingerprint === jobProfile.sourceFingerprint && existing.algorithmVersion === JOB_MATCH_ALGORITHM_VERSION;
+    if (cacheValid) return existing.result;
+
+    const result = this.scoreJob(job, jobProfile.profile as JobMatchProfile, user);
+    await this.dataSource.query(
+      `INSERT INTO job_match_results ("userId", "jobId", "resumeFingerprint", "jobProfileFingerprint", "algorithmVersion", score, result, "updatedAt")
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,now())
+       ON CONFLICT ("userId", "jobId") DO UPDATE SET
+         "resumeFingerprint" = EXCLUDED."resumeFingerprint", "jobProfileFingerprint" = EXCLUDED."jobProfileFingerprint",
+         "algorithmVersion" = EXCLUDED."algorithmVersion", score = EXCLUDED.score, result = EXCLUDED.result, "updatedAt" = now()`,
+      [user.id, job.id, resumeFingerprint, jobProfile.sourceFingerprint, JOB_MATCH_ALGORITHM_VERSION, result.score, JSON.stringify(result)],
     );
-    const [product, entitlementRows] = await Promise.all([productPromise, entitlementPromise]);
+    return result;
+  }
+
+  async getStatus(userId: string) {
+    const [product, entitlementRows, lifetimeFree] = await Promise.all([
+      this.payments.findProduct('JOB_MATCH_30D', true),
+      this.dataSource.query(
+        `SELECT "startsAt", "expiresAt", "paymentId", source, ("expiresAt" > now()) AS active
+         FROM user_feature_entitlements
+         WHERE "userId" = $1 AND feature = 'JOB_MATCH_PREMIUM' LIMIT 1`,
+        [userId],
+      ),
+      this.billingSupport.isLifetimeFree(userId),
+    ]);
     const entitlement = entitlementRows[0] || null;
-    return { product, entitlement, active: Boolean(entitlement?.active) };
+    return { product, entitlement, lifetimeFree, active: lifetimeFree || Boolean(entitlement?.active) };
   }
 
   async getMatches(userId: string) {
@@ -254,7 +275,6 @@ export class JobMatchService {
     const jobIds = jobs.map((job) => job.id);
     const profiles = await this.dataSource.query(`SELECT * FROM job_match_profiles WHERE status = 'READY' AND "jobId" = ANY($1::uuid[])`, [jobIds]);
     const profileMap = new Map(profiles.map((row: any) => [row.jobId, row]));
-    const resumeFingerprint = this.resumeFingerprint(user);
     const cached = await this.dataSource.query(`SELECT * FROM job_match_results WHERE "userId" = $1 AND "jobId" = ANY($2::uuid[])`, [userId, jobIds]);
     const cacheMap = new Map(cached.map((row: any) => [row.jobId, row]));
     const matches: any[] = [];
@@ -262,24 +282,88 @@ export class JobMatchService {
     for (const job of jobs) {
       const jobProfile = profileMap.get(job.id) as any;
       if (!jobProfile?.profile) continue;
-      const existing = cacheMap.get(job.id) as any;
-      const cacheValid = existing && existing.resumeFingerprint === resumeFingerprint && existing.jobProfileFingerprint === jobProfile.sourceFingerprint && existing.algorithmVersion === JOB_MATCH_ALGORITHM_VERSION;
-      let result = cacheValid ? existing.result : null;
-      if (!result) {
-        result = this.scoreJob(job, jobProfile.profile as JobMatchProfile, user);
-        await this.dataSource.query(
-          `INSERT INTO job_match_results ("userId", "jobId", "resumeFingerprint", "jobProfileFingerprint", "algorithmVersion", score, result, "updatedAt")
-           VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,now())
-           ON CONFLICT ("userId", "jobId") DO UPDATE SET
-             "resumeFingerprint" = EXCLUDED."resumeFingerprint", "jobProfileFingerprint" = EXCLUDED."jobProfileFingerprint",
-             "algorithmVersion" = EXCLUDED."algorithmVersion", score = EXCLUDED.score, result = EXCLUDED.result, "updatedAt" = now()`,
-          [userId, job.id, resumeFingerprint, jobProfile.sourceFingerprint, JOB_MATCH_ALGORITHM_VERSION, result.score, JSON.stringify(result)],
-        );
-      }
+      const result = await this.cachedScoreForUserJob(user, job, jobProfile, cacheMap.get(job.id));
       matches.push({ jobId: job.id, ...result });
     }
 
     matches.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
     return { ...status, matches };
+  }
+
+  async getCompanyCandidatesForJob(requestingUserId: string, jobId: string) {
+    const [requester, job] = await Promise.all([
+      this.users.findOne({ where: { id: requestingUserId } }),
+      this.jobs.findOne({ where: { id: jobId } }),
+    ]);
+    if (!requester) throw new ForbiddenException('Usuário não encontrado.');
+    if (!job) throw new NotFoundException('Vaga não encontrada.');
+    const authorized = requester.type === UserType.ADMIN || job.ownerId === requestingUserId || Boolean(requester.companyId && job.companyId && requester.companyId === job.companyId);
+    if (!authorized) throw new ForbiddenException('Você não pode consultar candidatos para esta vaga.');
+
+    const profileRows = await this.dataSource.query(
+      `SELECT * FROM job_match_profiles WHERE "jobId" = $1 AND status = 'READY' LIMIT 1`,
+      [jobId],
+    );
+    const jobProfile = profileRows[0];
+    if (!jobProfile?.profile) {
+      return { jobId, preparing: true, minimumScore: 55, candidates: [] };
+    }
+
+    const candidates = await this.users.createQueryBuilder('user')
+      .where('user."resumeStatus" = :status', { status: 'PUBLISHED' })
+      .andWhere('user."isOpenToWork" = true')
+      .andWhere('(user.type IS NULL OR user.type = :candidateType)', { candidateType: UserType.CANDIDATE })
+      .orderBy('user."updatedAt"', 'DESC')
+      .take(500)
+      .getMany();
+    if (!candidates.length) return { jobId, preparing: false, minimumScore: 55, candidates: [] };
+
+    const candidateIds = candidates.map((candidate) => candidate.id);
+    const [cachedRows, boostRows] = await Promise.all([
+      this.dataSource.query(
+        `SELECT * FROM job_match_results WHERE "jobId" = $1 AND "userId" = ANY($2::varchar[])`,
+        [jobId, candidateIds],
+      ),
+      this.dataSource.query(
+        `SELECT "userId", "expiresAt" FROM user_feature_entitlements
+         WHERE feature = 'RESUME_BOOST' AND "expiresAt" > now() AND "userId" = ANY($1::varchar[])`,
+        [candidateIds],
+      ),
+    ]);
+    const cacheMap = new Map(cachedRows.map((row: any) => [row.userId, row]));
+    const boosts = new Map(boostRows.map((row: any) => [row.userId, row.expiresAt]));
+    const ranked: any[] = [];
+
+    for (const candidate of candidates) {
+      const result = await this.cachedScoreForUserJob(candidate, job, jobProfile, cacheMap.get(candidate.id));
+      if (Number(result.score || 0) < 55) continue;
+      ranked.push({
+        candidateId: candidate.id,
+        score: result.score,
+        reason: result.reason,
+        evidence: result.evidence,
+        missingRequirements: result.missingRequirements,
+        confidence: result.confidence,
+        boosted: boosts.has(candidate.id),
+        boostExpiresAt: boosts.get(candidate.id) || null,
+        compatibilityBand: Number(result.score) >= 75 ? 'STRONG' : 'GOOD',
+      });
+    }
+
+    ranked.sort((a, b) => {
+      const bandA = a.compatibilityBand === 'STRONG' ? 2 : 1;
+      const bandB = b.compatibilityBand === 'STRONG' ? 2 : 1;
+      if (bandA !== bandB) return bandB - bandA;
+      if (a.boosted !== b.boosted) return Number(b.boosted) - Number(a.boosted);
+      return Number(b.score || 0) - Number(a.score || 0);
+    });
+
+    return {
+      jobId,
+      preparing: false,
+      minimumScore: 55,
+      rankingRule: 'compatibility_band_then_boost_then_score',
+      candidates: ranked,
+    };
   }
 }
