@@ -13,6 +13,15 @@ export type PushInstallationInput = {
   userAgent?: string | null;
 };
 
+export type AdminBroadcastInput = {
+  audience: 'all' | 'candidates' | 'companies' | 'admins' | 'user';
+  title: string;
+  message: string;
+  link?: string | null;
+  category?: 'announcement' | 'system' | 'maintenance' | 'important';
+  userQuery?: string | null;
+};
+
 @Injectable()
 export class NotificationsService {
   constructor(
@@ -228,13 +237,50 @@ export class NotificationsService {
     await Promise.all(recipients.map((user) => this.notifyUser(user.id, data)));
   }
 
+  async adminBroadcast(input: AdminBroadcastInput) {
+    const title = input.title.trim();
+    const message = input.message.trim();
+    const link = input.link?.trim() || null;
+    const category = input.category || 'announcement';
+
+    let recipients: User[] = [];
+    if (input.audience === 'admins') {
+      recipients = await this.userRepo.find({ where: { type: UserType.ADMIN } });
+    } else if (input.audience === 'companies') {
+      const all = await this.userRepo.find();
+      recipients = all.filter((user) => Boolean(user.companyId));
+    } else if (input.audience === 'candidates') {
+      const all = await this.userRepo.find();
+      recipients = all.filter((user) => user.type !== UserType.ADMIN && !user.companyId);
+    } else if (input.audience === 'user') {
+      const query = String(input.userQuery || '').trim().toLowerCase();
+      if (!query) return { sent: 0, recipients: 0 };
+      const all = await this.userRepo.find();
+      recipients = all.filter((user) => user.id.toLowerCase() === query || String(user.email || '').toLowerCase() === query);
+    } else {
+      recipients = await this.userRepo.find();
+    }
+
+    const type = `admin_${category}`;
+    let sent = 0;
+    for (let offset = 0; offset < recipients.length; offset += 100) {
+      const batch = recipients.slice(offset, offset + 100);
+      const results = await Promise.allSettled(
+        batch.map((user) => this.notifyUser(user.id, { title, message, link, type })),
+      );
+      sent += results.filter((result) => result.status === 'fulfilled').length;
+    }
+
+    return { sent, recipients: recipients.length };
+  }
+
   async notifyNewJob(jobData: any): Promise<void> {
     const users = await this.userRepo.find({ where: { isOpenToWork: true } });
     const candidates = users.filter((user) => user.type !== UserType.ADMIN);
     await Promise.all(
       candidates.map((candidate) => this.notifyUser(candidate.id, {
         title: 'Nova vaga na região',
-        message: `A empresa "${jobData.companyName}" publicou a vaga "${jobData.jobTitle}" em ${jobData.location || 'localização informada na vaga'}.`,
+        message: `A empresa \"${jobData.companyName}\" publicou a vaga \"${jobData.jobTitle}\" em ${jobData.location || 'localização informada na vaga'}.`,
         type: 'new_job',
         jobId: jobData.jobId,
         link: jobData.slug ? `/vagas/${jobData.slug}` : `/user/vaga/${jobData.jobId}`,
