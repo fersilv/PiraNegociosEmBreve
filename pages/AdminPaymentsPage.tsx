@@ -48,6 +48,7 @@ export function AdminPaymentsPage() {
       promotionEndsAt: product.promotionEndsAt ? String(product.promotionEndsAt).slice(0, 16) : "",
       enabled: Boolean(product.enabled),
       freeUses: Number(product.freeUses || 0),
+      durationDays: product.durationDays ? Number(product.durationDays) : null,
     }])));
     setPayments(Array.isArray(paymentResponse.data) ? paymentResponse.data : []);
   };
@@ -74,6 +75,9 @@ export function AdminPaymentsPage() {
         enabled: Boolean(draft.enabled),
         freeUses: Number(draft.freeUses || 0),
       });
+      if (product.code === "JOB_MATCH_30D") {
+        await api.patch("/admin/job-match/config", { durationDays: Number(draft.durationDays || 30) });
+      }
       setMessage(`${product.name} atualizado.`);
       await load();
     } catch (error: any) {
@@ -156,7 +160,7 @@ export function AdminPaymentsPage() {
 
       <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h2 className="text-lg font-bold text-stone-900">Produtos e regras</h2><p className="mt-1 text-xs text-stone-500">Preço, promoção, disponibilidade e quantidade de usos gratuitos são administráveis daqui.</p></div>
+          <div><h2 className="text-lg font-bold text-stone-900">Produtos e regras</h2><p className="mt-1 text-xs text-stone-500">Preço, promoção, duração e disponibilidade são administráveis daqui.</p></div>
           <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700"><QrCode className="mr-1.5 inline h-3.5 w-3.5" /> Somente Pix</div>
         </div>
         <div className="mt-5 grid gap-4 xl:grid-cols-3">
@@ -164,12 +168,13 @@ export function AdminPaymentsPage() {
             const draft = drafts[product.code] || {};
             return (
               <div key={product.code} className="rounded-2xl border border-stone-200 bg-stone-50/60 p-4">
-                <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-wider text-terracotta-600">{product.code}</p><h3 className="mt-1 font-bold text-stone-900">{product.name}</h3><p className="mt-1 text-xs leading-5 text-stone-500">{product.description}</p>{product.durationDays ? <p className="mt-2 text-[10px] font-black uppercase tracking-wider text-violet-600">Acesso por {product.durationDays} dias</p> : null}</div><Sparkles className="h-5 w-5 shrink-0 text-violet-400" /></div>
+                <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-wider text-terracotta-600">{product.code}</p><h3 className="mt-1 font-bold text-stone-900">{product.name}</h3><p className="mt-1 text-xs leading-5 text-stone-500">{product.description}</p></div><Sparkles className="h-5 w-5 shrink-0 text-violet-400" /></div>
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <Field label="Preço normal (R$)" value={draft.price ?? ""} onChange={(value) => patchDraft(product.code, { price: value })} />
                   <Field label="Preço promocional" value={draft.promoPrice ?? ""} onChange={(value) => patchDraft(product.code, { promoPrice: value })} placeholder="Opcional" />
                   <Field label="Início promoção" value={draft.promotionStartsAt ?? ""} onChange={(value) => patchDraft(product.code, { promotionStartsAt: value })} type="datetime-local" />
                   <Field label="Fim promoção" value={draft.promotionEndsAt ?? ""} onChange={(value) => patchDraft(product.code, { promotionEndsAt: value })} type="datetime-local" />
+                  {product.code === "JOB_MATCH_30D" && <Field label="Duração do acesso (dias)" value={String(draft.durationDays ?? 30)} onChange={(value) => patchDraft(product.code, { durationDays: Math.max(1, Number(value || 1)) })} type="number" />}
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5">
                   <label className="text-xs font-bold text-stone-600">Usos gratuitos</label>
