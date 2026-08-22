@@ -7,6 +7,7 @@ import {
   TemplateWrapper,
 } from "./TemplateWrapper";
 import { Mail, Phone, MapPin, Linkedin } from "lucide-react";
+import { getResumePersonalDetails } from "./ResumePersonalDetails";
 
 export function ModernTemplate({
   profile,
@@ -19,6 +20,7 @@ export function ModernTemplate({
   const headline = getResumeHeadline(profile);
   const displayAddress = address || profile.address;
   const photoUrl = profile.resumePhotoURL || profile.photoURL;
+  const personalDetails = getResumePersonalDetails(profile);
 
   const experienceSection =
     profile.experiences && profile.experiences.length > 0 ? (
@@ -166,6 +168,11 @@ export function ModernTemplate({
               </span>
             )}
           </div>
+          {personalDetails.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-white/80">
+              {personalDetails.map((detail) => <span key={detail}>• {detail}</span>)}
+            </div>
+          )}
         </header>
 
         <div className="flex flex-row">
