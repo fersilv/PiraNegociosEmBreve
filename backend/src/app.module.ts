@@ -16,6 +16,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { SeoModule } from './seo/seo.module';
 import { AdvertisingModule } from './advertising/advertising.module';
 import { ExternalApiModule } from './external-api/external-api.module';
+import { PaymentsModule } from './payments/payments.module';
 
 import { AiModule } from './ai/ai.module';
 
@@ -45,6 +46,7 @@ import { AiModule } from './ai/ai.module';
     AnalyticsModule,
     SeoModule,
     AdvertisingModule,
+    PaymentsModule,
     AiModule,
     ExternalApiModule,
     AdminModule,
