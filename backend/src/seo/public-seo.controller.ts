@@ -53,6 +53,50 @@ export class PublicSeoController {
     };
   }
 
+  @Get('public/jobs-index')
+  async jobsIndex() {
+    const jobs = await this.publicJobsQuery().orderBy('job.createdAt', 'DESC').getMany();
+    const cityMap = new Map<string, { city: string; state: string | null; count: number; updatedAt: Date }>();
+
+    for (const job of jobs) {
+      const city = this.cityName(job);
+      const slug = slugify(city);
+      if (!city || !slug) continue;
+      const state = job.state?.trim().toUpperCase() || this.stateFromLocation(job.location);
+      const updatedAt = job.updatedAt || job.createdAt || new Date();
+      const existing = cityMap.get(slug);
+      cityMap.set(slug, {
+        city,
+        state: state || existing?.state || null,
+        count: (existing?.count || 0) + 1,
+        updatedAt: !existing || updatedAt > existing.updatedAt ? updatedAt : existing.updatedAt,
+      });
+    }
+
+    return {
+      count: jobs.length,
+      cities: Array.from(cityMap.entries())
+        .map(([slug, value]) => ({ slug, ...value }))
+        .sort((a, b) => b.count - a.count || a.city.localeCompare(b.city, 'pt-BR')),
+      jobs: jobs.map((job) => ({
+        id: job.id,
+        slug: job.slug,
+        title: job.title,
+        companyName: job.companyName,
+        sourceName: job.sourceName,
+        location: job.location,
+        city: job.city,
+        state: job.state,
+        type: job.type,
+        workModel: job.workModel,
+        salary: job.salary,
+        sourcePublishedAt: job.sourcePublishedAt,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+      })),
+    };
+  }
+
   @Get('public/slug-availability')
   async slugAvailability(@Query('slug') value?: string) {
     const slug = slugify(value || '');
@@ -208,7 +252,11 @@ export class PublicSeoController {
     if (explicit) return explicit;
     const location = String(job.location || '').trim();
     if (!location || /^remoto$/i.test(location)) return '';
-    return location.split(',')[0].trim().replace(/\s*\/\s*[A-Z]{2}$/i, '').trim();
+    return location
+      .split(',')[0]
+      .trim()
+      .replace(/\s*\/\s*[A-Z]{2}$/i, '')
+      .trim();
   }
 
   private stateFromLocation(location: string | null | undefined): string | null {
@@ -280,6 +328,7 @@ export class PublicSeoController {
       applicationEmail: job.applicationEmail,
       applicationWhatsApp: job.applicationWhatsApp,
       deadlineDate: job.deadlineDate,
+      sourcePublishedAt: job.sourcePublishedAt,
       createdAt: job.createdAt,
       updatedAt: job.updatedAt,
       views: job.views,
