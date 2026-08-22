@@ -42,7 +42,7 @@ export function ResumeWorkspace() {
   const totalSize = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
 
   const chooseFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(event.target.files || []);
+    const selected: File[] = Array.from<File>(event.target.files || []);
     event.target.value = "";
     setError("");
     setSuccess("");
