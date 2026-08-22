@@ -153,10 +153,19 @@ RETURNS trigger AS $$
 DECLARE
   next_version integer;
   snapshot_score integer;
+  publication_time timestamptz;
 BEGIN
   IF NEW."resumeStatus" = 'PUBLISHED'
      AND NEW."publishedResumeSnapshot" IS NOT NULL
      AND OLD."resumePublishedAt" IS DISTINCT FROM NEW."resumePublishedAt" THEN
+    publication_time := coalesce(NEW."resumePublishedAt", now());
+
+    -- Só uma versão pode representar o currículo atualmente online. Ao publicar
+    -- uma nova, a anterior vira histórico automaticamente, mesmo sem despublicar antes.
+    UPDATE resume_publication_history
+    SET status = 'UNPUBLISHED', "unpublishedAt" = coalesce("unpublishedAt", publication_time)
+    WHERE "userId" = NEW.id AND status = 'PUBLISHED';
+
     SELECT coalesce(max(version), 0) + 1 INTO next_version
     FROM resume_publication_history
     WHERE "userId" = NEW.id;
@@ -174,13 +183,13 @@ BEGIN
       NEW."publishedResumeSnapshot",
       snapshot_score,
       'PUBLISHED',
-      coalesce(NEW."resumePublishedAt", now())
+      publication_time
     );
   END IF;
 
   IF OLD."resumeStatus" = 'PUBLISHED' AND NEW."resumeStatus" = 'DRAFT' THEN
     UPDATE resume_publication_history
-    SET status = 'UNPUBLISHED', "unpublishedAt" = now()
+    SET status = 'UNPUBLISHED', "unpublishedAt" = coalesce("unpublishedAt", now())
     WHERE id = (
       SELECT id
       FROM resume_publication_history
