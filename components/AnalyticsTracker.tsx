@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { trackAnalytics } from '../lib/analytics';
 import { PRIVACY_CONSENT_EVENT } from '../lib/privacyConsent';
 import { useAuth } from '../contexts/AuthContext';
+import { api } from '../lib/api';
 
 export function AnalyticsTracker() {
   const location = useLocation();
@@ -16,6 +17,16 @@ export function AnalyticsTracker() {
 
     const startedAt = Date.now();
     trackAnalytics('PAGE_VIEW');
+
+    const jobMatch = location.pathname.match(/^\/vagas\/([^/]+)$/);
+    if (jobMatch?.[1]) {
+      void api
+        .post(`/public/jobs-by-slug/${encodeURIComponent(jobMatch[1])}/view`)
+        .catch((error) => {
+          console.warn('Não foi possível registrar a visualização da vaga.', error);
+        });
+    }
+
     const onConsentChanged = () => trackAnalytics('PAGE_VIEW');
     window.addEventListener(PRIVACY_CONSENT_EVENT, onConsentChanged);
 
