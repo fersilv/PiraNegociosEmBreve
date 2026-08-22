@@ -33,6 +33,7 @@ export interface Job {
   flagReason?: string | null;
   lastVerifiedAt?: string | null;
   sourcePublishedAt?: string | null;
+  deadlineDate?: string | null;
   acceptsPlatformApplications?: boolean;
   requiresResumeFile?: boolean;
   externalApplicationInstructions?: string;
