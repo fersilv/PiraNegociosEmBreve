@@ -26,6 +26,7 @@ import {
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { User } from '../users/entities/user.entity';
 import { PaymentsService } from '../payments/payments.service';
+import { BillingSupportService } from '../payments/billing-support.service';
 
 @Controller('ai')
 @UseGuards(FirebaseAuthGuard)
@@ -37,6 +38,7 @@ export class AiController {
     private readonly resumeReviewService: ResumeReviewService,
     private readonly resumeImprovementService: ResumeImprovementService,
     private readonly paymentsService: PaymentsService,
+    private readonly billingSupport: BillingSupportService,
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
   ) {}
@@ -49,13 +51,14 @@ export class AiController {
 
   @Get('status')
   async getStatus(@Req() req: any) {
-    const [status, user, reanalysisProduct, improvementProduct, importProduct, credits] = await Promise.all([
+    const [status, user, reanalysisProduct, improvementProduct, importProduct, credits, lifetimeFree] = await Promise.all([
       this.aiService.getStatus(),
       this.usersRepository.findOne({ where: { id: req.user.uid } }),
       this.paymentsService.findProduct('RESUME_REANALYSIS', true),
       this.paymentsService.findProduct('RESUME_AI_IMPROVEMENT', true),
       this.paymentsService.findProduct('RESUME_AI_IMPORT', true),
       this.paymentsService.getCredits(req.user.uid),
+      this.billingSupport.isLifetimeFree(req.user.uid),
     ]);
 
     const analysisCount = Number(user?.aiAnalysisCount || 0);
@@ -64,12 +67,12 @@ export class AiController {
     const hasSavedResumeAnalysis = Boolean(user?.aiAnalysis && user?.hasAiAnalyzed);
     const reanalysisFreeNow = Boolean(reanalysisProduct.enabled) && Number(reanalysisProduct.effectivePriceCents || 0) === 0;
     const resumeReanalysisPaymentRequired =
+      !lifetimeFree &&
       Boolean(reanalysisProduct.enabled) &&
       Number(reanalysisProduct.effectivePriceCents || 0) > 0 &&
       !freeResumeAnalysisAvailable &&
       Number(credits.RESUME_REANALYSIS || 0) <= 0;
 
-    // A nota já conquistada permanece visível. O paywall só existe para gerar uma nova análise.
     const resumeScorePaymentRequired = resumeReanalysisPaymentRequired && !hasSavedResumeAnalysis;
 
     const importCount = Number(user?.aiImportCount || 0);
@@ -77,6 +80,7 @@ export class AiController {
     const freeResumeImportAvailable = importCount < freeImportLimit;
     const importFreeNow = Boolean(importProduct.enabled) && Number(importProduct.effectivePriceCents || 0) === 0;
     const resumeImportPaymentRequired =
+      !lifetimeFree &&
       Boolean(importProduct.enabled) &&
       Number(importProduct.effectivePriceCents || 0) > 0 &&
       !freeResumeImportAvailable &&
@@ -84,12 +88,14 @@ export class AiController {
 
     const improvementFreeNow = Boolean(improvementProduct.enabled) && Number(improvementProduct.effectivePriceCents || 0) === 0;
     const resumeImprovementPaymentRequired =
+      !lifetimeFree &&
       Boolean(improvementProduct.enabled) &&
       Number(improvementProduct.effectivePriceCents || 0) > 0 &&
       Number(credits.RESUME_AI_IMPROVEMENT || 0) <= 0;
 
     return {
       ...status,
+      lifetimeFree,
       resumeScorePaymentRequired,
       resumeReanalysisPaymentRequired,
       resumeImprovementPaymentRequired,
@@ -106,18 +112,19 @@ export class AiController {
         import: importProduct,
       },
       availability: {
-        reanalysis: freeResumeAnalysisAvailable || reanalysisFreeNow || Number(credits.RESUME_REANALYSIS || 0) > 0 || Boolean(reanalysisProduct.enabled),
-        improvement: improvementFreeNow || Number(credits.RESUME_AI_IMPROVEMENT || 0) > 0 || Boolean(improvementProduct.enabled),
-        import: freeResumeImportAvailable || importFreeNow || Number(credits.RESUME_AI_IMPORT || 0) > 0 || Boolean(importProduct.enabled),
+        reanalysis: lifetimeFree || freeResumeAnalysisAvailable || reanalysisFreeNow || Number(credits.RESUME_REANALYSIS || 0) > 0 || Boolean(reanalysisProduct.enabled),
+        improvement: lifetimeFree || improvementFreeNow || Number(credits.RESUME_AI_IMPROVEMENT || 0) > 0 || Boolean(improvementProduct.enabled),
+        import: lifetimeFree || freeResumeImportAvailable || importFreeNow || Number(credits.RESUME_AI_IMPORT || 0) > 0 || Boolean(importProduct.enabled),
       },
     };
   }
 
   private async runResumeImport(userId: string, documents: ResumeSourceDocumentInput[]) {
-    const [user, product, credits] = await Promise.all([
+    const [user, product, credits, lifetimeFree] = await Promise.all([
       this.requireUser(userId),
       this.paymentsService.findProduct('RESUME_AI_IMPORT', true),
       this.paymentsService.getCredits(userId),
+      this.billingSupport.isLifetimeFree(userId),
     ]);
     const count = Number(user.aiImportCount || 0);
     const freeLimit = user.aiImportLimit ?? Number(product.freeUses ?? 1);
@@ -125,7 +132,7 @@ export class AiController {
     const freeNow = Boolean(product.enabled) && Number(product.effectivePriceCents || 0) === 0;
     const paidCreditAvailable = Number(credits.RESUME_AI_IMPORT || 0) > 0;
 
-    if (!freeAvailable && !freeNow && !paidCreditAvailable) {
+    if (!lifetimeFree && !freeAvailable && !freeNow && !paidCreditAvailable) {
       if (!product.enabled) {
         throw new ForbiddenException({
           code: 'AI_IMPORT_UNAVAILABLE',
@@ -141,7 +148,7 @@ export class AiController {
     }
 
     let consumed = false;
-    if (!freeAvailable && !freeNow && paidCreditAvailable) {
+    if (!lifetimeFree && !freeAvailable && !freeNow && paidCreditAvailable) {
       await this.paymentsService.consumeCredit(userId, 'RESUME_AI_IMPORT');
       consumed = true;
     }
@@ -188,10 +195,11 @@ export class AiController {
       throw new BadRequestException('Envie os dados do currículo para avaliação.');
     }
 
-    const [user, product, credits] = await Promise.all([
+    const [user, product, credits, lifetimeFree] = await Promise.all([
       this.requireUser(req.user.uid),
       this.paymentsService.findProduct('RESUME_REANALYSIS', true),
       this.paymentsService.getCredits(req.user.uid),
+      this.billingSupport.isLifetimeFree(req.user.uid),
     ]);
 
     const analysisCount = Number(user.aiAnalysisCount || 0);
@@ -199,7 +207,7 @@ export class AiController {
     const freeAvailable = analysisCount < freeAnalysisLimit;
     const freeNow = Boolean(product.enabled) && Number(product.effectivePriceCents || 0) === 0;
     const paidCreditAvailable = Number(credits.RESUME_REANALYSIS || 0) > 0;
-    const canRunNewAnalysis = freeAvailable || freeNow || paidCreditAvailable;
+    const canRunNewAnalysis = lifetimeFree || freeAvailable || freeNow || paidCreditAvailable;
 
     if (!canRunNewAnalysis) {
       if (!product.enabled) {
@@ -217,7 +225,7 @@ export class AiController {
     }
 
     let consumed = false;
-    if (!freeAvailable && !freeNow && paidCreditAvailable) {
+    if (!lifetimeFree && !freeAvailable && !freeNow && paidCreditAvailable) {
       await this.paymentsService.consumeCredit(req.user.uid, 'RESUME_REANALYSIS');
       consumed = true;
     }
@@ -243,14 +251,15 @@ export class AiController {
 
   @Post('improve-resume')
   async improveResume(@Req() req: any) {
-    const [user, product, credits] = await Promise.all([
+    const [user, product, credits, lifetimeFree] = await Promise.all([
       this.requireUser(req.user.uid),
       this.paymentsService.findProduct('RESUME_AI_IMPROVEMENT', true),
       this.paymentsService.getCredits(req.user.uid),
+      this.billingSupport.isLifetimeFree(req.user.uid),
     ]);
     const freeNow = Boolean(product.enabled) && Number(product.effectivePriceCents || 0) === 0;
     const paidCreditAvailable = Number(credits.RESUME_AI_IMPROVEMENT || 0) > 0;
-    if (!freeNow && !paidCreditAvailable) {
+    if (!lifetimeFree && !freeNow && !paidCreditAvailable) {
       if (!product.enabled) {
         throw new ForbiddenException({ code: 'IMPROVEMENT_UNAVAILABLE', message: 'A otimização profissional por IA está temporariamente indisponível.' });
       }
@@ -263,7 +272,7 @@ export class AiController {
     }
 
     let consumed = false;
-    if (!freeNow && paidCreditAvailable) {
+    if (!lifetimeFree && !freeNow && paidCreditAvailable) {
       await this.paymentsService.consumeCredit(req.user.uid, 'RESUME_AI_IMPROVEMENT');
       consumed = true;
     }
@@ -308,8 +317,6 @@ export class AiController {
     let analysis: any = null;
     let analysisError: string | null = null;
     try {
-      // A reanálise é parte integrante do produto de otimização. Ela não usa nem
-      // altera o saldo de reanálises compradas separadamente pelo usuário.
       const profileForReview = {
         ...user,
         uploadedResumeFile: undefined,
