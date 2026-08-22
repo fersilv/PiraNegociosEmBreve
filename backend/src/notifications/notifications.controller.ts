@@ -21,6 +21,9 @@ const ALLOWED_NOTIFICATION_PREFERENCES = new Set([
   'companies',
 ]);
 
+const ADMIN_AUDIENCES = new Set(['all', 'candidates', 'companies', 'admins', 'user']);
+const ADMIN_CATEGORIES = new Set(['announcement', 'system', 'maintenance', 'important']);
+
 @Controller('notifications')
 @UseGuards(FirebaseAuthGuard)
 export class NotificationsController {
@@ -88,6 +91,38 @@ export class NotificationsController {
   @Post('push-test')
   sendTestPush(@Req() req: any) {
     return this.notifsService.sendTestPush(req.user.uid);
+  }
+
+  @Post('admin/broadcast')
+  async adminBroadcast(
+    @Req() req: any,
+    @Body() body: { audience?: unknown; title?: unknown; message?: unknown; link?: unknown; category?: unknown; userQuery?: unknown },
+  ) {
+    const admin = await this.usersRepository.findOne({ where: { id: req.user.uid } });
+    if (!admin || admin.type !== UserType.ADMIN) throw new ForbiddenException('Apenas administradores podem disparar notificações manuais.');
+
+    const audience = typeof body?.audience === 'string' ? body.audience : '';
+    const title = typeof body?.title === 'string' ? body.title.trim() : '';
+    const message = typeof body?.message === 'string' ? body.message.trim() : '';
+    const category = typeof body?.category === 'string' ? body.category : 'announcement';
+    const link = typeof body?.link === 'string' ? body.link.trim() : '';
+    const userQuery = typeof body?.userQuery === 'string' ? body.userQuery.trim() : '';
+
+    if (!ADMIN_AUDIENCES.has(audience)) throw new BadRequestException('Público inválido.');
+    if (!ADMIN_CATEGORIES.has(category)) throw new BadRequestException('Categoria inválida.');
+    if (!title || title.length > 120) throw new BadRequestException('Título deve ter entre 1 e 120 caracteres.');
+    if (!message || message.length > 800) throw new BadRequestException('Mensagem deve ter entre 1 e 800 caracteres.');
+    if (link && link.length > 500) throw new BadRequestException('Link muito longo.');
+    if (audience === 'user' && !userQuery) throw new BadRequestException('Informe o ID ou e-mail do usuário.');
+
+    return this.notifsService.adminBroadcast({
+      audience: audience as 'all' | 'candidates' | 'companies' | 'admins' | 'user',
+      title,
+      message,
+      link: link || null,
+      category: category as 'announcement' | 'system' | 'maintenance' | 'important',
+      userQuery: userQuery || null,
+    });
   }
 
   @Post()
