@@ -4,7 +4,7 @@ import type { Job } from '../jobs/entities/job.entity';
 import type { User } from '../users/entities/user.entity';
 
 describe('JobMatchService scoring guardrails', () => {
-  const service = new JobMatchService({} as any, {} as any, {} as any, {} as any, {} as any) as any;
+  const service = new JobMatchService({} as any, {} as any, {} as any, {} as any, {} as any, {} as any) as any;
 
   const colhedoraJob = {
     id: 'job-1',
