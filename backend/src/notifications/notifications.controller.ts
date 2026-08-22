@@ -27,13 +27,17 @@ export class NotificationsController {
   @Put('push-installation')
   registerPushInstallation(
     @Req() req: any,
-    @Body() body: { installationId?: unknown; platform?: unknown; userAgent?: unknown },
+    @Body() body: { installationId?: unknown; token?: unknown; platform?: unknown; userAgent?: unknown },
   ) {
     if (typeof body?.installationId !== 'string' || !body.installationId.trim() || body.installationId.length > 255) {
       throw new BadRequestException('Identificador de instalação inválido.');
     }
+    if (typeof body?.token !== 'string' || !body.token.trim() || body.token.length > 8192) {
+      throw new BadRequestException('Token FCM inválido.');
+    }
     return this.notifsService.registerPushInstallation(req.user.uid, {
       installationId: body.installationId,
+      token: body.token,
       platform: typeof body.platform === 'string' ? body.platform : null,
       userAgent: typeof body.userAgent === 'string' ? body.userAgent : null,
     });
