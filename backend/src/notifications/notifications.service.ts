@@ -25,10 +25,7 @@ export class NotificationsService {
   ) {}
 
   async findAllForUser(userId: string): Promise<Notification[]> {
-    return this.notifRepo.find({
-      where: { userId },
-      order: { createdAt: 'DESC' },
-    });
+    return this.notifRepo.find({ where: { userId }, order: { createdAt: 'DESC' } });
   }
 
   async markAsRead(userId: string, id: string): Promise<void> {
@@ -51,7 +48,6 @@ export class NotificationsService {
   async registerPushInstallation(userId: string, input: PushInstallationInput) {
     const installationId = input.installationId.trim();
     let installation = await this.pushInstallationRepo.findOne({ where: { installationId } });
-
     if (!installation) {
       installation = this.pushInstallationRepo.create({
         userId,
@@ -68,10 +64,8 @@ export class NotificationsService {
       installation.active = true;
       installation.lastSeenAt = new Date();
     }
-
     await this.pushInstallationRepo.save(installation);
 
-    // O token legado não é mais necessário após a primeira sincronização por FID.
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (user?.fcmToken) {
       user.fcmToken = null;
@@ -87,9 +81,7 @@ export class NotificationsService {
   }
 
   async unregisterPushInstallation(userId: string, installationId: string) {
-    const installation = await this.pushInstallationRepo.findOne({
-      where: { userId, installationId },
-    });
+    const installation = await this.pushInstallationRepo.findOne({ where: { userId, installationId } });
     if (!installation) return { unregistered: true };
     installation.active = false;
     await this.pushInstallationRepo.save(installation);
@@ -97,9 +89,7 @@ export class NotificationsService {
   }
 
   async pushStatus(userId: string) {
-    const activeInstallations = await this.pushInstallationRepo.count({
-      where: { userId, active: true },
-    });
+    const activeInstallations = await this.pushInstallationRepo.count({ where: { userId, active: true } });
     return { enabled: activeInstallations > 0, activeInstallations };
   }
 
@@ -110,34 +100,35 @@ export class NotificationsService {
     return '/user';
   }
 
+  private absoluteWebUrl(pathOrUrl: string): string {
+    if (/^https:\/\//i.test(pathOrUrl)) return pathOrUrl;
+    const origin = (process.env.PUBLIC_SITE_URL || 'https://piranegocios.com.br').replace(/\/$/, '');
+    return `${origin}${pathOrUrl.startsWith('/') ? '' : '/'}${pathOrUrl}`;
+  }
+
   private isPermanentRegistrationError(error: any): boolean {
     const code = String(error?.code || error?.errorInfo?.code || '').toLowerCase();
-    return (
-      code.includes('registration-token-not-registered') ||
+    return code.includes('registration-token-not-registered') ||
       code.includes('invalid-registration-token') ||
       code.includes('invalid-argument') ||
       code.includes('not-found') ||
-      code.includes('unregistered')
-    );
+      code.includes('unregistered');
   }
 
   private async disableInstallations(ids: string[]) {
     if (!ids.length) return;
-    await this.pushInstallationRepo.update(
-      { installationId: In(ids) },
-      { active: false },
-    );
+    await this.pushInstallationRepo.update({ installationId: In(ids) }, { active: false });
   }
 
   private async pushToUser(user: User | null, notif: Notification): Promise<void> {
     if (!user) return;
-
     const installations = await this.pushInstallationRepo.find({
       where: { userId: user.id, active: true },
       order: { updatedAt: 'DESC' },
     });
     const fids = Array.from(new Set(installations.map((item) => item.installationId).filter(Boolean)));
     const url = this.notificationUrl(notif);
+    const absoluteLink = this.absoluteWebUrl(url);
 
     if (fids.length) {
       for (let offset = 0; offset < fids.length; offset += 500) {
@@ -145,10 +136,7 @@ export class NotificationsService {
         try {
           const result = await this.firebaseService.getMessaging().sendEachForMulticast({
             fids: batch,
-            notification: {
-              title: notif.title,
-              body: notif.message,
-            },
+            notification: { title: notif.title, body: notif.message },
             data: {
               url,
               notificationId: String(notif.id || ''),
@@ -156,15 +144,8 @@ export class NotificationsService {
               jobId: String(notif.jobId || ''),
               appId: String(notif.appId || ''),
             },
-            webpush: {
-              fcmOptions: { link: url },
-              notification: {
-                icon: '/icon.svg',
-                badge: '/icon.svg',
-              },
-            },
+            webpush: { fcmOptions: { link: absoluteLink } },
           });
-
           const invalidFids = result.responses
             .map((response, index) => (!response.success && this.isPermanentRegistrationError(response.error) ? batch[index] : null))
             .filter((value): value is string => Boolean(value));
@@ -176,7 +157,6 @@ export class NotificationsService {
       return;
     }
 
-    // Compatibilidade temporária com navegadores cadastrados antes da migração para FID.
     const legacyToken = user.fcmToken?.trim();
     if (!legacyToken) return;
     try {
@@ -190,7 +170,7 @@ export class NotificationsService {
           jobId: String(notif.jobId || ''),
           appId: String(notif.appId || ''),
         },
-        webpush: { fcmOptions: { link: url } },
+        webpush: { fcmOptions: { link: absoluteLink } },
       });
     } catch (error: any) {
       console.warn(`Legacy FCM push failed for user ${user.id}:`, error?.code || error?.message || error);
@@ -204,9 +184,7 @@ export class NotificationsService {
   async create(data: Partial<Notification>): Promise<Notification> {
     const notif = this.notifRepo.create({ ...data, read: data.read ?? false });
     const saved = await this.notifRepo.save(notif);
-    const user = saved.userId
-      ? await this.userRepo.findOne({ where: { id: saved.userId } })
-      : null;
+    const user = saved.userId ? await this.userRepo.findOne({ where: { id: saved.userId } }) : null;
     await this.pushToUser(user, saved);
     return saved;
   }
@@ -234,15 +212,13 @@ export class NotificationsService {
     const users = await this.userRepo.find({ where: { isOpenToWork: true } });
     const candidates = users.filter((user) => user.type !== UserType.ADMIN);
     await Promise.all(
-      candidates.map((candidate) =>
-        this.notifyUser(candidate.id, {
-          title: 'Nova vaga na região',
-          message: `A empresa "${jobData.companyName}" publicou a vaga "${jobData.jobTitle}" em ${jobData.location || 'localização informada na vaga'}.`,
-          type: 'new_job',
-          jobId: jobData.jobId,
-          link: jobData.slug ? `/vagas/${jobData.slug}` : `/user/vaga/${jobData.jobId}`,
-        }),
-      ),
+      candidates.map((candidate) => this.notifyUser(candidate.id, {
+        title: 'Nova vaga na região',
+        message: `A empresa "${jobData.companyName}" publicou a vaga "${jobData.jobTitle}" em ${jobData.location || 'localização informada na vaga'}.`,
+        type: 'new_job',
+        jobId: jobData.jobId,
+        link: jobData.slug ? `/vagas/${jobData.slug}` : `/user/vaga/${jobData.jobId}`,
+      })),
     );
   }
 }
