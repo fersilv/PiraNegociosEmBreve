@@ -117,8 +117,28 @@ export class NotificationsService {
     await this.pushInstallationRepo.update({ installationId: In(ids) }, { active: false });
   }
 
+  private shouldPush(user: User, notif: Notification): boolean {
+    if (notif.type === 'push_test') return true;
+    const prefs = user.notificationPreferences || {};
+    if (prefs.pushEnabled === false) return false;
+    const type = String(notif.type || '').toLowerCase();
+    if (type === 'new_job' && prefs.newJobs === false) return false;
+    if ((type.includes('status') || type.includes('application')) && user.companyId && prefs.hiringUpdates === false) return false;
+    if ((type.includes('status') || type.includes('application')) && !user.companyId && prefs.applicationUpdates === false) return false;
+    if (type.includes('document') && prefs.documents === false) return false;
+    if (type.includes('message') || type.includes('chat')) {
+      if (user.companyId && prefs.candidateMessages === false) return false;
+      if (!user.companyId && prefs.messages === false) return false;
+    }
+    if (type.includes('moderation') && prefs.moderation === false) return false;
+    if (type.includes('api') && prefs.api === false) return false;
+    if (type.includes('company') && user.type === UserType.ADMIN && prefs.companies === false) return false;
+    if (type.includes('system') && prefs.system === false) return false;
+    return true;
+  }
+
   private async pushToUser(user: User | null, notif: Notification): Promise<void> {
-    if (!user) return;
+    if (!user || !this.shouldPush(user, notif)) return;
     const installations = await this.pushInstallationRepo.find({
       where: { userId: user.id, active: true },
       order: { updatedAt: 'DESC' },
