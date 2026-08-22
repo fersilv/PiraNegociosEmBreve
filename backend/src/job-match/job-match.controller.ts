@@ -18,6 +18,11 @@ export class JobMatchController {
   matches(@Req() req: any) {
     return this.jobMatch.getMatches(req.user.uid);
   }
+
+  @Get('jobs/:jobId/candidates')
+  companyCandidates(@Req() req: any, @Param('jobId') jobId: string) {
+    return this.jobMatch.getCompanyCandidatesForJob(req.user.uid, jobId);
+  }
 }
 
 @Controller('admin/job-match')
