@@ -89,6 +89,7 @@ export function AdminJobDetailsPage() {
       await load();
     } catch (requestError: any) {
       setError(requestError?.response?.data?.message || "Não foi possível atualizar a vaga.");
+    } finally {
       setSaving(false);
     }
   };
@@ -228,7 +229,7 @@ function Section({ title, icon, children }: { title: string; icon: React.ReactNo
 function RichText({ value, empty }: { value?: string | null; empty: string }) {
   const paragraphs = String(value || "").split(/\n+/).map((item) => item.trim()).filter(Boolean);
   if (!paragraphs.length) return <p className="text-sm text-stone-500">{empty}</p>;
-  return <div className="space-y-3 text-sm leading-7 text-stone-650">{paragraphs.map((paragraph, index) => <p key={`${paragraph}-${index}`}>{paragraph}</p>)}</div>;
+  return <div className="space-y-3 text-sm leading-7 text-stone-600">{paragraphs.map((paragraph, index) => <p key={`${paragraph}-${index}`}>{paragraph}</p>)}</div>;
 }
 
 function Info({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
