@@ -129,7 +129,9 @@ export class NotificationsService {
     if (installations.length) {
       for (let offset = 0; offset < installations.length; offset += 500) {
         const batch = installations.slice(offset, offset + 500);
-        const tokens = batch.map((item) => item.token).filter(Boolean);
+        const tokens = batch
+          .map((item) => item.token)
+          .filter((token): token is string => typeof token === 'string' && token.length > 0);
         if (!tokens.length) continue;
         try {
           const result = await this.firebaseService.getMessaging().sendEachForMulticast({
