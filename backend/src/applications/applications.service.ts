@@ -54,6 +54,7 @@ export class ApplicationsService {
     app.observations = this.asArray(app.observations);
     app.customDocs = this.asArray(app.customDocs);
     app.onboardingDocs = this.asRecord(app.onboardingDocs);
+    app.resumeSnapshot = app.resumeSnapshot ? this.asRecord(app.resumeSnapshot) : null;
     return app;
   }
 
@@ -127,7 +128,12 @@ export class ApplicationsService {
     return application ? this.normalizeApplication(application) : null;
   }
 
-  async create(candidateId: string, job: Job, resumeUrl?: string): Promise<Application> {
+  async create(
+    candidateId: string,
+    job: Job,
+    resumeUrl?: string,
+    resumeSnapshot?: Record<string, unknown>,
+  ): Promise<Application> {
     const existing = await this.appRepo.findOne({ where: { candidateId, jobId: job.id } });
     if (existing) throw new ConflictException('Você já possui uma candidatura para esta vaga.');
     const application = this.appRepo.create({
@@ -137,6 +143,7 @@ export class ApplicationsService {
       companyName: job.isConfidential ? 'Empresa Confidencial' : job.companyName,
       jobTitle: job.title,
       resumeUrl: resumeUrl || null,
+      resumeSnapshot: resumeSnapshot || null,
       status: ApplicationStatus.PENDING,
       observations: [],
       onboardingDocs: {},
