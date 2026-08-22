@@ -11,6 +11,7 @@ const RESUME_CONTENT_FIELDS = new Set([
   'resumePhotoURL', 'bio', 'salaryExpectation', 'experiences', 'education',
   'skills', 'courses', 'languages', 'resumePreferences', 'uploadedResumeFile',
 ]);
+const STRUCTURED_RESUME_MARKER = 'structured://published';
 
 @Controller('users')
 @UseGuards(FirebaseAuthGuard)
@@ -119,6 +120,7 @@ export class UsersController {
     if (touchesResume && updateData.resumeStatus !== 'PUBLISHED') {
       sanitized.resumeStatus = 'DRAFT';
       sanitized.resumePublishedAt = null;
+      if (existing?.resumeURL === STRUCTURED_RESUME_MARKER) sanitized.resumeURL = '';
     }
     if (updateData.resumeStatus === 'PUBLISHED') {
       const merged = { ...(existing || {}), ...sanitized } as User;
@@ -131,10 +133,14 @@ export class UsersController {
       if (!hasStructuredResume) throw new BadRequestException('Complete ao menos o resumo, experiências, formação ou habilidades antes de publicar o currículo.');
       sanitized.resumeStatus = 'PUBLISHED';
       sanitized.resumePublishedAt = new Date();
+      if (!existing?.resumeURL?.trim() || existing.resumeURL === STRUCTURED_RESUME_MARKER) {
+        sanitized.resumeURL = STRUCTURED_RESUME_MARKER;
+      }
     }
     if (updateData.resumeStatus === 'DRAFT') {
       sanitized.resumeStatus = 'DRAFT';
       sanitized.resumePublishedAt = null;
+      if (existing?.resumeURL === STRUCTURED_RESUME_MARKER) sanitized.resumeURL = '';
     }
 
     if (typeof user.email === 'string' && user.email.trim()) sanitized.email = user.email.trim().toLowerCase();
