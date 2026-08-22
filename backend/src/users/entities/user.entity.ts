@@ -136,6 +136,13 @@ export class User {
     hasOwnVehicle?: boolean | null;
     ownVehicles?: string[];
     includeExclusivePcdJobs?: boolean;
+    pcdDeclaration?: 'NOT_INFORMED' | 'YES' | 'NO';
+    pcdDocumentationStatus?:
+      | 'NOT_INFORMED'
+      | 'HAS_REPORT'
+      | 'NO_REPORT'
+      | 'IN_PROGRESS';
+    pcdDataConsent?: boolean;
   } | null;
 
   @Column({ type: 'text', nullable: true })
