@@ -71,6 +71,20 @@ export interface Language {
   level: string;
 }
 
+export interface WorkLocationPreference {
+  city: string;
+  state: string;
+}
+
+export interface JobPreferences {
+  preferredLocations?: WorkLocationPreference[];
+  hasDriverLicense?: boolean | null;
+  driverLicenseCategories?: string[];
+  hasOwnVehicle?: boolean | null;
+  ownVehicles?: string[];
+  includeExclusivePcdJobs?: boolean;
+}
+
 export interface UserProfile {
   name?: string;
   displayName?: string;
@@ -107,6 +121,9 @@ export interface UserProfile {
   languages?: Language[];
   salaryExpectation?: string;
   address?: string;
+  city?: string;
+  state?: string;
+  jobPreferences?: JobPreferences;
   resumePhotoURL?: string;
   resumePreferences?: ResumePreferences;
 }
