@@ -14,6 +14,7 @@ import { UserPreferencesPage } from "./UserPreferencesPage";
 import { UserProfessionalProfilePage } from "./UserProfessionalProfilePage";
 import { UserAccountSettingsPage } from "./UserAccountSettingsPage";
 import { UserPaymentsPage } from "./UserPaymentsPage";
+import { ResumeEvolutionPage } from "./ResumeEvolutionPage";
 import { NotificationPreferencesPage } from "./NotificationPreferencesPage";
 import { AdminDashboard, ApiV1Panel } from "./AdminDashboard";
 import { AdminOverview } from "./AdminOverview";
@@ -64,6 +65,7 @@ function UserRoutes() {
       <Route index element={<CandidateDashboard />} />
       <Route path="vagas" element={<UserJobsPage />} />
       <Route path="curriculo" element={<ResumeWorkspace />} />
+      <Route path="curriculo/evolucao" element={<ResumeEvolutionPage />} />
       <Route path="pagamentos" element={<UserPaymentsPage />} />
       <Route path="preferencias" element={<UserPreferencesPage />} />
       <Route path="notificacoes" element={<NotificationPreferencesPage />} />
