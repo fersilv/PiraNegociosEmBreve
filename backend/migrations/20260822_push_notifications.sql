@@ -16,5 +16,13 @@ CREATE TABLE IF NOT EXISTS "notifications" (
   "createdAt" timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE "notifications"
+  ADD COLUMN IF NOT EXISTS "link" varchar,
+  ADD COLUMN IF NOT EXISTS "type" varchar,
+  ADD COLUMN IF NOT EXISTS "jobId" varchar,
+  ADD COLUMN IF NOT EXISTS "appId" varchar,
+  ADD COLUMN IF NOT EXISTS "read" boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "createdAt" timestamptz NOT NULL DEFAULT now();
+
 CREATE INDEX IF NOT EXISTS "IDX_notifications_user_created"
   ON "notifications" ("userId", "createdAt" DESC);
