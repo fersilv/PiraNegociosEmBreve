@@ -44,6 +44,7 @@ import { MinimalistTemplate } from "../components/resume-templates/MinimalistTem
 import { CreativeTemplate } from "../components/resume-templates/CreativeTemplate";
 import { CityStateSelector } from "../components/CityStateSelector";
 import { FileUpload } from "../components/FileUpload";
+import { CandidateWorkPreferencesCard } from "../components/CandidateWorkPreferencesCard";
 import { SearchSelect } from "../components/SearchSelect";
 import { useAiStatus } from "../hooks/useAiStatus";
 
@@ -749,6 +750,7 @@ export function ResumeBuilderPage() {
 
   const STEPS = [
     { id: "personal", label: "Dados Pessoais", icon: <User className="w-4 h-4" /> },
+    { id: "preferences", label: "Preferências", icon: <Settings className="w-4 h-4" /> },
     ...(isFirstJob ? [] : [{ id: "experience", label: "Experiência", icon: <Briefcase className="w-4 h-4" /> }]),
     { id: "education", label: "Formação", icon: <GraduationCap className="w-4 h-4" /> },
     { id: "skills", label: "Habilidades", icon: <Sparkles className="w-4 h-4" /> },
@@ -848,6 +850,27 @@ export function ResumeBuilderPage() {
             </div>
 
             <div className="p-5 flex-1 overflow-y-auto space-y-7">
+              <section className="rounded-2xl border border-white/10 bg-white/[.055] p-4 text-white">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-[#f0b99d]">
+                    <FileText className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-black uppercase tracking-[.14em] text-white/45">Documento-base</p>
+                    <p className="mt-1 truncate text-xs font-bold text-white/90">{profile.uploadedResumeFile?.name || "Nenhum arquivo guardado"}</p>
+                    <p className="mt-1 text-[11px] leading-4 text-white/45">Opcional. Use apenas para guardar ou importar um currículo/documento existente.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => window.location.assign("/user/curriculo?import=1")}
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2.5 text-xs font-bold text-white transition hover:bg-white/15"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  {profile.uploadedResumeFile ? "Gerenciar documento-base" : "Importar documento-base"}
+                </button>
+              </section>
+
               {aiEnabled && (
                 <ResumeScoreCard
                   analysis={formAiAnalysis}
@@ -1032,6 +1055,17 @@ export function ResumeBuilderPage() {
               </div>
             </div>
             <FormField label="Pretensão salarial (opcional)" value={formSalary} onChange={setFormSalary} placeholder="Ex.: R$ 2.500,00 a R$ 3.000,00" />
+          </div>
+        );
+
+      case "preferences":
+        return (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-terracotta-100 bg-terracotta-50/50 p-4">
+              <p className="text-sm font-bold text-stone-900">Como e onde você quer trabalhar</p>
+              <p className="mt-1 text-xs leading-5 text-stone-500">Essas informações ajudam o PiraNegócios a recomendar oportunidades compatíveis com sua rotina, mobilidade e necessidades.</p>
+            </div>
+            <CandidateWorkPreferencesCard />
           </div>
         );
 

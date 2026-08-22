@@ -18,7 +18,6 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../lib/api";
 import { openBase64InNewTab } from "../lib/fileViewer";
-import { CandidateWorkPreferencesCard } from "../components/CandidateWorkPreferencesCard";
 import { ResumeBuilderStudio } from "./ResumeBuilderStudio";
 
 const ACCEPTED_RESUME_FILES = [
@@ -31,7 +30,7 @@ const MAX_FILES = 8;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 36 * 1024 * 1024;
 
-type Stage = "resume" | "preferences" | "publish";
+type Stage = "resume" | "publish";
 
 function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -71,7 +70,7 @@ export function ResumeWorkspace() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedStage = searchParams.get("stage");
-  const initialStage: Stage = requestedStage === "preferences" || requestedStage === "publish" ? requestedStage : "resume";
+  const initialStage: Stage = requestedStage === "publish" ? "publish" : "resume";
   const [stage, setStageState] = useState<Stage>(initialStage);
   const [open, setOpen] = useState(searchParams.get("import") === "1");
   const [files, setFiles] = useState<File[]>([]);
@@ -91,6 +90,10 @@ export function ResumeWorkspace() {
     setSearchParams(nextParams, { replace: true });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  React.useEffect(() => {
+    if (searchParams.get("import") === "1") setOpen(true);
+  }, [searchParams]);
 
   const totalSize = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
   const completionSignals = useMemo(() => [
@@ -301,61 +304,40 @@ export function ResumeWorkspace() {
       <input ref={fileInputRef} type="file" accept={ACCEPTED_RESUME_FILES} multiple onChange={chooseFiles} className="hidden" />
 
       <div className="resume-workflow-nav sticky top-0 z-[65] border-b border-[#5b4030]/10 bg-[#fffaf5]/95 px-3 py-3 backdrop-blur-xl sm:px-5">
-        <div className="mx-auto flex max-w-7xl items-center gap-2 overflow-x-auto">
-          <button type="button" onClick={() => navigate("/user")} className="mr-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-600" aria-label="Voltar ao meu espaço">
+        <div className="mx-auto flex max-w-7xl items-center gap-3">
+          <button type="button" onClick={() => navigate("/user")} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-600" aria-label="Voltar ao meu espaço">
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <StageButton number="1" label="Currículo" active={stage === "resume"} done={Boolean(profile?.bio || profile?.experiences?.length || profile?.education?.length)} onClick={() => setStage("resume")} />
-          <ChevronRight className="h-4 w-4 shrink-0 text-stone-300" />
-          <StageButton number="2" label="Preferências" active={stage === "preferences"} done={Boolean(profile?.city && profile?.state)} onClick={() => setStage("preferences")} />
-          <ChevronRight className="h-4 w-4 shrink-0 text-stone-300" />
-          <StageButton number="3" label="Versões e publicação" active={stage === "publish"} done={hasPublishedVersion} onClick={() => setStage("publish")} />
-          <span className={`ml-auto hidden shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[.12em] sm:inline-flex ${topStatusClass}`}>{topStatus}</span>
+          <div className="min-w-0">
+            <p className="text-[9px] font-black uppercase tracking-[.16em] text-terracotta-600">Carreira</p>
+            <p className="truncate font-serif text-lg font-bold text-stone-900">Meu currículo</p>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <span className={`hidden shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[.12em] sm:inline-flex ${topStatusClass}`}>{topStatus}</span>
+            <button type="button" onClick={() => setStage(stage === "publish" ? "resume" : "publish")} className="inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-xs font-bold text-stone-700 shadow-sm hover:bg-stone-50">
+              {stage === "publish" ? <><ArrowLeft className="h-4 w-4" /> Voltar ao currículo</> : <><Globe2 className="h-4 w-4 text-terracotta-600" /> Versões e publicação</>}
+            </button>
+          </div>
         </div>
       </div>
 
       {stage === "resume" && (
         <>
-          <section className="resume-source-bar mx-auto max-w-7xl px-3 pt-4 sm:px-5">
-            <div className="flex flex-col gap-3 rounded-[24px] border border-[#ddcfc3] bg-[#fffdfa] p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[.15em] text-terracotta-600">Documento-base</p>
-                {profile?.uploadedResumeFile ? (
-                  <><p className="mt-1 truncate text-sm font-bold text-stone-900">{profile.uploadedResumeFile.name}</p><p className="mt-1 text-[11px] text-stone-500">{(profile.uploadedResumeFile.size / 1024 / 1024).toFixed(1)} MB · disponível para vagas que exigem arquivo</p></>
-                ) : (
-                  <><p className="mt-1 text-sm font-bold text-stone-900">Nenhum arquivo guardado</p><p className="mt-1 text-[11px] text-stone-500">Opcional. O currículo estruturado publicado basta quando a empresa não exigir arquivo.</p></>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {profile?.uploadedResumeFile && <button type="button" disabled={openingStoredFile} onClick={() => void openStoredFile()} className="inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs font-bold text-stone-700 disabled:opacity-50">{openingStoredFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />} Abrir arquivo</button>}
-                <button type="button" onClick={() => { setError(""); setSuccess(""); fileInputRef.current?.click(); }} className="inline-flex items-center gap-2 rounded-xl bg-[#2b211c] px-3.5 py-2.5 text-xs font-bold text-white"><Upload className="h-4 w-4 text-[#f0b99d]" /> {profile?.uploadedResumeFile ? "Substituir / importar" : "Importar currículo"}</button>
-                {profile?.uploadedResumeFile && <button type="button" onClick={() => void removeStoredFile()} className="inline-flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5 text-xs font-bold text-red-600"><Trash2 className="h-4 w-4" /> Remover</button>}
-              </div>
-            </div>
-            {hasPublishedVersion && draftDiffersFromPublished && <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">Você está editando o <strong>rascunho</strong>. A última versão publicada continua congelada e {online ? "permanece online" : "está fora do ar"} até você publicar o rascunho.</div>}
-            {hasPublishedVersion && !online && !draftDiffersFromPublished && <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-100 px-4 py-3 text-xs font-semibold text-stone-600">Existe uma versão publicada preservada, mas ela está <strong>fora do ar</strong>.</div>}
+          <div className="mx-auto max-w-7xl px-3 pt-3 sm:px-5">
+            {hasPublishedVersion && draftDiffersFromPublished && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">Você está editando o <strong>rascunho</strong>. A última versão publicada continua congelada e {online ? "permanece online" : "está fora do ar"} até você publicar o rascunho.</div>}
+            {hasPublishedVersion && !online && !draftDiffersFromPublished && <div className="rounded-2xl border border-stone-200 bg-stone-100 px-4 py-3 text-xs font-semibold text-stone-600">Existe uma versão publicada preservada, mas ela está <strong>fora do ar</strong>.</div>}
             {error && <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">{error}</div>}
             {success && <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-700">{success}</div>}
-          </section>
-          <ResumeBuilderStudio />
-          <div className="resume-stage-actions sticky bottom-0 z-[60] border-t border-stone-200 bg-[#fffdfa]/96 p-3 backdrop-blur-xl">
-            <div className="mx-auto flex max-w-7xl justify-end"><button onClick={() => setStage("preferences")} className="inline-flex items-center gap-2 rounded-xl bg-[#2b211c] px-5 py-3 text-sm font-bold text-white">Continuar: preferências <ChevronRight className="h-4 w-4" /></button></div>
           </div>
+          <ResumeBuilderStudio />
         </>
       )}
 
-      {stage === "preferences" && (
-        <main className="mx-auto max-w-6xl space-y-5 px-3 py-5 sm:px-5 sm:py-7">
-          <div><p className="text-[10px] font-black uppercase tracking-[.16em] text-terracotta-600">Etapa 2 de 3</p><h1 className="mt-1 font-serif text-3xl font-bold">Preferências profissionais</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Cidade, mobilidade, CNH, veículo e informações PCD deixam candidaturas e matches mais realistas.</p></div>
-          <CandidateWorkPreferencesCard />
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between"><button onClick={() => setStage("resume")} className="rounded-xl border border-stone-200 bg-white px-5 py-3 text-sm font-bold text-stone-600">Voltar ao currículo</button><button onClick={() => setStage("publish")} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#2b211c] px-5 py-3 text-sm font-bold text-white">Versões e publicação <ChevronRight className="h-4 w-4" /></button></div>
-        </main>
-      )}
 
       {stage === "publish" && (
         <main className="mx-auto max-w-6xl px-3 py-6 sm:px-5 sm:py-9">
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div><p className="text-[10px] font-black uppercase tracking-[.16em] text-terracotta-600">Etapa 3 de 3</p><h1 className="mt-1 font-serif text-3xl font-bold">Versões do seu currículo</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Seu rascunho pode evoluir sem alterar a última versão publicada. Estar publicado e estar online agora são estados diferentes.</p></div>
+            <div><p className="text-[10px] font-black uppercase tracking-[.16em] text-terracotta-600">Publicação</p><h1 className="mt-1 font-serif text-3xl font-bold">Versões do seu currículo</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Seu rascunho pode evoluir sem alterar a última versão publicada. Estar publicado e estar online agora são estados diferentes.</p></div>
             <button type="button" onClick={() => navigate("/user")} className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-bold text-stone-600"><ArrowLeft className="h-4 w-4" /> Voltar ao meu espaço</button>
           </div>
 

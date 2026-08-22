@@ -1,9 +1,10 @@
 import React from "react";
-import { Link } from "react-router-dom";
-import { ArrowLeft, ShieldCheck, WandSparkles } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowLeft, FileText, ShieldCheck, WandSparkles } from "lucide-react";
 import { ResumeBuilderPage } from "./ResumeBuilderPage";
 
 export function ResumeBuilderStudio() {
+  const navigate = useNavigate();
   return (
     <div className="resume-studio">
       <ResumeStudioTheme />
@@ -27,6 +28,9 @@ export function ResumeBuilderStudio() {
           </div>
 
           <div className="hidden items-center gap-2 lg:flex">
+            <button type="button" onClick={() => navigate("/user/curriculo?stage=publish")} className="resume-studio-trust resume-studio-trust--button">
+              <FileText className="h-3.5 w-3.5" /> Versões e publicação
+            </button>
             <span className="resume-studio-trust">
               <ShieldCheck className="h-3.5 w-3.5" /> Integrado ao seu perfil
             </span>
@@ -99,6 +103,9 @@ function ResumeStudioTheme() {
 
       .resume-studio-kicker--muted { color: #9b8b81; }
       .resume-studio-dot { width: 3px; height: 3px; border-radius: 999px; background: #cabbb0; }
+
+      .resume-studio-trust--button { cursor: pointer; transition: .18s; }
+      .resume-studio-trust--button:hover { border-color: rgba(196,91,60,.28); color: #b55236; }
 
       .resume-studio-trust {
         display: inline-flex;
