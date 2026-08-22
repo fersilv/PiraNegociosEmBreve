@@ -17,13 +17,13 @@ import { SeoModule } from './seo/seo.module';
 import { AdvertisingModule } from './advertising/advertising.module';
 import { ExternalApiModule } from './external-api/external-api.module';
 import { PaymentsModule } from './payments/payments.module';
-
+import { JobMatchModule } from './job-match/job-match.module';
 import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true, // Faz as variáveis do .env estarem disponíveis em todo o app
+      isGlobal: true,
     }),
     AuthModule,
     TypeOrmModule.forRoot({
@@ -48,6 +48,7 @@ import { AiModule } from './ai/ai.module';
     AdvertisingModule,
     PaymentsModule,
     AiModule,
+    JobMatchModule,
     ExternalApiModule,
     AdminModule,
   ],
