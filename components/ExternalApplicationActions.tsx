@@ -1,11 +1,14 @@
 import React, { useMemo, useState } from "react";
-import { Check, Copy, Mail, MessageCircle } from "lucide-react";
+import { Check, Copy, ExternalLink, Mail, MessageCircle } from "lucide-react";
+import { applicationUrlLabel, safeApplicationUrl } from "../lib/jobApplication";
 
 type Props = {
   title: string;
   instructions?: string | null;
   email?: string | null;
   whatsapp?: string | null;
+  applicationUrl?: string | null;
+  applicationUrlTitle?: string | null;
 };
 
 export function ExternalApplicationActions({
@@ -13,6 +16,8 @@ export function ExternalApplicationActions({
   instructions,
   email,
   whatsapp,
+  applicationUrl,
+  applicationUrlTitle,
 }: Props) {
   const [copied, setCopied] = useState(false);
   const detectedEmail = useMemo(
@@ -25,6 +30,7 @@ export function ExternalApplicationActions({
   const rawNumber = (whatsapp || "").replace(/\D/g, "");
   const whatsappNumber =
     rawNumber && rawNumber.length <= 11 ? `55${rawNumber}` : rawNumber;
+  const applicationHref = safeApplicationUrl(applicationUrl);
   const copyEmail = async () => {
     if (!detectedEmail) return;
     await navigator.clipboard.writeText(detectedEmail);
@@ -37,6 +43,16 @@ export function ExternalApplicationActions({
         <p className="whitespace-pre-wrap text-sm">{instructions}</p>
       )}
       <div className="flex flex-wrap gap-2">
+        {applicationHref && (
+          <a
+            href={applicationHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg bg-terracotta-600 px-3 py-2 text-xs font-bold text-white hover:bg-terracotta-700"
+          >
+            <ExternalLink className="h-4 w-4" /> {applicationUrlLabel(applicationUrlTitle)}
+          </a>
+        )}
         {whatsappNumber && (
           <a
             href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(`Olá! Tenho interesse na vaga ${title}.`)}`}
