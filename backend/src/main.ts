@@ -39,10 +39,11 @@ async function ensureDatabaseExists() {
 async function bootstrap() {
   await ensureDatabaseExists();
 
-  // O parser padrão do Express/Nest limita JSON a 100 KB. Como o sistema ainda
-  // trafega avatar/currículo em data URLs (base64), configuramos explicitamente
-  // um teto compatível com uploads de até 10 MB sem deixar o body ilimitado.
-  const bodyLimit = process.env.BODY_LIMIT || '20mb';
+  // O sistema ainda trafega imagens/documentos em data URLs (base64). Mantemos
+  // um limite geral controlado e um teto maior somente para a importação de
+  // múltiplos documentos de currículo.
+  const bodyLimit = process.env.BODY_LIMIT || '30mb';
+  const resumeImportBodyLimit = process.env.RESUME_IMPORT_BODY_LIMIT || '60mb';
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
   });
@@ -56,6 +57,10 @@ async function bootstrap() {
   // respostas de erro de payload.
   app.enableCors();
 
+  app.use(
+    '/api/ai/analyze-resume-documents',
+    json({ limit: resumeImportBodyLimit }),
+  );
   app.use(json({ limit: bodyLimit }));
   app.use(urlencoded({ limit: bodyLimit, extended: true }));
 
