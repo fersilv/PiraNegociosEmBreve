@@ -12,15 +12,14 @@ export class Job {
   id: string;
 
   @Column()
-  ownerId: string; // References User.id
+  ownerId: string;
 
   @Column({ type: 'varchar', nullable: true })
-  companyId: string | null; // Null somente em vagas externas criadas pela administração
+  companyId: string | null;
 
   @Column()
   title: string;
 
-  // Stable canonical URL: https://piranegocios.com.br/vagas/{slug}
   @Column({ type: 'varchar', nullable: true, unique: true })
   slug: string | null;
 
@@ -104,6 +103,9 @@ export class Job {
 
   @Column({ default: true })
   acceptsPlatformApplications: boolean;
+
+  @Column({ default: false })
+  requiresResumeFile: boolean;
 
   @Column({ type: 'text', nullable: true })
   externalApplicationInstructions: string | null;
