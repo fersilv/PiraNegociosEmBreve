@@ -1,0 +1,12 @@
+PiraNegócios official brand assets mapping
+
+(1) logo-horizontal-gradient.png
+(2) logo-horizontal-white.png
+(3) logo-horizontal-black.png
+(4) logo-horizontal-terracotta.png
+(5) symbol-terracotta.png
+(6) symbol-white-textured.png
+(7) symbol-black.png
+(8) app-icon-terracotta.png
+(9) app-icon-burgundy.png
+(10) symbol-white.png
