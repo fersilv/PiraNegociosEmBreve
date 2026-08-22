@@ -7,7 +7,6 @@ import { useFeedback } from '../contexts/FeedbackContext';
 import {
   isNotificationSupported,
   requestNotificationPermission,
-  sendPushTest,
   setupForegroundFCMListener,
 } from '../lib/notifications';
 
@@ -18,7 +17,6 @@ export function NotificationCenter() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isPushEnabled, setIsPushEnabled] = useState(false);
-  const [testingPush, setTestingPush] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const preferencesPath = profile?.type === 'ADMIN'
@@ -85,21 +83,6 @@ export function NotificationCenter() {
       toast('Notificações push ativadas neste dispositivo.', 'success');
     } else {
       toast('Não foi possível ativar o push. Confirme a permissão de notificações do navegador.', 'warning');
-    }
-  };
-
-  const handleTestPush = async () => {
-    if (!user || testingPush) return;
-    setTestingPush(true);
-    try {
-      await sendPushTest();
-      await fetchNotifications();
-      toast('Push de teste enviado. Coloque esta aba em segundo plano para ver a notificação do sistema.', 'success');
-    } catch (error) {
-      console.error(error);
-      toast('Não foi possível enviar o push de teste. Verifique a configuração do Firebase no servidor.', 'error');
-    } finally {
-      setTestingPush(false);
     }
   };
 
@@ -175,17 +158,10 @@ export function NotificationCenter() {
           )}
 
           {isPushEnabled && isNotificationSupported() && (
-            <div className="px-4 py-2.5 bg-green-50/70 border-b border-green-100 flex items-center justify-between gap-3">
+            <div className="px-4 py-2.5 bg-green-50/70 border-b border-green-100">
               <p className="text-[11px] font-bold text-green-800 flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4" /> Push ativo neste dispositivo
               </p>
-              <button
-                onClick={handleTestPush}
-                disabled={testingPush}
-                className="text-[10px] font-bold text-green-800 underline underline-offset-2 disabled:opacity-50"
-              >
-                {testingPush ? 'Enviando...' : 'Testar'}
-              </button>
             </div>
           )}
 
