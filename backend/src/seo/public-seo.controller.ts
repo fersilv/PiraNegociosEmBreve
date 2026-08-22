@@ -11,6 +11,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { MoreThan, Repository } from 'typeorm';
 import type { Response } from 'express';
+import { createHash } from 'crypto';
 import { Company, CompanyStatus } from '../companies/entities/company.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { isReservedCompanySlug, slugify } from './seo.utils';
@@ -21,6 +22,8 @@ const siteUrl = () =>
 
 @Controller()
 export class PublicSeoController {
+  private readonly recentJobViews = new Map<string, number>();
+
   constructor(
     @InjectRepository(Company) private readonly companies: Repository<Company>,
     @InjectRepository(Job) private readonly jobs: Repository<Job>,
@@ -175,12 +178,17 @@ export class PublicSeoController {
   }
 
   @Post('public/jobs/:id/view')
-  async registerJobView(@Param('id') id: string) {
+  async registerJobView(@Param('id') id: string, @Req() req: any) {
     const job = await this.findPublicJob('id', id);
     await this.publicJobCompany(job);
-    await this.jobs.increment({ id: job.id }, 'views', 1);
-    const updated = await this.jobs.findOne({ where: { id: job.id }, select: { views: true } });
-    return { views: Number(updated?.views || job.views + 1) };
+    return this.incrementJobView(job, req);
+  }
+
+  @Post('public/jobs-by-slug/:slug/view')
+  async registerJobViewBySlug(@Param('slug') slug: string, @Req() req: any) {
+    const job = await this.findPublicJob('slug', slug);
+    await this.publicJobCompany(job);
+    return this.incrementJobView(job, req);
   }
 
   @Get('seo/sitemap')
@@ -233,6 +241,37 @@ export class PublicSeoController {
       return `  <url><loc>${this.escapeXml(url.loc)}</loc><lastmod>${d.toISOString().slice(0, 10)}</lastmod></url>`;
     }).join('\n')}\n</urlset>`;
     response.type('application/xml').send(xml);
+  }
+
+  private async incrementJobView(job: Job, req: any) {
+    const forwarded = String(req.headers?.['cf-connecting-ip'] || req.headers?.['x-forwarded-for'] || req.ip || '')
+      .split(',')[0]
+      .trim();
+    const userAgent = String(req.headers?.['user-agent'] || '').slice(0, 220);
+    const visitorHash = createHash('sha256')
+      .update(`${forwarded}|${userAgent}`)
+      .digest('hex')
+      .slice(0, 24);
+    const key = `${job.id}:${visitorHash}`;
+    const now = Date.now();
+    const previous = this.recentJobViews.get(key);
+
+    if (previous && now - previous < 8_000) {
+      const current = await this.jobs.findOne({ where: { id: job.id }, select: { views: true } });
+      return { views: Number(current?.views || job.views || 0), counted: false };
+    }
+
+    this.recentJobViews.set(key, now);
+    if (this.recentJobViews.size > 5_000) {
+      const cutoff = now - 60_000;
+      for (const [entryKey, timestamp] of this.recentJobViews.entries()) {
+        if (timestamp < cutoff) this.recentJobViews.delete(entryKey);
+      }
+    }
+
+    await this.jobs.increment({ id: job.id }, 'views', 1);
+    const updated = await this.jobs.findOne({ where: { id: job.id }, select: { views: true } });
+    return { views: Number(updated?.views || Number(job.views || 0) + 1), counted: true };
   }
 
   private publicJobsQuery() {
