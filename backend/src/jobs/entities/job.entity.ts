@@ -50,6 +50,21 @@ export class Job {
   @Column({ type: 'varchar', nullable: true })
   salary: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  estimatedSalary: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  estimatedSalarySource: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  estimatedSalarySourceUrl: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  estimatedSalaryRegion: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  estimatedSalaryUpdatedAt: Date | null;
+
   @Column({ nullable: true })
   companyName: string;
 
