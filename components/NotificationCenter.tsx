@@ -4,7 +4,6 @@ import { Bell, BellOff, Check, Trash2, ShieldCheck, Sparkles, AlertCircle } from
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  getPushStatus,
   isNotificationSupported,
   requestNotificationPermission,
   sendPushTest,
@@ -37,12 +36,12 @@ export function NotificationCenter() {
     let disposed = false;
 
     const refreshPushRegistration = async () => {
-      if (!isNotificationSupported()) return;
-      const status = await getPushStatus();
-      if (!disposed) setIsPushEnabled(status.enabled);
-      if (Notification.permission !== 'granted') return;
+      if (!isNotificationSupported() || Notification.permission !== 'granted') {
+        if (!disposed) setIsPushEnabled(false);
+        return;
+      }
       const installationId = await requestNotificationPermission(user.uid);
-      if (!disposed && installationId) setIsPushEnabled(true);
+      if (!disposed) setIsPushEnabled(Boolean(installationId));
     };
 
     void refreshPushRegistration();
