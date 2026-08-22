@@ -23,11 +23,7 @@ export class ApplicationsController {
     ]);
     if (!job) throw new BadRequestException('Vaga vinculada não encontrada.');
     if (user?.type === UserType.ADMIN) return;
-    if (
-      !user ||
-      (job.ownerId !== uid &&
-        !(user.companyId === job.companyId && user.isCompanyAdmin))
-    ) {
+    if (!user || (job.ownerId !== uid && !(user.companyId === job.companyId && user.isCompanyAdmin))) {
       throw new ForbiddenException('Você não tem permissão para administrar esta candidatura.');
     }
   }
@@ -46,6 +42,40 @@ export class ApplicationsController {
       throw new BadRequestException('Status de candidatura inválido.');
     }
     return normalized as ApplicationStatus;
+  }
+
+  private hasStructuredResume(candidate: User): boolean {
+    return Boolean(
+      candidate.bio?.trim() ||
+      (Array.isArray(candidate.experiences) && candidate.experiences.length > 0) ||
+      (Array.isArray(candidate.education) && candidate.education.length > 0) ||
+      (Array.isArray(candidate.skills) && candidate.skills.length > 0),
+    );
+  }
+
+  private buildResumeSnapshot(candidate: User, includeUploadedFile: boolean): Record<string, unknown> {
+    return {
+      fullName: candidate.fullName,
+      socialName: candidate.socialName,
+      phone: candidate.phone,
+      email: candidate.email,
+      city: candidate.city,
+      state: candidate.state,
+      address: candidate.address,
+      bio: candidate.bio,
+      experiences: Array.isArray(candidate.experiences) ? candidate.experiences : [],
+      education: Array.isArray(candidate.education) ? candidate.education : [],
+      skills: Array.isArray(candidate.skills) ? candidate.skills : [],
+      courses: Array.isArray(candidate.courses) ? candidate.courses : [],
+      languages: Array.isArray(candidate.languages) ? candidate.languages : [],
+      salaryExpectation: candidate.salaryExpectation,
+      resumePhotoURL: candidate.resumePhotoURL,
+      resumePreferences: candidate.resumePreferences || {},
+      resumePublishedAt: candidate.resumePublishedAt,
+      ...(includeUploadedFile && candidate.uploadedResumeFile
+        ? { uploadedResumeFile: candidate.uploadedResumeFile }
+        : {}),
+    };
   }
 
   @Get('me')
@@ -77,12 +107,34 @@ export class ApplicationsController {
     ]);
     if (!candidate) throw new ForbiddenException('Usuário não encontrado.');
     if (!job || !job.active) throw new BadRequestException('Esta vaga não está disponível para candidaturas.');
-    if (!job.acceptsPlatformApplications) throw new BadRequestException('Esta empresa recebe currículos por um canal externo indicado na vaga.');
-    const resumeUrl = createData.resumeURL || createData.resumeUrl || candidate.resumeURL || undefined;
-    if (!resumeUrl?.trim()) {
-      throw new BadRequestException('Envie seu currículo no perfil antes de se candidatar a uma vaga.');
+    if (!job.acceptsPlatformApplications) {
+      throw new BadRequestException('Esta empresa recebe currículos por um canal externo indicado na vaga.');
     }
-    return this.appsService.create(req.user.uid, job, resumeUrl);
+
+    const legacyResumeUrl = createData.resumeURL || createData.resumeUrl || candidate.resumeURL || undefined;
+    const hasUploadedResumeFile = Boolean(candidate.uploadedResumeFile?.dataUrl?.startsWith('data:'));
+
+    if (job.requiresResumeFile && !hasUploadedResumeFile && !legacyResumeUrl?.trim()) {
+      throw new BadRequestException(
+        'Esta empresa exige um arquivo de currículo. Importe ou anexe seu currículo antes de se candidatar.',
+      );
+    }
+
+    if (!job.requiresResumeFile) {
+      if (candidate.resumeStatus !== 'PUBLISHED' || !this.hasStructuredResume(candidate)) {
+        throw new BadRequestException(
+          'Publique seu currículo no PiraNegócios antes de se candidatar a esta vaga.',
+        );
+      }
+    }
+
+    const snapshot = this.buildResumeSnapshot(candidate, job.requiresResumeFile);
+    return this.appsService.create(
+      req.user.uid,
+      job,
+      legacyResumeUrl?.startsWith('http') ? legacyResumeUrl : undefined,
+      snapshot,
+    );
   }
 
   @Put(':id/status')
