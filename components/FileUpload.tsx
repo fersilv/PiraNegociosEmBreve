@@ -11,7 +11,7 @@ import {
   UploadCloud,
   X,
 } from 'lucide-react';
-import { useAiStatus } from '../hooks/useAiStatus';
+import { useImageAiStatus } from '../hooks/useImageAiStatus';
 import { api } from '../lib/api';
 
 interface FileUploadProps {
@@ -42,7 +42,7 @@ export function FileUpload({
   placeholder = 'Selecione ou arraste seu documento aqui',
   type = 'document',
 }: FileUploadProps) {
-  const { enabled: aiEnabled } = useAiStatus();
+  const { enabled: imageAiEnabled } = useImageAiStatus();
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -64,8 +64,9 @@ export function FileUpload({
     Boolean(value && value.match(/\.(jpg|jpeg|png|webp|gif)(\?|$)/i));
 
   // Company logos also use the avatar renderer. Photo AI must never be offered there.
+  // The action is additionally controlled by the dedicated image-AI switch in admin.
   const isPersonPhoto = type === 'avatar' && !/logo|logotipo/i.test(label);
-  const canEnhanceWithAi = isPersonPhoto && aiEnabled && Boolean(value);
+  const canEnhanceWithAi = isPersonPhoto && imageAiEnabled && Boolean(value);
 
   const handleDrag = (event: React.DragEvent) => {
     event.preventDefault();
