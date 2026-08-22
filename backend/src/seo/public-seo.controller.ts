@@ -93,6 +93,11 @@ export class PublicSeoController {
         type: job.type,
         workModel: job.workModel,
         salary: job.salary,
+        estimatedSalary: job.salary ? null : job.estimatedSalary,
+        estimatedSalarySource: job.salary ? null : job.estimatedSalarySource,
+        estimatedSalarySourceUrl: job.salary ? null : job.estimatedSalarySourceUrl,
+        estimatedSalaryRegion: job.salary ? null : job.estimatedSalaryRegion,
+        estimatedSalaryUpdatedAt: job.salary ? null : job.estimatedSalaryUpdatedAt,
         applicationUrl: job.applicationUrl,
         applicationUrlTitle: job.applicationUrlTitle,
         sourcePublishedAt: job.sourcePublishedAt,
@@ -349,6 +354,7 @@ export class PublicSeoController {
   }
 
   private publicJob(job: Job, company: Company | null) {
+    const hasOfficialSalary = Boolean(job.salary?.trim());
     return {
       id: job.id,
       slug: job.slug,
@@ -361,6 +367,11 @@ export class PublicSeoController {
       type: job.type,
       workModel: job.workModel,
       salary: job.salary,
+      estimatedSalary: hasOfficialSalary ? null : job.estimatedSalary,
+      estimatedSalarySource: hasOfficialSalary ? null : job.estimatedSalarySource,
+      estimatedSalarySourceUrl: hasOfficialSalary ? null : job.estimatedSalarySourceUrl,
+      estimatedSalaryRegion: hasOfficialSalary ? null : job.estimatedSalaryRegion,
+      estimatedSalaryUpdatedAt: hasOfficialSalary ? null : job.estimatedSalaryUpdatedAt,
       pcdMode: job.pcdMode,
       isTalentPool: job.isTalentPool,
       acceptsPlatformApplications: job.acceptsPlatformApplications,
