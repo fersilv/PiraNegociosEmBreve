@@ -6,6 +6,16 @@ ALTER TABLE users
 ALTER TABLE jobs
   ADD COLUMN IF NOT EXISTS "pcdMode" varchar(16) NOT NULL DEFAULT 'GENERAL';
 
+UPDATE users
+SET
+  city = trim(split_part(address, ',', 1)),
+  state = upper(trim(split_part(address, ',', 2)))
+WHERE
+  city IS NULL
+  AND state IS NULL
+  AND address IS NOT NULL
+  AND address ~ ',\s*[A-Za-z]{2}\s*$';
+
 CREATE INDEX IF NOT EXISTS idx_users_city_state
   ON users (lower(city), upper(state));
 
