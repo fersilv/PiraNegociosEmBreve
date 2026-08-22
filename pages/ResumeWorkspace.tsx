@@ -388,7 +388,7 @@ export function ResumeWorkspace() {
           {success && <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-700">{success}</div>}
 
           <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <button type="button" onClick={() => setStage("preferences")} className="rounded-xl border border-stone-200 bg-white px-5 py-3 text-sm font-bold text-stone-600">Revisar preferências</button>
+            
             <button type="button" onClick={leaveWithDraft} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#2b211c] px-5 py-3 text-sm font-bold text-white"><Save className="h-4 w-4" /> Salvar rascunho e sair</button>
           </div>
         </main>
