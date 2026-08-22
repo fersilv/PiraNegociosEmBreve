@@ -168,17 +168,17 @@ export default function JobsPage() {
 
   const availableLocations = useMemo(
     () =>
-      Array.from(new Set(jobs.map(locationLabel).filter(Boolean))).sort((a, b) =>
-        a.localeCompare(b, "pt-BR"),
-      ),
+      Array.from(
+        new Set<string>(jobs.map(locationLabel).filter((value): value is string => Boolean(value))),
+      ).sort((a, b) => a.localeCompare(b, "pt-BR")),
     [jobs],
   );
 
   const availableTypes = useMemo(
     () =>
-      Array.from(new Set(jobs.map((job) => job.type).filter(Boolean))).sort((a, b) =>
-        a.localeCompare(b, "pt-BR"),
-      ),
+      Array.from(
+        new Set<string>(jobs.map((job) => job.type).filter((value): value is string => Boolean(value))),
+      ).sort((a, b) => a.localeCompare(b, "pt-BR")),
     [jobs],
   );
 
