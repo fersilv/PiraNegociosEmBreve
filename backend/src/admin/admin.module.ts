@@ -18,6 +18,7 @@ import { SettingsService } from './settings.service';
 import { SettingsController } from './settings.controller';
 import { AdminAiController } from './admin-ai.controller';
 import { AdminJobDetailsController } from './admin-job-details.controller';
+import { AdminJobFlagsController } from './admin-job-flags.controller';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AdminJobDetailsController } from './admin-job-details.controller';
   controllers: [
     AdminController,
     AdminJobDetailsController,
+    AdminJobFlagsController,
     SettingsController,
     AdminAiController,
   ],
