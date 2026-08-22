@@ -10,6 +10,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { api } from "../lib/api";
+import { AiImageEnhancementPanel } from "./AiImageEnhancementPanel";
 
 type ProviderId = "GEMINI" | "OPENAI" | "ANTHROPIC";
 
@@ -430,8 +431,9 @@ export function AiIntegrationsPanel() {
           Inteligência Artificial
         </h1>
         <p className="mt-1 max-w-3xl text-stone-500">
-          Escolha o provedor e o modelo, valide a conexão e controle como a IA
-          deve agir em cada recurso da plataforma.
+          Escolha provedores e modelos, valide as conexões e controle como a IA
+          deve agir em cada recurso da plataforma. Texto e imagem possuem
+          configurações independentes.
         </p>
       </header>
 
@@ -468,8 +470,8 @@ export function AiIntegrationsPanel() {
               </div>
               <p className="mt-1 text-sm text-stone-600">
                 {config.enabled
-                  ? `${activeProviderLabel || config.provider} está ativo com o modelo ${config.model}.`
-                  : "Quando desabilitada, os recursos de IA ficam indisponíveis aos usuários."}
+                  ? `${activeProviderLabel || config.provider} está ativo com o modelo ${config.model} para recursos gerais de IA.`
+                  : "Quando desabilitada, todos os recursos de IA, inclusive imagem, ficam indisponíveis aos usuários."}
               </p>
             </div>
           </div>
@@ -517,8 +519,8 @@ export function AiIntegrationsPanel() {
             <div>
               <h3 className="font-bold text-stone-900">Credenciais</h3>
               <p className="text-xs text-stone-500">
-                Guarde as chaves dos provedores. Apenas um provedor fica ativo
-                por vez.
+                As mesmas chaves podem alimentar recursos gerais e de imagem,
+                desde que o provedor possua um modelo compatível.
               </p>
             </div>
           </div>
@@ -564,10 +566,9 @@ export function AiIntegrationsPanel() {
           <div className="flex items-center gap-2 border-b border-stone-100 pb-4">
             <Cpu className="h-5 w-5 text-indigo-500" />
             <div>
-              <h3 className="font-bold text-stone-900">Provedor e modelo</h3>
+              <h3 className="font-bold text-stone-900">Provedor e modelo geral</h3>
               <p className="text-xs text-stone-500">
-                O teste consulta os modelos realmente liberados para sua chave.
-                O sistema não escolhe mais o modelo por você.
+                Usado para currículo, matching, habilidades e demais tarefas de texto/raciocínio.
               </p>
             </div>
           </div>
@@ -659,6 +660,8 @@ export function AiIntegrationsPanel() {
         </section>
       </div>
 
+      <AiImageEnhancementPanel globalAiEnabled={config.enabled} />
+
       <section className="rounded-2xl border border-stone-200 bg-white p-5 sm:p-6 shadow-sm">
         <div className="flex items-start gap-3 border-b border-stone-100 pb-4">
           <div className="rounded-xl bg-violet-50 p-2.5 text-violet-700">
@@ -667,7 +670,7 @@ export function AiIntegrationsPanel() {
           <div>
             <h3 className="font-bold text-stone-900">Comportamento global</h3>
             <p className="mt-1 text-sm text-stone-500">
-              Estas regras acompanham todos os recursos de IA. As instruções
+              Estas regras acompanham os recursos textuais de IA. As instruções
               específicas da próxima seção são adicionadas somente ao caso
               correspondente.
             </p>
