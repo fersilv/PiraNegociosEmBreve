@@ -85,6 +85,11 @@ export class AdminPaymentsController {
     });
   }
 
+  @Post(':id/simulate')
+  simulate(@Req() req: any, @Param('id') id: string) {
+    return this.payments.simulatePayment(id, req.user.uid);
+  }
+
   @Post('credits/:userId')
   grantCredit(
     @Param('userId') userId: string,
