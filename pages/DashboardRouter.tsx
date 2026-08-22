@@ -11,30 +11,18 @@ import { TalentSearchPage } from "./TalentSearchPage";
 import { CandidateDashboard } from "./CandidateDashboard";
 import { UserJobsPage } from "./UserJobsPage";
 import { UserPreferencesPage } from "./UserPreferencesPage";
+import { UserProfessionalProfilePage } from "./UserProfessionalProfilePage";
+import { UserAccountSettingsPage } from "./UserAccountSettingsPage";
 import { AdminDashboard, ApiV1Panel } from "./AdminDashboard";
 import { AdminOverview } from "./AdminOverview";
 import { AdminAccountPage } from "./AdminAccountPage";
 import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
-import { ProfilePage } from "./ProfilePage";
 import { CompanyProfilePage } from "./CompanyProfilePage";
 import { CompanyJobPage } from "./CompanyJobPage";
 import { CompanyHiringConfig } from "./CompanyHiringConfig";
 import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
 import { CandidateJobViewPage } from "./CandidateJobViewPage";
 import { ResumeBuilderStudio } from "./ResumeBuilderStudio";
-
-function ProfilePageWithoutLegacyResumeAi() {
-  return (
-    <div className="profile-legacy-ai-hidden space-y-6">
-      <style>{`
-        .profile-legacy-ai-hidden div.bg-gradient-to-br.from-stone-900.to-stone-950.text-white.rounded-3xl {
-          display: none !important;
-        }
-      `}</style>
-      <ProfilePage />
-    </div>
-  );
-}
 
 function AdminPage({ children }: { children: React.ReactNode }) {
   return <div className="admin-page-shell">{children}</div>;
@@ -50,23 +38,7 @@ function AdminRoutes() {
       <Route path="usuarios" element={<AdminPage><AdminDashboard mode="moderation" section="users" /></AdminPage>} />
       <Route path="vinculos" element={<AdminPage><AdminDashboard mode="moderation" section="access" /></AdminPage>} />
       <Route path="publicidade" element={<AdminPage><AdminDashboard mode="moderation" section="advertising" /></AdminPage>} />
-      <Route
-        path="api"
-        element={
-          <AdminPage>
-            <div className="mx-auto max-w-7xl space-y-6 admin-standalone-page">
-              <header>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-terracotta-600">Infraestrutura · Integrações</p>
-                <h1 className="mt-1 text-3xl font-serif font-bold text-stone-900">API v1</h1>
-                <p className="mt-1 max-w-3xl text-stone-500">Gerencie chaves, origens, auditoria e a documentação da API de vagas.</p>
-              </header>
-              <section className="rounded-2xl border border-stone-200 bg-white shadow-sm admin-primary-surface">
-                <ApiV1Panel />
-              </section>
-            </div>
-          </AdminPage>
-        }
-      />
+      <Route path="api" element={<AdminPage><div className="mx-auto max-w-7xl space-y-6 admin-standalone-page"><header><p className="text-xs font-bold uppercase tracking-[0.18em] text-terracotta-600">Infraestrutura · Integrações</p><h1 className="mt-1 text-3xl font-serif font-bold text-stone-900">API v1</h1><p className="mt-1 max-w-3xl text-stone-500">Gerencie chaves, origens, auditoria e a documentação da API de vagas.</p></header><section className="rounded-2xl border border-stone-200 bg-white shadow-sm admin-primary-surface"><ApiV1Panel /></section></div></AdminPage>} />
       <Route path="ai" element={<AdminPage><div className="mx-auto max-w-7xl space-y-6 admin-standalone-page admin-ai-page"><AiIntegrationsPanel /></div></AdminPage>} />
       <Route path="conta" element={<AdminPage><AdminAccountPage /></AdminPage>} />
       <Route path="*" element={<Navigate to="/admin" replace />} />
@@ -82,7 +54,8 @@ function UserRoutes() {
       <Route path="vagas" element={<UserJobsPage />} />
       <Route path="curriculo" element={<ResumeBuilderStudio />} />
       <Route path="preferencias" element={<UserPreferencesPage />} />
-      <Route path="perfil" element={<ProfilePageWithoutLegacyResumeAi />} />
+      <Route path="perfil" element={<UserProfessionalProfilePage />} />
+      <Route path="configuracoes" element={<UserAccountSettingsPage />} />
       <Route path="admissao/:appId" element={<CandidateOnboardingPage />} />
       <Route path="vaga/:jobId" element={<CandidateJobViewPage />} />
       <Route path="*" element={<Navigate to="/user" replace />} />
@@ -91,9 +64,7 @@ function UserRoutes() {
 }
 
 function CompanyRoutes({ hasCompany }: { hasCompany: boolean }) {
-  const companyOnly = (element: React.ReactNode) =>
-    hasCompany ? element : <Navigate to="/company/perfil" replace />;
-
+  const companyOnly = (element: React.ReactNode) => hasCompany ? element : <Navigate to="/company/perfil" replace />;
   return (
     <Routes>
       <Route index element={companyOnly(<CompanyHomePage />)} />
@@ -112,7 +83,6 @@ function LegacyDashboardRedirect() {
   const { profile } = useAuth();
   const location = useLocation();
   const path = location.pathname;
-
   const adminMap: Array<[string, string]> = [
     ["/dashboard/admin/empresas", "/admin/empresas"],
     ["/dashboard/admin/vagas", "/admin/vagas"],
@@ -122,16 +92,11 @@ function LegacyDashboardRedirect() {
     ["/dashboard/admin/api", "/admin/api"],
     ["/dashboard/admin/ai", "/admin/ai"],
   ];
-
   for (const [legacy, canonical] of adminMap) {
-    if (path === legacy || path.startsWith(`${legacy}/`)) {
-      return <Navigate to={`${canonical}${path.slice(legacy.length)}${location.search}`} replace />;
-    }
+    if (path === legacy || path.startsWith(`${legacy}/`)) return <Navigate to={`${canonical}${path.slice(legacy.length)}${location.search}`} replace />;
   }
-
-  if (path === "/dashboard/perfil") {
-    return <Navigate to={profile?.type === "ADMIN" ? "/admin/conta" : "/user/perfil"} replace />;
-  }
+  if (path === "/dashboard/perfil") return <Navigate to={profile?.type === "ADMIN" ? "/admin/conta" : "/user/perfil"} replace />;
+  if (path === "/dashboard/configuracoes") return <Navigate to="/user/configuracoes" replace />;
   if (path === "/dashboard/preferencias") return <Navigate to="/user/preferencias" replace />;
   if (path === "/dashboard/pessoal") return <Navigate to="/user" replace />;
   if (path === "/dashboard/curriculo/gerador") return <Navigate to="/user/curriculo" replace />;
@@ -144,7 +109,6 @@ function LegacyDashboardRedirect() {
   if (path === "/dashboard/configuracao-contratacao") return <Navigate to="/company/contratacao" replace />;
   if (path === "/dashboard/empresa") return <Navigate to="/company/perfil" replace />;
   if (path === "/dashboard/onboarding") return <Navigate to={profile?.type === "ADMIN" ? "/admin/onboarding" : "/user/onboarding"} replace />;
-
   if (profile?.type === "ADMIN") return <Navigate to="/admin" replace />;
   if (profile?.companyId) return <Navigate to="/company" replace />;
   return <Navigate to="/user" replace />;
@@ -153,60 +117,23 @@ function LegacyDashboardRedirect() {
 export function Dashboard() {
   const { user, profile, loading } = useAuth();
   const location = useLocation();
-
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Carregando...</div>;
-  }
-
-  if (!user) {
-    return <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`} replace />;
-  }
-
-  if (location.pathname.startsWith("/dashboard")) {
-    return <LegacyDashboardRedirect />;
-  }
+  if (loading) return <div className="min-h-screen flex items-center justify-center">Carregando...</div>;
+  if (!user) return <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  if (location.pathname.startsWith("/dashboard")) return <LegacyDashboardRedirect />;
 
   const isAdminRoute = location.pathname === "/admin" || location.pathname.startsWith("/admin/");
   const isCompanyRoute = location.pathname === "/company" || location.pathname.startsWith("/company/");
   const isUserRoute = location.pathname === "/user" || location.pathname.startsWith("/user/");
   const isResumeStudioRoute = location.pathname === "/user/curriculo";
 
-  if (profile && !profile.phone && !location.pathname.includes("/onboarding")) {
-    return <Navigate to={profile.type === "ADMIN" ? "/admin/onboarding" : "/user/onboarding"} replace />;
-  }
-
+  if (profile && !profile.phone && !location.pathname.includes("/onboarding")) return <Navigate to={profile.type === "ADMIN" ? "/admin/onboarding" : "/user/onboarding"} replace />;
   if (profile?.type === "ADMIN") {
     if (!isAdminRoute) return <Navigate to="/admin" replace />;
-    return (
-      <AdminWorkspaceLayout>
-        <AdminRoutes />
-      </AdminWorkspaceLayout>
-    );
+    return <AdminWorkspaceLayout><AdminRoutes /></AdminWorkspaceLayout>;
   }
-
-  if (isAdminRoute) {
-    return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
-  }
-
-  if (isCompanyRoute) {
-    return (
-      <WorkspaceLayout workspace="company">
-        <CompanyRoutes hasCompany={Boolean(profile?.companyId)} />
-      </WorkspaceLayout>
-    );
-  }
-
-  if (isResumeStudioRoute) {
-    return <ResumeBuilderStudio />;
-  }
-
-  if (isUserRoute) {
-    return (
-      <WorkspaceLayout workspace="user">
-        <UserRoutes />
-      </WorkspaceLayout>
-    );
-  }
-
+  if (isAdminRoute) return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
+  if (isCompanyRoute) return <WorkspaceLayout workspace="company"><CompanyRoutes hasCompany={Boolean(profile?.companyId)} /></WorkspaceLayout>;
+  if (isResumeStudioRoute) return <ResumeBuilderStudio />;
+  if (isUserRoute) return <WorkspaceLayout workspace="user"><UserRoutes /></WorkspaceLayout>;
   return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
 }
