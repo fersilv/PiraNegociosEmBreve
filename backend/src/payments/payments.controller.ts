@@ -13,11 +13,15 @@ import {
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { AdminGuard } from '../admin/admin.guard';
 import { PaymentsService, type FeatureCredit } from './payments.service';
+import { BillingSupportService, type TimedFeature } from './billing-support.service';
 
 @Controller('payments')
 @UseGuards(FirebaseAuthGuard)
 export class PaymentsController {
-  constructor(private readonly payments: PaymentsService) {}
+  constructor(
+    private readonly payments: PaymentsService,
+    private readonly billingSupport: BillingSupportService,
+  ) {}
 
   @Get('catalog')
   getCatalog() {
@@ -34,10 +38,25 @@ export class PaymentsController {
     return this.payments.getCredits(req.user.uid);
   }
 
+  @Get('me/billing-status')
+  getMyBillingStatus(@Req() req: any) {
+    return this.billingSupport.getMyBillingStatus(req.user.uid);
+  }
+
   @Post('pix')
-  createPix(@Req() req: any, @Body() body: { productCode?: string }) {
+  async createPix(@Req() req: any, @Body() body: { productCode?: string }) {
     const productCode = String(body?.productCode || '').trim();
     if (!productCode) throw new BadRequestException('Informe o produto que deseja comprar.');
+
+    const lifetimeActivation = await this.billingSupport.activateLifetimeProduct(req.user.uid, productCode);
+    if (lifetimeActivation) {
+      return {
+        ...lifetimeActivation,
+        paymentRequired: false,
+        checkoutReady: false,
+        message: 'Conta vitalícia: este recurso não exige pagamento.',
+      };
+    }
     return this.payments.createPixPayment(req.user.uid, productCode);
   }
 
@@ -55,7 +74,10 @@ export class PaymentsController {
 @Controller('admin/payments')
 @UseGuards(FirebaseAuthGuard, AdminGuard)
 export class AdminPaymentsController {
-  constructor(private readonly payments: PaymentsService) {}
+  constructor(
+    private readonly payments: PaymentsService,
+    private readonly billingSupport: BillingSupportService,
+  ) {}
 
   @Get('products')
   getProducts() {
@@ -67,14 +89,96 @@ export class AdminPaymentsController {
     return this.payments.updateProduct(code, body || {});
   }
 
-  @Get()
-  list(@Query('limit') limit?: string) {
-    return this.payments.listAllPayments(Number(limit || 200));
-  }
-
   @Get('summary')
   summary() {
     return this.payments.paymentSummary();
+  }
+
+  @Get('users')
+  searchUsers(@Query('q') query?: string, @Query('limit') limit?: string) {
+    return this.billingSupport.searchUsers(query || '', Number(limit || 30));
+  }
+
+  @Get('users/:userId/support')
+  getUserSupport(@Param('userId') userId: string) {
+    return this.billingSupport.getUserSupport(userId);
+  }
+
+  @Patch('users/:userId/lifetime')
+  setLifetime(
+    @Req() req: any,
+    @Param('userId') userId: string,
+    @Body() body: { enabled?: boolean; note?: string },
+  ) {
+    return this.billingSupport.setLifetimeFree(userId, body?.enabled === true, req.user.uid, body?.note);
+  }
+
+  @Patch('users/:userId/credits/:feature')
+  setCreditBalance(
+    @Req() req: any,
+    @Param('userId') userId: string,
+    @Param('feature') rawFeature: string,
+    @Body() body: { quantity?: number; note?: string },
+  ) {
+    const feature = rawFeature as FeatureCredit;
+    return this.billingSupport.setCreditBalance(userId, feature, Number(body?.quantity || 0), req.user.uid, body?.note);
+  }
+
+  @Post('users/:userId/entitlements/:feature')
+  grantEntitlement(
+    @Req() req: any,
+    @Param('userId') userId: string,
+    @Param('feature') rawFeature: string,
+    @Body() body: { durationDays?: number; note?: string },
+  ) {
+    return this.billingSupport.grantTimedFeature(
+      userId,
+      rawFeature as TimedFeature,
+      Number(body?.durationDays || 30),
+      req.user.uid,
+      body?.note,
+    );
+  }
+
+  @Post('users/:userId/entitlements/:feature/revoke')
+  revokeEntitlement(
+    @Req() req: any,
+    @Param('userId') userId: string,
+    @Param('feature') rawFeature: string,
+    @Body() body: { note?: string },
+  ) {
+    return this.billingSupport.revokeTimedFeature(userId, rawFeature as TimedFeature, req.user.uid, body?.note);
+  }
+
+  @Post('users/:userId/subscriptions')
+  activateSubscription(
+    @Req() req: any,
+    @Param('userId') userId: string,
+    @Body() body: { productCode?: string; durationDays?: number; note?: string },
+  ) {
+    return this.billingSupport.activateSubscription(
+      userId,
+      String(body?.productCode || 'PREMIUM_MONTHLY'),
+      req.user.uid,
+      body?.durationDays,
+      body?.note,
+    );
+  }
+
+  @Patch('users/:userId/subscriptions/:subscriptionId')
+  updateSubscriptionStatus(
+    @Req() req: any,
+    @Param('userId') userId: string,
+    @Param('subscriptionId') subscriptionId: string,
+    @Body() body: { status?: 'ACTIVE' | 'PAST_DUE' | 'CANCELED' | 'EXPIRED' },
+  ) {
+    if (!body?.status) throw new BadRequestException('Informe o status da assinatura.');
+    return this.billingSupport.setSubscriptionStatus(userId, subscriptionId, body.status, req.user.uid);
+  }
+
+  @Get()
+  list(@Query('limit') limit?: string) {
+    return this.payments.listAllPayments(Number(limit || 200));
   }
 
   @Post(':id/confirm')
@@ -90,6 +194,7 @@ export class AdminPaymentsController {
     return this.payments.simulatePayment(id, req.user.uid);
   }
 
+  // Compatibilidade com integrações internas que já usavam este endpoint.
   @Post('credits/:userId')
   grantCredit(
     @Param('userId') userId: string,
