@@ -9,6 +9,11 @@ export interface Job {
   city?: string;
   state?: string;
   salary?: string;
+  estimatedSalary?: string | null;
+  estimatedSalarySource?: string | null;
+  estimatedSalarySourceUrl?: string | null;
+  estimatedSalaryRegion?: string | null;
+  estimatedSalaryUpdatedAt?: string | null;
   type: string;
   workModel?: string;
   skills?: string[];
