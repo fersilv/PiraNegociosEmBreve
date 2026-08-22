@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { BadgeDollarSign, CheckCircle2, Clock3, QrCode, ReceiptText, Save, Sparkles } from "lucide-react";
+import { BadgeDollarSign, CheckCircle2, Clock3, FlaskConical, QrCode, ReceiptText, Save, Sparkles } from "lucide-react";
 import { api } from "../lib/api";
 
 function money(cents: number) {
@@ -25,7 +25,7 @@ export function AdminPaymentsPage() {
   const [payments, setPayments] = useState<any[]>([]);
   const [drafts, setDrafts] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState<string | null>(null);
+  const [simulating, setSimulating] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
   const load = async () => {
@@ -79,14 +79,18 @@ export function AdminPaymentsPage() {
     }
   };
 
-  const confirmPayment = async (id: string) => {
-    if (!window.confirm("Confirmar este Pix manualmente? Use isso apenas enquanto o webhook do provedor não estiver conectado.")) return;
-    setConfirming(id);
+  const simulatePayment = async (id: string) => {
+    if (!window.confirm("DEV: simular aprovação deste Pix? O benefício será liberado para o usuário, mas o valor NÃO entrará na receita real.")) return;
+    setSimulating(id);
+    setMessage("");
     try {
-      await api.post(`/admin/payments/${id}/confirm`);
+      await api.post(`/admin/payments/${id}/simulate`);
+      setMessage("Pagamento aprovado em modo DEV. O benefício foi liberado sem contabilizar receita real.");
       await load();
+    } catch (error: any) {
+      setMessage(error?.response?.data?.message || "Não foi possível simular a aprovação deste pagamento.");
     } finally {
-      setConfirming(null);
+      setSimulating(null);
     }
   };
 
@@ -98,11 +102,19 @@ export function AdminPaymentsPage() {
         <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Gerencie preços, promoções, franquias gratuitas e o histórico de pagamentos. O checkout desta área aceita somente Pix.</p>
       </header>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Metric label="Receita confirmada" value={money(summary.paidAmountCents || 0)} icon={<BadgeDollarSign className="h-4 w-4" />} />
         <Metric label="Pagamentos pagos" value={String(summary.paid || 0)} icon={<CheckCircle2 className="h-4 w-4" />} />
         <Metric label="Aguardando Pix" value={String(summary.pending || 0)} icon={<Clock3 className="h-4 w-4" />} />
         <Metric label="Conversão registrada" value={`${paidConversion}%`} icon={<ReceiptText className="h-4 w-4" />} />
+        <Metric label="Simulações DEV" value={String(summary.simulated || 0)} icon={<FlaskConical className="h-4 w-4" />} />
+      </section>
+
+      <section className="rounded-3xl border border-violet-200 bg-violet-50 p-4 shadow-sm sm:p-5">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white"><FlaskConical className="h-4 w-4" /></span>
+          <div><p className="text-xs font-black uppercase tracking-[.14em] text-violet-700">Modo DEV de pagamentos</p><p className="mt-1 text-sm leading-6 text-violet-800/80">Use <strong>DEV · Aprovar</strong> para testar o fluxo completo de compra. A simulação libera créditos e recursos exatamente como um Pix pago, mas fica marcada no histórico e não soma receita nem conversão financeira real.</p></div>
+        </div>
       </section>
 
       <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
@@ -136,11 +148,11 @@ export function AdminPaymentsPage() {
       </section>
 
       <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
-        <div><h2 className="text-lg font-bold text-stone-900">Registro de pagamentos</h2><p className="mt-1 text-xs text-stone-500">Histórico financeiro com usuário, produto, valor e situação do Pix.</p></div>
+        <div><h2 className="text-lg font-bold text-stone-900">Registro de pagamentos</h2><p className="mt-1 text-xs text-stone-500">Histórico financeiro com usuário, produto, valor e situação do Pix. Testes DEV ficam identificados e fora da receita real.</p></div>
         <div className="mt-5 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead><tr className="border-b border-stone-200 text-[10px] uppercase tracking-wider text-stone-400"><th className="px-3 py-3">Usuário</th><th className="px-3 py-3">Produto</th><th className="px-3 py-3">Valor</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Criado</th><th className="px-3 py-3"></th></tr></thead>
-            <tbody>{payments.map((payment) => <tr key={payment.id} className="border-b border-stone-100"><td className="px-3 py-3"><p className="font-bold text-stone-800">{payment.fullName || payment.displayName || "Usuário"}</p><p className="text-xs text-stone-400">{payment.email}</p></td><td className="px-3 py-3 text-stone-600">{payment.productName || payment.productCode}</td><td className="px-3 py-3 font-bold text-stone-900">{money(payment.amountCents)}</td><td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${payment.status === "PAID" ? "bg-emerald-100 text-emerald-700" : payment.status === "PENDING" ? "bg-amber-100 text-amber-700" : "bg-stone-100 text-stone-500"}`}>{payment.status}</span></td><td className="px-3 py-3 text-xs text-stone-400">{dateLabel(payment.createdAt)}</td><td className="px-3 py-3 text-right">{payment.status === "PENDING" && <button type="button" onClick={() => void confirmPayment(payment.id)} disabled={confirming === payment.id} className="rounded-lg border border-stone-200 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-50">{confirming === payment.id ? "Confirmando..." : "Confirmar teste"}</button>}</td></tr>)}</tbody>
+            <tbody>{payments.map((payment) => <tr key={payment.id} className="border-b border-stone-100"><td className="px-3 py-3"><p className="font-bold text-stone-800">{payment.fullName || payment.displayName || "Usuário"}</p><p className="text-xs text-stone-400">{payment.email}</p></td><td className="px-3 py-3 text-stone-600">{payment.productName || payment.productCode}</td><td className="px-3 py-3 font-bold text-stone-900">{money(payment.amountCents)}</td><td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${payment.isSimulation ? "bg-violet-100 text-violet-700" : payment.status === "PAID" ? "bg-emerald-100 text-emerald-700" : payment.status === "PENDING" ? "bg-amber-100 text-amber-700" : "bg-stone-100 text-stone-500"}`}>{payment.isSimulation ? "DEV · SIMULADO" : payment.status}</span></td><td className="px-3 py-3 text-xs text-stone-400">{dateLabel(payment.createdAt)}</td><td className="px-3 py-3 text-right">{payment.status === "PENDING" && <button type="button" onClick={() => void simulatePayment(payment.id)} disabled={simulating === payment.id} className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 hover:bg-violet-100 disabled:opacity-50"><FlaskConical className="h-3.5 w-3.5" />{simulating === payment.id ? "Simulando..." : "DEV · Aprovar"}</button>}</td></tr>)}</tbody>
           </table>
           {payments.length === 0 && <p className="py-8 text-center text-sm text-stone-400">Nenhum pagamento registrado.</p>}
         </div>
