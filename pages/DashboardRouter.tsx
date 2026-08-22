@@ -6,13 +6,14 @@ import { WorkspaceLayout } from "../components/WorkspaceLayout";
 import { AdminWorkspaceLayout } from "../components/AdminWorkspaceLayout";
 import { CompanyDashboard } from "./CompanyDashboard";
 import { CompanyHomePage } from "./CompanyHomePage";
+import { CompanyNewJobPage } from "./CompanyNewJobPage";
+import { TalentSearchPage } from "./TalentSearchPage";
 import { CandidateDashboard } from "./CandidateDashboard";
 import { UserJobsPage } from "./UserJobsPage";
 import { AdminDashboard, ApiV1Panel } from "./AdminDashboard";
 import { AdminOverview } from "./AdminOverview";
 import { AdminAccountPage } from "./AdminAccountPage";
 import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
-import { ResumeDatabase } from "./ResumeDatabase";
 import { ProfilePage } from "./ProfilePage";
 import { CompanyProfilePage } from "./CompanyProfilePage";
 import { CompanyJobPage } from "./CompanyJobPage";
@@ -97,8 +98,9 @@ function CompanyRoutes({ hasCompany }: { hasCompany: boolean }) {
     <Routes>
       <Route index element={companyOnly(<CompanyHomePage />)} />
       <Route path="vagas" element={companyOnly(<CompanyDashboard />)} />
+      <Route path="vagas/nova" element={companyOnly(<CompanyNewJobPage />)} />
       <Route path="vagas/:jobId" element={companyOnly(<CompanyJobPage />)} />
-      <Route path="talentos" element={companyOnly(<ResumeDatabase />)} />
+      <Route path="talentos" element={companyOnly(<TalentSearchPage />)} />
       <Route path="contratacao" element={companyOnly(<CompanyHiringConfig />)} />
       <Route path="perfil" element={<CompanyProfilePage />} />
       <Route path="*" element={<Navigate to={hasCompany ? "/company" : "/company/perfil"} replace />} />
