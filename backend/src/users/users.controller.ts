@@ -170,7 +170,9 @@ export class UsersController {
           sanitized.resumeURL = STORED_RESUME_MARKER;
         }
       } else if (existing?.resumeURL === STORED_RESUME_MARKER) {
-        sanitized.resumeURL = existing.publishedResumeSnapshot ? STRUCTURED_RESUME_MARKER : '';
+        sanitized.resumeURL = existing.resumeStatus === 'PUBLISHED' && existing.publishedResumeSnapshot
+          ? STRUCTURED_RESUME_MARKER
+          : '';
       }
     }
 
@@ -194,10 +196,10 @@ export class UsersController {
         sanitized.resumeURL = merged.uploadedResumeFile ? STORED_RESUME_MARKER : STRUCTURED_RESUME_MARKER;
       }
     } else if (updateData.resumeStatus === 'DRAFT') {
-      // DRAFT explícito significa tirar a versão publicada do ar. O conteúdo editável permanece intacto.
+      // Tirar do ar não apaga a última versão publicada. O rascunho também permanece intacto.
       sanitized.resumeStatus = 'DRAFT';
-      sanitized.resumePublishedAt = null;
-      sanitized.publishedResumeSnapshot = null;
+      sanitized.resumePublishedAt = existing?.resumePublishedAt || null;
+      sanitized.publishedResumeSnapshot = existing?.publishedResumeSnapshot || null;
       sanitized.resumeURL = existing?.uploadedResumeFile ? STORED_RESUME_MARKER : '';
     } else if (existing?.resumeStatus === 'PUBLISHED') {
       // Editar o rascunho não derruba nem altera a versão já publicada.
