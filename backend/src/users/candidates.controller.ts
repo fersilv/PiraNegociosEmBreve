@@ -56,8 +56,20 @@ export class CandidatesController {
 
     return candidates.map((candidate) => {
       const { aiAnalysis, ...candidateData } = candidate;
+      const {
+        pcdDeclaration: _pcdDeclaration,
+        pcdDocumentationStatus: _pcdDocumentationStatus,
+        pcdDataConsent: _pcdDataConsent,
+        includeExclusivePcdJobs: _includeExclusivePcdJobs,
+        ...safeJobPreferences
+      } = candidate.jobPreferences || {};
+
       return {
         ...candidateData,
+        // Autodeclaração PcD e situação de documentação são dados sensíveis.
+        // O banco de talentos recebe apenas mobilidade/CNH/veículo. A empresa
+        // não consegue inferir a resposta PcD pelo toggle de recomendações.
+        jobPreferences: safeJobPreferences,
         ...(aiEnabled ? { aiAnalysis } : {}),
         name:
           candidate.socialName ||
