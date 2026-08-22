@@ -37,11 +37,15 @@ export class JobsService {
     private jobsRepository: Repository<Job>,
   ) {}
 
-  findAll(): Promise<Job[]> {
-    return this.jobsRepository.find({
+  async findAll(): Promise<Array<Job & { postedAt: string }>> {
+    const jobs = await this.jobsRepository.find({
       where: { active: true },
       order: { createdAt: 'DESC' },
     });
+    return jobs.map((job) => ({
+      ...job,
+      postedAt: (job.sourcePublishedAt || job.createdAt).toISOString(),
+    }));
   }
 
   findAllByOwner(ownerId: string): Promise<Job[]> {
