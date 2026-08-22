@@ -17,12 +17,12 @@
     "migrate:notification-preferences": "node scripts/run-sql-migration.cjs migrations/20260822_notification_preferences.sql",
     "migrate:resume-workflow": "node scripts/run-sql-migration.cjs migrations/20260822_resume_publication_job_requirements.sql",
     "migrate:job-application-url": "node scripts/run-sql-migration.cjs migrations/20260822_job_application_url.sql",
-    "migrate:payments": "node scripts/run-sql-migration.cjs migrations/20260822_payments_resume_history.sql",
+    "migrate:payments": "node scripts/run-sql-migration.cjs migrations/20260822_payments_resume_history.sql && node scripts/run-sql-migration.cjs migrations/20260822_payment_dev_simulation.sql",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "test:debug": "node --inspect-brk -r tsconfig-paths/register node_modules/.bin/jest --runInBand",
+    "test:debug": "node --inspect-brk node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
