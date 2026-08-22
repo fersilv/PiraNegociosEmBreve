@@ -10,21 +10,14 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { AdminGuard } from '../admin/admin.guard';
-import { User } from '../users/entities/user.entity';
 import { PaymentsService, type FeatureCredit } from './payments.service';
 
 @Controller('payments')
 @UseGuards(FirebaseAuthGuard)
 export class PaymentsController {
-  constructor(
-    private readonly payments: PaymentsService,
-    @InjectRepository(User)
-    private readonly users: Repository<User>,
-  ) {}
+  constructor(private readonly payments: PaymentsService) {}
 
   @Get('catalog')
   getCatalog() {
@@ -56,20 +49,6 @@ export class PaymentsController {
       this.payments.listPublicationHistory(req.user.uid),
     ]);
     return { analyses, improvements, publications };
-  }
-
-  @Post('me/resume-publication')
-  async recordResumePublication(@Req() req: any) {
-    const user = await this.users.findOne({ where: { id: req.user.uid } });
-    if (!user?.publishedResumeSnapshot) {
-      throw new BadRequestException('Não existe uma versão publicada para registrar.');
-    }
-    return this.payments.recordPublication(req.user.uid, user.publishedResumeSnapshot);
-  }
-
-  @Post('me/resume-unpublished')
-  markResumeUnpublished(@Req() req: any) {
-    return this.payments.markLatestPublicationUnpublished(req.user.uid);
   }
 }
 
