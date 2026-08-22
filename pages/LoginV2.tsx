@@ -1,0 +1,208 @@
+import React, { useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  ArrowLeft,
+  ArrowRight,
+  BriefcaseBusiness,
+  Check,
+  Eye,
+  EyeOff,
+  FileText,
+  Loader2,
+  MapPin,
+  Sparkles,
+} from "lucide-react";
+import {
+  GoogleAuthProvider,
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+} from "firebase/auth";
+import { auth } from "../lib/firebase";
+import { api } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
+
+type Mode = "login" | "register";
+
+export function Login() {
+  const [searchParams] = useSearchParams();
+  const returnTo = searchParams.get("returnTo");
+  const [mode, setMode] = useState<Mode>(searchParams.get("mode") === "register" ? "register" : "login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [name, setName] = useState("");
+  const [socialName, setSocialName] = useState("");
+  const [treatment, setTreatment] = useState("ela/dela");
+  const [phone, setPhone] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
+  const { refreshProfile } = useAuth();
+
+  const isRegister = mode === "register";
+
+  const destinationFor = (profile: any) => {
+    if (returnTo) return returnTo;
+    if (profile?.type === "ADMIN") return "/admin";
+    if (profile?.companyId && profile?.isCompanyAdmin) return "/company";
+    return "/user";
+  };
+
+  const loadRuntimeProfile = async () => {
+    const response = await api.get("/users/me");
+    await refreshProfile();
+    return response.data;
+  };
+
+  const changeMode = (next: Mode) => {
+    setMode(next);
+    setError("");
+    if (next === "login") setAcceptedTerms(false);
+  };
+
+  const handleGoogle = async () => {
+    if (isRegister && !acceptedTerms) {
+      setError("Para criar sua conta, confirme que leu os Termos de Uso e a Política de Privacidade.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const result = await signInWithPopup(auth, new GoogleAuthProvider());
+      const firebaseUser = result.user;
+      const runtime = await loadRuntimeProfile();
+      if (isRegister && !runtime?.acceptedTerms) {
+        await api.patch("/users/me", {
+          acceptedTerms: true,
+          displayName: runtime?.displayName || firebaseUser.displayName || undefined,
+          fullName: runtime?.fullName || firebaseUser.displayName || undefined,
+        });
+      }
+      await refreshProfile();
+      navigate(destinationFor(runtime));
+    } catch (loginError: any) {
+      console.error(loginError);
+      setError(firebaseMessage(loginError));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+    if (isRegister && !acceptedTerms) {
+      setError("Para criar sua conta, confirme que leu os Termos de Uso e a Política de Privacidade.");
+      return;
+    }
+    setLoading(true);
+    try {
+      if (!isRegister) {
+        await signInWithEmailAndPassword(auth, email.trim(), password);
+        const runtime = await loadRuntimeProfile();
+        navigate(destinationFor(runtime));
+        return;
+      }
+
+      const credential = await createUserWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+      void sendEmailVerification(credential.user).catch((verifyError) => console.warn("Não foi possível enviar a verificação de e-mail:", verifyError));
+      await api.post("/users/me", {
+        displayName: socialName.trim() || name.trim(),
+        fullName: name.trim(),
+        socialName: socialName.trim(),
+        treatment,
+        phone: phone.trim(),
+        acceptedTerms: true,
+      });
+      const runtime = await loadRuntimeProfile();
+      navigate(destinationFor(runtime));
+    } catch (submitError: any) {
+      console.error(submitError);
+      setError(firebaseMessage(submitError));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <main className="min-h-screen bg-[#f5efe8] text-[#251a15] lg:grid lg:grid-cols-[.92fr_1.08fr]">
+      <section className="relative hidden min-h-screen overflow-hidden bg-[#2b211c] p-10 text-white lg:flex lg:flex-col lg:justify-between xl:p-14">
+        <div className="absolute -left-24 top-24 h-72 w-72 rounded-full bg-[#d98765]/20 blur-3xl" />
+        <div className="absolute -bottom-20 right-0 h-80 w-80 rounded-full bg-[#f0c2a9]/10 blur-3xl" />
+        <div className="relative">
+          <Link to="/" className="inline-flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f1cfbd] font-serif text-xl font-black text-[#302019]">P</span><span><strong className="block font-serif text-xl">PiraNegócios</strong><span className="text-[9px] font-bold uppercase tracking-[.24em] text-white/35">Carreira local, de verdade</span></span></Link>
+        </div>
+
+        <div className="relative max-w-xl py-12">
+          <p className="text-[10px] font-black uppercase tracking-[.22em] text-[#efb89c]">Seu espaço profissional</p>
+          <h1 className="mt-4 font-serif text-5xl font-bold leading-[1.05] xl:text-6xl">Sua próxima oportunidade começa antes do botão “candidatar”.</h1>
+          <p className="mt-6 max-w-lg text-base leading-7 text-white/55">Monte um currículo que trabalha junto com você, diga onde realmente pode trabalhar e acompanhe cada etapa sem perder solicitação no caminho.</p>
+          <div className="mt-9 grid gap-3">
+            <Benefit icon={<MapPin className="h-4 w-4" />} title="Vagas da sua região" text="Busca local e cidades onde você realmente aceita trabalhar." />
+            <Benefit icon={<FileText className="h-4 w-4" />} title="Currículo vivo" text="Importe, organize, revise e publique sua versão profissional." />
+            <Benefit icon={<BriefcaseBusiness className="h-4 w-4" />} title="Processo acompanhado" text="Candidaturas, documentos e atualizações em um único lugar." />
+          </div>
+        </div>
+
+        <p className="relative text-[11px] leading-5 text-white/30">PiraNegócios · Pirassununga e região · tecnologia para aproximar pessoas e oportunidades.</p>
+      </section>
+
+      <section className="flex min-h-screen items-center justify-center px-4 py-8 sm:px-7 lg:px-12">
+        <div className="w-full max-w-[540px]">
+          <div className="mb-7 flex items-center justify-between">
+            <Link to="/" className="inline-flex items-center gap-2 text-xs font-bold text-stone-500 hover:text-stone-900"><ArrowLeft className="h-4 w-4" /> Voltar</Link>
+            <span className="font-serif text-lg font-black lg:hidden">PiraNegócios</span>
+          </div>
+
+          <div className="rounded-[32px] border border-[#ddcfc3] bg-[#fffdfa] p-5 shadow-[0_30px_90px_rgba(73,45,28,.10)] sm:p-8">
+            <div className="grid grid-cols-2 rounded-2xl bg-[#f2ebe4] p-1">
+              <button type="button" onClick={() => changeMode("login")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${!isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>Entrar</button>
+              <button type="button" onClick={() => changeMode("register")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>Criar conta</button>
+            </div>
+
+            <div className="mt-7">
+              <p className="text-[10px] font-black uppercase tracking-[.16em] text-terracotta-600">{isRegister ? "Comece seu perfil" : "Bem-vindo de volta"}</p>
+              <h2 className="mt-1 font-serif text-3xl font-bold text-stone-950">{isRegister ? "Crie sua conta profissional." : "Entre no seu espaço."}</h2>
+              <p className="mt-2 text-sm leading-6 text-stone-500">{isRegister ? "Leva poucos minutos. Seu currículo pode continuar depois como rascunho." : "Suas vagas, currículo, processos e empresa continuam exatamente de onde você parou."}</p>
+            </div>
+
+            {error && <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm font-semibold text-red-700">{error}</div>}
+
+            <button type="button" onClick={() => void handleGoogle()} disabled={loading || (isRegister && !acceptedTerms)} className="mt-6 flex h-12 w-full items-center justify-center gap-3 rounded-2xl border border-stone-200 bg-white text-sm font-bold text-stone-800 transition hover:bg-stone-50 disabled:opacity-45"><GoogleIcon /> Continuar com Google</button>
+
+            <div className="my-5 flex items-center gap-3"><span className="h-px flex-1 bg-stone-200" /><span className="text-[9px] font-black uppercase tracking-[.16em] text-stone-400">ou use seu e-mail</span><span className="h-px flex-1 bg-stone-200" /></div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {isRegister && (
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2"><Field label="Nome completo *"><input required value={name} onChange={(event) => setName(event.target.value)} className="auth-field" autoComplete="name" placeholder="Seu nome" /></Field><Field label="Telefone / WhatsApp *"><input required value={phone} onChange={(event) => setPhone(event.target.value)} className="auth-field" autoComplete="tel" placeholder="(19) 99999-9999" /></Field></div>
+                  <div className="grid gap-4 sm:grid-cols-2"><Field label="Nome social"><input value={socialName} onChange={(event) => setSocialName(event.target.value)} className="auth-field" placeholder="Opcional" /></Field><Field label="Como prefere ser tratado"><select value={treatment} onChange={(event) => setTreatment(event.target.value)} className="auth-field"><option value="ela/dela">Ela/Dela</option><option value="ele/dele">Ele/Dele</option><option value="elu/delu">Elu/Delu</option></select></Field></div>
+                </>
+              )}
+
+              <Field label="E-mail *"><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="auth-field" autoComplete="email" placeholder="voce@email.com" /></Field>
+              <Field label="Senha *"><div className="relative"><input required type={showPassword ? "text" : "password"} minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} className="auth-field pr-12" autoComplete={isRegister ? "new-password" : "current-password"} placeholder={isRegister ? "Mínimo 6 caracteres" : "Sua senha"} /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-stone-400 hover:bg-stone-100" aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></Field>
+
+              {isRegister && <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50/60 p-3.5"><input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500" /><span className="text-xs leading-5 text-stone-600">Li e concordo com os <Link to="/termos" target="_blank" className="font-bold text-terracotta-700 hover:underline">Termos de Uso e Política de Privacidade</Link>.</span></label>}
+
+              <button type="submit" disabled={loading || (isRegister && !acceptedTerms)} className="flex h-13 w-full items-center justify-center gap-2 rounded-2xl bg-terracotta-600 px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-terracotta-600/15 transition hover:bg-terracotta-700 disabled:opacity-45">{loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <>{isRegister ? "Criar minha conta" : "Entrar"}<ArrowRight className="h-4 w-4" /></>}</button>
+            </form>
+
+            <p className="mt-6 text-center text-xs text-stone-400">{isRegister ? "Já tem conta?" : "Ainda não tem conta?"} <button type="button" onClick={() => changeMode(isRegister ? "login" : "register")} className="font-black text-terracotta-700">{isRegister ? "Entrar" : "Criar agora"}</button></p>
+          </div>
+
+          <div className="mt-5 flex items-center justify-center gap-2 text-[10px] font-bold text-stone-400"><Sparkles className="h-3.5 w-3.5 text-terracotta-500" /> Um cadastro para carreira e, quando precisar, para o workspace da sua empresa.</div>
+        </div>
+      </section>
+
+      <style>{`.auth-field{width:100%;border:1px solid #ddd6d0;border-radius:14px;background:#fff;padding:12px 14px;font-size:14px;color:#292524;outline:none;transition:.2s}.auth-field:focus{border-color:#c66a4b;box-shadow:0 0 0 3px rgba(198,106,75,.10)}`}</style>
+    </main>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block"><span className="mb-1.5 block text-[10px] font-black uppercase tracking-[.12em] text-stone-500">{label}</span>{children}</label>; }
+function Benefit({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) { return <div className="flex items-start gap-3 rounded-[20px] border border-white/[.08] bg-white/[.045] p-4"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#efb89c]/12 text-[#efb89c]">{icon}</span><span><strong className="block text-sm text-white">{title}</strong><span className="mt-1 block text-xs leading-5 text-white/42">{text}</span></span></div>; }
+function GoogleIcon() { return <svg className="h-5 w-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09A6.6 6.6 0 0 1 5.49 12c0-.73.13-1.43.35-2.09V7.07H2.18A11 11 0 0 0 1 12c0 1.78.43 3.45 1.18 4.93z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"/></svg>; }
