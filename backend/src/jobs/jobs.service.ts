@@ -30,6 +30,8 @@ const JOB_MUTABLE_FIELDS = [
   'externalApplicationInstructions',
   'applicationEmail',
   'applicationWhatsApp',
+  'applicationUrl',
+  'applicationUrlTitle',
 ] as const;
 
 @Injectable()
