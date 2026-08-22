@@ -42,7 +42,7 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
   const { profile } = useAuth();
   const navigate = useNavigate();
   const hasStoredFile = Boolean(
-    profile?.uploadedResumeFile?.dataUrl?.startsWith("data:") ||
+    profile?.uploadedResumeFile ||
     (profile?.resumeURL && (/^https?:\/\//i.test(profile.resumeURL) || profile.resumeURL.startsWith("data:"))),
   );
   const hasPublishedStructuredResume = profile?.resumeStatus === "PUBLISHED";
@@ -95,7 +95,7 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
 
           <div className="pt-6 border-t border-stone-200/50 flex flex-col sm:flex-row gap-4">
             {job.acceptsPlatformApplications === false ? (
-              <div className="flex-1 rounded-xl bg-amber-50 border border-amber-200 px-5 py-3 text-sm text-amber-900"><p className="font-bold">Candidatura externa</p><ExternalApplicationActions title={job.title} instructions={job.externalApplicationInstructions} email={job.applicationEmail} whatsapp={job.applicationWhatsApp} /></div>
+              <div className="flex-1 rounded-xl bg-amber-50 border border-amber-200 px-5 py-3 text-sm text-amber-900"><p className="font-bold">Candidatura externa</p><ExternalApplicationActions title={job.title} instructions={job.externalApplicationInstructions} email={job.applicationEmail} whatsapp={job.applicationWhatsApp} applicationUrl={job.applicationUrl} applicationUrlTitle={job.applicationUrlTitle} /></div>
             ) : hasApplied ? (
               <button disabled className="flex-1 bg-green-100 text-green-700 py-3 px-6 rounded-xl font-bold flex items-center justify-center gap-2 opacity-100 cursor-default"><CheckCircle2 className="w-5 h-5" /> Candidatura Enviada</button>
             ) : (
