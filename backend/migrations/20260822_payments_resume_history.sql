@@ -106,3 +106,96 @@ CREATE TABLE IF NOT EXISTS resume_publication_history (
   UNIQUE ("userId", version)
 );
 CREATE INDEX IF NOT EXISTS resume_publication_history_user_idx ON resume_publication_history ("userId", version DESC);
+
+-- Preserva a situação existente ao ativar o recurso: a análise e a publicação atuais
+-- passam a ser o primeiro marco do histórico, sem exigir uma nova chamada de IA.
+INSERT INTO resume_analysis_history ("userId", source, score, analysis, "resumeSnapshot", "createdAt")
+SELECT
+  u.id,
+  'FREE',
+  greatest(0, least(100, round((u."aiAnalysis"->>'score')::numeric)::int)),
+  u."aiAnalysis",
+  jsonb_build_object(
+    'fullName', coalesce(u."fullName", ''),
+    'socialName', coalesce(u."socialName", ''),
+    'bio', coalesce(u.bio, ''),
+    'experiences', coalesce(u.experiences, '[]'::jsonb),
+    'education', coalesce(u.education, '[]'::jsonb),
+    'skills', coalesce(u.skills, '[]'::jsonb),
+    'courses', coalesce(u.courses, '[]'::jsonb),
+    'languages', coalesce(u.languages, '[]'::jsonb),
+    'resumePreferences', coalesce(u."resumePreferences", '{}'::jsonb)
+  ),
+  coalesce(u."updatedAt", now())
+FROM users u
+WHERE u."aiAnalysis" IS NOT NULL
+  AND (u."aiAnalysis"->>'score') ~ '^[0-9]+([.][0-9]+)?$'
+  AND NOT EXISTS (SELECT 1 FROM resume_analysis_history h WHERE h."userId" = u.id);
+
+INSERT INTO resume_publication_history ("userId", version, snapshot, score, status, "publishedAt")
+SELECT
+  u.id,
+  1,
+  u."publishedResumeSnapshot",
+  CASE
+    WHEN (u."publishedResumeSnapshot"->>'score') ~ '^[0-9]+([.][0-9]+)?$'
+      THEN greatest(0, least(100, round((u."publishedResumeSnapshot"->>'score')::numeric)::int))
+    ELSE NULL
+  END,
+  CASE WHEN u."resumeStatus" = 'PUBLISHED' THEN 'PUBLISHED' ELSE 'UNPUBLISHED' END,
+  coalesce(u."resumePublishedAt", u."updatedAt", now())
+FROM users u
+WHERE u."publishedResumeSnapshot" IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM resume_publication_history h WHERE h."userId" = u.id);
+
+CREATE OR REPLACE FUNCTION track_resume_publication_history()
+RETURNS trigger AS $$
+DECLARE
+  next_version integer;
+  snapshot_score integer;
+BEGIN
+  IF NEW."resumeStatus" = 'PUBLISHED'
+     AND NEW."publishedResumeSnapshot" IS NOT NULL
+     AND OLD."resumePublishedAt" IS DISTINCT FROM NEW."resumePublishedAt" THEN
+    SELECT coalesce(max(version), 0) + 1 INTO next_version
+    FROM resume_publication_history
+    WHERE "userId" = NEW.id;
+
+    snapshot_score := CASE
+      WHEN (NEW."publishedResumeSnapshot"->>'score') ~ '^[0-9]+([.][0-9]+)?$'
+        THEN greatest(0, least(100, round((NEW."publishedResumeSnapshot"->>'score')::numeric)::int))
+      ELSE NULL
+    END;
+
+    INSERT INTO resume_publication_history ("userId", version, snapshot, score, status, "publishedAt")
+    VALUES (
+      NEW.id,
+      next_version,
+      NEW."publishedResumeSnapshot",
+      snapshot_score,
+      'PUBLISHED',
+      coalesce(NEW."resumePublishedAt", now())
+    );
+  END IF;
+
+  IF OLD."resumeStatus" = 'PUBLISHED' AND NEW."resumeStatus" = 'DRAFT' THEN
+    UPDATE resume_publication_history
+    SET status = 'UNPUBLISHED', "unpublishedAt" = now()
+    WHERE id = (
+      SELECT id
+      FROM resume_publication_history
+      WHERE "userId" = NEW.id
+      ORDER BY version DESC
+      LIMIT 1
+    );
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS users_resume_publication_history_trigger ON users;
+CREATE TRIGGER users_resume_publication_history_trigger
+AFTER UPDATE OF "resumeStatus", "resumePublishedAt", "publishedResumeSnapshot" ON users
+FOR EACH ROW
+EXECUTE FUNCTION track_resume_publication_history();
