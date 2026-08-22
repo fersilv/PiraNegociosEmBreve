@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, BellOff, Check, Trash2, ShieldCheck, Sparkles, AlertCircle } from 'lucide-react';
+import { Bell, BellOff, Check, Trash2, ShieldCheck, Sparkles, AlertCircle, Settings2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useFeedback } from '../contexts/FeedbackContext';
 import {
   isNotificationSupported,
   requestNotificationPermission,
@@ -11,13 +12,20 @@ import {
 } from '../lib/notifications';
 
 export function NotificationCenter() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const { toast } = useFeedback();
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isPushEnabled, setIsPushEnabled] = useState(false);
   const [testingPush, setTestingPush] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const preferencesPath = profile?.type === 'ADMIN'
+    ? '/admin/notificacoes'
+    : profile?.companyId
+      ? '/company/notificacoes'
+      : '/user/notificacoes';
 
   const fetchNotifications = async () => {
     if (!user) return;
@@ -74,9 +82,9 @@ export function NotificationCenter() {
     const installationId = await requestNotificationPermission(user.uid);
     if (installationId) {
       setIsPushEnabled(true);
-      alert('Notificações push ativadas com sucesso neste dispositivo!');
+      toast('Notificações push ativadas neste dispositivo.', 'success');
     } else {
-      alert('Não foi possível ativar o push. Confirme a permissão de notificações do navegador.');
+      toast('Não foi possível ativar o push. Confirme a permissão de notificações do navegador.', 'warning');
     }
   };
 
@@ -86,10 +94,10 @@ export function NotificationCenter() {
     try {
       await sendPushTest();
       await fetchNotifications();
-      alert('Push de teste enviado. Para testar a notificação do sistema, deixe esta aba em segundo plano por um instante.');
+      toast('Push de teste enviado. Coloque esta aba em segundo plano para ver a notificação do sistema.', 'success');
     } catch (error) {
       console.error(error);
-      alert('Não foi possível enviar o push de teste. Verifique a configuração do Firebase Admin no servidor.');
+      toast('Não foi possível enviar o push de teste. Verifique a configuração do Firebase no servidor.', 'error');
     } finally {
       setTestingPush(false);
     }
@@ -111,6 +119,7 @@ export function NotificationCenter() {
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     } catch (err) {
       console.error(err);
+      toast('Não foi possível marcar as notificações como lidas.', 'error');
     }
   };
 
@@ -121,6 +130,7 @@ export function NotificationCenter() {
       setNotifications(prev => prev.filter(n => n.id !== id));
     } catch (err) {
       console.error(err);
+      toast('Não foi possível excluir esta notificação.', 'error');
     }
   };
 
@@ -216,8 +226,11 @@ export function NotificationCenter() {
             ))}
           </div>
 
-          <div className="p-3 border-t border-stone-100 text-center bg-stone-50/50">
+          <div className="p-3 border-t border-stone-100 bg-stone-50/50 flex items-center justify-between gap-3">
             <span className="text-[10px] text-stone-400 font-medium">PiraNegócios Alertas e Vagas</span>
+            <button onClick={() => { navigate(preferencesPath); setIsOpen(false); }} className="inline-flex items-center gap-1 text-[10px] font-bold text-stone-600 hover:text-terracotta-700">
+              <Settings2 className="h-3.5 w-3.5" /> Configurar
+            </button>
           </div>
         </div>
       )}
