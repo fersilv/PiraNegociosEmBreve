@@ -26,6 +26,52 @@ export class UsersController {
     return admins.includes(email.toLowerCase());
   }
 
+  private validateSensitiveJobPreferences(updateData: Partial<User>) {
+    const preferences = updateData.jobPreferences;
+    if (!preferences) return;
+
+    const declaration = preferences.pcdDeclaration ?? 'NOT_INFORMED';
+    const validDeclarations = ['NOT_INFORMED', 'YES', 'NO'];
+    const validDocumentationStatuses = [
+      'NOT_INFORMED',
+      'HAS_REPORT',
+      'NO_REPORT',
+      'IN_PROGRESS',
+    ];
+
+    if (!validDeclarations.includes(declaration)) {
+      throw new BadRequestException('Autodeclaração PcD inválida.');
+    }
+    if (
+      preferences.pcdDocumentationStatus &&
+      !validDocumentationStatuses.includes(preferences.pcdDocumentationStatus)
+    ) {
+      throw new BadRequestException('Status de documentação PcD inválido.');
+    }
+
+    if (declaration !== 'NOT_INFORMED' && preferences.pcdDataConsent !== true) {
+      throw new BadRequestException(
+        'O tratamento da autodeclaração PcD exige consentimento específico e destacado.',
+      );
+    }
+
+    if (
+      declaration !== 'YES' &&
+      preferences.pcdDocumentationStatus &&
+      preferences.pcdDocumentationStatus !== 'NOT_INFORMED'
+    ) {
+      throw new BadRequestException(
+        'O status de documentação só pode ser informado por quem se autodeclarou PcD.',
+      );
+    }
+
+    if (declaration !== 'YES' && preferences.includeExclusivePcdJobs === true) {
+      throw new BadRequestException(
+        'Vagas exclusivas PcD só podem ser ativadas após autodeclaração voluntária.',
+      );
+    }
+  }
+
   private async exposeProfileForRuntime(profile: User) {
     const runtimeProfile = {
       ...profile,
@@ -96,6 +142,7 @@ export class UsersController {
   async updateProfile(@Req() req: any, @Body() updateData: Partial<User>) {
     const user = req.user;
     const existing = await this.usersService.findOneOrNull(user.uid);
+    this.validateSensitiveJobPreferences(updateData);
     const sanitized = this.usersService.sanitizeSelfUpdate(updateData, existing);
 
     if (
