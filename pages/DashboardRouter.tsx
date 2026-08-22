@@ -17,6 +17,7 @@ import { AdminDashboard, ApiV1Panel } from "./AdminDashboard";
 import { AdminOverview } from "./AdminOverview";
 import { AdminAccountPage } from "./AdminAccountPage";
 import { AdminJobDetailsPage } from "./AdminJobDetailsPage";
+import { AdminFlaggedJobsPage } from "./AdminFlaggedJobsPage";
 import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
 import { CompanyProfilePage } from "./CompanyProfilePage";
 import { CompanyJobPage } from "./CompanyJobPage";
@@ -36,6 +37,7 @@ function AdminRoutes() {
       <Route index element={<AdminPage><AdminOverview /></AdminPage>} />
       <Route path="empresas" element={<AdminPage><AdminDashboard mode="moderation" section="companies" /></AdminPage>} />
       <Route path="vagas" element={<AdminPage><AdminDashboard mode="moderation" section="jobs" /></AdminPage>} />
+      <Route path="vagas/sinalizadas" element={<AdminPage><AdminFlaggedJobsPage /></AdminPage>} />
       <Route path="vagas/:jobId" element={<AdminPage><AdminJobDetailsPage /></AdminPage>} />
       <Route path="usuarios" element={<AdminPage><AdminDashboard mode="moderation" section="users" /></AdminPage>} />
       <Route path="vinculos" element={<AdminPage><AdminDashboard mode="moderation" section="access" /></AdminPage>} />
@@ -106,7 +108,12 @@ function LegacyDashboardRedirect() {
   if (path.startsWith("/dashboard/vaga-detalhes/")) return <Navigate to={path.replace("/dashboard/vaga-detalhes/", "/user/vaga/")} replace />;
   if (path === "/dashboard/empresa/inicio") return <Navigate to="/company" replace />;
   if (path === "/dashboard/empresa/painel") return <Navigate to="/company/vagas" replace />;
-  if (path.startsWith("/dashboard/vaga/")) return <Navigate to={path.replace("/dashboard/vaga/", "/company/vagas/")} replace />;
+  if (path.startsWith("/dashboard/vaga/")) {
+    const target = profile?.type === "ADMIN"
+      ? path.replace("/dashboard/vaga/", "/admin/vagas/")
+      : path.replace("/dashboard/vaga/", "/company/vagas/");
+    return <Navigate to={target} replace />;
+  }
   if (path === "/dashboard/curriculos") return <Navigate to="/company/talentos" replace />;
   if (path === "/dashboard/configuracao-contratacao") return <Navigate to="/company/contratacao" replace />;
   if (path === "/dashboard/empresa") return <Navigate to="/company/perfil" replace />;
