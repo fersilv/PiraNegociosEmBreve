@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { DataSource } from 'typeorm';
 import { PaymentsService, type FeatureCredit } from './payments.service';
 
-export type TimedFeature = 'JOB_MATCH_PREMIUM' | 'RESUME_BOOST';
+export type TimedFeature = 'JOB_MATCH_PREMIUM' | 'RESUME_BOOST' | 'EARLY_JOB_ALERTS';
 
 @Injectable()
 export class BillingSupportService {
@@ -10,6 +10,10 @@ export class BillingSupportService {
     private readonly dataSource: DataSource,
     private readonly payments: PaymentsService,
   ) {}
+
+  private isTimedFeature(feature: string): feature is TimedFeature {
+    return ['JOB_MATCH_PREMIUM', 'RESUME_BOOST', 'EARLY_JOB_ALERTS'].includes(feature);
+  }
 
   async isLifetimeFree(userId: string): Promise<boolean> {
     const rows = await this.dataSource.query(
@@ -20,8 +24,9 @@ export class BillingSupportService {
   }
 
   async getMyBillingStatus(userId: string) {
-    const [profileRows, credits, entitlements, subscriptions] = await Promise.all([
+    const [profileRows, userRows, credits, entitlements, subscriptions] = await Promise.all([
       this.dataSource.query(`SELECT "lifetimeFree" FROM user_billing_profiles WHERE "userId" = $1 LIMIT 1`, [userId]),
+      this.dataSource.query(`SELECT "isOpenToWork", "resumeStatus" FROM users WHERE id = $1 LIMIT 1`, [userId]),
       this.payments.getCredits(userId),
       this.dataSource.query(
         `SELECT feature, "startsAt", "expiresAt", source, ("expiresAt" > now()) AS active
@@ -36,6 +41,8 @@ export class BillingSupportService {
     ]);
     return {
       lifetimeFree: profileRows[0]?.lifetimeFree === true,
+      isOpenToWork: userRows[0]?.isOpenToWork === true,
+      resumeStatus: userRows[0]?.resumeStatus || 'DRAFT',
       credits,
       entitlements,
       subscriptions,
@@ -47,7 +54,7 @@ export class BillingSupportService {
     const term = String(query || '').trim();
     return this.dataSource.query(
       `SELECT
-         u.id, u.email, u."fullName", u."displayName", u.type, u."resumeStatus",
+         u.id, u.email, u."fullName", u."displayName", u.type, u."resumeStatus", u."isOpenToWork",
          coalesce(bp."lifetimeFree", false) AS "lifetimeFree",
          EXISTS (
            SELECT 1 FROM subscriptions s
@@ -67,7 +74,7 @@ export class BillingSupportService {
 
   async getUserSupport(userId: string) {
     const userRows = await this.dataSource.query(
-      `SELECT id, email, "fullName", "displayName", type, "resumeStatus", "createdAt", "updatedAt"
+      `SELECT id, email, "fullName", "displayName", type, "resumeStatus", "isOpenToWork", "createdAt", "updatedAt"
        FROM users WHERE id = $1 LIMIT 1`,
       [userId],
     );
@@ -160,7 +167,7 @@ export class BillingSupportService {
   }
 
   async grantTimedFeature(userId: string, feature: TimedFeature, durationDays: number, adminUserId: string, note?: string) {
-    if (!['JOB_MATCH_PREMIUM','RESUME_BOOST'].includes(feature)) throw new BadRequestException('Benefício temporário inválido.');
+    if (!this.isTimedFeature(feature)) throw new BadRequestException('Benefício temporário inválido.');
     const days = Math.min(3650, Math.max(1, Math.round(Number(durationDays) || 1)));
     const rows = await this.dataSource.query(
       `SELECT extend_feature_entitlement($1,$2,$3,NULL,'ADMIN',$4,$5) AS "expiresAt"`,
@@ -170,7 +177,7 @@ export class BillingSupportService {
   }
 
   async revokeTimedFeature(userId: string, feature: TimedFeature, adminUserId: string, note?: string) {
-    if (!['JOB_MATCH_PREMIUM','RESUME_BOOST'].includes(feature)) throw new BadRequestException('Benefício temporário inválido.');
+    if (!this.isTimedFeature(feature)) throw new BadRequestException('Benefício temporário inválido.');
     const rows = await this.dataSource.query(
       `UPDATE user_feature_entitlements SET "expiresAt" = now(), source = 'ADMIN', "grantedBy" = $3,
           note = $4, "updatedAt" = now()
@@ -185,12 +192,13 @@ export class BillingSupportService {
     const benefits = Array.isArray(product.benefits) ? product.benefits : [];
     const granted: any[] = [];
     for (const benefit of benefits) {
-      if (benefit?.kind !== 'ENTITLEMENT' || !['JOB_MATCH_PREMIUM','RESUME_BOOST'].includes(String(benefit?.feature))) continue;
+      const feature = String(benefit?.feature || '');
+      if (benefit?.kind !== 'ENTITLEMENT' || !this.isTimedFeature(feature)) continue;
       const rows = await this.dataSource.query(
         `SELECT extend_feature_entitlement($1,$2,$3,NULL,$4,$5,$6) AS "expiresAt"`,
-        [userId, String(benefit.feature), durationDays, source, adminUserId, String(note || '').trim().slice(0, 1000) || null],
+        [userId, feature, durationDays, source, adminUserId, String(note || '').trim().slice(0, 1000) || null],
       );
-      granted.push({ feature: benefit.feature, expiresAt: rows[0]?.expiresAt });
+      granted.push({ feature, expiresAt: rows[0]?.expiresAt });
     }
     return granted;
   }
@@ -245,12 +253,13 @@ export class BillingSupportService {
     const durationDays = Number(product.durationDays || 30);
     const activated: any[] = [];
     for (const benefit of entitlementBenefits) {
-      if (!['JOB_MATCH_PREMIUM','RESUME_BOOST'].includes(String(benefit.feature))) continue;
+      const feature = String(benefit?.feature || '');
+      if (!this.isTimedFeature(feature)) continue;
       const rows = await this.dataSource.query(
         `SELECT extend_feature_entitlement($1,$2,$3,NULL,'LIFETIME_FREE',NULL,'Ativação sem cobrança para conta vitalícia') AS "expiresAt"`,
-        [userId, String(benefit.feature), durationDays],
+        [userId, feature, durationDays],
       );
-      activated.push({ feature: benefit.feature, expiresAt: rows[0]?.expiresAt });
+      activated.push({ feature, expiresAt: rows[0]?.expiresAt });
     }
     return { lifetimeFree: true, product, activated };
   }
