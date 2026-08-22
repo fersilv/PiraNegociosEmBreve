@@ -15,6 +15,7 @@ export interface Job {
   pcdMode?: JobPcdMode;
   isSponsored?: boolean;
   postedAt: string;
+  createdAt?: string;
   description: string;
   requirements?: string;
   ownerId?: string;
