@@ -73,9 +73,11 @@
       "json",
       "ts"
     ],
-    "transform": {},
-    "transformIgnorePatterns": [],
-    "testRegex": "(/__tests__/.*?_test)\\.jsx?$",
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
