@@ -55,7 +55,7 @@ export class ApplicationsController {
     );
   }
 
-  private buildResumeSnapshot(candidate: User, includeUploadedFile: boolean): Record<string, unknown> {
+  private buildCurrentResumeSnapshot(candidate: User, includeUploadedFile: boolean): Record<string, unknown> {
     return {
       fullName: candidate.fullName,
       socialName: candidate.socialName,
@@ -78,6 +78,17 @@ export class ApplicationsController {
         ? { uploadedResumeFile: candidate.uploadedResumeFile }
         : {}),
     };
+  }
+
+  private publishedResumeSnapshot(candidate: User): Record<string, unknown> | null {
+    if (candidate.publishedResumeSnapshot && typeof candidate.publishedResumeSnapshot === 'object') {
+      return { ...candidate.publishedResumeSnapshot };
+    }
+    // Compatibilidade com currículos publicados antes do snapshot versionado.
+    if (candidate.resumeStatus === 'PUBLISHED' && this.hasStructuredResume(candidate)) {
+      return this.buildCurrentResumeSnapshot(candidate, false);
+    }
+    return null;
   }
 
   @Get('me')
@@ -127,15 +138,20 @@ export class ApplicationsController {
       );
     }
 
-    if (!job.requiresResumeFile) {
-      if (candidate.resumeStatus !== 'PUBLISHED' || !this.hasStructuredResume(candidate)) {
-        throw new BadRequestException(
-          'Publique seu currículo no PiraNegócios antes de se candidatar a esta vaga.',
-        );
-      }
+    const publishedSnapshot = this.publishedResumeSnapshot(candidate);
+    if (!job.requiresResumeFile && !publishedSnapshot) {
+      throw new BadRequestException(
+        'Publique seu currículo no PiraNegócios antes de se candidatar a esta vaga.',
+      );
     }
 
-    const snapshot = this.buildResumeSnapshot(candidate, job.requiresResumeFile);
+    const snapshot = job.requiresResumeFile
+      ? {
+          ...(publishedSnapshot || this.buildCurrentResumeSnapshot(candidate, false)),
+          ...(candidate.uploadedResumeFile ? { uploadedResumeFile: candidate.uploadedResumeFile } : {}),
+        }
+      : publishedSnapshot!;
+
     return this.appsService.create(
       req.user.uid,
       job,
