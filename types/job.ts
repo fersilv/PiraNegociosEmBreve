@@ -1,3 +1,5 @@
+export type JobPcdMode = "GENERAL" | "INCLUSIVE" | "EXCLUSIVE";
+
 export interface Job {
   id: string;
   slug?: string;
@@ -10,6 +12,7 @@ export interface Job {
   type: string;
   workModel?: string;
   skills?: string[];
+  pcdMode?: JobPcdMode;
   isSponsored?: boolean;
   postedAt: string;
   description: string;
