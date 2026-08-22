@@ -46,6 +46,40 @@ describe('ExternalJobsService', () => {
     ).rejects.toThrow('state deve ser uma UF brasileira válida');
   });
 
+  it('valida e preserva o link explícito de candidatura online', async () => {
+    const { service, jobs } = setup();
+    jobs.findOne.mockResolvedValue(null);
+    jobs.find.mockResolvedValue([]);
+
+    const result = await service.findDuplicate(
+      {
+        title: 'Analista de suporte',
+        description: 'Atendimento e suporte aos usuários.',
+        applicationUrl: 'https://empresa.gupy.io/jobs/123',
+        applicationUrlTitle: 'Candidatar-se pela Gupy',
+      },
+      client,
+    );
+
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        applicationUrl: 'https://empresa.gupy.io/jobs/123',
+        applicationUrlTitle: 'Candidatar-se pela Gupy',
+      }),
+    );
+
+    await expect(
+      service.findDuplicate(
+        {
+          title: 'Analista de suporte',
+          description: 'Atendimento e suporte aos usuários.',
+          applicationUrl: 'javascript:alert(1)',
+        },
+        client,
+      ),
+    ).rejects.toThrow('applicationUrl deve começar com http:// ou https://');
+  });
+
   it('identifica duplicidade mesmo com acentos diferentes', async () => {
     const { service, jobs } = setup();
     jobs.findOne.mockResolvedValue(null);
@@ -157,6 +191,8 @@ describe('ExternalJobsService', () => {
         title: 'Repositor',
         description: 'Reposição de mercadorias',
         applicationWhatsApp: '(19) 99999-9999',
+        applicationUrl: 'https://empresa.example/carreiras/repositor',
+        applicationUrlTitle: 'Candidatar-se no portal',
       },
       client,
     );
@@ -168,6 +204,8 @@ describe('ExternalJobsService', () => {
         ingestionSourceId: client.id,
         ingestionSourceName: client.name,
         applicationWhatsApp: '19999999999',
+        applicationUrl: 'https://empresa.example/carreiras/repositor',
+        applicationUrlTitle: 'Candidatar-se no portal',
         city: 'Pirassununga',
         state: 'SP',
       }),
@@ -201,6 +239,8 @@ describe('ExternalJobsService', () => {
       requirements: null,
       applicationEmail: null,
       applicationWhatsApp: null,
+      applicationUrl: null,
+      applicationUrlTitle: null,
       externalApplicationInstructions: null,
       deadlineDate: null,
       active: false,
@@ -213,7 +253,7 @@ describe('ExternalJobsService', () => {
 
     const result = await service.update(
       current.id,
-      { title: 'Repositor de loja', salary: 'R$ 2.500' },
+      { title: 'Repositor de loja', salary: 'R$ 2.500', applicationUrl: 'https://empresa.example/jobs/repositor' },
       client,
     );
 
@@ -222,6 +262,7 @@ describe('ExternalJobsService', () => {
       expect.objectContaining({
         title: 'Repositor de loja',
         salary: 'R$ 2.500',
+        applicationUrl: 'https://empresa.example/jobs/repositor',
         active: false,
         moderationStatus: 'PENDING',
       }),
