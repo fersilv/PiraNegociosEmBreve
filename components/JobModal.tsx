@@ -1,11 +1,13 @@
 import React from "react";
 import { createPortal } from "react-dom";
 import {
+  Accessibility,
   MapPin,
   Briefcase,
   Laptop,
   DollarSign,
   Clock,
+  ExternalLink,
   X,
   CheckCircle2,
 } from "lucide-react";
@@ -20,7 +22,20 @@ interface JobModalProps {
   onApply: () => void;
 }
 
+function safeSourceHref(value?: string | null) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
+  const sourceHref = safeSourceHref(job.sourceUrl);
+  const pcdMode = job.pcdMode || "GENERAL";
+
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
       <div
@@ -41,6 +56,18 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
 
         <div className="p-6 md:p-8 space-y-6">
           <div>
+            <div className="mb-3 flex flex-wrap gap-2">
+              {pcdMode === "INCLUSIVE" && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-bold text-sky-800">
+                  <Accessibility className="h-3.5 w-3.5" /> Também aberta a PCD
+                </span>
+              )}
+              {pcdMode === "EXCLUSIVE" && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-[11px] font-bold text-violet-800">
+                  <Accessibility className="h-3.5 w-3.5" /> Exclusiva para PCD
+                </span>
+              )}
+            </div>
             <h2 className="text-2xl md:text-3xl font-serif font-bold text-stone-900 mb-2 flex items-center gap-3">
               {job.title}
               {job.isTalentPool && (
@@ -113,6 +140,23 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
             </div>
           )}
 
+          {(job.sourceName || sourceHref) && (
+            <div className="rounded-2xl border border-stone-200 bg-white/75 p-4">
+              <p className="text-[10px] font-bold uppercase tracking-[.17em] text-stone-400">Origem da oportunidade</p>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-bold text-stone-800">{job.sourceName || "Fonte externa"}</p>
+                  {job.isExternalListing && <p className="mt-0.5 text-xs text-stone-500">Confira a publicação original antes de enviar dados fora da plataforma.</p>}
+                </div>
+                {sourceHref && (
+                  <a href={sourceHref} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-xs font-bold text-stone-700 hover:border-terracotta-300 hover:text-terracotta-700">
+                    Ver vaga na fonte <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="pt-6 border-t border-stone-200/50 flex flex-col sm:flex-row gap-4">
             {job.acceptsPlatformApplications === false ? (
               <div className="flex-1 rounded-xl bg-amber-50 border border-amber-200 px-5 py-3 text-sm text-amber-900">
@@ -151,7 +195,6 @@ export function JobModal({ job, hasApplied, onClose, onApply }: JobModalProps) {
         </div>
       </div>
 
-      {/* Click outside to close */}
       <div className="fixed inset-0 -z-10" onClick={onClose} />
     </div>,
     document.body,
