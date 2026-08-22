@@ -10,6 +10,7 @@ import { CompanyNewJobPage } from "./CompanyNewJobPage";
 import { TalentSearchPage } from "./TalentSearchPage";
 import { CandidateDashboard } from "./CandidateDashboard";
 import { UserJobsPage } from "./UserJobsPage";
+import { UserPreferencesPage } from "./UserPreferencesPage";
 import { AdminDashboard, ApiV1Panel } from "./AdminDashboard";
 import { AdminOverview } from "./AdminOverview";
 import { AdminAccountPage } from "./AdminAccountPage";
@@ -21,7 +22,6 @@ import { CompanyHiringConfig } from "./CompanyHiringConfig";
 import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
 import { CandidateJobViewPage } from "./CandidateJobViewPage";
 import { ResumeBuilderStudio } from "./ResumeBuilderStudio";
-import { CandidateWorkPreferencesCard } from "../components/CandidateWorkPreferencesCard";
 
 function ProfilePageWithoutLegacyResumeAi() {
   return (
@@ -31,7 +31,6 @@ function ProfilePageWithoutLegacyResumeAi() {
           display: none !important;
         }
       `}</style>
-      <CandidateWorkPreferencesCard />
       <ProfilePage />
     </div>
   );
@@ -82,6 +81,7 @@ function UserRoutes() {
       <Route index element={<CandidateDashboard />} />
       <Route path="vagas" element={<UserJobsPage />} />
       <Route path="curriculo" element={<ResumeBuilderStudio />} />
+      <Route path="preferencias" element={<UserPreferencesPage />} />
       <Route path="perfil" element={<ProfilePageWithoutLegacyResumeAi />} />
       <Route path="admissao/:appId" element={<CandidateOnboardingPage />} />
       <Route path="vaga/:jobId" element={<CandidateJobViewPage />} />
@@ -132,6 +132,7 @@ function LegacyDashboardRedirect() {
   if (path === "/dashboard/perfil") {
     return <Navigate to={profile?.type === "ADMIN" ? "/admin/conta" : "/user/perfil"} replace />;
   }
+  if (path === "/dashboard/preferencias") return <Navigate to="/user/preferencias" replace />;
   if (path === "/dashboard/pessoal") return <Navigate to="/user" replace />;
   if (path === "/dashboard/curriculo/gerador") return <Navigate to="/user/curriculo" replace />;
   if (path.startsWith("/dashboard/admissao/")) return <Navigate to={path.replace("/dashboard/admissao/", "/user/admissao/")} replace />;
