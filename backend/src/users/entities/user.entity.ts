@@ -122,6 +122,22 @@ export class User {
   @Column({ type: 'varchar', nullable: true })
   address: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  city: string | null;
+
+  @Column({ type: 'varchar', length: 2, nullable: true })
+  state: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  jobPreferences: {
+    preferredLocations?: { city: string; state: string }[];
+    hasDriverLicense?: boolean | null;
+    driverLicenseCategories?: string[];
+    hasOwnVehicle?: boolean | null;
+    ownVehicles?: string[];
+    includeExclusivePcdJobs?: boolean;
+  } | null;
+
   @Column({ type: 'text', nullable: true })
   resumePhotoURL: string | null;
 
