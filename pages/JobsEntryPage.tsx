@@ -1,6 +1,7 @@
 import React from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { CitySeoLinks } from "../components/CitySeoLinks";
 import JobsPage from "./JobsPage";
 
 export default function JobsEntryPage() {
@@ -18,5 +19,10 @@ export default function JobsEntryPage() {
     return <Navigate to="/user/vagas" replace />;
   }
 
-  return <JobsPage />;
+  return (
+    <>
+      <JobsPage />
+      <CitySeoLinks />
+    </>
+  );
 }
