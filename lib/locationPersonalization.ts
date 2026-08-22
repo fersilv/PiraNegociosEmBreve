@@ -49,9 +49,10 @@ function normalize(value: unknown) {
 }
 
 function parseLocationLabel(value: string) {
-  const parts = value.split(",").map((item) => item.trim()).filter(Boolean);
-  const city = parts[0] || "";
-  const state = (parts[1] || "SP").toUpperCase().slice(0, 2);
+  const clean = String(value || "").trim();
+  const match = clean.match(/^(.+?)(?:\s*,\s*|\s*\/\s*)([A-Z]{2})$/i);
+  const city = (match?.[1] || clean).trim();
+  const state = (match?.[2] || "SP").toUpperCase();
   return { city, state, key: `${normalize(city)}|${normalize(state)}` };
 }
 
