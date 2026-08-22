@@ -13,6 +13,7 @@ import { UserJobsPage } from "./UserJobsPage";
 import { UserPreferencesPage } from "./UserPreferencesPage";
 import { UserProfessionalProfilePage } from "./UserProfessionalProfilePage";
 import { UserAccountSettingsPage } from "./UserAccountSettingsPage";
+import { UserPaymentsPage } from "./UserPaymentsPage";
 import { NotificationPreferencesPage } from "./NotificationPreferencesPage";
 import { AdminDashboard, ApiV1Panel } from "./AdminDashboard";
 import { AdminOverview } from "./AdminOverview";
@@ -20,6 +21,7 @@ import { AdminAccountPage } from "./AdminAccountPage";
 import { AdminJobDetailsPage } from "./AdminJobDetailsPage";
 import { AdminFlaggedJobsPage } from "./AdminFlaggedJobsPage";
 import { AdminRegistrationPage } from "./AdminRegistrationPage";
+import { AdminPaymentsPage } from "./AdminPaymentsPage";
 import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
 import { CompanyProfilePage } from "./CompanyProfilePage";
 import { CompanyJobPage } from "./CompanyJobPage";
@@ -45,6 +47,7 @@ function AdminRoutes() {
       <Route path="vinculos" element={<AdminPage><AdminDashboard mode="moderation" section="access" /></AdminPage>} />
       <Route path="cadastros" element={<AdminPage><AdminRegistrationPage /></AdminPage>} />
       <Route path="publicidade" element={<AdminPage><AdminDashboard mode="moderation" section="advertising" /></AdminPage>} />
+      <Route path="pagamentos" element={<AdminPage><AdminPaymentsPage /></AdminPage>} />
       <Route path="api" element={<AdminPage><div className="mx-auto max-w-7xl space-y-6 admin-standalone-page"><header><p className="text-xs font-bold uppercase tracking-[0.18em] text-terracotta-600">Infraestrutura · Integrações</p><h1 className="mt-1 text-3xl font-serif font-bold text-stone-900">API v1</h1><p className="mt-1 max-w-3xl text-stone-500">Gerencie chaves, origens, auditoria e a documentação da API de vagas.</p></header><section className="rounded-2xl border border-stone-200 bg-white shadow-sm admin-primary-surface"><ApiV1Panel /></section></div></AdminPage>} />
       <Route path="ai" element={<AdminPage><div className="mx-auto max-w-7xl space-y-6 admin-standalone-page admin-ai-page"><AiIntegrationsPanel /></div></AdminPage>} />
       <Route path="notificacoes" element={<AdminPage><NotificationPreferencesPage /></AdminPage>} />
@@ -61,6 +64,7 @@ function UserRoutes() {
       <Route index element={<CandidateDashboard />} />
       <Route path="vagas" element={<UserJobsPage />} />
       <Route path="curriculo" element={<ResumeWorkspace />} />
+      <Route path="pagamentos" element={<UserPaymentsPage />} />
       <Route path="preferencias" element={<UserPreferencesPage />} />
       <Route path="notificacoes" element={<NotificationPreferencesPage />} />
       <Route path="perfil" element={<UserProfessionalProfilePage />} />
@@ -100,6 +104,7 @@ function LegacyDashboardRedirect() {
     ["/dashboard/admin/vinculos", "/admin/vinculos"],
     ["/dashboard/admin/cadastros", "/admin/cadastros"],
     ["/dashboard/admin/publicidade", "/admin/publicidade"],
+    ["/dashboard/admin/pagamentos", "/admin/pagamentos"],
     ["/dashboard/admin/api", "/admin/api"],
     ["/dashboard/admin/ai", "/admin/ai"],
   ];
