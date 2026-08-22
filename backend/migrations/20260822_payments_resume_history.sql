@@ -1,3 +1,7 @@
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS "aiImportCount" integer NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS "aiImportLimit" integer NULL;
+
 CREATE TABLE IF NOT EXISTS payment_products (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   code varchar(64) NOT NULL UNIQUE,
