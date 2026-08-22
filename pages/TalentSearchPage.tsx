@@ -8,7 +8,9 @@ import {
   RefreshCw,
   Search,
   Send,
+  Sparkles,
   UserRoundSearch,
+  Zap,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { api, asArray } from "../lib/api";
@@ -22,6 +24,8 @@ export function TalentSearchPage() {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [folders, setFolders] = useState<any[]>([]);
   const [companyJobs, setCompanyJobs] = useState<any[]>([]);
+  const [jobRanking, setJobRanking] = useState<any[]>([]);
+  const [rankingLoading, setRankingLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [companyVerified, setCompanyVerified] = useState<boolean | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<any | null>(null);
@@ -66,47 +70,73 @@ export function TalentSearchPage() {
 
   useEffect(() => { void load(); }, [profile?.companyId]);
 
+  useEffect(() => {
+    let active = true;
+    if (!inviteJobId) {
+      setJobRanking([]);
+      setRankingLoading(false);
+      return () => { active = false; };
+    }
+    setRankingLoading(true);
+    void api.get(`/job-match/jobs/${inviteJobId}/candidates`)
+      .then((response) => {
+        if (!active) return;
+        setJobRanking(Array.isArray(response.data?.candidates) ? response.data.candidates : []);
+      })
+      .catch((error) => {
+        console.error("Erro ao ordenar talentos por compatibilidade:", error);
+        if (active) setJobRanking([]);
+      })
+      .finally(() => { if (active) setRankingLoading(false); });
+    return () => { active = false; };
+  }, [inviteJobId]);
+
+  const rankingMap = useMemo(() => new Map(jobRanking.map((item, index) => [item.candidateId, { ...item, rank: index + 1 }])), [jobRanking]);
+
   const availableHomeCities = useMemo(
-    () => Array.from(new Set<string>(
-      candidates
-        .map((candidate) => candidate.city && candidate.state ? `${candidate.city}, ${candidate.state}` : "")
-        .filter((value): value is string => Boolean(value)),
-    )).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    () => Array.from(new Set<string>(candidates.map((candidate) => candidate.city && candidate.state ? `${candidate.city}, ${candidate.state}` : "").filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b, "pt-BR")),
     [candidates],
   );
   const availableAcceptedCities = useMemo(
-    () => Array.from(new Set<string>(
-      candidates
-        .flatMap((candidate) => (candidate.jobPreferences?.preferredLocations || []).map(locationLabel))
-        .filter((value): value is string => Boolean(value)),
-    )).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    () => Array.from(new Set<string>(candidates.flatMap((candidate) => (candidate.jobPreferences?.preferredLocations || []).map(locationLabel)).filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b, "pt-BR")),
     [candidates],
   );
 
-  const filtered = useMemo(() => candidates.filter((candidate) => {
-    const searchable = normalize([
-      candidate.name,
-      candidate.fullName,
-      candidate.socialName,
-      candidate.bio,
-      ...(candidate.skills || []),
-      ...(candidate.experiences || []).flatMap((experience: any) => [experience.role, experience.company, experience.description]),
-      ...(candidate.courses || []).map((course: any) => course.name),
-    ].filter(Boolean).join(" "));
-    if (query && !searchable.includes(normalize(query))) return false;
-    const candidateHome = candidate.city && candidate.state ? `${candidate.city}, ${candidate.state}` : candidate.address || "";
-    if (homeCity && normalize(candidateHome) !== normalize(homeCity)) return false;
-    const preferred = candidate.jobPreferences?.preferredLocations || [];
-    if (acceptedCity && !preferred.some((item: any) => normalize(locationLabel(item)) === normalize(acceptedCity))) return false;
-    const prefs = candidate.jobPreferences || {};
-    if (license === "SIM" && prefs.hasDriverLicense !== true) return false;
-    if (license === "NAO" && prefs.hasDriverLicense !== false) return false;
-    if (licenseCategory !== "TODAS" && !(prefs.driverLicenseCategories || []).includes(licenseCategory)) return false;
-    if (vehicle === "SIM" && prefs.hasOwnVehicle !== true) return false;
-    if (vehicle === "NAO" && prefs.hasOwnVehicle !== false) return false;
-    if (vehicleType !== "TODOS" && !(prefs.ownVehicles || []).includes(vehicleType)) return false;
-    return true;
-  }), [candidates, query, homeCity, acceptedCity, license, licenseCategory, vehicle, vehicleType]);
+  const filtered = useMemo(() => {
+    const result = candidates.filter((candidate) => {
+      const searchable = normalize([
+        candidate.name,
+        candidate.fullName,
+        candidate.socialName,
+        candidate.bio,
+        ...(candidate.skills || []),
+        ...(candidate.experiences || []).flatMap((experience: any) => [experience.role, experience.company, experience.description]),
+        ...(candidate.courses || []).map((course: any) => course.name),
+      ].filter(Boolean).join(" "));
+      if (query && !searchable.includes(normalize(query))) return false;
+      const candidateHome = candidate.city && candidate.state ? `${candidate.city}, ${candidate.state}` : candidate.address || "";
+      if (homeCity && normalize(candidateHome) !== normalize(homeCity)) return false;
+      const preferred = candidate.jobPreferences?.preferredLocations || [];
+      if (acceptedCity && !preferred.some((item: any) => normalize(locationLabel(item)) === normalize(acceptedCity))) return false;
+      const prefs = candidate.jobPreferences || {};
+      if (license === "SIM" && prefs.hasDriverLicense !== true) return false;
+      if (license === "NAO" && prefs.hasDriverLicense !== false) return false;
+      if (licenseCategory !== "TODAS" && !(prefs.driverLicenseCategories || []).includes(licenseCategory)) return false;
+      if (vehicle === "SIM" && prefs.hasOwnVehicle !== true) return false;
+      if (vehicle === "NAO" && prefs.hasOwnVehicle !== false) return false;
+      if (vehicleType !== "TODOS" && !(prefs.ownVehicles || []).includes(vehicleType)) return false;
+      return true;
+    });
+
+    if (inviteJobId && jobRanking.length > 0) {
+      result.sort((a, b) => {
+        const rankA = rankingMap.get(a.id)?.rank ?? Number.MAX_SAFE_INTEGER;
+        const rankB = rankingMap.get(b.id)?.rank ?? Number.MAX_SAFE_INTEGER;
+        return rankA - rankB;
+      });
+    }
+    return result;
+  }, [candidates, query, homeCity, acceptedCity, license, licenseCategory, vehicle, vehicleType, inviteJobId, jobRanking.length, rankingMap]);
 
   const createFolder = async () => {
     if (!profile?.companyId || !newFolder.trim()) return;
@@ -134,7 +164,7 @@ export function TalentSearchPage() {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div><p className="text-[10px] font-bold uppercase tracking-[.19em] text-terracotta-600">Recrutamento · Busca ativa</p><h1 className="mt-1 flex items-center gap-3 font-serif text-3xl font-bold text-stone-950"><UserRoundSearch className="h-8 w-8 text-terracotta-600" /> Banco de talentos</h1><p className="mt-2 max-w-3xl text-sm text-stone-500">Filtre pessoas pela trajetória e pela disponibilidade real de mobilidade, CNH e veículo.</p></div>
+        <div><p className="text-[10px] font-bold uppercase tracking-[.19em] text-terracotta-600">Recrutamento · Busca ativa</p><h1 className="mt-1 flex items-center gap-3 font-serif text-3xl font-bold text-stone-950"><UserRoundSearch className="h-8 w-8 text-terracotta-600" /> Banco de talentos</h1><p className="mt-2 max-w-3xl text-sm text-stone-500">Filtre pessoas pela trajetória e disponibilidade. Ao selecionar uma vaga, candidatos compatíveis passam a ser ordenados pelo Match Inteligente.</p></div>
         <button onClick={() => void load()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-xs font-bold text-stone-700"><RefreshCw className="h-4 w-4" /> Atualizar</button>
       </header>
 
@@ -154,14 +184,20 @@ export function TalentSearchPage() {
 
       <section className="grid gap-3 rounded-[24px] border border-stone-200 bg-white p-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
         <label><span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-stone-400">Salvar em pasta</span><select value={selectedFolderId} onChange={(e) => setSelectedFolderId(e.target.value)} className="filter-field"><option value="">Banco geral</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></label>
-        <label><span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-stone-400">Convidar para vaga</span><select value={inviteJobId} onChange={(e) => setInviteJobId(e.target.value)} className="filter-field"><option value="">Selecione uma vaga...</option>{companyJobs.map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}</select></label>
+        <label><span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-stone-400">Compatibilidade / convidar para vaga</span><select value={inviteJobId} onChange={(e) => setInviteJobId(e.target.value)} className="filter-field"><option value="">Selecione uma vaga...</option>{companyJobs.map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}</select></label>
         <div className="flex gap-2"><input value={newFolder} onChange={(e) => setNewFolder(e.target.value)} placeholder="Nova pasta" className="filter-field max-w-40" /><button onClick={() => void createFolder()} title="Criar pasta" className="rounded-xl bg-stone-900 px-3 text-white"><FolderPlus className="h-4 w-4" /></button></div>
       </section>
+
+      {inviteJobId && (
+        <section className="rounded-2xl border border-violet-200 bg-violet-50 p-4 text-xs leading-5 text-violet-800">
+          <div className="flex items-start gap-2"><Sparkles className="mt-0.5 h-4 w-4 shrink-0" /><div><strong>Ranking inteligente desta vaga.</strong> {rankingLoading ? "Calculando compatibilidade..." : `${jobRanking.length} candidato(s) com pelo menos 55% de compatibilidade foram priorizados.`} O selo <strong>Impulsionado</strong> melhora a posição apenas dentro da mesma faixa de compatibilidade e nunca altera a nota.</div></div>
+        </section>
+      )}
 
       <div className="flex items-center justify-between"><p className="text-sm text-stone-500"><strong className="text-stone-900">{filtered.length}</strong> candidatos encontrados</p></div>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {filtered.map((candidate) => <CandidateCard key={candidate.id} candidate={candidate} onOpen={() => setSelectedCandidate(candidate)} onSave={() => void saveCandidate(candidate.id)} onInvite={() => void inviteCandidate(candidate.id)} />)}
+        {filtered.map((candidate) => <CandidateCard key={candidate.id} candidate={candidate} match={rankingMap.get(candidate.id)} onOpen={() => setSelectedCandidate(candidate)} onSave={() => void saveCandidate(candidate.id)} onInvite={() => void inviteCandidate(candidate.id)} />)}
       </section>
       {filtered.length === 0 && <div className="rounded-3xl border border-dashed border-stone-300 bg-white/60 p-12 text-center text-sm text-stone-500">Nenhum candidato corresponde aos filtros atuais.</div>}
 
@@ -171,9 +207,9 @@ export function TalentSearchPage() {
   );
 }
 
-function CandidateCard({ candidate, onOpen, onSave, onInvite }: { candidate: any; onOpen: () => void; onSave: () => void; onInvite: () => void; key?: React.Key }) {
+function CandidateCard({ candidate, match, onOpen, onSave, onInvite }: { candidate: any; match?: any; onOpen: () => void; onSave: () => void; onInvite: () => void; key?: React.Key }) {
   const prefs = candidate.jobPreferences || {};
   const home = candidate.city && candidate.state ? `${candidate.city}, ${candidate.state}` : candidate.address || "Cidade não informada";
   const preferred = prefs.preferredLocations || [];
-  return <article className="flex flex-col rounded-[26px] border border-stone-200 bg-white p-5 shadow-sm transition hover:shadow-md"><div className="flex items-start gap-3"><div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-stone-100">{candidate.photoURL ? <img src={candidate.photoURL} className="h-full w-full object-cover" alt="" /> : <UserRoundSearch className="h-5 w-5 text-stone-400" />}</div><div className="min-w-0"><h2 className="truncate font-bold text-stone-950">{candidate.name || candidate.socialName || candidate.fullName}</h2><p className="mt-1 inline-flex items-center gap-1 text-xs text-stone-500"><MapPin className="h-3.5 w-3.5" /> {home}</p></div></div><p className="mt-4 line-clamp-3 text-xs leading-5 text-stone-600">{candidate.bio || "Sem resumo profissional cadastrado."}</p>{candidate.skills?.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{candidate.skills.slice(0, 5).map((skill: string) => <span key={skill} className="rounded-full bg-terracotta-50 px-2 py-1 text-[10px] font-bold text-terracotta-700">{skill}</span>)}</div>}<div className="mt-4 space-y-2 rounded-2xl bg-stone-50 p-3 text-[11px] text-stone-600"><div><strong>Aceita:</strong> {preferred.length ? preferred.slice(0, 3).map(locationLabel).join(" · ") : "somente localização principal / não informado"}</div><div className="flex flex-wrap gap-x-4 gap-y-1"><span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" /> CNH: {prefs.hasDriverLicense === true ? (prefs.driverLicenseCategories || []).join(", ") || "Sim" : prefs.hasDriverLicense === false ? "Não" : "Não informado"}</span><span className="inline-flex items-center gap-1"><Car className="h-3 w-3" /> Veículo: {prefs.hasOwnVehicle === true ? (prefs.ownVehicles || []).join(", ") || "Sim" : prefs.hasOwnVehicle === false ? "Não" : "Não informado"}</span></div></div><div className="mt-auto grid grid-cols-3 gap-2 pt-4"><button onClick={onOpen} className="rounded-xl border border-stone-200 px-2 py-2 text-[11px] font-bold text-stone-700">Perfil</button><button onClick={onSave} className="rounded-xl border border-stone-200 px-2 py-2 text-[11px] font-bold text-stone-700">Salvar</button><button onClick={onInvite} className="inline-flex items-center justify-center gap-1 rounded-xl bg-stone-900 px-2 py-2 text-[11px] font-bold text-white"><Send className="h-3 w-3" /> Convidar</button></div></article>;
+  return <article className={`flex flex-col rounded-[26px] border bg-white p-5 shadow-sm transition hover:shadow-md ${match?.boosted ? "border-violet-300 ring-1 ring-violet-100" : "border-stone-200"}`}><div className="flex items-start gap-3"><div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-stone-100">{candidate.photoURL ? <img src={candidate.photoURL} className="h-full w-full object-cover" alt="" /> : <UserRoundSearch className="h-5 w-5 text-stone-400" />}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate font-bold text-stone-950">{candidate.name || candidate.socialName || candidate.fullName}</h2>{match?.boosted && <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-violet-700"><Zap className="h-3 w-3" /> Impulsionado</span>}</div><p className="mt-1 inline-flex items-center gap-1 text-xs text-stone-500"><MapPin className="h-3.5 w-3.5" /> {home}</p></div>{match && <div className="rounded-xl bg-emerald-50 px-2.5 py-2 text-center"><strong className="block text-base text-emerald-700">{match.score}%</strong><span className="text-[8px] font-black uppercase tracking-wider text-emerald-600">match</span></div>}</div><p className="mt-4 line-clamp-3 text-xs leading-5 text-stone-600">{candidate.bio || "Sem resumo profissional cadastrado."}</p>{match?.reason && <p className="mt-3 rounded-xl bg-emerald-50/60 p-2.5 text-[10px] leading-4 text-emerald-800">{match.reason}</p>}{candidate.skills?.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{candidate.skills.slice(0, 5).map((skill: string) => <span key={skill} className="rounded-full bg-terracotta-50 px-2 py-1 text-[10px] font-bold text-terracotta-700">{skill}</span>)}</div>}<div className="mt-4 space-y-2 rounded-2xl bg-stone-50 p-3 text-[11px] text-stone-600"><div><strong>Aceita:</strong> {preferred.length ? preferred.slice(0, 3).map(locationLabel).join(" · ") : "somente localização principal / não informado"}</div><div className="flex flex-wrap gap-x-4 gap-y-1"><span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" /> CNH: {prefs.hasDriverLicense === true ? (prefs.driverLicenseCategories || []).join(", ") || "Sim" : prefs.hasDriverLicense === false ? "Não" : "Não informado"}</span><span className="inline-flex items-center gap-1"><Car className="h-3 w-3" /> Veículo: {prefs.hasOwnVehicle === true ? (prefs.ownVehicles || []).join(", ") || "Sim" : prefs.hasOwnVehicle === false ? "Não" : "Não informado"}</span></div></div><div className="mt-auto grid grid-cols-3 gap-2 pt-4"><button onClick={onOpen} className="rounded-xl border border-stone-200 px-2 py-2 text-[11px] font-bold text-stone-700">Perfil</button><button onClick={onSave} className="rounded-xl border border-stone-200 px-2 py-2 text-[11px] font-bold text-stone-700">Salvar</button><button onClick={onInvite} className="inline-flex items-center justify-center gap-1 rounded-xl bg-stone-900 px-2 py-2 text-[11px] font-bold text-white"><Send className="h-3 w-3" /> Convidar</button></div></article>;
 }
