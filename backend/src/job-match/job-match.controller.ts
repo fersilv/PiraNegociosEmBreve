@@ -1,6 +1,7 @@
-import { Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { AdminGuard } from '../admin/admin.guard';
+import { JobMatchAdminService } from './job-match-admin.service';
 import { JobMatchService } from './job-match.service';
 
 @Controller('job-match')
@@ -22,7 +23,20 @@ export class JobMatchController {
 @Controller('admin/job-match')
 @UseGuards(FirebaseAuthGuard, AdminGuard)
 export class AdminJobMatchController {
-  constructor(private readonly jobMatch: JobMatchService) {}
+  constructor(
+    private readonly jobMatch: JobMatchService,
+    private readonly adminMatch: JobMatchAdminService,
+  ) {}
+
+  @Get('overview')
+  overview() {
+    return this.adminMatch.overview();
+  }
+
+  @Post('backfill')
+  backfill(@Query('limit') limit?: string) {
+    return this.adminMatch.backfill(Number(limit || 25));
+  }
 
   @Post('jobs/:id/reanalyze')
   reanalyze(@Param('id') id: string) {
