@@ -17,7 +17,7 @@ export function FileUpload({
   accept,
   value,
   onChange,
-  maxSizeKB = 10240, // 10MB default for document photos/PDFs
+  maxSizeKB,
   placeholder = 'Selecione ou arraste seu documento aqui',
   type = 'document'
 }: FileUploadProps) {
@@ -31,6 +31,7 @@ export function FileUpload({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const effectiveMaxSizeKB = maxSizeKB ?? (type === 'avatar' ? 20480 : 10240);
 
   const isBase64 = value && value.startsWith('data:');
   const fileTypeStr = isBase64 ? value.split(';')[0].split(':')[1] : '';
@@ -64,7 +65,6 @@ export function FileUpload({
           let width = img.width;
           let height = img.height;
 
-          // Resize if larger than maxDimension (e.g. 1600px)
           if (width > maxDimension || height > maxDimension) {
             if (width > height) {
               height = Math.round((height * maxDimension) / width);
@@ -86,11 +86,9 @@ export function FileUpload({
 
           ctx.drawImage(img, 0, 0, width, height);
 
-          // Convert image to compressed JPEG or PNG
           const isPng = file.type === 'image/png';
           let compressedDataUrl = canvas.toDataURL(isPng ? 'image/png' : 'image/jpeg', quality);
 
-          // If string is still over ~1.5MB base64 (~1.1MB binary), compress further
           if (compressedDataUrl.length > 1800000 && !isPng) {
             compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
           }
@@ -156,16 +154,18 @@ export function FileUpload({
     setUploading(true);
 
     try {
-      // Automatic client-side image compression
+      if (file.size > effectiveMaxSizeKB * 1024) {
+        setError(`O arquivo excede o limite máximo de ${effectiveMaxSizeKB >= 1024 ? (effectiveMaxSizeKB/1024).toFixed(0) + 'MB' : effectiveMaxSizeKB + 'KB'}. Por favor, envie um arquivo menor.`);
+        return;
+      }
+
       const compressedData = await compressImageIfNeeded(file);
       const base64Data = await applyPhotoPreference(compressedData);
 
-      // Estimate compressed size in KB (base64 length * 3/4 / 1024)
       const estimatedSizeKB = Math.round((base64Data.length * 3) / 4 / 1024);
 
-      if (estimatedSizeKB > maxSizeKB) {
-        setError(`O arquivo excede o limite máximo de ${maxSizeKB >= 1024 ? (maxSizeKB/1024).toFixed(0) + 'MB' : maxSizeKB + 'KB'}. Por favor, envie um arquivo menor.`);
-        setUploading(false);
+      if (estimatedSizeKB > effectiveMaxSizeKB) {
+        setError(`O arquivo processado excede o limite máximo de ${effectiveMaxSizeKB >= 1024 ? (effectiveMaxSizeKB/1024).toFixed(0) + 'MB' : effectiveMaxSizeKB + 'KB'}. Por favor, envie um arquivo menor.`);
         return;
       }
 
@@ -231,7 +231,6 @@ export function FileUpload({
 
   return (
     <div className="space-y-2">
-      {/* Hidden file input for file picker */}
       <input
         ref={fileInputRef}
         type="file"
@@ -240,7 +239,6 @@ export function FileUpload({
         className="hidden"
       />
 
-      {/* Hidden file input for smartphone camera capture */}
       <input
         ref={cameraInputRef}
         type="file"
@@ -253,7 +251,7 @@ export function FileUpload({
       <div className="flex justify-between items-center">
         <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest">{label}</label>
         <span className="text-[10px] text-stone-400 font-medium font-mono">
-          Máx: {maxSizeKB >= 1024 ? `${(maxSizeKB/1024).toFixed(0)}MB` : `${maxSizeKB}KB`}
+          Máx: {effectiveMaxSizeKB >= 1024 ? `${(effectiveMaxSizeKB/1024).toFixed(0)}MB` : `${effectiveMaxSizeKB}KB`}
         </span>
       </div>
 
@@ -285,7 +283,6 @@ export function FileUpload({
       )}
 
       {value ? (
-        // Preview State
         <div className="relative rounded-2xl border border-stone-200 bg-stone-50 p-4 transition-all hover:bg-stone-100/60 group">
           <div className="flex items-center gap-4">
             {type === 'avatar' && isImage ? (
@@ -307,14 +304,12 @@ export function FileUpload({
                 <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
                 {type === 'avatar' ? 'Foto de Perfil' : type === 'resume' ? 'Currículo Anexado' : 'Documento Anexado'}
               </p>
-              
               <div className="flex items-center gap-2 mt-1">
                 {isBase64 ? (
                   <span className="text-[10px] bg-green-100 text-green-800 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Carregado</span>
                 ) : (
                   <span className="text-[10px] bg-stone-200 text-stone-700 px-2 py-0.5 rounded-full font-medium">Link Externo</span>
                 )}
-                
                 {isBase64 && (
                   <span className="text-[10px] font-mono text-stone-400">
                     ~{formatBytes(Math.round((value.length * 3) / 4))}
@@ -325,7 +320,7 @@ export function FileUpload({
               <div className="flex items-center gap-3 mt-2.5">
                 <a
                   href={value}
-                  download={type === 'resume' ? 'curriculo.pdf' : 'documento.pdf'}
+                  download={type === 'resume' ? 'curriculo' : 'documento'}
                   target="_blank"
                   rel="noreferrer"
                   className="text-xs text-terracotta-600 font-bold hover:underline"
@@ -354,7 +349,6 @@ export function FileUpload({
           </div>
         </div>
       ) : (
-        // Upload Control Box with Camera & Mobile QR Options
         <div className="space-y-2">
           <div
             onDragEnter={handleDrag}
@@ -375,7 +369,6 @@ export function FileUpload({
               {uploading ? 'Carregando arquivo...' : placeholder}
             </p>
 
-            {/* Action Buttons: Camera (Mobile only) vs File Picker */}
             <div className="flex flex-wrap items-center justify-center gap-2 mt-2 w-full">
               <button
                 type="button"
@@ -406,7 +399,6 @@ export function FileUpload({
         </div>
       )}
 
-      {/* QR CODE HANDOFF MODAL */}
       {showQrModal && (
         <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl relative border border-stone-200">
