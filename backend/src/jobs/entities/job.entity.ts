@@ -54,6 +54,9 @@ export class Job {
   @Column({ nullable: true })
   companyName: string;
 
+  @Column({ type: 'varchar', length: 16, default: 'GENERAL' })
+  pcdMode: string;
+
   @Column({ default: false })
   isExternalListing: boolean;
 
