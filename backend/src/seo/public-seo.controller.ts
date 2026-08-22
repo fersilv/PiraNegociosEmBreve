@@ -16,10 +16,7 @@ import { isReservedCompanySlug, slugify } from './seo.utils';
 import { CompanySlugAlias } from '../companies/entities/company-slug-alias.entity';
 
 const siteUrl = () =>
-  (process.env.PUBLIC_SITE_URL || 'https://piranegocios.com.br').replace(
-    /\/$/,
-    '',
-  );
+  (process.env.PUBLIC_SITE_URL || 'https://piranegocios.com.br').replace(/\/$/, '');
 
 @Controller()
 export class PublicSeoController {
@@ -36,9 +33,7 @@ export class PublicSeoController {
     if (!slug || isReservedCompanySlug(slug)) return { slug, available: false };
     const [exists, alias] = await Promise.all([
       this.companies.exists({ where: [{ slug }, { pendingSlug: slug }] }),
-      this.companySlugAliases.exists({
-        where: { slug, expiresAt: MoreThan(new Date()) },
-      }),
+      this.companySlugAliases.exists({ where: { slug, expiresAt: MoreThan(new Date()) } }),
     ]);
     return { slug, available: !exists && !alias };
   }
@@ -55,24 +50,18 @@ export class PublicSeoController {
       });
       if (alias) {
         company = await this.companies.findOne({
-          where: {
-            id: alias.companyId,
-            verificationStatus: CompanyStatus.VERIFIED,
-          },
+          where: { id: alias.companyId, verificationStatus: CompanyStatus.VERIFIED },
         });
         resolvedFromAlias = Boolean(company);
       }
     }
-    if (!company)
-      throw new NotFoundException('Empresa pública não encontrada.');
+    if (!company) throw new NotFoundException('Empresa pública não encontrada.');
     const jobs = await this.jobs
       .createQueryBuilder('job')
       .where('job.companyId = :companyId', { companyId: company.id })
       .andWhere('job.active = true')
       .andWhere('job.isConfidential = false')
-      .andWhere(
-        '(job.deadlineDate IS NULL OR job.deadlineDate >= CURRENT_DATE)',
-      )
+      .andWhere('(job.deadlineDate IS NULL OR job.deadlineDate >= CURRENT_DATE)')
       .orderBy('job.createdAt', 'DESC')
       .getMany();
     return {
@@ -89,17 +78,36 @@ export class PublicSeoController {
     return this.publicJob(job, company);
   }
 
+  @Get('public/jobs-by-city/:citySlug')
+  async jobsByCity(@Param('citySlug') citySlug: string) {
+    const normalizedSlug = slugify(citySlug);
+    const jobs = await this.publicJobsQuery().orderBy('job.createdAt', 'DESC').getMany();
+    const matching = jobs.filter((job) => slugify(this.cityName(job)) === normalizedSlug);
+    if (!matching.length) throw new NotFoundException('Não há vagas públicas ativas para esta cidade.');
+    const city = this.cityName(matching[0]);
+    const state = matching.find((job) => job.state)?.state || this.stateFromLocation(matching[0].location);
+    const publicJobs = await Promise.all(
+      matching.map(async (job) => this.publicJob(job, await this.publicJobCompany(job))),
+    );
+    return {
+      city,
+      state: state || null,
+      slug: normalizedSlug,
+      count: publicJobs.length,
+      jobs: publicJobs,
+      updatedAt: matching.reduce<Date | null>((latest, job) => {
+        const value = job.updatedAt || job.createdAt;
+        return !latest || value > latest ? value : latest;
+      }, null),
+    };
+  }
+
   @Post('public/jobs/:id/view')
   async registerJobView(@Param('id') id: string) {
     const job = await this.findPublicJob('id', id);
     await this.publicJobCompany(job);
-
     await this.jobs.increment({ id: job.id }, 'views', 1);
-    const updated = await this.jobs.findOne({
-      where: { id: job.id },
-      select: { views: true },
-    });
-
+    const updated = await this.jobs.findOne({ where: { id: job.id }, select: { views: true } });
     return { views: Number(updated?.views || job.views + 1) };
   }
 
@@ -110,25 +118,31 @@ export class PublicSeoController {
         where: { verificationStatus: CompanyStatus.VERIFIED },
         select: { slug: true, updatedAt: true },
       }),
-      this.jobs
-        .createQueryBuilder('job')
-        .leftJoin(Company, 'company', 'company.id::varchar = job.companyId')
-        .where('job.active = true')
-        .andWhere('job.isConfidential = false')
-        .andWhere('job.slug IS NOT NULL')
-        .andWhere(
-          '(job.companyId IS NULL OR company.verificationStatus = :status)',
-          { status: CompanyStatus.VERIFIED },
-        )
-        .andWhere(
-          '(job.deadlineDate IS NULL OR job.deadlineDate >= CURRENT_DATE)',
-        )
-        .select(['job.slug', 'job.updatedAt'])
+      this.publicJobsQuery()
+        .select([
+          'job.id', 'job.slug', 'job.city', 'job.state', 'job.location',
+          'job.updatedAt', 'job.createdAt',
+        ])
         .getMany(),
     ]);
+
+    const cityMap = new Map<string, { name: string; lastmod: Date }>();
+    for (const job of jobs) {
+      const city = this.cityName(job);
+      const slug = slugify(city);
+      if (!slug) continue;
+      const lastmod = job.updatedAt || job.createdAt || new Date();
+      const existing = cityMap.get(slug);
+      if (!existing || lastmod > existing.lastmod) cityMap.set(slug, { name: city, lastmod });
+    }
+
     const urls = [
       { loc: `${siteUrl()}/`, lastmod: new Date() },
       { loc: `${siteUrl()}/vagas`, lastmod: new Date() },
+      ...Array.from(cityMap.entries()).map(([slug, city]) => ({
+        loc: `${siteUrl()}/vagas-em/${slug}`,
+        lastmod: city.lastmod,
+      })),
       ...companies
         .filter((company) => company.slug)
         .map((company) => ({
@@ -149,17 +163,42 @@ export class PublicSeoController {
     response.type('application/xml').send(xml);
   }
 
+  private publicJobsQuery() {
+    return this.jobs
+      .createQueryBuilder('job')
+      .leftJoin(Company, 'company', 'company.id::varchar = job.companyId')
+      .where('job.active = true')
+      .andWhere('job.isConfidential = false')
+      .andWhere('job.slug IS NOT NULL')
+      .andWhere(
+        '(job.companyId IS NULL OR company.verificationStatus = :status)',
+        { status: CompanyStatus.VERIFIED },
+      )
+      .andWhere('(job.deadlineDate IS NULL OR job.deadlineDate >= CURRENT_DATE)');
+  }
+
+  private cityName(job: Job): string {
+    const explicit = job.city?.trim();
+    if (explicit) return explicit;
+    const location = String(job.location || '').trim();
+    if (!location || /^remoto$/i.test(location)) return '';
+    return location.split(',')[0].trim().replace(/\s*\/\s*[A-Z]{2}$/i, '').trim();
+  }
+
+  private stateFromLocation(location: string | null | undefined): string | null {
+    const value = String(location || '');
+    const match = value.match(/(?:,|\/)\s*([A-Z]{2})\s*$/i);
+    return match ? match[1].toUpperCase() : null;
+  }
+
   private async findPublicJob(field: 'id' | 'slug', value: string) {
     const job = await this.jobs
       .createQueryBuilder('job')
       .where(`job.${field} = :value`, { value })
       .andWhere('job.active = true')
       .andWhere('job.isConfidential = false')
-      .andWhere(
-        '(job.deadlineDate IS NULL OR job.deadlineDate >= CURRENT_DATE)',
-      )
+      .andWhere('(job.deadlineDate IS NULL OR job.deadlineDate >= CURRENT_DATE)')
       .getOne();
-
     if (!job) throw new NotFoundException('Vaga pública não encontrada.');
     return job;
   }
@@ -167,15 +206,10 @@ export class PublicSeoController {
   private async publicJobCompany(job: Job) {
     const company = job.companyId
       ? await this.companies.findOne({
-          where: {
-            id: job.companyId,
-            verificationStatus: CompanyStatus.VERIFIED,
-          },
+          where: { id: job.companyId, verificationStatus: CompanyStatus.VERIFIED },
         })
       : null;
-
-    if (job.companyId && !company)
-      throw new NotFoundException('Vaga pública não encontrada.');
+    if (job.companyId && !company) throw new NotFoundException('Vaga pública não encontrada.');
     return company;
   }
 
@@ -215,6 +249,7 @@ export class PublicSeoController {
       pcdMode: job.pcdMode,
       isTalentPool: job.isTalentPool,
       acceptsPlatformApplications: job.acceptsPlatformApplications,
+      requiresResumeFile: job.requiresResumeFile,
       externalApplicationInstructions: job.externalApplicationInstructions,
       applicationEmail: job.applicationEmail,
       applicationWhatsApp: job.applicationWhatsApp,
@@ -223,6 +258,7 @@ export class PublicSeoController {
       updatedAt: job.updatedAt,
       views: job.views,
       company: company ? this.publicCompany(company) : null,
+      companyName: job.isConfidential ? null : (company?.name || job.companyName || null),
       isExternalListing: job.isExternalListing,
       sourceName: job.sourceName,
       sourceUrl: job.sourceUrl,
@@ -233,13 +269,7 @@ export class PublicSeoController {
     return value.replace(
       /[<>&'\"]/g,
       (character) =>
-        ({
-          '<': '&lt;',
-          '>': '&gt;',
-          '&': '&amp;',
-          "'": '&apos;',
-          '"': '&quot;',
-        })[character] || character,
+        ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[character] || character,
     );
   }
 }
