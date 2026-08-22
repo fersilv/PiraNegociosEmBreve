@@ -26,6 +26,17 @@ export class UsersController {
     return admins.includes(email.toLowerCase());
   }
 
+  private async ensureRegistrationAllowed(existing: User | null, email?: string) {
+    if (existing || this.isBootstrapAdmin(email)) return;
+    const registrationsOpen = (await this.settingsService.getValue('ALLOW_NEW_REGISTRATIONS', 'true')) === 'true';
+    if (!registrationsOpen) {
+      throw new ForbiddenException({
+        code: 'REGISTRATION_CLOSED',
+        message: 'Novos cadastros estão temporariamente pausados. Entre na lista de espera para ser avisado quando reabrirmos.',
+      });
+    }
+  }
+
   private validateSensitiveJobPreferences(updateData: Partial<User>) {
     const preferences = updateData.jobPreferences;
     if (!preferences) return;
@@ -139,6 +150,7 @@ export class UsersController {
       return this.exposeProfileForRuntime(existing);
     }
     if (existing) return this.exposeProfileForRuntime(existing);
+    await this.ensureRegistrationAllowed(existing, user.email);
     const email = typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
     if (!email) throw new BadRequestException('Sua conta de autenticação precisa possuir um e-mail válido.');
     const displayName = (typeof user.name === 'string' && user.name.trim()) || email.split('@')[0];
@@ -151,6 +163,7 @@ export class UsersController {
   async updateProfile(@Req() req: any, @Body() updateData: Partial<User>) {
     const user = req.user;
     const existing = await this.usersService.findOneOrNull(user.uid);
+    await this.ensureRegistrationAllowed(existing, user.email);
     this.validateSensitiveJobPreferences(updateData);
     this.validateResumePublication(updateData);
     const sanitized = this.usersService.sanitizeSelfUpdate(updateData, existing);
@@ -196,13 +209,11 @@ export class UsersController {
         sanitized.resumeURL = merged.uploadedResumeFile ? STORED_RESUME_MARKER : STRUCTURED_RESUME_MARKER;
       }
     } else if (updateData.resumeStatus === 'DRAFT') {
-      // Tirar do ar não apaga a última versão publicada. O rascunho também permanece intacto.
       sanitized.resumeStatus = 'DRAFT';
       sanitized.resumePublishedAt = existing?.resumePublishedAt || null;
       sanitized.publishedResumeSnapshot = existing?.publishedResumeSnapshot || null;
       sanitized.resumeURL = existing?.uploadedResumeFile ? STORED_RESUME_MARKER : '';
     } else if (existing?.resumeStatus === 'PUBLISHED') {
-      // Editar o rascunho não derruba nem altera a versão já publicada.
       sanitized.resumeStatus = 'PUBLISHED';
       sanitized.resumePublishedAt = existing.resumePublishedAt;
       sanitized.publishedResumeSnapshot = existing.publishedResumeSnapshot;
