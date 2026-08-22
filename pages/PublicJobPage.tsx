@@ -10,6 +10,7 @@ import {
   Loader2,
   MapPin,
   Eye,
+  Info,
 } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 import { api } from "../lib/api";
@@ -38,6 +39,11 @@ type PublicJob = {
   type?: string;
   workModel?: string;
   salary?: string;
+  estimatedSalary?: string | null;
+  estimatedSalarySource?: string | null;
+  estimatedSalarySourceUrl?: string | null;
+  estimatedSalaryRegion?: string | null;
+  estimatedSalaryUpdatedAt?: string | null;
   requirements?: string;
   deadlineDate?: string;
   createdAt: string;
@@ -232,6 +238,12 @@ export default function PublicJobPage() {
     ? `${job.city}${job.state ? `, ${job.state}` : ""}`
     : job.location || "";
   const description = `${job.title}${companyText}${locationText ? `, ${locationText}` : ""}. Veja os requisitos e como se candidatar pelo PiraNegócios.`;
+  const hasOfficialSalary = Boolean(job.salary?.trim());
+  const hasEstimatedSalary = !hasOfficialSalary && Boolean(job.estimatedSalary?.trim());
+  const estimateSourceHref =
+    hasEstimatedSalary && job.estimatedSalarySourceUrl && /^https?:\/\//i.test(job.estimatedSalarySourceUrl)
+      ? job.estimatedSalarySourceUrl
+      : null;
   
   return (
     <div className="min-h-screen bg-stone-50">
@@ -331,11 +343,54 @@ export default function PublicJobPage() {
                 {job.workModel}
               </span>
             )}
-            <span className="flex items-center gap-2">
+            <span className={`flex items-center gap-2 ${hasEstimatedSalary ? "font-bold text-amber-800" : ""}`}>
               <DollarSign className="w-4 h-4 text-terracotta-600" />
-              {job.salary || "Salário a combinar"}
+              {hasOfficialSalary
+                ? job.salary
+                : hasEstimatedSalary
+                  ? `Média salarial estimada: ${job.estimatedSalary}`
+                  : "Salário não informado"}
             </span>
           </div>
+
+          {hasEstimatedSalary && (
+            <section className="mt-5 rounded-2xl border border-amber-200 bg-amber-50/80 p-5 text-amber-950">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-xl bg-white p-2 text-amber-700 shadow-sm ring-1 ring-amber-100">
+                  <Info className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-black uppercase tracking-[.14em] text-amber-700">Média salarial estimada</p>
+                  <p className="mt-1 text-xl font-black text-stone-900">{job.estimatedSalary}</p>
+                  <p className="mt-2 text-sm leading-6 text-amber-900">
+                    Este valor é uma referência de mercado para o cargo e região e não foi informado pela empresa responsável pela vaga. A remuneração real oferecida pode ser maior ou menor, de acordo com experiência, jornada, benefícios, convenção coletiva e outros critérios da contratação.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-amber-900">
+                    {job.estimatedSalarySource && (
+                      <span><strong>Fonte:</strong> {job.estimatedSalarySource}</span>
+                    )}
+                    {job.estimatedSalaryRegion && (
+                      <span><strong>Região considerada:</strong> {job.estimatedSalaryRegion}</span>
+                    )}
+                    {job.estimatedSalaryUpdatedAt && (
+                      <span><strong>Referência consultada em:</strong> {new Date(job.estimatedSalaryUpdatedAt).toLocaleDateString("pt-BR")}</span>
+                    )}
+                  </div>
+                  {estimateSourceHref && (
+                    <a
+                      href={estimateSourceHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 inline-flex items-center gap-1.5 text-xs font-black text-amber-800 underline decoration-amber-300 underline-offset-4 hover:text-amber-950"
+                    >
+                      Consultar fonte da média <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+
           <ShareJobButtons 
             title={job.title} 
             url={canonical} 
