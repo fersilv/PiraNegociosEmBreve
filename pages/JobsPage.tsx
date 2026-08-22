@@ -19,28 +19,16 @@ import { JobModal } from "../components/JobModal";
 import { Navbar } from "../components/Navbar";
 import { SeoHead } from "../components/SeoHead";
 import { api, asArray } from "../lib/api";
+import {
+  buildLocalityRecommendation,
+  localityRank,
+  type VisitorLocationHint,
+} from "../lib/locationPersonalization";
 import type { Job } from "../types/job";
 
 const ITEMS_PER_PAGE = 12;
 const STOP_WORDS = new Set([
-  "a",
-  "o",
-  "as",
-  "os",
-  "de",
-  "da",
-  "do",
-  "das",
-  "dos",
-  "em",
-  "para",
-  "com",
-  "e",
-  "um",
-  "uma",
-  "no",
-  "na",
-  "por",
+  "a", "o", "as", "os", "de", "da", "do", "das", "dos", "em", "para", "com", "e", "um", "uma", "no", "na", "por",
 ]);
 
 type PcdFilter = "TODOS" | "PCD" | "INCLUSIVE" | "EXCLUSIVE";
@@ -55,9 +43,7 @@ const normalizeSearch = (value: unknown) =>
     .trim();
 
 const words = (value: unknown) =>
-  normalizeSearch(value)
-    .split(" ")
-    .filter((word) => word.length > 1 && !STOP_WORDS.has(word));
+  normalizeSearch(value).split(" ").filter((word) => word.length > 1 && !STOP_WORDS.has(word));
 
 const stem = (word: string) => word.replace(/(oes|aes|ais)$/, "ao").replace(/s$/, "");
 
@@ -83,21 +69,10 @@ const relevance = (job: Job, search: string) => {
   const query = normalizeSearch(search);
   if (!query) return 1;
   const title = normalizeSearch(job.title);
-  const searchable = normalizeSearch(
-    [
-      job.title,
-      job.companyName,
-      job.sourceName,
-      job.description,
-      job.requirements,
-      job.location,
-      job.city,
-      job.state,
-      job.type,
-      job.workModel,
-      ...(job.skills || []),
-    ].join(" "),
-  );
+  const searchable = normalizeSearch([
+    job.title, job.companyName, job.sourceName, job.description, job.requirements,
+    job.location, job.city, job.state, job.type, job.workModel, ...(job.skills || []),
+  ].join(" "));
   if (title.includes(query)) return 1000;
 
   const haystack = words(searchable);
@@ -106,17 +81,11 @@ const relevance = (job: Job, search: string) => {
   let score = 0;
   for (const token of queryWords) {
     const exact = haystack.some(
-      (word) =>
-        stem(word) === stem(token) ||
-        word.startsWith(stem(token)) ||
-        stem(token).startsWith(stem(word)),
+      (word) => stem(word) === stem(token) || word.startsWith(stem(token)) || stem(token).startsWith(stem(word)),
     );
-    const fuzzy =
-      !exact &&
-      token.length >= 5 &&
-      haystack.some(
-        (word) => Math.abs(word.length - token.length) <= 1 && distance(word, token) <= 1,
-      );
+    const fuzzy = !exact && token.length >= 5 && haystack.some(
+      (word) => Math.abs(word.length - token.length) <= 1 && distance(word, token) <= 1,
+    );
     if (exact || fuzzy) {
       hits += 1;
       score += title.includes(token) ? 20 : fuzzy ? 5 : 10;
@@ -129,9 +98,7 @@ const locationLabel = (job: Job) =>
   job.city && job.state ? `${job.city}, ${job.state}` : job.location || "";
 
 const jobDate = (job: Job) =>
-  new Date(
-    job.sourcePublishedAt || job.postedAt || job.createdAt || job.updatedAt || 0,
-  ).getTime();
+  new Date(job.sourcePublishedAt || job.postedAt || job.createdAt || job.updatedAt || 0).getTime();
 
 export default function JobsPage() {
   const navigate = useNavigate();
@@ -139,6 +106,7 @@ export default function JobsPage() {
   const initialParams = useMemo(() => new URLSearchParams(location.search), []);
 
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [visitorLocation, setVisitorLocation] = useState<VisitorLocationHint | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [searchTerm, setSearchTerm] = useState(initialParams.get("q") || "");
@@ -153,13 +121,18 @@ export default function JobsPage() {
 
   useEffect(() => {
     let active = true;
-    api
-      .get("/jobs")
-      .then((response) => {
+    Promise.allSettled([api.get("/jobs"), api.get("/public/location-hint")])
+      .then(([jobsResult, locationResult]) => {
         if (!active) return;
-        setJobs(asArray<Job>(response.data).filter((job) => job.active !== false));
+        if (jobsResult.status === "fulfilled") {
+          setJobs(asArray<Job>(jobsResult.value.data).filter((job) => job.active !== false));
+        } else {
+          console.error("Erro ao carregar vagas:", jobsResult.reason);
+        }
+        if (locationResult.status === "fulfilled") {
+          setVisitorLocation(locationResult.value.data as VisitorLocationHint);
+        }
       })
-      .catch((error) => console.error("Erro ao carregar vagas:", error))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
@@ -167,25 +140,24 @@ export default function JobsPage() {
   }, []);
 
   const availableLocations = useMemo(
-    () =>
-      Array.from(
-        new Set<string>(jobs.map(locationLabel).filter((value): value is string => Boolean(value))),
-      ).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    () => Array.from(new Set<string>(jobs.map(locationLabel).filter((value): value is string => Boolean(value))))
+      .sort((a, b) => a.localeCompare(b, "pt-BR")),
     [jobs],
   );
 
+  const locality = useMemo(
+    () => buildLocalityRecommendation(visitorLocation, availableLocations),
+    [visitorLocation, availableLocations],
+  );
+
   const availableTypes = useMemo(
-    () =>
-      Array.from(
-        new Set<string>(jobs.map((job) => job.type).filter((value): value is string => Boolean(value))),
-      ).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    () => Array.from(new Set<string>(jobs.map((job) => job.type).filter((value): value is string => Boolean(value))))
+      .sort((a, b) => a.localeCompare(b, "pt-BR")),
     [jobs],
   );
 
   const cityCount = availableLocations.length;
-  const pcdCount = jobs.filter(
-    (job) => job.pcdMode === "INCLUSIVE" || job.pcdMode === "EXCLUSIVE",
-  ).length;
+  const pcdCount = jobs.filter((job) => job.pcdMode === "INCLUSIVE" || job.pcdMode === "EXCLUSIVE").length;
 
   const filteredAndSortedJobs = useMemo(() => {
     let result = [...jobs];
@@ -211,15 +183,11 @@ export default function JobsPage() {
     }
 
     if (typeFilter !== "TODOS") {
-      result = result.filter(
-        (job) => normalizeSearch(job.type) === normalizeSearch(typeFilter),
-      );
+      result = result.filter((job) => normalizeSearch(job.type) === normalizeSearch(typeFilter));
     }
 
     if (pcdFilter === "PCD") {
-      result = result.filter(
-        (job) => job.pcdMode === "INCLUSIVE" || job.pcdMode === "EXCLUSIVE",
-      );
+      result = result.filter((job) => job.pcdMode === "INCLUSIVE" || job.pcdMode === "EXCLUSIVE");
     } else if (pcdFilter === "INCLUSIVE") {
       result = result.filter((job) => job.pcdMode === "INCLUSIVE");
     } else if (pcdFilter === "EXCLUSIVE") {
@@ -237,37 +205,26 @@ export default function JobsPage() {
     if (salaryOnly) result = result.filter((job) => Boolean(job.salary?.trim()));
 
     if (!searchTerm.trim()) {
-      result.sort((a, b) =>
-        sortBy === "recentes" ? jobDate(b) - jobDate(a) : jobDate(a) - jobDate(b),
-      );
+      result.sort((a, b) => {
+        if (locationFilter === "TODOS" && locality) {
+          const localityDifference = localityRank(locationLabel(a), locality) - localityRank(locationLabel(b), locality);
+          if (localityDifference) return localityDifference;
+        }
+        const sponsoredDifference = Number(Boolean(b.isSponsored)) - Number(Boolean(a.isSponsored));
+        if (sponsoredDifference) return sponsoredDifference;
+        return sortBy === "recentes" ? jobDate(b) - jobDate(a) : jobDate(a) - jobDate(b);
+      });
     }
 
-    result.sort((a, b) => Number(Boolean(b.isSponsored)) - Number(Boolean(a.isSponsored)));
     return result;
   }, [
-    jobs,
-    searchTerm,
-    locationFilter,
-    workModelFilter,
-    typeFilter,
-    pcdFilter,
-    sourceFilter,
-    salaryOnly,
-    sortBy,
+    jobs, searchTerm, locationFilter, workModelFilter, typeFilter, pcdFilter,
+    sourceFilter, salaryOnly, sortBy, locality,
   ]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [
-    searchTerm,
-    locationFilter,
-    workModelFilter,
-    typeFilter,
-    pcdFilter,
-    sourceFilter,
-    salaryOnly,
-    sortBy,
-  ]);
+  }, [searchTerm, locationFilter, workModelFilter, typeFilter, pcdFilter, sourceFilter, salaryOnly, sortBy]);
 
   const filterCount = [
     locationFilter !== "TODOS",
@@ -280,10 +237,7 @@ export default function JobsPage() {
 
   const totalPages = Math.max(1, Math.ceil(filteredAndSortedJobs.length / ITEMS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
-  const currentJobs = filteredAndSortedJobs.slice(
-    (safePage - 1) * ITEMS_PER_PAGE,
-    safePage * ITEMS_PER_PAGE,
-  );
+  const currentJobs = filteredAndSortedJobs.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
 
   const clearFilters = () => {
     setSearchTerm("");
@@ -325,6 +279,16 @@ export default function JobsPage() {
                 <p className="mt-4 max-w-2xl text-sm leading-7 text-[#735f54] sm:text-base">
                   Vagas de empresas, PATs, agências e fontes públicas reunidas com cidade, modalidade, PCD e origem identificados.
                 </p>
+                {locality?.recommendedLabel && (
+                  <div className="mt-4 inline-flex max-w-2xl items-start gap-2 rounded-2xl border border-[#c96847]/15 bg-white/55 px-3.5 py-2.5 text-xs font-semibold leading-5 text-[#6d5549]">
+                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#c96847]" />
+                    <span>
+                      {locality.exact
+                        ? `Você parece estar em ${locality.detectedLabel}. Sem filtros, mostramos primeiro as vagas daí e depois as cidades mais próximas.`
+                        : `Você parece estar em ${locality.detectedLabel}. Como não há vagas exatamente aí, começamos por ${locality.recommendedLabel}.`}
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="flex flex-wrap gap-2 lg:max-w-sm lg:justify-end">
                 <Metric value={jobs.length} label="vagas abertas" />
@@ -363,9 +327,7 @@ export default function JobsPage() {
                   >
                     <option value="TODOS">Toda a região</option>
                     {availableLocations.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
+                      <option key={item} value={item}>{item}</option>
                     ))}
                   </select>
                 </label>
@@ -390,15 +352,11 @@ export default function JobsPage() {
                     <SlidersHorizontal className="h-4 w-4 text-[#c96847]" />
                     <h2 className="text-sm font-black text-[#33251f]">Filtros</h2>
                     {filterCount > 0 && (
-                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#c96847] px-1.5 text-[9px] font-black text-white">
-                        {filterCount}
-                      </span>
+                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#c96847] px-1.5 text-[9px] font-black text-white">{filterCount}</span>
                     )}
                   </div>
                   {filterCount > 0 && (
-                    <button onClick={clearFilters} className="text-[10px] font-bold text-[#a25a42] hover:underline">
-                      Limpar
-                    </button>
+                    <button onClick={clearFilters} className="text-[10px] font-bold text-[#a25a42] hover:underline">Limpar</button>
                   )}
                 </div>
 
@@ -414,9 +372,7 @@ export default function JobsPage() {
                 <FilterGroup title="Contrato">
                   <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="filter-select">
                     <option value="TODOS">Todos os contratos</option>
-                    {availableTypes.map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
+                    {availableTypes.map((item) => <option key={item} value={item}>{item}</option>)}
                   </select>
                 </FilterGroup>
 
@@ -471,8 +427,11 @@ export default function JobsPage() {
                     <strong className="font-black text-[#2d211c]">{filteredAndSortedJobs.length}</strong>{" "}
                     {filteredAndSortedJobs.length === 1 ? "oportunidade encontrada" : "oportunidades encontradas"}
                   </p>
-                  {searchTerm && (
-                    <p className="mt-1 text-xs text-[#a08c81]">Resultados para “{searchTerm}”</p>
+                  {searchTerm && <p className="mt-1 text-xs text-[#a08c81]">Resultados para “{searchTerm}”</p>}
+                  {!searchTerm && locationFilter === "TODOS" && locality?.recommendedLabel && (
+                    <p className="mt-1 text-xs font-semibold text-[#a05a43]">
+                      Ordenadas por proximidade a {locality.detectedLabel}, depois por data.
+                    </p>
                   )}
                 </div>
                 <select
@@ -480,8 +439,8 @@ export default function JobsPage() {
                   onChange={(event) => setSortBy(event.target.value as "recentes" | "antigas")}
                   className="self-start rounded-xl border border-[#4b3328]/10 bg-white px-3.5 py-2.5 text-xs font-bold text-[#5d493f] outline-none sm:self-auto"
                 >
-                  <option value="recentes">Mais recentes</option>
-                  <option value="antigas">Mais antigas</option>
+                  <option value="recentes">Mais recentes em cada cidade</option>
+                  <option value="antigas">Mais antigas em cada cidade</option>
                 </select>
               </div>
 
@@ -518,9 +477,7 @@ export default function JobsPage() {
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <span className="px-3 text-xs font-bold text-[#756156]">
-                    Página {safePage} de {totalPages}
-                  </span>
+                  <span className="px-3 text-xs font-bold text-[#756156]">Página {safePage} de {totalPages}</span>
                   <button
                     onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                     disabled={safePage === totalPages}
@@ -561,11 +518,7 @@ export default function JobsPage() {
         <JobModal
           job={selectedJob}
           onClose={() => setSelectedJob(null)}
-          onApply={() =>
-            navigate(
-              `/login?returnTo=${encodeURIComponent(`/vagas?applyTo=${selectedJob.id}`)}`,
-            )
-          }
+          onApply={() => navigate(`/login?returnTo=${encodeURIComponent(`/vagas?applyTo=${selectedJob.id}`)}`)}
         />
       )}
 
@@ -595,12 +548,7 @@ function FilterGroup({ title, children }: { title: string; children: React.React
 }
 
 function ChoiceList({
-  value,
-  onChange,
-  options,
-  allLabel,
-  labels,
-  icon,
+  value, onChange, options, allLabel, labels, icon,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -620,9 +568,7 @@ function ChoiceList({
             type="button"
             onClick={() => onChange(option)}
             className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-[11px] font-bold transition ${
-              active
-                ? "bg-[#2d211c] text-white shadow-sm"
-                : "bg-[#faf6f2] text-[#715c51] ring-1 ring-[#4b3328]/8 hover:bg-[#f2e8df]"
+              active ? "bg-[#2d211c] text-white shadow-sm" : "bg-[#faf6f2] text-[#715c51] ring-1 ring-[#4b3328]/8 hover:bg-[#f2e8df]"
             }`}
           >
             {option !== "TODOS" && icon}
