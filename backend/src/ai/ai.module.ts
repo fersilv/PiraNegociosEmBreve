@@ -5,19 +5,22 @@ import { AiService } from './ai.service';
 import { JobSkillsService } from './job-skills.service';
 import { ResumeImportService } from './resume-import.service';
 import { ResumeReviewService } from './resume-review.service';
+import { ResumeImprovementService } from './resume-improvement.service';
 import { PhotoAiController } from './photo-ai.controller';
 import { PhotoAiService } from './photo-ai.service';
 import { AdminModule } from '../admin/admin.module';
+import { PaymentsModule } from '../payments/payments.module';
 import { User } from '../users/entities/user.entity';
 
 @Module({
-  imports: [AdminModule, TypeOrmModule.forFeature([User])],
+  imports: [AdminModule, PaymentsModule, TypeOrmModule.forFeature([User])],
   controllers: [AiController, PhotoAiController],
   providers: [
     AiService,
     JobSkillsService,
     ResumeImportService,
     ResumeReviewService,
+    ResumeImprovementService,
     PhotoAiService,
   ],
   exports: [
@@ -25,6 +28,7 @@ import { User } from '../users/entities/user.entity';
     JobSkillsService,
     ResumeImportService,
     ResumeReviewService,
+    ResumeImprovementService,
     PhotoAiService,
   ],
 })
