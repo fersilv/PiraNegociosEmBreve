@@ -20,8 +20,8 @@ export class PushInstallation {
   @Column({ type: 'varchar', length: 255 })
   installationId: string;
 
-  @Column({ type: 'text' })
-  token: string;
+  @Column({ type: 'text', nullable: true })
+  token: string | null;
 
   @Column({ type: 'varchar', length: 120, nullable: true })
   platform: string | null;
