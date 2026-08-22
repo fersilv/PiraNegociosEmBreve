@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   ShieldCheck,
   User,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
@@ -53,6 +54,7 @@ const groups: AdminNavGroup[] = [
   {
     label: "Plataforma",
     items: [
+      { to: "/admin/cadastros", label: "Novos cadastros", icon: <UserPlus className="h-4 w-4" /> },
       { to: "/admin/notificacoes", label: "Notificações", icon: <BellRing className="h-4 w-4" /> },
       { to: "/admin/publicidade", label: "Publicidade", icon: <Megaphone className="h-4 w-4" /> },
       { to: "/admin/api", label: "API v1", icon: <KeyRound className="h-4 w-4" /> },
@@ -186,6 +188,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
+              <MoreLink to="/admin/cadastros" icon={<UserPlus className="h-4 w-4" />} label="Novos cadastros" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/notificacoes" icon={<BellRing className="h-4 w-4" />} label="Notificações" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/vagas/sinalizadas" icon={<AlertTriangle className="h-4 w-4" />} label="Vagas sinalizadas" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/vinculos" icon={<Link2 className="h-4 w-4" />} label="Vínculos" close={() => setMoreOpen(false)} />
