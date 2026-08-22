@@ -56,3 +56,41 @@ CREATE TABLE IF NOT EXISTS job_match_results (
 );
 CREATE INDEX IF NOT EXISTS job_match_results_user_score_idx
   ON job_match_results ("userId", score DESC, "updatedAt" DESC);
+
+CREATE OR REPLACE FUNCTION grant_job_match_entitlement_on_payment()
+RETURNS trigger AS $$
+DECLARE
+  duration_days integer;
+  base_time timestamptz;
+BEGIN
+  IF NEW.status = 'PAID'
+     AND OLD.status IS DISTINCT FROM 'PAID'
+     AND NEW."productCode" = 'JOB_MATCH_30D' THEN
+    SELECT coalesce("durationDays", 30) INTO duration_days
+    FROM payment_products
+    WHERE code = NEW."productCode";
+
+    SELECT greatest(now(), coalesce("expiresAt", now())) INTO base_time
+    FROM user_feature_entitlements
+    WHERE "userId" = NEW."userId" AND feature = 'JOB_MATCH_PREMIUM';
+
+    base_time := coalesce(base_time, now());
+
+    INSERT INTO user_feature_entitlements
+      ("userId", feature, "startsAt", "expiresAt", "paymentId", "updatedAt")
+    VALUES
+      (NEW."userId", 'JOB_MATCH_PREMIUM', now(), base_time + make_interval(days => duration_days), NEW.id, now())
+    ON CONFLICT ("userId", feature) DO UPDATE
+    SET "expiresAt" = base_time + make_interval(days => duration_days),
+        "paymentId" = NEW.id,
+        "updatedAt" = now();
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS payments_job_match_entitlement_trigger ON payments;
+CREATE TRIGGER payments_job_match_entitlement_trigger
+AFTER UPDATE OF status ON payments
+FOR EACH ROW
+EXECUTE FUNCTION grant_job_match_entitlement_on_payment();
