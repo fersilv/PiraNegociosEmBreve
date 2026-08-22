@@ -51,14 +51,27 @@ export class SettingsController {
     };
     const changedProvider = providerByKey[body.key];
     if (changedProvider && previousValue !== body.value) {
-      const activeProvider = await this.settingsService.getValue('AI_PROVIDER');
-      const enabled =
-        (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
-      if (enabled && activeProvider === changedProvider) {
+      const [activeProvider, imageProvider, enabled, imageEnabled] =
+        await Promise.all([
+          this.settingsService.getValue('AI_PROVIDER'),
+          this.settingsService.getValue('AI_IMAGE_PROVIDER'),
+          this.settingsService.getValue('AI_ENABLED', 'false'),
+          this.settingsService.getValue('AI_IMAGE_ENABLED', 'false'),
+        ]);
+
+      if (enabled === 'true' && activeProvider === changedProvider) {
         await this.settingsService.createOrUpdate(
           'AI_ENABLED',
           'false',
           'Habilita os recursos de inteligência artificial no sistema',
+        );
+      }
+
+      if (imageEnabled === 'true' && imageProvider === changedProvider) {
+        await this.settingsService.createOrUpdate(
+          'AI_IMAGE_ENABLED',
+          'false',
+          'Habilita o aprimoramento de imagens por inteligência artificial',
         );
       }
     }
