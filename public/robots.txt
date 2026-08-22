@@ -1,6 +1,9 @@
 User-agent: *
 Allow: /
 Disallow: /dashboard/
+Disallow: /user/
+Disallow: /company/
+Disallow: /admin/
 Disallow: /login
 Disallow: /api/
 Disallow: /uploads/
