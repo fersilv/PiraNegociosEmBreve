@@ -65,11 +65,22 @@ export class UsersController {
     }
   }
 
+  private resumeFileMetadata(file: User['uploadedResumeFile']) {
+    if (!file) return null;
+    return {
+      name: file.name,
+      mimeType: file.mimeType,
+      size: file.size,
+      uploadedAt: file.uploadedAt,
+    };
+  }
+
   private async exposeProfileForRuntime(profile: User) {
     const runtimeProfile = {
       ...profile,
       type: profile.type ?? UserType.CANDIDATE,
       resumeStatus: profile.resumeStatus || 'DRAFT',
+      uploadedResumeFile: this.resumeFileMetadata(profile.uploadedResumeFile),
       experiences: this.usersService.normalizeExperienceDates(profile.experiences),
     };
     const aiEnabled = (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
@@ -77,6 +88,12 @@ export class UsersController {
     if (canExposeResumeAnalysis) return runtimeProfile;
     const { aiAnalysis: _aiAnalysis, ...safeProfile } = runtimeProfile;
     return { ...safeProfile, hasAiAnalyzed: false };
+  }
+
+  @Get('me/resume-file')
+  async getResumeFile(@Req() req: any) {
+    const user = await this.usersService.findOneOrNull(req.user.uid);
+    return user?.uploadedResumeFile || null;
   }
 
   @Get('me')
