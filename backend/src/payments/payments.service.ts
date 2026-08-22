@@ -117,9 +117,6 @@ export class PaymentsService {
       ],
     );
 
-    // O domínio de pagamento já é exclusivamente PIX. A geração do QR/copia-e-cola
-    // entra pelo adaptador do provedor escolhido; enquanto ele não estiver configurado,
-    // o registro fica PENDING e pode ser confirmado pelo admin em ambiente de teste.
     return {
       ...rows[0],
       product,
@@ -154,13 +151,14 @@ export class PaymentsService {
   async paymentSummary() {
     const rows = await this.dataSource.query(`
       SELECT
-        count(*)::int AS total,
-        count(*) FILTER (WHERE status = 'PENDING')::int AS pending,
-        count(*) FILTER (WHERE status = 'PAID')::int AS paid,
-        coalesce(sum("amountCents") FILTER (WHERE status = 'PAID'), 0)::int AS "paidAmountCents"
+        count(*) FILTER (WHERE "isSimulation" = false)::int AS total,
+        count(*) FILTER (WHERE status = 'PENDING' AND "isSimulation" = false)::int AS pending,
+        count(*) FILTER (WHERE status = 'PAID' AND "isSimulation" = false)::int AS paid,
+        count(*) FILTER (WHERE status = 'PAID' AND "isSimulation" = true)::int AS simulated,
+        coalesce(sum("amountCents") FILTER (WHERE status = 'PAID' AND "isSimulation" = false), 0)::int AS "paidAmountCents"
       FROM payments
     `);
-    return rows[0] || { total: 0, pending: 0, paid: 0, paidAmountCents: 0 };
+    return rows[0] || { total: 0, pending: 0, paid: 0, simulated: 0, paidAmountCents: 0 };
   }
 
   private featureForProduct(code: string): FeatureCredit | null {
@@ -170,7 +168,11 @@ export class PaymentsService {
     return null;
   }
 
-  async confirmPayment(paymentId: string, metadata: Record<string, unknown> = {}) {
+  private async settlePayment(
+    paymentId: string,
+    metadata: Record<string, unknown>,
+    isSimulation: boolean,
+  ) {
     return this.dataSource.transaction(async (manager) => {
       const rows = await manager.query(
         `SELECT * FROM payments WHERE id = $1 FOR UPDATE`,
@@ -185,10 +187,10 @@ export class PaymentsService {
 
       const paidRows = await manager.query(
         `UPDATE payments
-         SET status = 'PAID', "paidAt" = now(), "updatedAt" = now(),
+         SET status = 'PAID', "paidAt" = now(), "updatedAt" = now(), "isSimulation" = $3,
              metadata = coalesce(metadata, '{}'::jsonb) || $2::jsonb
          WHERE id = $1 RETURNING *`,
-        [paymentId, JSON.stringify(metadata)],
+        [paymentId, JSON.stringify(metadata), isSimulation],
       );
 
       const feature = this.featureForProduct(payment.productCode);
@@ -204,6 +206,22 @@ export class PaymentsService {
 
       return paidRows[0];
     });
+  }
+
+  async confirmPayment(paymentId: string, metadata: Record<string, unknown> = {}) {
+    return this.settlePayment(paymentId, metadata, false);
+  }
+
+  async simulatePayment(paymentId: string, adminUserId: string) {
+    return this.settlePayment(
+      paymentId,
+      {
+        simulatedByAdmin: adminUserId,
+        confirmationMode: 'DEV_SIMULATION',
+        simulatedAt: new Date().toISOString(),
+      },
+      true,
+    );
   }
 
   async getCredits(userId: string) {
