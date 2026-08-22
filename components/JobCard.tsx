@@ -11,7 +11,6 @@ import {
   MapPin,
 } from "lucide-react";
 import type { Job } from "../types/job";
-import { ShareJobButtons } from "./ShareJobButtons";
 
 interface JobCardProps {
   key?: React.Key;
@@ -51,6 +50,25 @@ function postedAt(job: Job) {
   );
 }
 
+function locationLabel(job: Job) {
+  return job.location || [job.city, job.state].filter(Boolean).join(", ") || "Local não informado";
+}
+
+function cardDescription(description?: string | null) {
+  const normalized = String(description || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+
+  const structuredMarker = normalized.search(
+    /\s(?:Empresa|Local de trabalho|Código da fonte|Codigo da fonte|Fonte):/i,
+  );
+
+  if (structuredMarker > 24) {
+    return normalized.slice(0, structuredMarker).trim();
+  }
+
+  return normalized;
+}
+
 export function JobCard({ job, onClick, hasApplied = false }: JobCardProps) {
   const relativeDate = getRelativeTimeString(postedAt(job));
   const companyLabel = job.isConfidential
@@ -59,6 +77,8 @@ export function JobCard({ job, onClick, hasApplied = false }: JobCardProps) {
   const externalSource = job.isExternalListing && job.sourceName;
   const safeSourceUrl =
     job.sourceUrl && /^https?:\/\//i.test(job.sourceUrl) ? job.sourceUrl : null;
+  const description = cardDescription(job.description);
+  const location = locationLabel(job);
 
   return (
     <article
@@ -130,9 +150,9 @@ export function JobCard({ job, onClick, hasApplied = false }: JobCardProps) {
         )}
       </div>
 
-      {job.description && (
-        <p className="mt-4 line-clamp-2 text-sm leading-6 text-[#6f5c52]">
-          {job.description}
+      {description && (
+        <p className="mt-4 line-clamp-2 max-w-4xl text-sm leading-6 text-[#6f5c52]">
+          {description}
         </p>
       )}
 
@@ -154,63 +174,49 @@ export function JobCard({ job, onClick, hasApplied = false }: JobCardProps) {
         </div>
       )}
 
-      <div className="mt-5 flex flex-col gap-4 border-t border-[#5b4030]/8 pt-4 xl:flex-row xl:items-end xl:justify-between">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 text-xs text-[#77665d]">
-          <span className="inline-flex items-center gap-1.5">
-            <MapPin className="h-3.5 w-3.5 text-[#c96847]" />
-            {job.location || "Local não informado"}
+      <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2.5 border-t border-[#5b4030]/8 pt-4 text-xs text-[#77665d]">
+        <span className="inline-flex items-center gap-1.5">
+          <MapPin className="h-3.5 w-3.5 text-[#c96847]" />
+          {location}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Briefcase className="h-3.5 w-3.5 text-[#c96847]" />
+          {job.type || "Contrato não informado"}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <Laptop className="h-3.5 w-3.5 text-[#c96847]" />
+          {job.workModel || "Presencial"}
+        </span>
+        {job.salary && (
+          <span className="inline-flex items-center gap-1.5 font-bold text-[#433129]">
+            <DollarSign className="h-3.5 w-3.5 text-[#c96847]" />
+            {job.salary}
           </span>
-          <span className="inline-flex items-center gap-1.5">
-            <Briefcase className="h-3.5 w-3.5 text-[#c96847]" />
-            {job.type || "Contrato não informado"}
+        )}
+        {relativeDate && (
+          <span className="inline-flex items-center gap-1.5 text-[#9a887e]">
+            <Clock3 className="h-3.5 w-3.5" />
+            {relativeDate}
           </span>
-          <span className="inline-flex items-center gap-1.5">
-            <Laptop className="h-3.5 w-3.5 text-[#c96847]" />
-            {job.workModel || "Presencial"}
-          </span>
-          {job.salary && (
-            <span className="inline-flex items-center gap-1.5 font-bold text-[#433129]">
-              <DollarSign className="h-3.5 w-3.5 text-[#c96847]" />
-              {job.salary}
-            </span>
-          )}
-          {relativeDate && (
-            <span className="inline-flex items-center gap-1.5 text-[#9a887e]">
-              <Clock3 className="h-3.5 w-3.5" />
-              {relativeDate}
-            </span>
-          )}
-        </div>
+        )}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 xl:justify-end">
-          {safeSourceUrl ? (
-            <a
-              href={safeSourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(event) => event.stopPropagation()}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#f7f2ed] px-2.5 py-1.5 text-[10px] font-black text-[#9d5d43] transition hover:bg-[#f1e4da]"
-            >
-              <ExternalLink className="h-3 w-3" /> Ver fonte original
-            </a>
-          ) : externalSource ? (
-            <span className="max-w-[180px] truncate text-[10px] font-bold uppercase tracking-[.1em] text-[#a08c81]" title={externalSource}>
-              Fonte: {externalSource}
-            </span>
-          ) : null}
-          <div onClick={(event) => event.stopPropagation()} className="shrink-0">
-            <ShareJobButtons
-              title={job.title}
-              url={`https://piranegocios.com.br/vagas/${job.slug || job.id}`}
-              companyName={companyLabel}
-              location={job.location}
-              salary={job.salary}
-              workModel={job.workModel}
-              acceptsPlatformApplications={job.acceptsPlatformApplications}
-              hideEmbed
-            />
-          </div>
-        </div>
+        <span className="hidden flex-1 sm:block" />
+
+        {safeSourceUrl ? (
+          <a
+            href={safeSourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(event) => event.stopPropagation()}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[#f7f2ed] px-2.5 py-1.5 text-[10px] font-black text-[#9d5d43] transition hover:bg-[#f1e4da]"
+          >
+            <ExternalLink className="h-3 w-3" /> Fonte original
+          </a>
+        ) : externalSource ? (
+          <span className="max-w-[190px] truncate text-[10px] font-bold text-[#a08c81]" title={externalSource}>
+            Fonte: {externalSource}
+          </span>
+        ) : null}
       </div>
     </article>
   );
