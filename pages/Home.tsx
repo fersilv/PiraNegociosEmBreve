@@ -19,6 +19,11 @@ import { Navbar } from "../components/Navbar";
 import { SeoHead } from "../components/SeoHead";
 import { useAuth } from "../contexts/AuthContext";
 import { api, asArray } from "../lib/api";
+import {
+  buildLocalityRecommendation,
+  localityRank,
+  type VisitorLocationHint,
+} from "../lib/locationPersonalization";
 import type { Job } from "../types/job";
 
 const jobDate = (job: Job) =>
@@ -33,23 +38,25 @@ export default function Home() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [visitorLocation, setVisitorLocation] = useState<VisitorLocationHint | null>(null);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [query, setQuery] = useState("");
   const [city, setCity] = useState("");
 
   useEffect(() => {
     let active = true;
-    api
-      .get("/jobs")
-      .then((response) => {
+    Promise.allSettled([api.get("/jobs"), api.get("/public/location-hint")])
+      .then(([jobsResult, locationResult]) => {
         if (!active) return;
-        setJobs(
-          asArray<Job>(response.data)
-            .filter((job) => job.active !== false)
-            .sort((a, b) => jobDate(b) - jobDate(a)),
-        );
+        if (jobsResult.status === "fulfilled") {
+          setJobs(asArray<Job>(jobsResult.value.data).filter((job) => job.active !== false));
+        } else {
+          console.error("Erro ao carregar vagas públicas:", jobsResult.reason);
+        }
+        if (locationResult.status === "fulfilled") {
+          setVisitorLocation(locationResult.value.data as VisitorLocationHint);
+        }
       })
-      .catch((error) => console.error("Erro ao carregar vagas públicas:", error))
       .finally(() => active && setLoadingJobs(false));
     return () => {
       active = false;
@@ -66,6 +73,11 @@ export default function Home() {
     [jobs],
   );
 
+  const locality = useMemo(
+    () => buildLocalityRecommendation(visitorLocation, cities),
+    [visitorLocation, cities],
+  );
+
   const sourceCount = useMemo(
     () =>
       new Set(
@@ -80,7 +92,21 @@ export default function Home() {
     [jobs],
   );
 
-  const recentJobs = jobs.slice(0, 6);
+  const recentJobs = useMemo(
+    () =>
+      [...jobs]
+        .sort((a, b) => {
+          const localityDifference =
+            localityRank(jobLocation(a), locality) - localityRank(jobLocation(b), locality);
+          if (localityDifference) return localityDifference;
+          const sponsoredDifference = Number(Boolean(b.isSponsored)) - Number(Boolean(a.isSponsored));
+          if (sponsoredDifference) return sponsoredDifference;
+          return jobDate(b) - jobDate(a);
+        })
+        .slice(0, 6),
+    [jobs, locality],
+  );
+
   const remoteCount = jobs.filter(
     (job) => (job.workModel || "").toLowerCase() === "remoto",
   ).length;
@@ -236,12 +262,18 @@ export default function Home() {
         <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[.2em] text-[#b96345]">Oportunidades agora</p>
+              <p className="text-[10px] font-black uppercase tracking-[.2em] text-[#b96345]">
+                {locality?.recommendedLabel ? `Perto de você · ${locality.recommendedLabel}` : "Oportunidades agora"}
+              </p>
               <h2 className="mt-2 max-w-2xl font-serif text-4xl font-bold tracking-[-.025em] text-[#2d211c] sm:text-5xl">
-                Vagas que estão circulando pela região.
+                {locality?.recommendedLabel ? "Vagas mais próximas primeiro." : "Vagas que estão circulando pela região."}
               </h2>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-[#735f54]">
-                Empresas locais, PATs, agências e fontes públicas reunidas em uma experiência única de busca.
+                {locality?.recommendedLabel
+                  ? locality.exact
+                    ? `Identificamos sua região como ${locality.detectedLabel}. Primeiro mostramos oportunidades daí e depois seguimos pelas cidades próximas, sempre pelas mais recentes.`
+                    : `Você parece estar em ${locality.detectedLabel}, mas não há vagas abertas exatamente aí agora. Começamos por ${locality.recommendedLabel}, a cidade atendida mais próxima com oportunidades.`
+                  : "Empresas locais, PATs, agências e fontes públicas reunidas em uma experiência única de busca."}
               </p>
             </div>
             <Link
