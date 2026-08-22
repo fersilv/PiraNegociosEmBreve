@@ -75,8 +75,8 @@ function haversineKm(a: Coordinates, b: Coordinates) {
 }
 
 function visitorCoordinates(hint: VisitorLocationHint): Coordinates | null {
-  const latitude = Number(hint.latitude);
-  const longitude = Number(hint.longitude);
+  const latitude = typeof hint.latitude === "number" ? hint.latitude : Number.NaN;
+  const longitude = typeof hint.longitude === "number" ? hint.longitude : Number.NaN;
   if (Number.isFinite(latitude) && Number.isFinite(longitude)) return { latitude, longitude };
   if (hint.city && hint.state) {
     return REGIONAL_COORDINATES[`${normalize(hint.city)}|${normalize(hint.state)}`] || null;
