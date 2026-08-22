@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { Onboarding } from "./Onboarding";
 import { WorkspaceLayout } from "../components/WorkspaceLayout";
 import { AdminWorkspaceLayout } from "../components/AdminWorkspaceLayout";
-import { CompanyDashboard } from "./CompanyDashboard";
+import { CompanyJobsManagementPage } from "./CompanyJobsManagementPage";
 import { CompanyHomePage } from "./CompanyHomePage";
 import { CompanyNewJobPage } from "./CompanyNewJobPage";
 import { TalentSearchPage } from "./TalentSearchPage";
@@ -97,7 +97,7 @@ function CompanyRoutes({ hasCompany }: { hasCompany: boolean }) {
   return (
     <Routes>
       <Route index element={companyOnly(<CompanyHomePage />)} />
-      <Route path="vagas" element={companyOnly(<CompanyDashboard />)} />
+      <Route path="vagas" element={companyOnly(<CompanyJobsManagementPage />)} />
       <Route path="vagas/nova" element={companyOnly(<CompanyNewJobPage />)} />
       <Route path="vagas/:jobId" element={companyOnly(<CompanyJobPage />)} />
       <Route path="talentos" element={companyOnly(<TalentSearchPage />)} />
