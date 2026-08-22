@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { BadgeDollarSign, CheckCircle2, Clock3, FlaskConical, QrCode, ReceiptText, Save, Sparkles } from "lucide-react";
+import { BadgeDollarSign, CheckCircle2, Clock3, FlaskConical, QrCode, ReceiptText, RefreshCw, Save, Sparkles } from "lucide-react";
 import { api } from "../lib/api";
 
 function money(cents: number) {
@@ -23,18 +23,22 @@ export function AdminPaymentsPage() {
   const [summary, setSummary] = useState<any>({});
   const [products, setProducts] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
+  const [matchOverview, setMatchOverview] = useState<any>({});
   const [drafts, setDrafts] = useState<Record<string, any>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [simulating, setSimulating] = useState<string | null>(null);
+  const [preparingMatch, setPreparingMatch] = useState(false);
   const [message, setMessage] = useState("");
 
   const load = async () => {
-    const [summaryResponse, productResponse, paymentResponse] = await Promise.all([
+    const [summaryResponse, productResponse, paymentResponse, matchResponse] = await Promise.all([
       api.get("/admin/payments/summary"),
       api.get("/admin/payments/products"),
       api.get("/admin/payments?limit=250"),
+      api.get("/admin/job-match/overview").catch(() => ({ data: {} })),
     ]);
     setSummary(summaryResponse.data || {});
+    setMatchOverview(matchResponse.data || {});
     const nextProducts = Array.isArray(productResponse.data) ? productResponse.data : [];
     setProducts(nextProducts);
     setDrafts(Object.fromEntries(nextProducts.map((product: any) => [product.code, {
@@ -94,12 +98,27 @@ export function AdminPaymentsPage() {
     }
   };
 
+  const prepareActiveJobs = async () => {
+    if (!window.confirm("Preparar as vagas ativas que ainda não possuem ficha do Match Inteligente? Cada vaga pendente pode gerar uma chamada de IA.")) return;
+    setPreparingMatch(true);
+    setMessage("");
+    try {
+      const response = await api.post("/admin/job-match/backfill?limit=100");
+      setMatchOverview(response.data?.overview || {});
+      setMessage(`${Number(response.data?.processed || 0)} vaga(s) processada(s) para o Match Inteligente.`);
+    } catch (error: any) {
+      setMessage(error?.response?.data?.message || "Não foi possível preparar as vagas ativas.");
+    } finally {
+      setPreparingMatch(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <header>
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-terracotta-600">Financeiro · Pix</p>
         <h1 className="mt-1 text-3xl font-serif font-bold text-stone-900">Pagamentos e monetização</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Gerencie preços, promoções, franquias gratuitas e o histórico de pagamentos. O checkout desta área aceita somente Pix.</p>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Gerencie preços, promoções, recursos premium e o histórico de pagamentos. O checkout desta área aceita somente Pix.</p>
       </header>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -113,7 +132,25 @@ export function AdminPaymentsPage() {
       <section className="rounded-3xl border border-violet-200 bg-violet-50 p-4 shadow-sm sm:p-5">
         <div className="flex items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white"><FlaskConical className="h-4 w-4" /></span>
-          <div><p className="text-xs font-black uppercase tracking-[.14em] text-violet-700">Modo DEV de pagamentos</p><p className="mt-1 text-sm leading-6 text-violet-800/80">Use <strong>DEV · Aprovar</strong> para testar o fluxo completo de compra. A simulação libera créditos e recursos exatamente como um Pix pago, mas fica marcada no histórico e não soma receita nem conversão financeira real.</p></div>
+          <div><p className="text-xs font-black uppercase tracking-[.14em] text-violet-700">Modo DEV de pagamentos</p><p className="mt-1 text-sm leading-6 text-violet-800/80">Use <strong>DEV · Aprovar</strong> para testar o fluxo completo de compra. A simulação libera créditos e acessos temporários exatamente como um Pix pago, mas fica marcada no histórico e não soma receita nem conversão financeira real.</p></div>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-sky-200 bg-sky-50 p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[.15em] text-sky-700">Match Inteligente · preparação das vagas</p>
+            <h2 className="mt-1 text-lg font-bold text-stone-950">A IA roda quando a vaga fica ativa</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-stone-600">Novas ativações são preparadas automaticamente. Este botão serve somente para o estoque de vagas que já estava ativo antes da implantação ou para fichas que falharam.</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-wider">
+              <span className="rounded-full bg-white px-3 py-1.5 text-stone-600">Ativas {Number(matchOverview.active || 0)}</span>
+              <span className="rounded-full bg-emerald-100 px-3 py-1.5 text-emerald-700">Prontas {Number(matchOverview.ready || 0)}</span>
+              <span className="rounded-full bg-amber-100 px-3 py-1.5 text-amber-700">Pendentes {Number(matchOverview.pending || 0)}</span>
+              <span className="rounded-full bg-red-100 px-3 py-1.5 text-red-700">Erros {Number(matchOverview.error || 0)}</span>
+              <span className="rounded-full bg-stone-200 px-3 py-1.5 text-stone-600">Sem ficha {Number(matchOverview.missing || 0)}</span>
+            </div>
+          </div>
+          <button type="button" disabled={preparingMatch} onClick={() => void prepareActiveJobs()} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-sky-700 px-5 py-3 text-sm font-black text-white disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${preparingMatch ? "animate-spin" : ""}`} /> {preparingMatch ? "Preparando..." : "Preparar vagas ativas"}</button>
         </div>
       </section>
 
@@ -127,7 +164,7 @@ export function AdminPaymentsPage() {
             const draft = drafts[product.code] || {};
             return (
               <div key={product.code} className="rounded-2xl border border-stone-200 bg-stone-50/60 p-4">
-                <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-wider text-terracotta-600">{product.code}</p><h3 className="mt-1 font-bold text-stone-900">{product.name}</h3><p className="mt-1 text-xs leading-5 text-stone-500">{product.description}</p></div><Sparkles className="h-5 w-5 shrink-0 text-violet-400" /></div>
+                <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-black uppercase tracking-wider text-terracotta-600">{product.code}</p><h3 className="mt-1 font-bold text-stone-900">{product.name}</h3><p className="mt-1 text-xs leading-5 text-stone-500">{product.description}</p>{product.durationDays ? <p className="mt-2 text-[10px] font-black uppercase tracking-wider text-violet-600">Acesso por {product.durationDays} dias</p> : null}</div><Sparkles className="h-5 w-5 shrink-0 text-violet-400" /></div>
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <Field label="Preço normal (R$)" value={draft.price ?? ""} onChange={(value) => patchDraft(product.code, { price: value })} />
                   <Field label="Preço promocional" value={draft.promoPrice ?? ""} onChange={(value) => patchDraft(product.code, { promoPrice: value })} placeholder="Opcional" />
