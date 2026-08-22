@@ -36,8 +36,8 @@ firebase.messaging().onBackgroundMessage(payload => {
   const title = notification.title || 'PiraNegócios';
   self.registration.showNotification(title, {
     body: notification.body || 'Você recebeu uma nova atualização.',
-    icon: '/icon.svg',
-    badge: '/icon.svg',
+    icon: '/brand/push-icon-192.png',
+    badge: '/brand/notification-badge-96.png',
     data: payload.data || {},
   });
 });
