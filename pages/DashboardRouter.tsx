@@ -19,6 +19,7 @@ import { AdminOverview } from "./AdminOverview";
 import { AdminAccountPage } from "./AdminAccountPage";
 import { AdminJobDetailsPage } from "./AdminJobDetailsPage";
 import { AdminFlaggedJobsPage } from "./AdminFlaggedJobsPage";
+import { AdminRegistrationPage } from "./AdminRegistrationPage";
 import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
 import { CompanyProfilePage } from "./CompanyProfilePage";
 import { CompanyJobPage } from "./CompanyJobPage";
@@ -42,6 +43,7 @@ function AdminRoutes() {
       <Route path="vagas/:jobId" element={<AdminPage><AdminJobDetailsPage /></AdminPage>} />
       <Route path="usuarios" element={<AdminPage><AdminDashboard mode="moderation" section="users" /></AdminPage>} />
       <Route path="vinculos" element={<AdminPage><AdminDashboard mode="moderation" section="access" /></AdminPage>} />
+      <Route path="cadastros" element={<AdminPage><AdminRegistrationPage /></AdminPage>} />
       <Route path="publicidade" element={<AdminPage><AdminDashboard mode="moderation" section="advertising" /></AdminPage>} />
       <Route path="api" element={<AdminPage><div className="mx-auto max-w-7xl space-y-6 admin-standalone-page"><header><p className="text-xs font-bold uppercase tracking-[0.18em] text-terracotta-600">Infraestrutura · Integrações</p><h1 className="mt-1 text-3xl font-serif font-bold text-stone-900">API v1</h1><p className="mt-1 max-w-3xl text-stone-500">Gerencie chaves, origens, auditoria e a documentação da API de vagas.</p></header><section className="rounded-2xl border border-stone-200 bg-white shadow-sm admin-primary-surface"><ApiV1Panel /></section></div></AdminPage>} />
       <Route path="ai" element={<AdminPage><div className="mx-auto max-w-7xl space-y-6 admin-standalone-page admin-ai-page"><AiIntegrationsPanel /></div></AdminPage>} />
@@ -96,6 +98,7 @@ function LegacyDashboardRedirect() {
     ["/dashboard/admin/vagas", "/admin/vagas"],
     ["/dashboard/admin/usuarios", "/admin/usuarios"],
     ["/dashboard/admin/vinculos", "/admin/vinculos"],
+    ["/dashboard/admin/cadastros", "/admin/cadastros"],
     ["/dashboard/admin/publicidade", "/admin/publicidade"],
     ["/dashboard/admin/api", "/admin/api"],
     ["/dashboard/admin/ai", "/admin/ai"],
