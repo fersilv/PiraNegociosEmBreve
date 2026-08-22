@@ -136,18 +136,19 @@ export function ResumeWorkspace() {
 
   return (
     <div className="relative">
+      <style>{`@media print { .resume-import-control, .resume-import-modal { display: none !important; } }`}</style>
       <ResumeBuilderStudio />
 
       <button
         type="button"
         onClick={() => { setOpen(true); setError(""); setSuccess(""); }}
-        className="fixed bottom-5 right-5 z-[70] inline-flex items-center gap-2 rounded-2xl bg-[#2b211c] px-4 py-3 text-xs font-black text-white shadow-[0_18px_55px_rgba(43,33,28,.28)] transition hover:-translate-y-0.5 hover:bg-[#3a2b24] sm:bottom-7 sm:right-7 sm:px-5 sm:text-sm"
+        className="resume-import-control fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-[70] inline-flex items-center gap-2 rounded-2xl bg-[#2b211c] px-4 py-3 text-xs font-black text-white shadow-[0_18px_55px_rgba(43,33,28,.28)] transition hover:-translate-y-0.5 hover:bg-[#3a2b24] sm:bottom-7 sm:right-7 sm:px-5 sm:text-sm"
       >
         <Upload className="h-4 w-4 text-[#f0b99d]" /> Importar currículo/documentos
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/45 p-0 backdrop-blur-sm sm:items-center sm:p-5" onClick={() => !processing && setOpen(false)}>
+        <div className="resume-import-modal fixed inset-0 z-[90] flex items-end justify-center bg-black/45 p-0 backdrop-blur-sm sm:items-center sm:p-5" onClick={() => !processing && setOpen(false)}>
           <section className="w-full max-w-xl rounded-t-[30px] border border-white/10 bg-[#fffdfa] p-5 shadow-2xl sm:rounded-[30px] sm:p-6" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-start gap-3">
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><Sparkles className="h-5 w-5" /></span>
