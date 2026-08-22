@@ -32,6 +32,7 @@ const userNavigation: NavItem[] = [
   { to: "/user", label: "Início", icon: <Home className="h-5 w-5" />, end: true },
   { to: "/user/vagas", label: "Encontrar vagas", icon: <Briefcase className="h-5 w-5" /> },
   { to: "/user/curriculo", label: "Meu currículo", icon: <FileText className="h-5 w-5" /> },
+  { to: "/user/preferencias", label: "Preferências", icon: <Settings2 className="h-5 w-5" /> },
   { to: "/user/perfil", label: "Meu perfil", icon: <User className="h-5 w-5" /> },
 ];
 
