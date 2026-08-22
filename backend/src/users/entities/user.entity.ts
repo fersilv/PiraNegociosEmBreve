@@ -62,6 +62,21 @@ export class User {
   @Column({ nullable: true })
   resumeURL: string;
 
+  @Column({ type: 'varchar', length: 16, default: 'DRAFT' })
+  resumeStatus: 'DRAFT' | 'PUBLISHED';
+
+  @Column({ type: 'timestamptz', nullable: true })
+  resumePublishedAt: Date | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  uploadedResumeFile: {
+    name: string;
+    mimeType: string;
+    size: number;
+    dataUrl: string;
+    uploadedAt: string;
+  } | null;
+
   @Column({ default: false })
   isVerified: boolean;
 
