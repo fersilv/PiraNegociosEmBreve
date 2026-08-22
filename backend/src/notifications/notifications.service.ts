@@ -240,7 +240,7 @@ export class NotificationsService {
   async adminBroadcast(input: AdminBroadcastInput) {
     const title = input.title.trim();
     const message = input.message.trim();
-    const link = input.link?.trim() || null;
+    const link = input.link?.trim() || undefined;
     const category = input.category || 'announcement';
 
     let recipients: User[] = [];
