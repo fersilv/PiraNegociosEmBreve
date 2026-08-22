@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Briefcase, Building2, Loader2, MapPin } from "lucide-react";
+import { ArrowLeft, Briefcase, Building2, ExternalLink, Loader2, MapPin } from "lucide-react";
 import { api } from "../lib/api";
+import { applicationUrlLabel, safeApplicationUrl } from "../lib/jobApplication";
 
 type CityJob = {
   id: string;
@@ -17,6 +18,8 @@ type CityJob = {
   company?: { name?: string } | null;
   sourceName?: string;
   description?: string;
+  applicationUrl?: string | null;
+  applicationUrlTitle?: string | null;
 };
 type CityData = { city: string; state?: string | null; slug: string; count: number; jobs: CityJob[]; updatedAt?: string };
 
@@ -112,7 +115,21 @@ export default function CityJobsPage() {
           <div className="grid gap-3">
             {data.jobs.map((job) => {
               const companyName = job.company?.name || job.companyName || job.sourceName || "Empresa";
-              return <Link key={job.id} to={`/vagas/${job.slug}`} className="group rounded-[24px] border border-stone-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-terracotta-200 hover:shadow-md"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[.12em] text-terracotta-600"><Building2 className="h-3.5 w-3.5" /> {companyName}</p><h3 className="mt-1 text-xl font-bold text-stone-950 group-hover:text-terracotta-700">{job.title}</h3><p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-500"><span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {job.location || place}</span>{job.type && <span>{job.type}</span>}{job.workModel && <span>{job.workModel}</span>}</p></div>{job.salary && <span className="shrink-0 rounded-full bg-stone-100 px-3 py-1.5 text-xs font-bold text-stone-700">{job.salary}</span>}</div>{job.description && <p className="mt-4 line-clamp-2 text-sm leading-6 text-stone-600">{job.description}</p>}</Link>;
+              const applicationHref = safeApplicationUrl(job.applicationUrl);
+              return (
+                <article key={job.id} className="group rounded-[24px] border border-stone-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-terracotta-200 hover:shadow-md">
+                  <Link to={`/vagas/${job.slug}`} className="block">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[.12em] text-terracotta-600"><Building2 className="h-3.5 w-3.5" /> {companyName}</p><h3 className="mt-1 text-xl font-bold text-stone-950 group-hover:text-terracotta-700">{job.title}</h3><p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-500"><span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {job.location || place}</span>{job.type && <span>{job.type}</span>}{job.workModel && <span>{job.workModel}</span>}</p></div>{job.salary && <span className="shrink-0 rounded-full bg-stone-100 px-3 py-1.5 text-xs font-bold text-stone-700">{job.salary}</span>}</div>{job.description && <p className="mt-4 line-clamp-2 text-sm leading-6 text-stone-600">{job.description}</p>}
+                  </Link>
+                  {applicationHref && (
+                    <div className="mt-4 border-t border-stone-100 pt-4">
+                      <a href={applicationHref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-terracotta-600 px-4 py-2.5 text-xs font-black text-white transition hover:bg-terracotta-700">
+                        <ExternalLink className="h-3.5 w-3.5" /> {applicationUrlLabel(job.applicationUrlTitle)}
+                      </a>
+                    </div>
+                  )}
+                </article>
+              );
             })}
           </div>
         </section>
