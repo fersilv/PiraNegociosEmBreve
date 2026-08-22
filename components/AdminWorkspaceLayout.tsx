@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import {
   Activity,
+  AlertTriangle,
   Briefcase,
   Building2,
   Cpu,
@@ -43,7 +44,8 @@ const groups: AdminNavGroup[] = [
     label: "Operação",
     items: [
       { to: "/admin/empresas", label: "Empresas", icon: <Building2 className="h-4 w-4" /> },
-      { to: "/admin/vagas", label: "Vagas", icon: <Briefcase className="h-4 w-4" /> },
+      { to: "/admin/vagas", label: "Vagas", icon: <Briefcase className="h-4 w-4" />, end: true },
+      { to: "/admin/vagas/sinalizadas", label: "Sinalizadas", icon: <AlertTriangle className="h-4 w-4" /> },
       { to: "/admin/usuarios", label: "Usuários", icon: <Users className="h-4 w-4" /> },
       { to: "/admin/vinculos", label: "Vínculos", icon: <Link2 className="h-4 w-4" /> },
     ],
@@ -160,7 +162,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
       >
         <MobileLink to="/admin" end icon={<LayoutDashboard className="h-5 w-5" />} label="Início" />
         <MobileLink to="/admin/empresas" icon={<Building2 className="h-5 w-5" />} label="Empresas" />
-        <MobileLink to="/admin/vagas" icon={<Briefcase className="h-5 w-5" />} label="Vagas" />
+        <MobileLink to="/admin/vagas" end icon={<Briefcase className="h-5 w-5" />} label="Vagas" />
         <MobileLink to="/admin/usuarios" icon={<Users className="h-5 w-5" />} label="Usuários" />
         <button type="button" onClick={() => setMoreOpen(true)} className="flex min-w-14 flex-col items-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-semibold text-white/60">
           <MoreHorizontal className="h-5 w-5" />
@@ -181,6 +183,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
+              <MoreLink to="/admin/vagas/sinalizadas" icon={<AlertTriangle className="h-4 w-4" />} label="Vagas sinalizadas" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/vinculos" icon={<Link2 className="h-4 w-4" />} label="Vínculos" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/publicidade" icon={<Megaphone className="h-4 w-4" />} label="Publicidade" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/api" icon={<KeyRound className="h-4 w-4" />} label="API v1" close={() => setMoreOpen(false)} />
