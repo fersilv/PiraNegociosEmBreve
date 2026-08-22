@@ -65,4 +65,19 @@ describe('JobMatchService scoring guardrails', () => {
     expect(result.score).toBeGreaterThan(50);
     expect(result.technicalScore).toBeGreaterThanOrEqual(70);
   });
+
+  it('coloca currículo impulsionado em slot superior sem adulterar a compatibilidade', () => {
+    const entries = [
+      { candidateId: 'ana', score: 84, boosted: false },
+      { candidateId: 'maria', score: 76, boosted: false },
+      { candidateId: 'luana', score: 66, boosted: false },
+      { candidateId: 'joao', score: 59, boosted: true },
+    ];
+
+    const ranked = service.rankCompanyExposure(entries);
+
+    expect(ranked.map((item: any) => item.candidateId)).toEqual(['ana', 'joao', 'maria', 'luana']);
+    expect(ranked.find((item: any) => item.candidateId === 'joao')?.score).toBe(59);
+    expect(ranked.find((item: any) => item.candidateId === 'maria')?.score).toBe(76);
+  });
 });
