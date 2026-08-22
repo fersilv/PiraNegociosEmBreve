@@ -1,7 +1,17 @@
-import React from 'react';
-import { Briefcase, MapPin, DollarSign, Laptop, CheckCircle2 } from 'lucide-react';
-import { Job } from '../types/job';
-import { ShareJobButtons } from './ShareJobButtons';
+import React from "react";
+import {
+  Accessibility,
+  ArrowUpRight,
+  Briefcase,
+  CheckCircle2,
+  Clock3,
+  DollarSign,
+  ExternalLink,
+  Laptop,
+  MapPin,
+} from "lucide-react";
+import type { Job } from "../types/job";
+import { ShareJobButtons } from "./ShareJobButtons";
 
 interface JobCardProps {
   key?: React.Key;
@@ -10,112 +20,186 @@ interface JobCardProps {
   hasApplied?: boolean;
 }
 
-export function getRelativeTimeString(dateString: string) {
+export function getRelativeTimeString(dateString?: string | null) {
+  if (!dateString) return "";
   const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return "";
   const now = new Date();
   const diffInSec = Math.round((date.getTime() - now.getTime()) / 1000);
-  
-  const rtf = new Intl.RelativeTimeFormat('pt-BR', { numeric: 'auto' });
-  
-  if (Math.abs(diffInSec) < 60) return rtf.format(diffInSec, 'second');
+  const rtf = new Intl.RelativeTimeFormat("pt-BR", { numeric: "auto" });
+
+  if (Math.abs(diffInSec) < 60) return rtf.format(diffInSec, "second");
   const diffInMin = Math.round(diffInSec / 60);
-  if (Math.abs(diffInMin) < 60) return rtf.format(diffInMin, 'minute');
+  if (Math.abs(diffInMin) < 60) return rtf.format(diffInMin, "minute");
   const diffInHour = Math.round(diffInMin / 60);
-  if (Math.abs(diffInHour) < 24) return rtf.format(diffInHour, 'hour');
+  if (Math.abs(diffInHour) < 24) return rtf.format(diffInHour, "hour");
   const diffInDay = Math.round(diffInHour / 24);
-  if (Math.abs(diffInDay) < 30) return rtf.format(diffInDay, 'day');
+  if (Math.abs(diffInDay) < 30) return rtf.format(diffInDay, "day");
   const diffInMonth = Math.round(diffInDay / 30);
-  if (Math.abs(diffInMonth) < 12) return rtf.format(diffInMonth, 'month');
+  if (Math.abs(diffInMonth) < 12) return rtf.format(diffInMonth, "month");
   const diffInYear = Math.round(diffInDay / 365);
-  return rtf.format(diffInYear, 'year');
+  return rtf.format(diffInYear, "year");
+}
+
+function postedAt(job: Job) {
+  return (
+    job.sourcePublishedAt ||
+    job.postedAt ||
+    job.createdAt ||
+    job.updatedAt ||
+    ""
+  );
 }
 
 export function JobCard({ job, onClick, hasApplied = false }: JobCardProps) {
+  const relativeDate = getRelativeTimeString(postedAt(job));
+  const companyLabel = job.isConfidential
+    ? "Empresa confidencial"
+    : job.companyName || job.sourceName || "Empresa não informada";
+  const externalSource = job.isExternalListing && job.sourceName;
+
   return (
-    <div 
+    <article
       onClick={onClick}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); }}
-      className={`text-left p-5 rounded-2xl transition-all duration-300 hover:shadow-lg w-full flex flex-col gap-3
-        ${job.isSponsored 
-          ? 'bg-terracotta-50/80 border border-terracotta-200 hover:border-terracotta-400' 
-          : 'bg-white border border-stone-200 hover:border-terracotta-300'
-        }`}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") onClick();
+      }}
+      className={`group relative w-full cursor-pointer overflow-hidden rounded-[24px] border bg-white p-5 text-left shadow-[0_10px_35px_rgba(66,43,31,.045)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_50px_rgba(66,43,31,.10)] sm:p-6 ${
+        job.isSponsored
+          ? "border-[#e2a58c] ring-1 ring-[#efd2c5]"
+          : "border-[#5b4030]/10 hover:border-[#c97655]/35"
+      }`}
     >
-      <div className="flex justify-between items-start gap-4">
-        <div>
-          <h4 className="font-semibold text-stone-900 text-lg line-clamp-1 flex items-center gap-2">
-            {job.title}
-            {job.isTalentPool && (
-              <span className="bg-purple-100 text-purple-700 text-[10px] uppercase font-bold px-2 py-0.5 rounded shrink-0">Banco de Talentos</span>
-            )}
+      {job.isSponsored && (
+        <div className="absolute right-0 top-0 rounded-bl-2xl bg-[#2d211c] px-3 py-1.5 text-[9px] font-black uppercase tracking-[.15em] text-white">
+          Destaque
+        </div>
+      )}
+
+      <div className="flex items-start gap-4">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#f5e8df] text-lg font-black text-[#b76042] shadow-inner">
+          {companyLabel.charAt(0).toUpperCase() || "P"}
+        </div>
+
+        <div className="min-w-0 flex-1 pr-8 sm:pr-16">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="min-w-0 font-serif text-xl font-bold leading-tight text-[#2d211c] sm:text-[22px]">
+              {job.title}
+            </h3>
             {hasApplied && (
-              <span className="bg-green-100 text-green-700 text-[10px] uppercase font-bold px-2 py-0.5 rounded shrink-0 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Inscrito</span>
-            )}
-            {job.acceptsPlatformApplications === false && (
-              <span className="bg-amber-100 text-amber-800 text-[10px] uppercase font-bold px-2 py-0.5 rounded shrink-0">Candidatura externa</span>
-            )}
-          </h4>
-          <p className="text-terracotta-700 text-sm font-medium flex items-center gap-1.5">
-            {job.isConfidential ? 'Empresa Confidencial' : job.companyName}
-            {!job.isConfidential && job.isCompanyVerified && (
-              <span 
-                className="inline-flex items-center justify-center bg-blue-50 border border-blue-200 text-blue-600 p-0.5 rounded-full cursor-help hover:bg-blue-100 transition-colors shrink-0" 
-                title="Esta empresa passou por verificação documental"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-emerald-700 ring-1 ring-emerald-100">
+                <CheckCircle2 className="h-3 w-3" /> Inscrito
               </span>
+            )}
+          </div>
+          <p className="mt-1.5 flex items-center gap-1.5 text-sm font-bold text-[#9d5d43]">
+            {companyLabel}
+            {!job.isConfidential && job.isCompanyVerified && (
+              <CheckCircle2 className="h-3.5 w-3.5 text-sky-600" />
             )}
           </p>
         </div>
-        {job.isSponsored && (
-          <span className="bg-terracotta-100 text-terracotta-700 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wider shrink-0">
-            Destaque
+
+        <ArrowUpRight className="absolute right-5 top-6 h-5 w-5 text-[#bca89d] transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-[#c96847]" />
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {job.isTalentPool && (
+          <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-700 ring-1 ring-violet-100">
+            Banco de talentos
+          </span>
+        )}
+        {job.pcdMode === "INCLUSIVE" && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700 ring-1 ring-sky-100">
+            <Accessibility className="h-3 w-3" /> Também para PCD
+          </span>
+        )}
+        {job.pcdMode === "EXCLUSIVE" && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-700 ring-1 ring-violet-100">
+            <Accessibility className="h-3 w-3" /> Exclusiva PCD
+          </span>
+        )}
+        {job.acceptsPlatformApplications === false && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-800 ring-1 ring-amber-100">
+            <ExternalLink className="h-3 w-3" /> Candidatura externa
           </span>
         )}
       </div>
-      
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between mt-auto pt-2 gap-4 border-t border-stone-100">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <span className="flex items-center gap-1.5 text-xs text-stone-500">
-            <MapPin className="w-3.5 h-3.5" />
-            {job.location}
+
+      {job.description && (
+        <p className="mt-4 line-clamp-2 text-sm leading-6 text-[#6f5c52]">
+          {job.description}
+        </p>
+      )}
+
+      {job.skills && job.skills.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {job.skills.slice(0, 4).map((skill) => (
+            <span
+              key={skill}
+              className="rounded-lg bg-[#f7f2ed] px-2.5 py-1 text-[10px] font-bold text-[#72584b]"
+            >
+              {skill}
+            </span>
+          ))}
+          {job.skills.length > 4 && (
+            <span className="rounded-lg bg-[#f7f2ed] px-2.5 py-1 text-[10px] font-bold text-[#9a8174]">
+              +{job.skills.length - 4}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="mt-5 flex flex-col gap-4 border-t border-[#5b4030]/8 pt-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 text-xs text-[#77665d]">
+          <span className="inline-flex items-center gap-1.5">
+            <MapPin className="h-3.5 w-3.5 text-[#c96847]" />
+            {job.location || "Local não informado"}
           </span>
-          <span className="flex items-center gap-1.5 text-xs text-stone-500">
-            <Briefcase className="w-3.5 h-3.5" />
-            {job.type}
+          <span className="inline-flex items-center gap-1.5">
+            <Briefcase className="h-3.5 w-3.5 text-[#c96847]" />
+            {job.type || "Contrato não informado"}
           </span>
-          <span className="flex items-center gap-1 text-[11px] font-bold text-stone-700 bg-stone-100 border border-stone-200 px-2 py-0.5 rounded-md">
-            <Laptop className="w-3 h-3 text-terracotta-600" />
-            {job.workModel || 'Presencial'}
+          <span className="inline-flex items-center gap-1.5">
+            <Laptop className="h-3.5 w-3.5 text-[#c96847]" />
+            {job.workModel || "Presencial"}
           </span>
           {job.salary && (
-            <span className="flex items-center gap-1.5 text-xs text-stone-500">
-              <DollarSign className="w-3.5 h-3.5" />
+            <span className="inline-flex items-center gap-1.5 font-bold text-[#433129]">
+              <DollarSign className="h-3.5 w-3.5 text-[#c96847]" />
               {job.salary}
             </span>
           )}
-          {job.updatedAt && (
-            <span className="text-[10px] text-stone-400 font-medium ml-1">
-              Atualizado {getRelativeTimeString(job.updatedAt)}
+          {relativeDate && (
+            <span className="inline-flex items-center gap-1.5 text-[#9a887e]">
+              <Clock3 className="h-3.5 w-3.5" />
+              {relativeDate}
             </span>
           )}
         </div>
-        
-        <div onClick={(e) => e.stopPropagation()} className="shrink-0 -mt-2">
-          <ShareJobButtons 
-            title={job.title}
-            url={`https://piranegocios.com.br/vagas/${job.slug || job.id}`}
-            companyName={job.isConfidential ? "Empresa Confidencial" : job.companyName}
-            location={job.location}
-            salary={job.salary}
-            workModel={job.workModel}
-            acceptsPlatformApplications={job.acceptsPlatformApplications}
-            hideEmbed
-          />
+
+        <div className="flex items-center justify-between gap-3 xl:justify-end">
+          {externalSource && (
+            <span className="max-w-[180px] truncate text-[10px] font-bold uppercase tracking-[.1em] text-[#a08c81]" title={externalSource}>
+              Fonte: {externalSource}
+            </span>
+          )}
+          <div onClick={(event) => event.stopPropagation()} className="shrink-0">
+            <ShareJobButtons
+              title={job.title}
+              url={`https://piranegocios.com.br/vagas/${job.slug || job.id}`}
+              companyName={companyLabel}
+              location={job.location}
+              salary={job.salary}
+              workModel={job.workModel}
+              acceptsPlatformApplications={job.acceptsPlatformApplications}
+              hideEmbed
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </article>
   );
 }
