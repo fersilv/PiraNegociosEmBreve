@@ -73,6 +73,10 @@ export function TemplateWrapper({
   return (
     <div className="resume-a4-document bg-white mx-auto shadow-sm border border-stone-200 print:border-none print:shadow-none">
       <style>{`
+        .resume-workflow:has(#resume-builder-root) .resume-stage-actions {
+          display: none !important;
+        }
+
         .resume-a4-document {
           position: relative;
           width: 210mm;
@@ -80,6 +84,21 @@ export function TemplateWrapper({
           box-sizing: border-box;
           padding-bottom: 13mm;
           overflow: visible;
+        }
+
+        .resume-a4-document::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          z-index: 50;
+          pointer-events: none;
+          background: repeating-linear-gradient(
+            to bottom,
+            transparent 0,
+            transparent calc(297mm - 1px),
+            rgba(103, 83, 72, .20) calc(297mm - 1px),
+            rgba(103, 83, 72, .20) 297mm
+          );
         }
 
         .resume-a4-document section,
@@ -106,7 +125,7 @@ export function TemplateWrapper({
           left: 10mm;
           right: 10mm;
           bottom: 4mm;
-          z-index: 20;
+          z-index: 60;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -145,6 +164,10 @@ export function TemplateWrapper({
             border: 0 !important;
             box-shadow: none !important;
             overflow: visible !important;
+          }
+
+          .resume-a4-document::after {
+            display: none !important;
           }
 
           .resume-a4-document section,
