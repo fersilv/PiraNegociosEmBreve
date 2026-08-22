@@ -33,6 +33,8 @@ type PublicJob = {
   title: string;
   description: string;
   location?: string;
+  city?: string;
+  state?: string;
   type?: string;
   workModel?: string;
   salary?: string;
@@ -43,6 +45,8 @@ type PublicJob = {
   externalApplicationInstructions?: string;
   applicationEmail?: string;
   applicationWhatsApp?: string;
+  applicationUrl?: string | null;
+  applicationUrlTitle?: string | null;
   company: PublicCompany | null;
   isExternalListing?: boolean;
   isConfidential?: boolean;
@@ -79,9 +83,6 @@ export default function PublicJobPage() {
       .finally(() => setLoading(false));
   }, [slug]);
 
-  // A visualização total é persistida por HTTP. Ela não depende do WebSocket
-  // estar corretamente encaminhado pelo proxy e só é registrada uma vez neste
-  // navegador para cada vaga, mantendo o comportamento anterior.
   useEffect(() => {
     if (!job || authLoading || isAdmin) return;
 
@@ -105,8 +106,6 @@ export default function PublicJobPage() {
     };
   }, [job?.id, authLoading, isAdmin]);
 
-  // O socket fica responsável apenas pela presença em tempo real. Mesmo se ele
-  // estiver indisponível, o total de visualizações continua sendo contabilizado.
   useEffect(() => {
     if (!job || authLoading || isAdmin) return;
 
@@ -171,12 +170,13 @@ export default function PublicJobPage() {
     if (job.workModel?.toLowerCase() === "remoto") {
       data.jobLocationType = "TELECOMMUTE";
       data.applicantLocationRequirements = { "@type": "Country", name: "BR" };
-    } else if (job.location) {
+    } else if (job.location || job.city) {
       data.jobLocation = {
         "@type": "Place",
         address: {
           "@type": "PostalAddress",
-          addressLocality: job.location,
+          addressLocality: job.city || job.location,
+          ...(job.state ? { addressRegion: job.state } : {}),
           addressCountry: "BR",
         },
       };
@@ -228,12 +228,15 @@ export default function PublicJobPage() {
   const organizationName = job.company?.name || job.sourceName;
   const isConfidential = job.isConfidential === true;
   const companyText = organizationName && !isConfidential ? ` em ${organizationName}` : "";
-  const description = `${job.title}${companyText}${job.location ? `, ${job.location}` : ""}. Veja os requisitos e candidate-se pelo PiraNegócios.`;
+  const locationText = job.city
+    ? `${job.city}${job.state ? `, ${job.state}` : ""}`
+    : job.location || "";
+  const description = `${job.title}${companyText}${locationText ? `, ${locationText}` : ""}. Veja os requisitos e como se candidatar pelo PiraNegócios.`;
   
   return (
     <div className="min-h-screen bg-stone-50">
       <SeoHead
-        title={`${job.title}${companyText} | Vagas em Pirassununga | PiraNegócios`}
+        title={`${job.title}${companyText}${locationText ? ` | Vaga em ${locationText}` : ""} | PiraNegócios`}
         description={description}
         canonical={canonical}
         structuredData={structuredData}
@@ -310,10 +313,10 @@ export default function PublicJobPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-x-6 gap-y-3 mt-8 py-5 border-y border-stone-100 text-sm text-stone-600">
-            {job.location && (
+            {locationText && (
               <span className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-terracotta-600" />
-                {job.location}
+                {locationText}
               </span>
             )}
             {job.type && (
@@ -337,7 +340,7 @@ export default function PublicJobPage() {
             title={job.title} 
             url={canonical} 
             companyName={job.company?.name || job.sourceName || "Empresa Confidencial"}
-            location={job.location}
+            location={locationText}
             salary={job.salary}
             workModel={job.workModel}
             acceptsPlatformApplications={job.acceptsPlatformApplications}
@@ -378,6 +381,8 @@ export default function PublicJobPage() {
                   instructions={job.externalApplicationInstructions}
                   email={job.applicationEmail}
                   whatsapp={job.applicationWhatsApp}
+                  applicationUrl={job.applicationUrl}
+                  applicationUrlTitle={job.applicationUrlTitle}
                 />
               </div>
             )}
@@ -391,7 +396,7 @@ export default function PublicJobPage() {
                   <p className="text-terracotta-800 text-sm mt-1.5 leading-relaxed">
                     {job.acceptsPlatformApplications
                       ? "Crie seu currículo online no PiraNegócios gratuitamente e candidate-se com apenas um clique a esta e muitas outras vagas."
-                      : `Cadastre seu currículo no PiraNegócios gratuitamente e seja encontrado por dezenas de empresas de ${job.location ? job.location.split("-")[0].split(",")[0].trim() : "Pirassununga e região"} buscando talentos.`}
+                      : `Cadastre seu currículo no PiraNegócios gratuitamente e seja encontrado por dezenas de empresas de ${job.city || (job.location ? job.location.split("-")[0].split(",")[0].trim() : "Pirassununga e região")} buscando talentos.`}
                   </p>
                 </div>
                 <Link
