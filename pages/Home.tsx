@@ -59,7 +59,9 @@ export default function Home() {
   const cities = useMemo(
     () =>
       Array.from(
-        new Set(jobs.map(jobLocation).filter((value): value is string => Boolean(value))),
+        new Set<string>(
+          jobs.map(jobLocation).filter((value): value is string => Boolean(value)),
+        ),
       ).sort((a, b) => a.localeCompare(b, "pt-BR")),
     [jobs],
   );
