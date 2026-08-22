@@ -66,8 +66,22 @@ export function TalentSearchPage() {
 
   useEffect(() => { void load(); }, [profile?.companyId]);
 
-  const availableHomeCities = useMemo(() => Array.from(new Set(candidates.map((candidate) => candidate.city && candidate.state ? `${candidate.city}, ${candidate.state}` : "").filter(Boolean))).sort((a, b) => a.localeCompare(b, "pt-BR")), [candidates]);
-  const availableAcceptedCities = useMemo(() => Array.from(new Set(candidates.flatMap((candidate) => (candidate.jobPreferences?.preferredLocations || []).map(locationLabel)).filter(Boolean))).sort((a, b) => a.localeCompare(b, "pt-BR")), [candidates]);
+  const availableHomeCities = useMemo(
+    () => Array.from(new Set<string>(
+      candidates
+        .map((candidate) => candidate.city && candidate.state ? `${candidate.city}, ${candidate.state}` : "")
+        .filter((value): value is string => Boolean(value)),
+    )).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [candidates],
+  );
+  const availableAcceptedCities = useMemo(
+    () => Array.from(new Set<string>(
+      candidates
+        .flatMap((candidate) => (candidate.jobPreferences?.preferredLocations || []).map(locationLabel))
+        .filter((value): value is string => Boolean(value)),
+    )).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [candidates],
+  );
 
   const filtered = useMemo(() => candidates.filter((candidate) => {
     const searchable = normalize([
@@ -157,7 +171,7 @@ export function TalentSearchPage() {
   );
 }
 
-function CandidateCard({ candidate, onOpen, onSave, onInvite }: { candidate: any; onOpen: () => void; onSave: () => void; onInvite: () => void }) {
+function CandidateCard({ candidate, onOpen, onSave, onInvite }: { candidate: any; onOpen: () => void; onSave: () => void; onInvite: () => void; key?: React.Key }) {
   const prefs = candidate.jobPreferences || {};
   const home = candidate.city && candidate.state ? `${candidate.city}, ${candidate.state}` : candidate.address || "Cidade não informada";
   const preferred = prefs.preferredLocations || [];
