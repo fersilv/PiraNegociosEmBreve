@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 interface CityStateSelectorProps {
   onLocationChange: (location: string) => void;
@@ -23,23 +23,25 @@ export function CityStateSelector({
   onLocationChange,
   initialValue = "",
 }: CityStateSelectorProps) {
-  const initial = useMemo(() => parseInitialLocation(initialValue), [initialValue]);
+  const initial = useMemo(() => parseInitialLocation(initialValue), []);
   const [cities, setCities] = useState<{ id: number; nome: string }[]>([]);
   const [selectedState, setSelectedState] = useState(initial.state);
   const [selectedCity, setSelectedCity] = useState(initial.city);
   const [manualCity, setManualCity] = useState(initial.city);
   const [loadingCities, setLoadingCities] = useState(false);
   const [citiesError, setCitiesError] = useState(false);
+  const lastEmittedValueRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (
-      initial.state !== selectedState ||
-      initial.city !== selectedCity
-    ) {
-      setSelectedState(initial.state);
-      setSelectedCity(initial.city);
-      setManualCity(initial.city);
+    if (initialValue === lastEmittedValueRef.current) {
+      lastEmittedValueRef.current = null;
+      return;
     }
+
+    const next = parseInitialLocation(initialValue);
+    setSelectedState(next.state);
+    setSelectedCity(next.city);
+    setManualCity(next.city);
   }, [initialValue]);
 
   useEffect(() => {
@@ -87,8 +89,9 @@ export function CityStateSelector({
 
   const emitLocation = (city: string, state = selectedState) => {
     const cleanCity = city.trim();
-    if (state && cleanCity) onLocationChange(`${cleanCity}, ${state}`);
-    else onLocationChange("");
+    const value = state && cleanCity ? `${cleanCity}, ${state}` : "";
+    lastEmittedValueRef.current = value;
+    onLocationChange(value);
   };
 
   const handleStateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -98,7 +101,7 @@ export function CityStateSelector({
     setManualCity("");
     setCities([]);
     setCitiesError(false);
-    onLocationChange("");
+    emitLocation("", newState);
   };
 
   const handleCityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -119,13 +122,13 @@ export function CityStateSelector({
 
   return (
     <div className="space-y-2">
-      <div className="flex gap-4">
-        <div className="w-1/3">
+      <div className="flex gap-3">
+        <div className="w-[34%] min-w-24">
           <select
             required
             value={selectedState}
             onChange={handleStateChange}
-            className="w-full rounded-xl border border-stone-200 bg-white px-4 py-3 outline-none focus:border-terracotta-500"
+            className="w-full rounded-xl border border-stone-200 bg-white px-3 py-3 outline-none focus:border-terracotta-500"
           >
             <option value="">Estado</option>
             {selectedState && !STATES.includes(selectedState) && (
@@ -137,7 +140,7 @@ export function CityStateSelector({
           </select>
         </div>
 
-        <div className="w-2/3">
+        <div className="min-w-0 flex-1">
           {useManualMode ? (
             <input
               value={manualCity}
