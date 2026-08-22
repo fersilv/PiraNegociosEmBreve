@@ -8,6 +8,7 @@ import { FirebaseService } from '../auth/firebase.service';
 
 export type PushInstallationInput = {
   installationId: string;
+  token: string;
   platform?: string | null;
   userAgent?: string | null;
 };
@@ -47,11 +48,13 @@ export class NotificationsService {
 
   async registerPushInstallation(userId: string, input: PushInstallationInput) {
     const installationId = input.installationId.trim();
+    const token = input.token.trim();
     let installation = await this.pushInstallationRepo.findOne({ where: { installationId } });
     if (!installation) {
       installation = this.pushInstallationRepo.create({
         userId,
         installationId,
+        token,
         platform: input.platform?.trim().slice(0, 120) || null,
         userAgent: input.userAgent?.trim().slice(0, 512) || null,
         active: true,
@@ -59,18 +62,13 @@ export class NotificationsService {
       });
     } else {
       installation.userId = userId;
+      installation.token = token;
       installation.platform = input.platform?.trim().slice(0, 120) || installation.platform || null;
       installation.userAgent = input.userAgent?.trim().slice(0, 512) || installation.userAgent || null;
       installation.active = true;
       installation.lastSeenAt = new Date();
     }
     await this.pushInstallationRepo.save(installation);
-
-    const user = await this.userRepo.findOne({ where: { id: userId } });
-    if (user?.fcmToken) {
-      user.fcmToken = null;
-      await this.userRepo.save(user).catch(() => undefined);
-    }
 
     return {
       registered: true,
@@ -111,7 +109,6 @@ export class NotificationsService {
     return code.includes('registration-token-not-registered') ||
       code.includes('invalid-registration-token') ||
       code.includes('invalid-argument') ||
-      code.includes('not-found') ||
       code.includes('unregistered');
   }
 
@@ -126,16 +123,17 @@ export class NotificationsService {
       where: { userId: user.id, active: true },
       order: { updatedAt: 'DESC' },
     });
-    const fids = Array.from(new Set(installations.map((item) => item.installationId).filter(Boolean)));
     const url = this.notificationUrl(notif);
     const absoluteLink = this.absoluteWebUrl(url);
 
-    if (fids.length) {
-      for (let offset = 0; offset < fids.length; offset += 500) {
-        const batch = fids.slice(offset, offset + 500);
+    if (installations.length) {
+      for (let offset = 0; offset < installations.length; offset += 500) {
+        const batch = installations.slice(offset, offset + 500);
+        const tokens = batch.map((item) => item.token).filter(Boolean);
+        if (!tokens.length) continue;
         try {
           const result = await this.firebaseService.getMessaging().sendEachForMulticast({
-            fids: batch,
+            tokens,
             notification: { title: notif.title, body: notif.message },
             data: {
               url,
@@ -146,10 +144,10 @@ export class NotificationsService {
             },
             webpush: { fcmOptions: { link: absoluteLink } },
           });
-          const invalidFids = result.responses
-            .map((response, index) => (!response.success && this.isPermanentRegistrationError(response.error) ? batch[index] : null))
+          const invalidIds = result.responses
+            .map((response, index) => (!response.success && this.isPermanentRegistrationError(response.error) ? batch[index]?.installationId : null))
             .filter((value): value is string => Boolean(value));
-          await this.disableInstallations(invalidFids);
+          await this.disableInstallations(invalidIds);
         } catch (error: any) {
           console.warn(`FCM push failed for user ${user.id}:`, error?.code || error?.message || error);
         }
