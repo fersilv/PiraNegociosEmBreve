@@ -13,12 +13,15 @@ import { UserSanction } from './entities/user-sanction.entity';
 import { JobReport } from '../jobs/entities/job-report.entity';
 import { CompanySlugAlias } from '../companies/entities/company-slug-alias.entity';
 import { Setting } from './entities/setting.entity';
+import { RegistrationInterest } from './entities/registration-interest.entity';
 
 import { SettingsService } from './settings.service';
 import { SettingsController } from './settings.controller';
 import { AdminAiController } from './admin-ai.controller';
 import { AdminJobDetailsController } from './admin-job-details.controller';
 import { AdminJobFlagsController } from './admin-job-flags.controller';
+import { AdminRegistrationController, PublicRegistrationController } from './registration.controller';
+import { RegistrationService } from './registration.service';
 
 @Module({
   imports: [
@@ -34,6 +37,7 @@ import { AdminJobFlagsController } from './admin-job-flags.controller';
       JobReport,
       CompanySlugAlias,
       Setting,
+      RegistrationInterest,
     ]),
   ],
   controllers: [
@@ -42,8 +46,10 @@ import { AdminJobFlagsController } from './admin-job-flags.controller';
     AdminJobFlagsController,
     SettingsController,
     AdminAiController,
+    AdminRegistrationController,
+    PublicRegistrationController,
   ],
-  providers: [AdminGuard, SettingsService],
-  exports: [SettingsService],
+  providers: [AdminGuard, SettingsService, RegistrationService],
+  exports: [SettingsService, RegistrationService],
 })
 export class AdminModule {}
