@@ -7,12 +7,14 @@ import {
   TemplateWrapper,
 } from "./TemplateWrapper";
 import { Mail, Phone, MapPin, Linkedin, LayoutDashboard } from "lucide-react";
+import { getResumePersonalDetails } from "./ResumePersonalDetails";
 
 export function CreativeTemplate({ profile, color = "#f97316", showPhoto, address }: TemplateProps) {
   const nameToUse = getResumeDisplayName(profile);
   const headline = getResumeHeadline(profile);
   const displayAddress = address || profile.address;
   const photoUrl = profile.resumePhotoURL || profile.photoURL;
+  const personalDetails = getResumePersonalDetails(profile);
   const nameParts = nameToUse.split(" ");
   const firstName = nameParts[0];
   const lastName = nameParts.slice(1).join(" ");
@@ -116,6 +118,14 @@ export function CreativeTemplate({ profile, color = "#f97316", showPhoto, addres
                 {displayAddress && <ContactItem color={color} icon={<MapPin className="w-4 h-4" />} text={displayAddress} />}
                 {profile.linkedinURL && <ContactItem color={color} icon={<Linkedin className="w-4 h-4" />} text={profile.linkedinURL.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, "")} />}
               </ul>
+              {personalDetails.length > 0 && (
+                <div className="mt-5 border-t border-stone-200 pt-4">
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-[.14em] text-stone-400">Dados pessoais</p>
+                  <ul className="space-y-2 text-xs font-semibold leading-5 text-stone-600">
+                    {personalDetails.map((detail) => <li key={detail}>{detail}</li>)}
+                  </ul>
+                </div>
+              )}
             </section>
 
             {profile.skills && profile.skills.length > 0 && (
