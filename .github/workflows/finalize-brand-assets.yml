@@ -1,0 +1,136 @@
+name: Finalize PiraNegocios brand assets
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: "!contains(github.event.head_commit.message, 'brand assets finalized')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Pillow
+        run: python -m pip install --quiet pillow
+
+      - name: Rename official masters
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd public/brand
+          mv 'ChatGPT Image 22 de ago. de 2026, 15_43_00 (1).png' logo-horizontal-gradient.png
+          mv 'ChatGPT Image 22 de ago. de 2026, 15_43_01 (2).png' logo-horizontal-white.png
+          mv 'ChatGPT Image 22 de ago. de 2026, 15_43_01 (3).png' logo-horizontal-black.png
+          mv 'ChatGPT Image 22 de ago. de 2026, 15_43_01 (4).png' logo-horizontal-terracotta.png
+          mv 'ChatGPT Image 22 de ago. de 2026, 15_43_01 (5).png' symbol-terracotta.png
+          mv 'ChatGPT Image 22 de ago. de 2026, 15_43_02 (6).png' symbol-white-textured.png
+          mv 'ChatGPT Image 22 de ago. de 2026, 15_43_02 (7).png' symbol-black.png
+          mv 'ChatGPT Image 22 de ago. de 2026, 15_43_02 (8).png' app-icon-terracotta.png
+          mv 'ChatGPT Image 22 de ago. de 2026, 15_43_02 (9).png' app-icon-burgundy.png
+          mv 'ChatGPT Image 22 de ago. de 2026, 15_43_02 (10).png' symbol-white.png
+          rm -f piranegocios-brand-correct.zip
+
+      - name: Generate production sizes
+        shell: bash
+        run: |
+          python <<'PY'
+          from PIL import Image
+          from pathlib import Path
+
+          root = Path('public/brand')
+          terracotta = (204, 88, 67, 255)
+
+          def trim(im):
+              box = im.getbbox()
+              return im.crop(box) if box else im
+
+          def fit(im, size, ratio=.84):
+              im = trim(im.convert('RGBA'))
+              target = int(size * ratio)
+              scale = min(target / im.width, target / im.height)
+              w, h = max(1, round(im.width * scale)), max(1, round(im.height * scale))
+              resized = im.resize((w, h), Image.Resampling.LANCZOS)
+              canvas = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+              canvas.alpha_composite(resized, ((size-w)//2, (size-h)//2))
+              return canvas
+
+          symbol_color = Image.open(root / 'symbol-terracotta.png').convert('RGBA')
+          symbol_white = Image.open(root / 'symbol-white.png').convert('RGBA')
+          app_icon = Image.open(root / 'app-icon-terracotta.png').convert('RGBA')
+
+          for size in (16, 32, 48):
+              fit(symbol_color, size, .86).save(root / f'favicon-{size}.png', optimize=True)
+
+          for size in (192, 512):
+              fit(app_icon, size, .94).save(root / f'pwa-{size}.png', optimize=True)
+              maskable = Image.new('RGBA', (size, size), terracotta)
+              maskable.alpha_composite(fit(symbol_white, size, .58))
+              maskable.save(root / f'pwa-maskable-{size}.png', optimize=True)
+
+          fit(app_icon, 180, .94).save(root / 'apple-touch-icon-180.png', optimize=True)
+          fit(app_icon, 192, .94).save(root / 'push-icon-192.png', optimize=True)
+          fit(symbol_white, 96, .74).save(root / 'notification-badge-96.png', optimize=True)
+          PY
+
+      - name: Apply PWA, favicon and push assets
+        shell: bash
+        run: |
+          cat > public/manifest.webmanifest <<'JSON'
+          {
+            "name": "PiraNegócios",
+            "short_name": "PiraNegócios",
+            "description": "Vagas, empresas e oportunidades da sua região.",
+            "lang": "pt-BR",
+            "start_url": "/",
+            "scope": "/",
+            "display": "standalone",
+            "background_color": "#F5F2EB",
+            "theme_color": "#A63F2D",
+            "orientation": "portrait-primary",
+            "icons": [
+              { "src": "/brand/pwa-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+              { "src": "/brand/pwa-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+              { "src": "/brand/pwa-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+              { "src": "/brand/pwa-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+            ]
+          }
+          JSON
+
+          python <<'PY'
+          from pathlib import Path
+
+          sw = Path('public/firebase-messaging-sw.js')
+          text = sw.read_text()
+          text = text.replace("icon: '/icon.svg'", "icon: '/brand/push-icon-192.png'")
+          text = text.replace("badge: '/icon.svg'", "badge: '/brand/notification-badge-96.png'")
+          sw.write_text(text)
+
+          index = Path('index.html')
+          text = index.read_text()
+          import re
+          text = re.sub(r'<link rel="icon"[^>]*>', '<link rel="icon" href="/brand/favicon-32.png" sizes="32x32" type="image/png" />', text)
+          text = re.sub(r'<link rel="apple-touch-icon"[^>]*>', '<link rel="apple-touch-icon" href="/brand/apple-touch-icon-180.png" />', text)
+          index.write_text(text)
+          PY
+
+      - name: Remove temporary brand workflows
+        shell: bash
+        run: |
+          rm -f .github/workflows/extract-correct-brand-assets.yml
+          rm -f .github/workflows/generate-brand-assets.yml
+          rm -f .github/workflows/finalize-brand-assets.yml
+
+      - name: Commit finalized assets
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore: brand assets finalized' || exit 0
+          git push
