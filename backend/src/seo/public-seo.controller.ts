@@ -142,7 +142,7 @@ export class PublicSeoController {
           lastmod: job.updatedAt || new Date(),
         })),
     ];
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/sitemap/0.9">\n${urls.map((url) => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((url) => {
       const d = url.lastmod instanceof Date && !isNaN(url.lastmod.getTime()) ? url.lastmod : new Date();
       return `  <url><loc>${this.escapeXml(url.loc)}</loc><lastmod>${d.toISOString().slice(0, 10)}</lastmod></url>`;
     }).join('\n')}\n</urlset>`;
@@ -207,9 +207,12 @@ export class PublicSeoController {
       description: job.description,
       requirements: job.requirements,
       location: job.location,
+      city: job.city,
+      state: job.state,
       type: job.type,
       workModel: job.workModel,
       salary: job.salary,
+      pcdMode: job.pcdMode,
       isTalentPool: job.isTalentPool,
       acceptsPlatformApplications: job.acceptsPlatformApplications,
       externalApplicationInstructions: job.externalApplicationInstructions,
