@@ -6,12 +6,14 @@ import {
   TemplateProps,
   TemplateWrapper,
 } from "./TemplateWrapper";
+import { getResumePersonalDetails } from "./ResumePersonalDetails";
 
 export function MinimalistTemplate({ profile, color = "#1c1917", showPhoto, address }: TemplateProps) {
   const nameToUse = getResumeDisplayName(profile);
   const headline = getResumeHeadline(profile);
   const displayAddress = address || profile.address;
   const photoUrl = profile.resumePhotoURL || profile.photoURL;
+  const personalDetails = getResumePersonalDetails(profile);
 
   const contactItems: string[] = [];
   if (profile.email) contactItems.push(profile.email);
@@ -31,6 +33,11 @@ export function MinimalistTemplate({ profile, color = "#1c1917", showPhoto, addr
             {showPhoto && photoUrl && <img src={photoUrl} alt="Foto de perfil" className="w-20 h-20 rounded-lg object-cover grayscale opacity-90" />}
           </div>
           <div className="text-sm tracking-wide text-stone-500 uppercase">{contactItems.join("  |  ")}</div>
+          {personalDetails.length > 0 && (
+            <div className="mt-2 text-xs font-medium tracking-wide text-stone-500 uppercase">
+              {personalDetails.join("  |  ")}
+            </div>
+          )}
         </header>
 
         {profile.bio && (
