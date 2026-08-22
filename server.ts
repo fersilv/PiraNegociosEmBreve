@@ -11,6 +11,7 @@ import {
   initializeApp,
 } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { registerSeoRoutes } from "./server-seo";
 
 type AuthenticatedRequest = express.Request & {
   firebaseUser?: { uid: string; email?: string };
@@ -522,6 +523,8 @@ Retorne ESTRITAMENTE um JSON no seguinte formato:
       if (!response.ok) return null;
       return response.json() as Promise<any>;
     };
+
+    registerSeoRoutes({ app, publicSiteUrl, getPublicData, sendSpa });
 
     app.get("/robots.txt", (_req, res) => {
       res
