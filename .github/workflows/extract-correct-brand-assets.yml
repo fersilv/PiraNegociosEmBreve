@@ -1,0 +1,32 @@
+name: Extract corrected PiraNegocios brand assets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'public/brand/piranegocios-brand-correct.zip'
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract corrected PNG assets
+        run: |
+          mkdir -p public/brand
+          rm -f public/brand/*.svg
+          unzip -o public/brand/piranegocios-brand-correct.zip -d public/brand
+          rm -f public/brand/piranegocios-brand-correct.zip
+          rm -f .github/workflows/extract-correct-brand-assets.yml
+      - name: Commit extracted assets
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet || git commit -m 'chore: extract corrected PiraNegocios PNG brand assets'
+          git push
