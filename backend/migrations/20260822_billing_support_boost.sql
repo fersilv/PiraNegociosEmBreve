@@ -20,12 +20,28 @@ WHERE code = 'JOB_MATCH_30D' AND benefits = '[]'::jsonb;
 INSERT INTO payment_products
   (code, name, description, "priceCents", enabled, "freeUses", "sortOrder", "durationDays", "billingType", benefits)
 VALUES
-  ('RESUME_BOOST_15D', 'Impulso de currículo · 15 dias', 'Dá prioridade de exposição ao currículo entre candidatos da mesma faixa de compatibilidade. Não altera a pontuação de match.', 799, true, 0, 50, 15, 'ONE_TIME', '[{"kind":"ENTITLEMENT","feature":"RESUME_BOOST"}]'::jsonb),
-  ('PREMIUM_MONTHLY', 'Plano Destaque mensal', 'Plano recorrente com Match Inteligente e impulso contínuo do currículo enquanto a mensalidade estiver ativa.', 999, true, 0, 60, 30, 'RECURRING', '[{"kind":"ENTITLEMENT","feature":"JOB_MATCH_PREMIUM"},{"kind":"ENTITLEMENT","feature":"RESUME_BOOST"}]'::jsonb)
+  ('RESUME_BOOST_7D', 'Impulso de currículo · 7 dias', 'Coloca o currículo em posições de destaque entre candidatos elegíveis, no Banco de Talentos e nas candidaturas. Não altera a compatibilidade real.', 499, true, 0, 45, 7, 'ONE_TIME', '[{"kind":"ENTITLEMENT","feature":"RESUME_BOOST"}]'::jsonb),
+  ('RESUME_BOOST_15D', 'Impulso de currículo · 15 dias', 'Coloca o currículo em posições de destaque entre candidatos elegíveis, no Banco de Talentos e nas candidaturas. Não altera a compatibilidade real.', 799, true, 0, 50, 15, 'ONE_TIME', '[{"kind":"ENTITLEMENT","feature":"RESUME_BOOST"}]'::jsonb),
+  ('PREMIUM_MONTHLY', 'Plano Destaque mensal', 'Plano recorrente com Match Inteligente, impulso contínuo do currículo e alertas antecipados de novas vagas compatíveis.', 999, true, 0, 60, 30, 'RECURRING', '[{"kind":"ENTITLEMENT","feature":"JOB_MATCH_PREMIUM"},{"kind":"ENTITLEMENT","feature":"RESUME_BOOST"},{"kind":"ENTITLEMENT","feature":"EARLY_JOB_ALERTS"}]'::jsonb)
 ON CONFLICT (code) DO UPDATE SET
   "billingType" = EXCLUDED."billingType",
   benefits = CASE WHEN payment_products.benefits = '[]'::jsonb THEN EXCLUDED.benefits ELSE payment_products.benefits END,
   "durationDays" = COALESCE(payment_products."durationDays", EXCLUDED."durationDays");
+
+-- Atualiza somente textos/benefícios padrão conhecidos, preservando customizações posteriores do admin.
+UPDATE payment_products
+SET description = 'Coloca o currículo em posições de destaque entre candidatos elegíveis, no Banco de Talentos e nas candidaturas. Não altera a compatibilidade real.'
+WHERE code = 'RESUME_BOOST_15D'
+  AND description = 'Dá prioridade de exposição ao currículo entre candidatos da mesma faixa de compatibilidade. Não altera a pontuação de match.';
+
+UPDATE payment_products
+SET description = 'Plano recorrente com Match Inteligente, impulso contínuo do currículo e alertas antecipados de novas vagas compatíveis.',
+    benefits = '[{"kind":"ENTITLEMENT","feature":"JOB_MATCH_PREMIUM"},{"kind":"ENTITLEMENT","feature":"RESUME_BOOST"},{"kind":"ENTITLEMENT","feature":"EARLY_JOB_ALERTS"}]'::jsonb
+WHERE code = 'PREMIUM_MONTHLY'
+  AND description IN (
+    'Plano recorrente com Match Inteligente e impulso contínuo do currículo enquanto a mensalidade estiver ativa.',
+    'Plano recorrente com Match Inteligente, impulso contínuo do currículo e alertas antecipados de novas vagas compatíveis.'
+  );
 
 CREATE TABLE IF NOT EXISTS user_billing_profiles (
   "userId" varchar PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -85,6 +101,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_one_active_product
 ALTER TABLE payments
   ADD COLUMN IF NOT EXISTS "subscriptionId" uuid NULL REFERENCES subscriptions(id) ON DELETE SET NULL;
 
+CREATE TABLE IF NOT EXISTS scheduled_job_alerts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  "jobId" uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  "earlyRecipientIds" jsonb NOT NULL DEFAULT '[]'::jsonb,
+  "releaseAt" timestamptz NOT NULL,
+  "earlyDispatchedAt" timestamptz NULL,
+  "generalDispatchedAt" timestamptz NULL,
+  "processingAt" timestamptz NULL,
+  "createdAt" timestamptz NOT NULL DEFAULT now(),
+  "updatedAt" timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT scheduled_job_alerts_job_unique UNIQUE ("jobId")
+);
+CREATE INDEX IF NOT EXISTS scheduled_job_alerts_due_idx
+  ON scheduled_job_alerts ("releaseAt") WHERE "generalDispatchedAt" IS NULL;
+
 CREATE OR REPLACE FUNCTION extend_feature_entitlement(
   p_user_id varchar,
   p_feature varchar,
@@ -117,6 +149,12 @@ BEGIN
     note = p_note,
     "updatedAt" = now();
 
+  -- Ativar um Impulso também torna o currículo visível no Banco de Talentos.
+  -- O usuário pode ocultá-lo novamente depois; isso não pausa nem cancela o Impulso.
+  IF p_feature = 'RESUME_BOOST' THEN
+    UPDATE users SET "isOpenToWork" = true, "updatedAt" = now() WHERE id = p_user_id;
+  END IF;
+
   RETURN next_expiry;
 END;
 $$ LANGUAGE plpgsql;
@@ -139,7 +177,7 @@ BEGIN
 
   IF NEW."productCode" = 'JOB_MATCH_30D' THEN
     PERFORM extend_feature_entitlement(NEW."userId", 'JOB_MATCH_PREMIUM', duration_days, NEW.id, 'PAYMENT');
-  ELSIF NEW."productCode" = 'RESUME_BOOST_15D' THEN
+  ELSIF NEW."productCode" IN ('RESUME_BOOST_7D', 'RESUME_BOOST_15D') THEN
     PERFORM extend_feature_entitlement(NEW."userId", 'RESUME_BOOST', duration_days, NEW.id, 'PAYMENT');
   ELSIF NEW."productCode" = 'PREMIUM_MONTHLY' THEN
     SELECT * INTO subscription_row
@@ -169,6 +207,7 @@ BEGIN
     UPDATE payments SET "subscriptionId" = subscription_row.id WHERE id = NEW.id;
     PERFORM extend_feature_entitlement(NEW."userId", 'JOB_MATCH_PREMIUM', duration_days, NEW.id, 'SUBSCRIPTION');
     PERFORM extend_feature_entitlement(NEW."userId", 'RESUME_BOOST', duration_days, NEW.id, 'SUBSCRIPTION');
+    PERFORM extend_feature_entitlement(NEW."userId", 'EARLY_JOB_ALERTS', duration_days, NEW.id, 'SUBSCRIPTION');
   END IF;
 
   RETURN NEW;
