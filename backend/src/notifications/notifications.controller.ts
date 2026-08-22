@@ -6,6 +6,21 @@ import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { Notification } from './entities/notification.entity';
 import { User, UserType } from '../users/entities/user.entity';
 
+const ALLOWED_NOTIFICATION_PREFERENCES = new Set([
+  'pushEnabled',
+  'newJobs',
+  'applicationUpdates',
+  'messages',
+  'documents',
+  'applications',
+  'candidateMessages',
+  'hiringUpdates',
+  'system',
+  'moderation',
+  'api',
+  'companies',
+]);
+
 @Controller('notifications')
 @UseGuards(FirebaseAuthGuard)
 export class NotificationsController {
@@ -17,6 +32,25 @@ export class NotificationsController {
   @Get()
   findAll(@Req() req: any) {
     return this.notifsService.findAllForUser(req.user.uid);
+  }
+
+  @Get('preferences')
+  async preferences(@Req() req: any) {
+    const user = await this.usersRepository.findOne({ where: { id: req.user.uid } });
+    return user?.notificationPreferences || {};
+  }
+
+  @Put('preferences')
+  async updatePreferences(@Req() req: any, @Body() body: Record<string, unknown>) {
+    const user = await this.usersRepository.findOne({ where: { id: req.user.uid } });
+    if (!user) throw new BadRequestException('Usuário não encontrado.');
+    const next: Record<string, boolean> = { ...(user.notificationPreferences || {}) };
+    for (const [key, value] of Object.entries(body || {})) {
+      if (ALLOWED_NOTIFICATION_PREFERENCES.has(key) && typeof value === 'boolean') next[key] = value;
+    }
+    user.notificationPreferences = next;
+    await this.usersRepository.save(user);
+    return next;
   }
 
   @Get('push-status')
