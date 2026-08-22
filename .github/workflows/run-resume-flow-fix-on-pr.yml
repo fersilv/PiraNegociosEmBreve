@@ -1,0 +1,37 @@
+name: Run resume flow fix on PR
+
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  patch-main:
+    if: github.event.pull_request.head.ref == 'trigger-resume-flow-fix'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Apply patch
+        run: python .github/scripts/fix_resume_flow.py
+      - name: Sanity checks
+        run: |
+          grep -q 'id: "preferences", label: "Preferências"' pages/ResumeBuilderPage.tsx
+          grep -q 'Gerenciar documento-base' pages/ResumeBuilderPage.tsx
+          ! grep -q 'label="Preferências" active={stage' pages/ResumeWorkspace.tsx
+          grep -q 'Versões e publicação' pages/ResumeBuilderStudio.tsx
+      - name: Commit patch to main and clean temporary files
+        run: |
+          rm -f .github/workflows/fix-resume-information-architecture.yml
+          rm -f .github/workflows/run-resume-flow-fix-on-pr.yml
+          rm -f .github/scripts/fix_resume_flow.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pages/ResumeBuilderPage.tsx pages/ResumeWorkspace.tsx pages/ResumeBuilderStudio.tsx .github
+          git commit -m "fix: simplify resume flow and move preferences into builder"
+          git push origin HEAD:main
