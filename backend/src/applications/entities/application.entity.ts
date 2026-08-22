@@ -17,16 +17,19 @@ export class Application {
   id: string;
 
   @Column()
-  candidateId: string; // References User.id
+  candidateId: string;
 
   @Column()
-  jobId: string; // References Job.id
+  jobId: string;
 
   @Column({ type: 'enum', enum: ApplicationStatus, default: ApplicationStatus.PENDING })
   status: ApplicationStatus;
 
   @Column({ type: 'varchar', nullable: true })
-  resumeUrl: string | null; // URL of the uploaded resume file
+  resumeUrl: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  resumeSnapshot: Record<string, unknown> | null;
 
   @Column({ type: 'text', nullable: true })
   coverLetter: string;
