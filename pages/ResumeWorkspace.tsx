@@ -4,7 +4,21 @@ import { useAuth } from "../contexts/AuthContext";
 import { api } from "../lib/api";
 import { ResumeBuilderStudio } from "./ResumeBuilderStudio";
 
-const ACCEPTED_RESUME_FILES = ".pdf,.doc,.docx,.txt,.rtf,image/png,image/jpeg";
+const ACCEPTED_RESUME_FILES = [
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".txt",
+  ".rtf",
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
+  "text/rtf",
+  "application/rtf",
+  "image/png",
+  "image/jpeg",
+].join(",");
 const MAX_FILES = 8;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 36 * 1024 * 1024;
@@ -144,7 +158,7 @@ export function ResumeWorkspace() {
         onClick={() => { setOpen(true); setError(""); setSuccess(""); }}
         className="resume-import-control fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-[70] inline-flex items-center gap-2 rounded-2xl bg-[#2b211c] px-4 py-3 text-xs font-black text-white shadow-[0_18px_55px_rgba(43,33,28,.28)] transition hover:-translate-y-0.5 hover:bg-[#3a2b24] sm:bottom-7 sm:right-7 sm:px-5 sm:text-sm"
       >
-        <Upload className="h-4 w-4 text-[#f0b99d]" /> Importar currículo/documentos
+        <Upload className="h-4 w-4 text-[#f0b99d]" /> Importar Word, PDF ou documentos
       </button>
 
       {open && (
@@ -162,7 +176,7 @@ export function ResumeWorkspace() {
 
             <label className="mt-5 flex cursor-pointer flex-col items-center justify-center rounded-[22px] border-2 border-dashed border-violet-200 bg-violet-50/45 px-4 py-7 text-center transition hover:border-violet-400 hover:bg-violet-50">
               <FileText className="h-7 w-7 text-violet-600" />
-              <strong className="mt-3 text-sm text-stone-900">Selecionar currículo ou documentos</strong>
+              <strong className="mt-3 text-sm text-stone-900">Selecionar Word, currículo ou documentos</strong>
               <span className="mt-1 text-[11px] text-stone-500">PDF, DOC, DOCX, TXT, RTF, PNG e JPG</span>
               <span className="mt-1 text-[10px] text-stone-400">até 8 arquivos · 20 MB por arquivo · 36 MB no conjunto</span>
               <input type="file" accept={ACCEPTED_RESUME_FILES} multiple onChange={chooseFiles} className="hidden" />
