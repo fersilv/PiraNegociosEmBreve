@@ -26,6 +26,8 @@ export type ExternalJobInput = {
   pcdMode?: unknown;
   applicationEmail?: unknown;
   applicationWhatsApp?: unknown;
+  applicationUrl?: unknown;
+  applicationUrlTitle?: unknown;
   externalApplicationInstructions?: unknown;
   deadlineDate?: unknown;
   allowSimilarDuplicate?: unknown;
@@ -57,6 +59,8 @@ type SanitizedExternalJob = {
   pcdMode: string;
   applicationEmail: string | null;
   applicationWhatsApp: string | null;
+  applicationUrl: string | null;
+  applicationUrlTitle: string | null;
   externalApplicationInstructions: string | null;
   deadlineDate: string | null;
   isTalentPool: boolean;
@@ -240,6 +244,8 @@ export class ExternalJobsService {
       pcdMode: input.pcdMode !== undefined ? input.pcdMode : job.pcdMode,
       applicationEmail: input.applicationEmail !== undefined ? input.applicationEmail : job.applicationEmail,
       applicationWhatsApp: input.applicationWhatsApp !== undefined ? input.applicationWhatsApp : job.applicationWhatsApp,
+      applicationUrl: input.applicationUrl !== undefined ? input.applicationUrl : job.applicationUrl,
+      applicationUrlTitle: input.applicationUrlTitle !== undefined ? input.applicationUrlTitle : job.applicationUrlTitle,
       externalApplicationInstructions: input.externalApplicationInstructions !== undefined ? input.externalApplicationInstructions : job.externalApplicationInstructions,
       deadlineDate: input.deadlineDate !== undefined ? input.deadlineDate : job.deadlineDate,
       isTalentPool: input.isTalentPool !== undefined ? input.isTalentPool : job.isTalentPool,
@@ -341,6 +347,9 @@ export class ExternalJobsService {
     const whatsappInput = this.optionalText(input.applicationWhatsApp, 'applicationWhatsApp', 30);
     const applicationWhatsApp = whatsappInput ? whatsappInput.replace(/\D/g, '') : null;
     if (applicationWhatsApp && (applicationWhatsApp.length < 10 || applicationWhatsApp.length > 13)) throw new BadRequestException('applicationWhatsApp deve conter DDD e número, com DDI opcional.');
+    const applicationUrl = this.optionalText(input.applicationUrl, 'applicationUrl', 2_000);
+    if (applicationUrl && !/^https?:\/\//i.test(applicationUrl)) throw new BadRequestException('applicationUrl deve começar com http:// ou https://.');
+    const applicationUrlTitle = this.optionalText(input.applicationUrlTitle, 'applicationUrlTitle', 180);
     const deadlineDate = this.optionalText(input.deadlineDate, 'deadlineDate', 10);
     if (deadlineDate && !this.isIsoDate(deadlineDate)) throw new BadRequestException('deadlineDate deve usar o formato YYYY-MM-DD.');
     return {
@@ -349,6 +358,7 @@ export class ExternalJobsService {
       type: this.optionalText(input.type, 'type', 40) || 'Não informado',
       workModel: this.optionalText(input.workModel, 'workModel', 40) || 'Não informado',
       salary: this.optionalText(input.salary, 'salary', 80), pcdMode, applicationEmail, applicationWhatsApp,
+      applicationUrl, applicationUrlTitle,
       externalApplicationInstructions: this.optionalText(input.externalApplicationInstructions, 'externalApplicationInstructions', 5_000),
       deadlineDate,
       isTalentPool: this.optionalBoolean(input.isTalentPool, 'isTalentPool') || false,
@@ -402,7 +412,8 @@ export class ExternalJobsService {
       type: job.type, workModel: job.workModel, salary: job.salary, pcdMode: job.pcdMode, deadlineDate: job.deadlineDate,
       acceptsPlatformApplications: job.acceptsPlatformApplications,
       externalApplicationInstructions: job.externalApplicationInstructions, applicationEmail: job.applicationEmail,
-      applicationWhatsApp: job.applicationWhatsApp, isConfidential: job.isConfidential, isTalentPool: job.isTalentPool,
+      applicationWhatsApp: job.applicationWhatsApp, applicationUrl: job.applicationUrl,
+      applicationUrlTitle: job.applicationUrlTitle, isConfidential: job.isConfidential, isTalentPool: job.isTalentPool,
       isSponsored: job.isSponsored, active: job.active, moderationStatus: job.moderationStatus,
       reportCount: job.reportCount, ingestionSourceId: job.ingestionSourceId, ingestionSourceName: job.ingestionSourceName,
       isFlagged: job.isFlagged, flagObservation: job.flagObservation, flagReason: job.flagReason,
