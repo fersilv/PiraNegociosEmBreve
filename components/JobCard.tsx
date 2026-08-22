@@ -57,6 +57,8 @@ export function JobCard({ job, onClick, hasApplied = false }: JobCardProps) {
     ? "Empresa confidencial"
     : job.companyName || job.sourceName || "Empresa não informada";
   const externalSource = job.isExternalListing && job.sourceName;
+  const safeSourceUrl =
+    job.sourceUrl && /^https?:\/\//i.test(job.sourceUrl) ? job.sourceUrl : null;
 
   return (
     <article
@@ -180,12 +182,22 @@ export function JobCard({ job, onClick, hasApplied = false }: JobCardProps) {
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-3 xl:justify-end">
-          {externalSource && (
+        <div className="flex flex-wrap items-center justify-between gap-3 xl:justify-end">
+          {safeSourceUrl ? (
+            <a
+              href={safeSourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(event) => event.stopPropagation()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#f7f2ed] px-2.5 py-1.5 text-[10px] font-black text-[#9d5d43] transition hover:bg-[#f1e4da]"
+            >
+              <ExternalLink className="h-3 w-3" /> Ver fonte original
+            </a>
+          ) : externalSource ? (
             <span className="max-w-[180px] truncate text-[10px] font-bold uppercase tracking-[.1em] text-[#a08c81]" title={externalSource}>
               Fonte: {externalSource}
             </span>
-          )}
+          ) : null}
           <div onClick={(event) => event.stopPropagation()} className="shrink-0">
             <ShareJobButtons
               title={job.title}
