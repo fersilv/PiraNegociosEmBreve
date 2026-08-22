@@ -169,6 +169,9 @@ export class User {
   @Column({ type: 'jsonb', nullable: true })
   resumePreferences: Record<string, unknown> | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  notificationPreferences: Record<string, boolean> | null;
+
   @Column({ type: 'varchar', nullable: true })
   fcmToken: string | null;
 
