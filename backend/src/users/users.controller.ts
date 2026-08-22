@@ -12,6 +12,7 @@ const RESUME_CONTENT_FIELDS = new Set([
   'skills', 'courses', 'languages', 'resumePreferences', 'uploadedResumeFile',
 ]);
 const STRUCTURED_RESUME_MARKER = 'structured://published';
+const STORED_RESUME_MARKER = 'stored://uploaded';
 
 @Controller('users')
 @UseGuards(FirebaseAuthGuard)
@@ -122,6 +123,17 @@ export class UsersController {
       sanitized.resumePublishedAt = null;
       if (existing?.resumeURL === STRUCTURED_RESUME_MARKER) sanitized.resumeURL = '';
     }
+
+    if (updateData.uploadedResumeFile !== undefined) {
+      if (updateData.uploadedResumeFile) {
+        if (!existing?.resumeURL?.trim() || existing.resumeURL === STRUCTURED_RESUME_MARKER || existing.resumeURL === STORED_RESUME_MARKER) {
+          sanitized.resumeURL = STORED_RESUME_MARKER;
+        }
+      } else if (existing?.resumeURL === STORED_RESUME_MARKER) {
+        sanitized.resumeURL = '';
+      }
+    }
+
     if (updateData.resumeStatus === 'PUBLISHED') {
       const merged = { ...(existing || {}), ...sanitized } as User;
       const hasStructuredResume = Boolean(
@@ -133,14 +145,15 @@ export class UsersController {
       if (!hasStructuredResume) throw new BadRequestException('Complete ao menos o resumo, experiências, formação ou habilidades antes de publicar o currículo.');
       sanitized.resumeStatus = 'PUBLISHED';
       sanitized.resumePublishedAt = new Date();
-      if (!existing?.resumeURL?.trim() || existing.resumeURL === STRUCTURED_RESUME_MARKER) {
-        sanitized.resumeURL = STRUCTURED_RESUME_MARKER;
+      const resumeUrl = sanitized.resumeURL ?? existing?.resumeURL;
+      if (!resumeUrl?.trim() || resumeUrl === STRUCTURED_RESUME_MARKER) {
+        sanitized.resumeURL = merged.uploadedResumeFile ? STORED_RESUME_MARKER : STRUCTURED_RESUME_MARKER;
       }
     }
     if (updateData.resumeStatus === 'DRAFT') {
       sanitized.resumeStatus = 'DRAFT';
       sanitized.resumePublishedAt = null;
-      if (existing?.resumeURL === STRUCTURED_RESUME_MARKER) sanitized.resumeURL = '';
+      if (existing?.resumeURL === STRUCTURED_RESUME_MARKER && !existing.uploadedResumeFile) sanitized.resumeURL = '';
     }
 
     if (typeof user.email === 'string' && user.email.trim()) sanitized.email = user.email.trim().toLowerCase();
