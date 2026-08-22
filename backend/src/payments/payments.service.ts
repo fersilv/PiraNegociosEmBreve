@@ -202,17 +202,6 @@ export class PaymentsService {
         );
       }
 
-      // A otimização inclui a reanálise final prometida ao usuário.
-      if (payment.productCode === 'RESUME_AI_IMPROVEMENT') {
-        await manager.query(
-          `INSERT INTO user_feature_credits ("userId", feature, credits)
-           VALUES ($1, 'RESUME_REANALYSIS', 1)
-           ON CONFLICT ("userId", feature)
-           DO UPDATE SET credits = user_feature_credits.credits + 1, "updatedAt" = now()`,
-          [payment.userId],
-        );
-      }
-
       return paidRows[0];
     });
   }
@@ -341,37 +330,6 @@ export class PaymentsService {
        FROM resume_improvement_proposals WHERE "userId" = $1 ORDER BY "createdAt" DESC`,
       [userId],
     );
-  }
-
-  async recordPublication(userId: string, snapshot: Record<string, unknown>) {
-    return this.dataSource.transaction(async (manager) => {
-      const versionRows = await manager.query(
-        `SELECT coalesce(max(version), 0)::int + 1 AS version FROM resume_publication_history WHERE "userId" = $1`,
-        [userId],
-      );
-      const version = Number(versionRows[0]?.version || 1);
-      const rawScore = Number(snapshot?.score);
-      const score = Number.isFinite(rawScore) ? Math.max(0, Math.min(100, Math.round(rawScore))) : null;
-      const rows = await manager.query(
-        `INSERT INTO resume_publication_history ("userId", version, snapshot, score, status, "publishedAt")
-         VALUES ($1, $2, $3::jsonb, $4, 'PUBLISHED', now()) RETURNING *`,
-        [userId, version, JSON.stringify(snapshot), score],
-      );
-      return rows[0];
-    });
-  }
-
-  async markLatestPublicationUnpublished(userId: string) {
-    const rows = await this.dataSource.query(
-      `UPDATE resume_publication_history
-       SET status = 'UNPUBLISHED', "unpublishedAt" = now()
-       WHERE id = (
-         SELECT id FROM resume_publication_history WHERE "userId" = $1 ORDER BY version DESC LIMIT 1
-       )
-       RETURNING *`,
-      [userId],
-    );
-    return rows[0] || null;
   }
 
   async listPublicationHistory(userId: string) {
