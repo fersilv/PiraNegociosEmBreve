@@ -14,6 +14,7 @@ import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { AdminGuard } from '../admin/admin.guard';
 import { PaymentsService, type FeatureCredit } from './payments.service';
 import { BillingSupportService, type TimedFeature } from './billing-support.service';
+import { ProductDurationService } from './product-duration.service';
 
 @Controller('payments')
 @UseGuards(FirebaseAuthGuard)
@@ -77,6 +78,7 @@ export class AdminPaymentsController {
   constructor(
     private readonly payments: PaymentsService,
     private readonly billingSupport: BillingSupportService,
+    private readonly productDuration: ProductDurationService,
   ) {}
 
   @Get('products')
@@ -87,6 +89,11 @@ export class AdminPaymentsController {
   @Patch('products/:code')
   updateProduct(@Param('code') code: string, @Body() body: Record<string, unknown>) {
     return this.payments.updateProduct(code, body || {});
+  }
+
+  @Patch('products/:code/duration')
+  updateProductDuration(@Param('code') code: string, @Body() body: { durationDays?: number }) {
+    return this.productDuration.update(code, Number(body?.durationDays));
   }
 
   @Get('summary')
@@ -194,7 +201,6 @@ export class AdminPaymentsController {
     return this.payments.simulatePayment(id, req.user.uid);
   }
 
-  // Compatibilidade com integrações internas que já usavam este endpoint.
   @Post('credits/:userId')
   grantCredit(
     @Param('userId') userId: string,
