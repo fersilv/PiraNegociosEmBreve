@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 600" role="img" aria-label="PiraNegócios">
+  <defs>
+    <linearGradient id="g" x1="70" y1="70" x2="430" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A63F2D"/>
+      <stop offset="1" stop-color="#CC5843"/>
+    </linearGradient>
+    <mask id="m">
+      <rect width="512" height="600" fill="black"/>
+      <path d="M256 34C141 34 58 116 58 224c0 82 44 140 105 180l-31 72 83-40 41 124 42-124 82 40-31-72c61-40 105-98 105-180C454 116 371 34 256 34Z" fill="white"/>
+      <circle cx="256" cy="222" r="86" fill="black"/>
+      <path d="M330 150 454 84v78l-108 58Z" fill="black"/>
+      <path d="m215 436 41 52 42-52-42 124Z" fill="black"/>
+    </mask>
+  </defs>
+  <rect width="512" height="600" fill="url(#g)" mask="url(#m)"/>
+  <circle cx="256" cy="222" r="42" fill="url(#g)"/>
+</svg>
