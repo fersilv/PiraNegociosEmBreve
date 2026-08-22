@@ -32,6 +32,7 @@ export function CompanyNewJobPage() {
   const [title, setTitle] = useState("");
   const [location, setLocation] = useState("");
   const [salary, setSalary] = useState("");
+  const [deadlineDate, setDeadlineDate] = useState("");
   const [type, setType] = useState("CLT");
   const [workModel, setWorkModel] = useState("Presencial");
   const [description, setDescription] = useState("");
@@ -126,6 +127,15 @@ export function CompanyNewJobPage() {
       alert("Informe como a pessoa deve se candidatar fora da plataforma.");
       return;
     }
+    if (deadlineDate) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const deadline = new Date(`${deadlineDate}T00:00:00`);
+      if (Number.isNaN(deadline.getTime()) || deadline < today) {
+        alert("O prazo da candidatura precisa ser hoje ou uma data futura.");
+        return;
+      }
+    }
 
     setSaving(true);
     try {
@@ -134,6 +144,7 @@ export function CompanyNewJobPage() {
         title: title.trim(),
         location: location || "Remoto",
         salary: salary.trim() || undefined,
+        deadlineDate: isTalentPool ? undefined : deadlineDate || undefined,
         type,
         workModel,
         description: description.trim(),
@@ -180,12 +191,13 @@ export function CompanyNewJobPage() {
       </header>
 
       <form onSubmit={submit} className="space-y-6">
-        <Section number="01" title="Oportunidade" description="Cargo, local e formato de trabalho.">
+        <Section number="01" title="Oportunidade" description="Cargo, local, prazo e formato de trabalho.">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Cargo *"><input required value={title} onChange={(e) => setTitle(e.target.value)} className="field" placeholder="Ex.: Assistente Administrativo" /></Field>
             <Field label="Regime"><select value={type} onChange={(e) => setType(e.target.value)} className="field">{TYPES.map((item) => <option key={item}>{item}</option>)}</select></Field>
             <Field label="Modelo de trabalho"><select value={workModel} onChange={(e) => setWorkModel(e.target.value)} className="field">{WORK_MODELS.map((item) => <option key={item}>{item}</option>)}</select></Field>
-            <Field label="Faixa salarial"><input value={salary} onChange={(e) => setSalary(e.target.value)} className="field" placeholder="Ex.: R$ 2.500 a R$ 3.000" /></Field>
+            <Field label="Faixa salarial"><input value={salary} onChange={(e) => setSalary(e.target.value)} className="field" placeholder="Ex.: R$ 2.500 a R$ 3.000 por mês" /></Field>
+            {!isTalentPool && <Field label="Candidaturas até (opcional)"><input type="date" value={deadlineDate} onChange={(e) => setDeadlineDate(e.target.value)} min={new Date().toISOString().slice(0, 10)} className="field" /><span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-stone-400">Quando informado, o prazo também ajuda buscadores a entender quando a vaga deixa de aceitar candidaturas.</span></Field>}
           </div>
           {workModel !== "Remoto" && <div className="mt-4"><Field label="Cidade da vaga *"><CityStateSelector initialValue={location} onLocationChange={setLocation} /></Field></div>}
         </Section>
@@ -235,7 +247,7 @@ export function CompanyNewJobPage() {
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-stone-200 p-4"><input type="checkbox" checked={isConfidential} onChange={(e) => setIsConfidential(e.target.checked)} /><span><strong className="block text-sm text-stone-900">Empresa confidencial</strong><span className="text-xs text-stone-500">Oculta o nome da empresa para candidatos.</span></span></label>
-            <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-stone-200 p-4"><input type="checkbox" checked={isTalentPool} onChange={(e) => setIsTalentPool(e.target.checked)} /><span><strong className="block text-sm text-stone-900">Banco de talentos</strong><span className="text-xs text-stone-500">Processo contínuo, sem uma única contratação imediata.</span></span></label>
+            <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-stone-200 p-4"><input type="checkbox" checked={isTalentPool} onChange={(e) => { const checked = e.target.checked; setIsTalentPool(checked); if (checked) setDeadlineDate(""); }} /><span><strong className="block text-sm text-stone-900">Banco de talentos</strong><span className="text-xs text-stone-500">Processo contínuo, sem uma única contratação imediata.</span></span></label>
           </div>
         </Section>
 
