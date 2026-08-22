@@ -66,10 +66,10 @@ export function AiImageEnhancementPanel({
   const [loading, setLoading] = useState(true);
   const [loadingModels, setLoadingModels] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error' | ''; text: string }>({
-    type: '',
-    text: '',
-  });
+  const [message, setMessage] = useState<{
+    type: 'success' | 'error' | '';
+    text: string;
+  }>({ type: '', text: '' });
 
   const loadConfig = async () => {
     setLoading(true);
@@ -137,6 +137,13 @@ export function AiImageEnhancementPanel({
         ? (response.data.models as ImageModelInfo[])
         : [];
       setModels(nextModels);
+      setConfig((current) => ({
+        ...current,
+        configuredProviders: {
+          ...current.configuredProviders,
+          [provider]: true,
+        },
+      }));
       if (!nextModels.some((item) => item.id === model)) {
         setModel(nextModels[0]?.id || '');
       }
@@ -188,14 +195,6 @@ export function AiImageEnhancementPanel({
         return;
       }
 
-      if (!config.configuredProviders[provider]) {
-        setMessage({
-          type: 'error',
-          text: `Salve primeiro a chave da ${providerMeta?.label || provider} na seção de credenciais.`,
-        });
-        return;
-      }
-
       if (!model || !models.some((item) => item.id === model)) {
         setMessage({
           type: 'error',
@@ -216,6 +215,10 @@ export function AiImageEnhancementPanel({
         globalEnabled: true,
         provider: response.data?.provider || provider,
         model: response.data?.model || model,
+        configuredProviders: {
+          ...current.configuredProviders,
+          [provider]: true,
+        },
       }));
       setMessage({
         type: 'success',
@@ -278,7 +281,13 @@ export function AiImageEnhancementPanel({
             </p>
             {config.enabled && config.provider && config.model && (
               <p className="mt-2 text-xs font-semibold text-violet-700">
-                Em uso: {IMAGE_PROVIDERS.find((item) => item.id === config.provider)?.label} · {config.model}
+                Em uso:{' '}
+                {
+                  IMAGE_PROVIDERS.find(
+                    (item) => item.id === config.provider,
+                  )?.label
+                }{' '}
+                · {config.model}
               </p>
             )}
           </div>
@@ -306,7 +315,10 @@ export function AiImageEnhancementPanel({
       {!globalAiEnabled && (
         <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>A IA geral está desligada. O aprimoramento de imagem só pode ser ativado quando a IA do sistema estiver habilitada.</span>
+          <span>
+            A IA geral está desligada. O aprimoramento de imagem só pode ser
+            ativado quando a IA do sistema estiver habilitada.
+          </span>
         </div>
       )}
 
@@ -349,7 +361,9 @@ export function AiImageEnhancementPanel({
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <strong className="text-sm text-stone-900">{item.label}</strong>
+                    <strong className="text-sm text-stone-900">
+                      {item.label}
+                    </strong>
                     <span
                       className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
                         configured
@@ -360,13 +374,16 @@ export function AiImageEnhancementPanel({
                       {configured ? 'Chave pronta' : 'Sem chave'}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs leading-5 text-stone-500">{item.description}</p>
+                  <p className="mt-1 text-xs leading-5 text-stone-500">
+                    {item.description}
+                  </p>
                 </button>
               );
             })}
           </div>
           <p className="mt-3 text-[11px] leading-5 text-stone-400">
-            Anthropic não é listado aqui porque seus modelos não geram uma nova imagem de saída.
+            Anthropic não é listado aqui porque seus modelos não geram uma nova
+            imagem de saída.
           </p>
         </div>
 
@@ -377,13 +394,14 @@ export function AiImageEnhancementPanel({
                 Modelo compatível
               </p>
               <p className="mt-1 text-xs leading-5 text-stone-500">
-                A lista é filtrada pelo backend. Modelos somente de texto não aparecem.
+                A lista é filtrada pelo backend. Modelos somente de texto não
+                aparecem.
               </p>
             </div>
             <button
               type="button"
               onClick={() => void loadCompatibleModels()}
-              disabled={loadingModels || config.enabled || !config.configuredProviders[provider]}
+              disabled={loadingModels || config.enabled}
               className="inline-flex items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-45"
             >
               {loadingModels ? (
@@ -406,25 +424,31 @@ export function AiImageEnhancementPanel({
                 >
                   <option value="">Selecione um modelo de imagem</option>
                   {models.map((item) => (
-                    <option key={`${item.providerId}-${item.id}`} value={item.id}>
+                    <option
+                      key={`${item.providerId}-${item.id}`}
+                      value={item.id}
+                    >
                       {item.name} ({item.id})
                     </option>
                   ))}
                 </select>
                 <div className="mt-3 flex items-start gap-2 text-[11px] leading-5 text-stone-500">
                   <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-500" />
-                  <span>Somente modelos capazes de receber uma foto e devolver uma imagem aprimorada entram nesta lista.</span>
+                  <span>
+                    Somente modelos capazes de receber uma foto e devolver uma
+                    imagem aprimorada entram nesta lista.
+                  </span>
                 </div>
               </>
             ) : config.model && config.provider === provider ? (
               <div className="text-sm text-stone-600">
-                Modelo salvo: <strong>{config.model}</strong>. Carregue a lista para validar os modelos atualmente disponíveis para a chave.
+                Modelo salvo: <strong>{config.model}</strong>. Carregue a lista
+                para validar os modelos atualmente disponíveis para a chave.
               </div>
             ) : (
               <div className="text-sm leading-6 text-stone-500">
-                {config.configuredProviders[provider]
-                  ? 'Clique em “Carregar modelos” para consultar somente os modelos com capacidade de imagem.'
-                  : `Salve primeiro a chave da ${providerMeta?.label || provider} em Credenciais.`}
+                Clique em “Carregar modelos”. O backend consulta a chave salva e
+                retorna somente modelos com capacidade de imagem.
               </div>
             )}
           </div>
