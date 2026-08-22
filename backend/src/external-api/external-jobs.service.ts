@@ -23,6 +23,11 @@ export type ExternalJobInput = {
   type?: unknown;
   workModel?: unknown;
   salary?: unknown;
+  estimatedSalary?: unknown;
+  estimatedSalarySource?: unknown;
+  estimatedSalarySourceUrl?: unknown;
+  estimatedSalaryRegion?: unknown;
+  estimatedSalaryUpdatedAt?: unknown;
   pcdMode?: unknown;
   applicationEmail?: unknown;
   applicationWhatsApp?: unknown;
@@ -56,6 +61,11 @@ type SanitizedExternalJob = {
   type: string;
   workModel: string;
   salary: string | null;
+  estimatedSalary: string | null;
+  estimatedSalarySource: string | null;
+  estimatedSalarySourceUrl: string | null;
+  estimatedSalaryRegion: string | null;
+  estimatedSalaryUpdatedAt: Date | null;
   pcdMode: string;
   applicationEmail: string | null;
   applicationWhatsApp: string | null;
@@ -110,8 +120,7 @@ export class ExternalJobsService {
 
   constructor(
     @InjectRepository(Job) private readonly jobs: Repository<Job>,
-    @InjectRepository(ExternalApiRequest)
-    private readonly requests: Repository<ExternalApiRequest>,
+    @InjectRepository(ExternalApiRequest) private readonly requests: Repository<ExternalApiRequest>,
   ) {}
 
   async check(input: ExternalJobInput, client: ExternalApiClient) {
@@ -241,6 +250,11 @@ export class ExternalJobsService {
       type: input.type !== undefined ? input.type : job.type,
       workModel: input.workModel !== undefined ? input.workModel : job.workModel,
       salary: input.salary !== undefined ? input.salary : job.salary,
+      estimatedSalary: input.estimatedSalary !== undefined ? input.estimatedSalary : job.estimatedSalary,
+      estimatedSalarySource: input.estimatedSalarySource !== undefined ? input.estimatedSalarySource : job.estimatedSalarySource,
+      estimatedSalarySourceUrl: input.estimatedSalarySourceUrl !== undefined ? input.estimatedSalarySourceUrl : job.estimatedSalarySourceUrl,
+      estimatedSalaryRegion: input.estimatedSalaryRegion !== undefined ? input.estimatedSalaryRegion : job.estimatedSalaryRegion,
+      estimatedSalaryUpdatedAt: input.estimatedSalaryUpdatedAt !== undefined ? input.estimatedSalaryUpdatedAt : job.estimatedSalaryUpdatedAt,
       pcdMode: input.pcdMode !== undefined ? input.pcdMode : job.pcdMode,
       applicationEmail: input.applicationEmail !== undefined ? input.applicationEmail : job.applicationEmail,
       applicationWhatsApp: input.applicationWhatsApp !== undefined ? input.applicationWhatsApp : job.applicationWhatsApp,
@@ -317,7 +331,7 @@ export class ExternalJobsService {
     if (filters.pcdMode) builder.andWhere('job."pcdMode" = :pcdMode', { pcdMode: filters.pcdMode });
 
     const searchTokens = this.normalize(filters.q).split(' ').filter((token) => token.length > 1).slice(0, 12);
-    const searchable = `translate(lower(concat_ws(' ', job.title, job."companyName", job."sourceName", job.description, job.requirements, job.location, job.city, job.state, job.type, job."workModel", job.salary, job."pcdMode")), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc')`;
+    const searchable = `translate(lower(concat_ws(' ', job.title, job."companyName", job."sourceName", job.description, job.requirements, job.location, job.city, job.state, job.type, job."workModel", job.salary, job."estimatedSalary", job."estimatedSalarySource", job."estimatedSalaryRegion", job."pcdMode")), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc')`;
     searchTokens.forEach((token, index) => builder.andWhere(`${searchable} LIKE :searchToken${index}`, { [`searchToken${index}`]: `%${token}%` }));
     const rows = await builder.getMany();
     const hasMore = rows.length > limit;
@@ -352,18 +366,55 @@ export class ExternalJobsService {
     const applicationUrlTitle = this.optionalText(input.applicationUrlTitle, 'applicationUrlTitle', 180);
     const deadlineDate = this.optionalText(input.deadlineDate, 'deadlineDate', 10);
     if (deadlineDate && !this.isIsoDate(deadlineDate)) throw new BadRequestException('deadlineDate deve usar o formato YYYY-MM-DD.');
+
+    const salary = this.optionalText(input.salary, 'salary', 80);
+    let estimatedSalary = this.optionalText(input.estimatedSalary, 'estimatedSalary', 80);
+    let estimatedSalarySource = this.optionalText(input.estimatedSalarySource, 'estimatedSalarySource', 160);
+    let estimatedSalarySourceUrl = this.optionalText(input.estimatedSalarySourceUrl, 'estimatedSalarySourceUrl', 2_000);
+    let estimatedSalaryRegion = this.optionalText(input.estimatedSalaryRegion, 'estimatedSalaryRegion', 160);
+    let estimatedSalaryUpdatedAt = this.optionalDate(input.estimatedSalaryUpdatedAt, 'estimatedSalaryUpdatedAt');
+
+    if (estimatedSalarySourceUrl && !/^https?:\/\//i.test(estimatedSalarySourceUrl)) {
+      throw new BadRequestException('estimatedSalarySourceUrl deve começar com http:// ou https://.');
+    }
+    if (salary) {
+      estimatedSalary = null;
+      estimatedSalarySource = null;
+      estimatedSalarySourceUrl = null;
+      estimatedSalaryRegion = null;
+      estimatedSalaryUpdatedAt = null;
+    } else if (estimatedSalary && !estimatedSalarySource) {
+      throw new BadRequestException('estimatedSalarySource é obrigatório quando estimatedSalary for informado.');
+    } else if (!estimatedSalary) {
+      estimatedSalarySource = null;
+      estimatedSalarySourceUrl = null;
+      estimatedSalaryRegion = null;
+      estimatedSalaryUpdatedAt = null;
+    }
+
     return {
       title, description, city, state, location: `${city}, ${state}`, sourceName, sourceUrl,
       requirements: this.optionalText(input.requirements, 'requirements', 20_000),
       type: this.optionalText(input.type, 'type', 40) || 'Não informado',
       workModel: this.optionalText(input.workModel, 'workModel', 40) || 'Não informado',
-      salary: this.optionalText(input.salary, 'salary', 80), pcdMode, applicationEmail, applicationWhatsApp,
-      applicationUrl, applicationUrlTitle,
+      salary,
+      estimatedSalary,
+      estimatedSalarySource,
+      estimatedSalarySourceUrl,
+      estimatedSalaryRegion,
+      estimatedSalaryUpdatedAt,
+      pcdMode,
+      applicationEmail,
+      applicationWhatsApp,
+      applicationUrl,
+      applicationUrlTitle,
       externalApplicationInstructions: this.optionalText(input.externalApplicationInstructions, 'externalApplicationInstructions', 5_000),
       deadlineDate,
       isTalentPool: this.optionalBoolean(input.isTalentPool, 'isTalentPool') || false,
       isFlagged: this.optionalBoolean(input.isFlagged, 'isFlagged') || false,
-      flagObservation: this.optionalText(input.flagObservation, 'flagObservation', 1000), companyName, sourceExternalId,
+      flagObservation: this.optionalText(input.flagObservation, 'flagObservation', 1000),
+      companyName,
+      sourceExternalId,
       sourcePublishedAt: this.optionalDate(input.sourcePublishedAt, 'sourcePublishedAt'),
       lastVerifiedAt: this.optionalDate(input.lastVerifiedAt, 'lastVerifiedAt'),
       lastSeenAt: this.optionalDate(input.lastSeenAt, 'lastSeenAt'),
@@ -373,14 +424,58 @@ export class ExternalJobsService {
     };
   }
 
-  private optionalBoolean(value: unknown, field: string): boolean | null { if (value === undefined || value === null || value === '') return null; if (typeof value === 'boolean') return value; if (value === 'true') return true; if (value === 'false') return false; throw new BadRequestException(`${field} deve ser um valor booleano.`); }
-  private optionalDate(value: unknown, field: string): Date | null { if (value === undefined || value === null || value === '') return null; if (typeof value !== 'string') throw new BadRequestException(`${field} deve ser uma string de data (ISO-8601).`); const date = new Date(value); if (isNaN(date.getTime())) throw new BadRequestException(`${field} deve ser uma data válida.`); return date; }
-  private requiredText(value: unknown, field: string, maxLength: number) { const result = this.optionalText(value, field, maxLength); if (!result) throw new BadRequestException(`${field} é obrigatório.`); return result; }
-  private optionalText(value: unknown, field: string, maxLength: number) { if (value === undefined || value === null || value === '') return null; if (typeof value !== 'string') throw new BadRequestException(`${field} deve ser texto.`); return value.trim().slice(0, maxLength) || null; }
-  private isIsoDate(value: string) { const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value); if (!match) return false; const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))); return date.toISOString().slice(0, 10) === value; }
-  private normalize(value: unknown) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
-  private tokens(value: unknown) { return new Set(this.normalize(value).split(' ').filter((token) => token.length > 2)); }
-  private similarity(left: unknown, right: unknown) { const a = this.tokens(left); const b = this.tokens(right); if (!a.size || !b.size) return 0; const intersection = [...a].filter((value) => b.has(value)).length; return intersection / (a.size + b.size - intersection); }
+  private optionalBoolean(value: unknown, field: string): boolean | null {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value === 'boolean') return value;
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    throw new BadRequestException(`${field} deve ser um valor booleano.`);
+  }
+
+  private optionalDate(value: unknown, field: string): Date | null {
+    if (value === undefined || value === null || value === '') return null;
+    if (value instanceof Date && !isNaN(value.getTime())) return value;
+    if (typeof value !== 'string') throw new BadRequestException(`${field} deve ser uma string de data (ISO-8601).`);
+    const date = new Date(value);
+    if (isNaN(date.getTime())) throw new BadRequestException(`${field} deve ser uma data válida.`);
+    return date;
+  }
+
+  private requiredText(value: unknown, field: string, maxLength: number) {
+    const result = this.optionalText(value, field, maxLength);
+    if (!result) throw new BadRequestException(`${field} é obrigatório.`);
+    return result;
+  }
+
+  private optionalText(value: unknown, field: string, maxLength: number) {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value !== 'string') throw new BadRequestException(`${field} deve ser texto.`);
+    return value.trim().slice(0, maxLength) || null;
+  }
+
+  private isIsoDate(value: string) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return false;
+    const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    return date.toISOString().slice(0, 10) === value;
+  }
+
+  private normalize(value: unknown) {
+    return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  private tokens(value: unknown) {
+    return new Set(this.normalize(value).split(' ').filter((token) => token.length > 2));
+  }
+
+  private similarity(left: unknown, right: unknown) {
+    const a = this.tokens(left);
+    const b = this.tokens(right);
+    if (!a.size || !b.size) return 0;
+    const intersection = [...a].filter((value) => b.has(value)).length;
+    return intersection / (a.size + b.size - intersection);
+  }
+
   private catalogFilters(query: JobCatalogQuery): CatalogFilters {
     const state = this.queryText(query.state, 'state', 2).toUpperCase();
     if (state && !this.validStates.has(state)) throw new BadRequestException('state deve ser uma UF brasileira válida.');
@@ -398,18 +493,57 @@ export class ExternalJobsService {
       pcdMode,
     };
   }
-  private queryText(value: unknown, field: string, maxLength: number) { if (value === undefined || value === null || value === '') return ''; if (typeof value !== 'string') throw new BadRequestException(`${field} deve ser informado uma única vez.`); return value.trim().slice(0, maxLength); }
-  private queryBoolean(value: unknown, field: string): boolean | null { if (value === undefined || value === null || value === '') return null; if (value === 'true') return true; if (value === 'false') return false; throw new BadRequestException(`${field} deve ser true ou false.`); }
-  private encodeCursor(createdAt: Date, id: string, filterHash: string, client: ExternalApiClient) { const payload = { version: 1, createdAt: createdAt.toISOString(), id, filterHash }; const signature = this.cursorSignature(payload, client); return Buffer.from(JSON.stringify({ ...payload, signature })).toString('base64url'); }
-  private decodeCursor(token: string, filterHash: string, client: ExternalApiClient) { try { if (typeof token !== 'string' || token.length > 1_024) throw new Error('invalid cursor'); const payload = JSON.parse(Buffer.from(token, 'base64url').toString()) as { version?: unknown; createdAt?: unknown; id?: unknown; filterHash?: unknown; signature?: unknown }; if (payload.version !== 1 || typeof payload.createdAt !== 'string' || typeof payload.id !== 'string' || typeof payload.filterHash !== 'string' || typeof payload.signature !== 'string' || payload.filterHash !== filterHash || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(payload.createdAt) || !/^[0-9a-f-]{36}$/i.test(payload.id)) throw new Error('invalid cursor'); const expected = this.cursorSignature({ version: payload.version, createdAt: payload.createdAt, id: payload.id, filterHash: payload.filterHash }, client); const suppliedBuffer = Buffer.from(payload.signature); const expectedBuffer = Buffer.from(expected); if (suppliedBuffer.length !== expectedBuffer.length || !timingSafeEqual(suppliedBuffer, expectedBuffer)) throw new Error('invalid cursor'); return { createdAt: new Date(payload.createdAt), id: payload.id }; } catch { throw new BadRequestException('Cursor inválido, expirado ou incompatível com os filtros atuais.'); } }
-  private cursorSignature(payload: { version: number; createdAt: string; id: string; filterHash: string }, client: ExternalApiClient) { return createHmac('sha256', client.keyHash).update(`${payload.version}|${payload.createdAt}|${payload.id}|${payload.filterHash}`).digest('base64url'); }
+
+  private queryText(value: unknown, field: string, maxLength: number) {
+    if (value === undefined || value === null || value === '') return '';
+    if (typeof value !== 'string') throw new BadRequestException(`${field} deve ser informado uma única vez.`);
+    return value.trim().slice(0, maxLength);
+  }
+
+  private queryBoolean(value: unknown, field: string): boolean | null {
+    if (value === undefined || value === null || value === '') return null;
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    throw new BadRequestException(`${field} deve ser true ou false.`);
+  }
+
+  private encodeCursor(createdAt: Date, id: string, filterHash: string, client: ExternalApiClient) {
+    const payload = { version: 1, createdAt: createdAt.toISOString(), id, filterHash };
+    const signature = this.cursorSignature(payload, client);
+    return Buffer.from(JSON.stringify({ ...payload, signature })).toString('base64url');
+  }
+
+  private decodeCursor(token: string, filterHash: string, client: ExternalApiClient) {
+    try {
+      if (typeof token !== 'string' || token.length > 1_024) throw new Error('invalid cursor');
+      const payload = JSON.parse(Buffer.from(token, 'base64url').toString()) as { version?: unknown; createdAt?: unknown; id?: unknown; filterHash?: unknown; signature?: unknown };
+      if (payload.version !== 1 || typeof payload.createdAt !== 'string' || typeof payload.id !== 'string' || typeof payload.filterHash !== 'string' || typeof payload.signature !== 'string' || payload.filterHash !== filterHash || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(payload.createdAt) || !/^[0-9a-f-]{36}$/i.test(payload.id)) throw new Error('invalid cursor');
+      const expected = this.cursorSignature({ version: payload.version, createdAt: payload.createdAt, id: payload.id, filterHash: payload.filterHash }, client);
+      const suppliedBuffer = Buffer.from(payload.signature);
+      const expectedBuffer = Buffer.from(expected);
+      if (suppliedBuffer.length !== expectedBuffer.length || !timingSafeEqual(suppliedBuffer, expectedBuffer)) throw new Error('invalid cursor');
+      return { createdAt: new Date(payload.createdAt), id: payload.id };
+    } catch {
+      throw new BadRequestException('Cursor inválido, expirado ou incompatível com os filtros atuais.');
+    }
+  }
+
+  private cursorSignature(payload: { version: number; createdAt: string; id: string; filterHash: string }, client: ExternalApiClient) {
+    return createHmac('sha256', client.keyHash).update(`${payload.version}|${payload.createdAt}|${payload.id}|${payload.filterHash}`).digest('base64url');
+  }
 
   private catalogResult(job: Job) {
     return {
       id: job.id, slug: job.slug, title: job.title, description: job.description, requirements: job.requirements,
       companyId: job.companyId, companyName: job.companyName, isExternalListing: job.isExternalListing,
       sourceName: job.sourceName, sourceUrl: job.sourceUrl, city: job.city, state: job.state, location: job.location,
-      type: job.type, workModel: job.workModel, salary: job.salary, pcdMode: job.pcdMode, deadlineDate: job.deadlineDate,
+      type: job.type, workModel: job.workModel, salary: job.salary,
+      estimatedSalary: job.estimatedSalary,
+      estimatedSalarySource: job.estimatedSalarySource,
+      estimatedSalarySourceUrl: job.estimatedSalarySourceUrl,
+      estimatedSalaryRegion: job.estimatedSalaryRegion,
+      estimatedSalaryUpdatedAt: job.estimatedSalaryUpdatedAt,
+      pcdMode: job.pcdMode, deadlineDate: job.deadlineDate,
       acceptsPlatformApplications: job.acceptsPlatformApplications,
       externalApplicationInstructions: job.externalApplicationInstructions, applicationEmail: job.applicationEmail,
       applicationWhatsApp: job.applicationWhatsApp, applicationUrl: job.applicationUrl,
