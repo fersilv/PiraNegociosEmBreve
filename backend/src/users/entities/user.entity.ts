@@ -69,6 +69,9 @@ export class User {
   resumePublishedAt: Date | null;
 
   @Column({ type: 'jsonb', nullable: true })
+  publishedResumeSnapshot: Record<string, unknown> | null;
+
+  @Column({ type: 'jsonb', nullable: true })
   uploadedResumeFile: {
     name: string;
     mimeType: string;
