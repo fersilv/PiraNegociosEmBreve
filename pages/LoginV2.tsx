@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, Eye, EyeOff, FileText, Loader2, MapPin, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, BellRing, BriefcaseBusiness, CheckCircle2, Eye, EyeOff, FileText, Loader2, MapPin, Sparkles } from "lucide-react";
 import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
+  deleteUser,
+  getAdditionalUserInfo,
   sendEmailVerification,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -46,24 +48,34 @@ export function Login() {
   const [registrationLocation, setRegistrationLocation] = useState("");
   const [locationWasSuggested, setLocationWasSuggested] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [registrationOpen, setRegistrationOpen] = useState(true);
+  const [registrationStatusLoaded, setRegistrationStatusLoaded] = useState(false);
+  const [waitlisted, setWaitlisted] = useState(false);
+  const [waitlistEmail, setWaitlistEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const { refreshProfile } = useAuth();
   const isRegister = mode === "register";
+  const waitlistMode = isRegister && registrationStatusLoaded && !registrationOpen;
 
   useEffect(() => {
     let active = true;
-    api.get("/public/location-hint")
-      .then((response) => {
+    Promise.allSettled([api.get("/public/location-hint"), api.get("/public/registration")])
+      .then(([locationResult, registrationResult]) => {
         if (!active) return;
-        const hint = response.data as VisitorLocationHint;
-        if (hint?.city && hint?.state) {
-          setRegistrationLocation((current) => current || `${hint.city}, ${hint.state}`);
-          setLocationWasSuggested(true);
+        if (locationResult.status === "fulfilled") {
+          const hint = locationResult.value.data as VisitorLocationHint;
+          if (hint?.city && hint?.state) {
+            setRegistrationLocation((current) => current || `${hint.city}, ${hint.state}`);
+            setLocationWasSuggested(true);
+          }
         }
-      })
-      .catch(() => undefined);
+        if (registrationResult.status === "fulfilled") {
+          setRegistrationOpen(registrationResult.value.data?.open !== false);
+        }
+        setRegistrationStatusLoaded(true);
+      });
     return () => { active = false; };
   }, []);
 
@@ -83,6 +95,7 @@ export function Login() {
   const changeMode = (next: Mode) => {
     setMode(next);
     setError("");
+    setWaitlisted(false);
     if (next === "login") setAcceptedTerms(false);
   };
 
@@ -93,8 +106,18 @@ export function Login() {
       : {};
   };
 
+  const joinWaitlist = async (waitlistName: string, waitlistAddress: string, source: "EMAIL" | "GOOGLE") => {
+    const response = await api.post("/public/registration/waitlist", {
+      name: waitlistName.trim(),
+      email: waitlistAddress.trim().toLowerCase(),
+      source,
+    });
+    setWaitlistEmail(response.data?.interest?.email || waitlistAddress.trim().toLowerCase());
+    setWaitlisted(true);
+  };
+
   const handleGoogle = async () => {
-    if (isRegister && !acceptedTerms) {
+    if (isRegister && registrationOpen && !acceptedTerms) {
       setError("Para criar sua conta, confirme que leu os Termos de Uso e a Política de Privacidade.");
       return;
     }
@@ -102,8 +125,18 @@ export function Login() {
     setError("");
     try {
       const result = await signInWithPopup(auth, new GoogleAuthProvider());
+      const isNewGoogleAccount = Boolean(getAdditionalUserInfo(result)?.isNewUser);
+
+      if (!registrationOpen && isNewGoogleAccount) {
+        const googleName = result.user.displayName?.trim() || result.user.email?.split("@")[0] || "Novo interessado";
+        const googleEmail = result.user.email || "";
+        await joinWaitlist(googleName, googleEmail, "GOOGLE");
+        await deleteUser(result.user).catch((deleteError) => console.warn("Não foi possível remover a identidade temporária do Firebase:", deleteError));
+        return;
+      }
+
       let runtime = await loadRuntimeProfile();
-      if (isRegister && !runtime?.acceptedTerms) {
+      if (isRegister && registrationOpen && !runtime?.acceptedTerms) {
         await api.patch("/users/me", {
           acceptedTerms: true,
           displayName: runtime?.displayName || result.user.displayName || undefined,
@@ -124,6 +157,23 @@ export function Login() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError("");
+    if (waitlistMode) {
+      if (!name.trim() || !email.trim()) {
+        setError("Informe seu nome e e-mail para entrar na lista de espera.");
+        return;
+      }
+      setLoading(true);
+      try {
+        await joinWaitlist(name, email, "EMAIL");
+      } catch (submitError: any) {
+        console.error(submitError);
+        setError(firebaseMessage(submitError));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (isRegister && !acceptedTerms) {
       setError("Para criar sua conta, confirme que leu os Termos de Uso e a Política de Privacidade.");
       return;
@@ -163,7 +213,7 @@ export function Login() {
       <section className="relative hidden min-h-screen overflow-hidden bg-[#2b211c] p-10 text-white lg:flex lg:flex-col lg:justify-between xl:p-14">
         <div className="absolute -left-24 top-24 h-72 w-72 rounded-full bg-[#d98765]/20 blur-3xl" />
         <div className="absolute -bottom-20 right-0 h-80 w-80 rounded-full bg-[#f0c2a9]/10 blur-3xl" />
-        <Link to="/" className="relative inline-flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f1cfbd] font-serif text-xl font-black text-[#302019]">P</span><span><strong className="block font-serif text-xl">PiraNegócios</strong><span className="text-[9px] font-bold uppercase tracking-[.24em] text-white/35">Carreira local, de verdade</span></span></Link>
+        <Link to="/" className="relative inline-flex items-center"><img src="/brand/logo-horizontal-white.png" alt="PiraNegócios" className="h-10 w-auto max-w-[230px] object-contain object-left" /></Link>
         <div className="relative max-w-xl py-12">
           <p className="text-[10px] font-black uppercase tracking-[.22em] text-[#efb89c]">Seu espaço profissional</p>
           <h1 className="mt-4 font-serif text-5xl font-bold leading-[1.05] xl:text-6xl">Sua próxima oportunidade começa antes do botão “candidatar”.</h1>
@@ -179,21 +229,51 @@ export function Login() {
 
       <section className="flex min-h-screen items-center justify-center px-4 py-8 sm:px-7 lg:px-12">
         <div className="w-full max-w-[540px]">
-          <div className="mb-7 flex items-center justify-between"><Link to="/" className="inline-flex items-center gap-2 text-xs font-bold text-stone-500 hover:text-stone-900"><ArrowLeft className="h-4 w-4" /> Voltar</Link><span className="font-serif text-lg font-black lg:hidden">PiraNegócios</span></div>
+          <div className="mb-7 flex items-center justify-between"><Link to="/" className="inline-flex items-center gap-2 text-xs font-bold text-stone-500 hover:text-stone-900"><ArrowLeft className="h-4 w-4" /> Voltar</Link><img src="/brand/logo-horizontal-burgundy.png" alt="PiraNegócios" className="h-7 w-auto max-w-[180px] object-contain lg:hidden" /></div>
           <div className="rounded-[32px] border border-[#ddcfc3] bg-[#fffdfa] p-5 shadow-[0_30px_90px_rgba(73,45,28,.10)] sm:p-8">
-            <div className="grid grid-cols-2 rounded-2xl bg-[#f2ebe4] p-1"><button type="button" onClick={() => changeMode("login")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${!isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>Entrar</button><button type="button" onClick={() => changeMode("register")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>Criar conta</button></div>
-            <div className="mt-7"><p className="text-[10px] font-black uppercase tracking-[.16em] text-terracotta-600">{isRegister ? "Comece seu perfil" : "Bem-vindo de volta"}</p><h2 className="mt-1 font-serif text-3xl font-bold text-stone-950">{isRegister ? "Crie sua conta profissional." : "Entre no seu espaço."}</h2><p className="mt-2 text-sm leading-6 text-stone-500">{isRegister ? "Leva poucos minutos. Seu currículo pode continuar depois como rascunho." : "Suas vagas, currículo, processos e empresa continuam exatamente de onde você parou."}</p></div>
-            {error && <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm font-semibold text-red-700">{error}</div>}
-            <button type="button" onClick={() => void handleGoogle()} disabled={loading || (isRegister && !acceptedTerms)} className="mt-6 flex h-12 w-full items-center justify-center gap-3 rounded-2xl border border-stone-200 bg-white text-sm font-bold text-stone-800 transition hover:bg-stone-50 disabled:opacity-45"><GoogleIcon /> Continuar com Google</button>
-            <div className="my-5 flex items-center gap-3"><span className="h-px flex-1 bg-stone-200" /><span className="text-[9px] font-black uppercase tracking-[.16em] text-stone-400">ou use seu e-mail</span><span className="h-px flex-1 bg-stone-200" /></div>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {isRegister && <><div className="grid gap-4 sm:grid-cols-2"><Field label="Nome completo *"><input required value={name} onChange={(event) => setName(event.target.value)} className="auth-field" autoComplete="name" placeholder="Seu nome" /></Field><Field label="Telefone / WhatsApp *"><input required value={phone} onChange={(event) => setPhone(event.target.value)} className="auth-field" autoComplete="tel" placeholder="(19) 99999-9999" /></Field></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Nome social"><input value={socialName} onChange={(event) => setSocialName(event.target.value)} className="auth-field" placeholder="Opcional" /></Field><Field label="Como prefere ser tratado"><select value={treatment} onChange={(event) => setTreatment(event.target.value)} className="auth-field"><option value="ela/dela">Ela/Dela</option><option value="ele/dele">Ele/Dele</option><option value="elu/delu">Elu/Delu</option></select></Field></div><Field label="Cidade onde você mora *"><CityStateSelector initialValue={registrationLocation} onLocationChange={(value) => { setRegistrationLocation(value); setLocationWasSuggested(false); }} /><p className="mt-1.5 flex items-center gap-1.5 text-[10px] leading-4 text-stone-400"><MapPin className="h-3 w-3 text-terracotta-500" />{locationWasSuggested ? "Sugerimos esta cidade pela sua região de acesso. Confira e altere se necessário." : "Usamos sua cidade para priorizar vagas e matches realmente viáveis."}</p></Field></>}
-              <Field label="E-mail *"><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="auth-field" autoComplete="email" placeholder="voce@email.com" /></Field>
-              <Field label="Senha *"><div className="relative"><input required type={showPassword ? "text" : "password"} minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} className="auth-field pr-12" autoComplete={isRegister ? "new-password" : "current-password"} placeholder={isRegister ? "Mínimo 6 caracteres" : "Sua senha"} /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-stone-400 hover:bg-stone-100" aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></Field>
-              {isRegister && <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50/60 p-3.5"><input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500" /><span className="text-xs leading-5 text-stone-600">Li e concordo com os <Link to="/termos" target="_blank" className="font-bold text-terracotta-700 hover:underline">Termos de Uso e Política de Privacidade</Link>.</span></label>}
-              <button type="submit" disabled={loading || (isRegister && !acceptedTerms)} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-terracotta-600 px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-terracotta-600/15 transition hover:bg-terracotta-700 disabled:opacity-45">{loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <>{isRegister ? "Criar minha conta" : "Entrar"}<ArrowRight className="h-4 w-4" /></>}</button>
-            </form>
-            <p className="mt-6 text-center text-xs text-stone-400">{isRegister ? "Já tem conta?" : "Ainda não tem conta?"} <button type="button" onClick={() => changeMode(isRegister ? "login" : "register")} className="font-black text-terracotta-700">{isRegister ? "Entrar" : "Criar agora"}</button></p>
+            <div className="grid grid-cols-2 rounded-2xl bg-[#f2ebe4] p-1"><button type="button" onClick={() => changeMode("login")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${!isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>Entrar</button><button type="button" onClick={() => changeMode("register")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>{registrationStatusLoaded && !registrationOpen ? "Lista de espera" : "Criar conta"}</button></div>
+
+            {waitlisted ? (
+              <div className="py-10 text-center">
+                <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-[20px] bg-emerald-100 text-emerald-700"><CheckCircle2 className="h-7 w-7" /></span>
+                <p className="mt-5 text-[10px] font-black uppercase tracking-[.18em] text-terracotta-600">Pré-cadastro confirmado</p>
+                <h2 className="mt-2 font-serif text-3xl font-bold text-stone-950">Você está na lista. 💌</h2>
+                <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-stone-500">Guardamos apenas seu nome e <strong>{waitlistEmail}</strong>. Assim que novos membros forem aceitos, avisaremos por e-mail.</p>
+                <button type="button" onClick={() => changeMode("login")} className="mt-7 inline-flex items-center gap-2 rounded-2xl bg-[#2b211c] px-5 py-3 text-sm font-black text-white">Já tenho conta, entrar <ArrowRight className="h-4 w-4" /></button>
+              </div>
+            ) : (
+              <>
+                <div className="mt-7">
+                  <p className="text-[10px] font-black uppercase tracking-[.16em] text-terracotta-600">{waitlistMode ? "Acesso em preparação" : isRegister ? "Comece seu perfil" : "Bem-vindo de volta"}</p>
+                  <h2 className="mt-1 font-serif text-3xl font-bold text-stone-950">{waitlistMode ? "Novos cadastros estão temporariamente pausados." : isRegister ? "Crie sua conta profissional." : "Entre no seu espaço."}</h2>
+                  <p className="mt-2 text-sm leading-6 text-stone-500">{waitlistMode ? "Estamos preparando a próxima etapa da plataforma. Deixe apenas seu nome e e-mail e avisaremos assim que a entrada for reaberta." : isRegister ? "Leva poucos minutos. Seu currículo pode continuar depois como rascunho." : "Suas vagas, currículo, processos e empresa continuam exatamente de onde você parou."}</p>
+                </div>
+
+                {waitlistMode && <div className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4"><BellRing className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><p className="text-xs leading-5 text-amber-900">O pré-cadastro <strong>não cria uma conta</strong> e não pede senha, telefone ou outros dados. Ele serve somente para avisar quando novos membros forem aceitos.</p></div>}
+                {error && <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm font-semibold text-red-700">{error}</div>}
+
+                <button type="button" onClick={() => void handleGoogle()} disabled={loading || (isRegister && registrationOpen && !acceptedTerms)} className="mt-6 flex h-12 w-full items-center justify-center gap-3 rounded-2xl border border-stone-200 bg-white text-sm font-bold text-stone-800 transition hover:bg-stone-50 disabled:opacity-45"><GoogleIcon /> {waitlistMode ? "Entrar na lista com Google" : "Continuar com Google"}</button>
+                <div className="my-5 flex items-center gap-3"><span className="h-px flex-1 bg-stone-200" /><span className="text-[9px] font-black uppercase tracking-[.16em] text-stone-400">ou use seu e-mail</span><span className="h-px flex-1 bg-stone-200" /></div>
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  {waitlistMode ? (
+                    <>
+                      <Field label="Nome *"><input required value={name} onChange={(event) => setName(event.target.value)} className="auth-field" autoComplete="name" placeholder="Como podemos chamar você?" /></Field>
+                      <Field label="E-mail *"><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="auth-field" autoComplete="email" placeholder="voce@email.com" /></Field>
+                    </>
+                  ) : (
+                    <>
+                      {isRegister && <><div className="grid gap-4 sm:grid-cols-2"><Field label="Nome completo *"><input required value={name} onChange={(event) => setName(event.target.value)} className="auth-field" autoComplete="name" placeholder="Seu nome" /></Field><Field label="Telefone / WhatsApp *"><input required value={phone} onChange={(event) => setPhone(event.target.value)} className="auth-field" autoComplete="tel" placeholder="(19) 99999-9999" /></Field></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Nome social"><input value={socialName} onChange={(event) => setSocialName(event.target.value)} className="auth-field" placeholder="Opcional" /></Field><Field label="Como prefere ser tratado"><select value={treatment} onChange={(event) => setTreatment(event.target.value)} className="auth-field"><option value="ela/dela">Ela/Dela</option><option value="ele/dele">Ele/Dele</option><option value="elu/delu">Elu/Delu</option></select></Field></div><Field label="Cidade onde você mora *"><CityStateSelector initialValue={registrationLocation} onLocationChange={(value) => { setRegistrationLocation(value); setLocationWasSuggested(false); }} /><p className="mt-1.5 flex items-center gap-1.5 text-[10px] leading-4 text-stone-400"><MapPin className="h-3 w-3 text-terracotta-500" />{locationWasSuggested ? "Sugerimos esta cidade pela sua região de acesso. Confira e altere se necessário." : "Usamos sua cidade para priorizar vagas e matches realmente viáveis."}</p></Field></>}
+                      <Field label="E-mail *"><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="auth-field" autoComplete="email" placeholder="voce@email.com" /></Field>
+                      <Field label="Senha *"><div className="relative"><input required type={showPassword ? "text" : "password"} minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} className="auth-field pr-12" autoComplete={isRegister ? "new-password" : "current-password"} placeholder={isRegister ? "Mínimo 6 caracteres" : "Sua senha"} /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-stone-400 hover:bg-stone-100" aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></Field>
+                      {isRegister && <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50/60 p-3.5"><input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500" /><span className="text-xs leading-5 text-stone-600">Li e concordo com os <Link to="/termos" target="_blank" className="font-bold text-terracotta-700 hover:underline">Termos de Uso e Política de Privacidade</Link>.</span></label>}
+                    </>
+                  )}
+                  <button type="submit" disabled={loading || (!waitlistMode && isRegister && !acceptedTerms)} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-terracotta-600 px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-terracotta-600/15 transition hover:bg-terracotta-700 disabled:opacity-45">{loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <>{waitlistMode ? "Quero ser avisado" : isRegister ? "Criar minha conta" : "Entrar"}<ArrowRight className="h-4 w-4" /></>}</button>
+                </form>
+                <p className="mt-6 text-center text-xs text-stone-400">{isRegister ? "Já tem conta?" : "Ainda não tem conta?"} <button type="button" onClick={() => changeMode(isRegister ? "login" : "register")} className="font-black text-terracotta-700">{isRegister ? "Entrar" : registrationStatusLoaded && !registrationOpen ? "Entrar na lista" : "Criar agora"}</button></p>
+              </>
+            )}
           </div>
           <div className="mt-5 flex items-center justify-center gap-2 text-[10px] font-bold text-stone-400"><Sparkles className="h-3.5 w-3.5 text-terracotta-500" /> Um cadastro para carreira e, quando precisar, para o workspace da sua empresa.</div>
         </div>
