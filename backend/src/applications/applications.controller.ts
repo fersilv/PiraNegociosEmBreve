@@ -81,11 +81,12 @@ export class ApplicationsController {
   }
 
   private publishedResumeSnapshot(candidate: User): Record<string, unknown> | null {
+    if (candidate.resumeStatus !== 'PUBLISHED') return null;
     if (candidate.publishedResumeSnapshot && typeof candidate.publishedResumeSnapshot === 'object') {
       return { ...candidate.publishedResumeSnapshot };
     }
     // Compatibilidade com currículos publicados antes do snapshot versionado.
-    if (candidate.resumeStatus === 'PUBLISHED' && this.hasStructuredResume(candidate)) {
+    if (this.hasStructuredResume(candidate)) {
       return this.buildCurrentResumeSnapshot(candidate, false);
     }
     return null;
