@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import {
   Activity,
   Briefcase,
@@ -65,12 +65,11 @@ const groups: AdminNavGroup[] = [
 ];
 
 export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }) {
-  const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = useState(false);
 
   const logout = async () => {
     await auth.signOut();
-    navigate("/");
+    window.location.replace("/");
   };
 
   return (
@@ -126,7 +125,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
         </nav>
 
         <div className="border-t border-white/[0.05] p-4">
-          <button type="button" onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 font-medium text-white/45 transition hover:bg-white/[0.06] hover:text-white">
+          <button type="button" onClick={() => void logout()} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 font-medium text-white/45 transition hover:bg-white/[0.06] hover:text-white">
             <LogOut className="h-5 w-5" /> Sair
           </button>
         </div>
@@ -155,12 +154,15 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
         <main className="admin-content p-4 pb-24 sm:p-6 md:p-8 md:pb-8">{children}</main>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-white/[0.05] bg-[#171714]/98 px-2 py-2 text-white shadow-[0_-12px_36px_rgba(0,0,0,.14)] backdrop-blur md:hidden">
+      <nav
+        className="admin-mobile-nav fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-white/[0.08] px-2 pt-2 text-white shadow-[0_-12px_36px_rgba(0,0,0,.22)] md:hidden"
+        style={{ backgroundColor: "#171714", color: "#ffffff", paddingBottom: "max(0.6rem, env(safe-area-inset-bottom))" }}
+      >
         <MobileLink to="/admin" end icon={<LayoutDashboard className="h-5 w-5" />} label="Início" />
         <MobileLink to="/admin/empresas" icon={<Building2 className="h-5 w-5" />} label="Empresas" />
         <MobileLink to="/admin/vagas" icon={<Briefcase className="h-5 w-5" />} label="Vagas" />
         <MobileLink to="/admin/usuarios" icon={<Users className="h-5 w-5" />} label="Usuários" />
-        <button type="button" onClick={() => setMoreOpen(true)} className="flex min-w-14 flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold text-white/45">
+        <button type="button" onClick={() => setMoreOpen(true)} className="flex min-w-14 flex-col items-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-semibold text-white/60">
           <MoreHorizontal className="h-5 w-5" />
           <span>Mais</span>
         </button>
@@ -168,7 +170,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
 
       {moreOpen && (
         <div className="fixed inset-0 z-50 flex items-end bg-black/45 backdrop-blur-sm md:hidden" onClick={() => setMoreOpen(false)}>
-          <div className="w-full rounded-t-[30px] bg-[#1d1d19] p-4 pb-7 text-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+          <div className="w-full rounded-t-[30px] bg-[#1d1d19] p-4 pb-[max(1.75rem,env(safe-area-inset-bottom))] text-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between px-1">
               <div>
                 <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/30">Administração</p>
@@ -185,6 +187,13 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
               <MoreLink to="/admin/ai" icon={<Cpu className="h-4 w-4" />} label="Inteligência Artificial" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/conta" icon={<User className="h-4 w-4" />} label="Meus dados" close={() => setMoreOpen(false)} />
             </div>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-red-300/10 bg-red-400/[0.08] px-4 py-3.5 text-sm font-bold text-red-200"
+            >
+              <LogOut className="h-4 w-4" /> Sair da conta
+            </button>
           </div>
         </div>
       )}
@@ -194,7 +203,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
 
 function MobileLink({ to, label, icon, end = false }: { to: string; label: string; icon: React.ReactNode; end?: boolean }) {
   return (
-    <NavLink to={to} end={end} className={({ isActive }) => `flex min-w-14 flex-col items-center gap-0.5 px-2 py-1 text-[10px] font-semibold ${isActive ? "text-terracotta-300" : "text-white/45"}`}>
+    <NavLink to={to} end={end} className={({ isActive }) => `flex min-w-14 flex-col items-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-semibold ${isActive ? "bg-white/[0.08] text-[#f2c5ad]" : "text-white/55"}`}>
       {icon}
       <span>{label}</span>
     </NavLink>
