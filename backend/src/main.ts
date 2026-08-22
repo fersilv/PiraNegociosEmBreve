@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { json, urlencoded } from 'express';
 import { join } from 'path';
 import { Client } from 'pg';
 import { attachSpaFallback } from './spa-fallback';
@@ -38,14 +39,25 @@ async function ensureDatabaseExists() {
 async function bootstrap() {
   await ensureDatabaseExists();
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // O parser padrão do Express/Nest limita JSON a 100 KB. Como o sistema ainda
+  // trafega avatar/currículo em data URLs (base64), configuramos explicitamente
+  // um teto compatível com uploads de até 10 MB sem deixar o body ilimitado.
+  const bodyLimit = process.env.BODY_LIMIT || '20mb';
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
+
   // O Nginx termina o HTTPS; assim req.protocol preserva https ao gerar URLs.
   app.set('trust proxy', 1);
   // Public API contract. Nginx forwards /api/* unchanged to this service.
   app.setGlobalPrefix('api');
 
-  // Habilitar CORS para o frontend em React
+  // Habilitar CORS para o frontend em React antes dos parsers, inclusive para
+  // respostas de erro de payload.
   app.enableCors();
+
+  app.use(json({ limit: bodyLimit }));
+  app.use(urlencoded({ limit: bodyLimit, extended: true }));
 
   // Servir arquivos de upload estaticamente na rota /uploads
   app.useStaticAssets(join(__dirname, '..', 'uploads'), {
