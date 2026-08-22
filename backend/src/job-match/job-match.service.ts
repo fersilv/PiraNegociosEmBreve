@@ -34,14 +34,7 @@ export class JobMatchService {
   }
 
   private jobFingerprint(job: Job) {
-    return this.hash({
-      title: job.title,
-      description: job.description,
-      requirements: job.requirements,
-      skills: job.skills,
-      type: job.type,
-      workModel: job.workModel,
-    });
+    return this.hash({ title: job.title, description: job.description, requirements: job.requirements, skills: job.skills, type: job.type, workModel: job.workModel });
   }
 
   private resumeFingerprint(user: User) {
@@ -61,13 +54,8 @@ export class JobMatchService {
   async analyzeActiveJob(job: Job, force = false) {
     if (!job.active) return null;
     const sourceFingerprint = this.jobFingerprint(job);
-    const existing = await this.dataSource.query(
-      `SELECT * FROM job_match_profiles WHERE "jobId" = $1 LIMIT 1`,
-      [job.id],
-    );
-    if (!force && existing[0]?.status === 'READY' && existing[0]?.sourceFingerprint === sourceFingerprint && existing[0]?.algorithmVersion === JOB_MATCH_ALGORITHM_VERSION) {
-      return existing[0];
-    }
+    const existing = await this.dataSource.query(`SELECT * FROM job_match_profiles WHERE "jobId" = $1 LIMIT 1`, [job.id]);
+    if (!force && existing[0]?.status === 'READY' && existing[0]?.sourceFingerprint === sourceFingerprint && existing[0]?.algorithmVersion === JOB_MATCH_ALGORITHM_VERSION) return existing[0];
 
     await this.dataSource.query(
       `INSERT INTO job_match_profiles ("jobId", status, "algorithmVersion", "sourceFingerprint", profile, error, "updatedAt")
@@ -80,8 +68,7 @@ export class JobMatchService {
     try {
       const profile = await this.ai.analyze(job);
       const rows = await this.dataSource.query(
-        `UPDATE job_match_profiles SET status = 'READY', profile = $2::jsonb, error = NULL,
-           "analyzedAt" = now(), "updatedAt" = now()
+        `UPDATE job_match_profiles SET status = 'READY', profile = $2::jsonb, error = NULL, "analyzedAt" = now(), "updatedAt" = now()
          WHERE "jobId" = $1 RETURNING *`,
         [job.id, JSON.stringify(profile)],
       );
@@ -126,7 +113,7 @@ export class JobMatchService {
     if (normalizedSource.includes(normalizedTerm)) return 1;
     const wanted = this.tokens(term, ignoreGeneric);
     if (!wanted.length) return 0;
-    const sourceTokens = new Set(this.tokens(source, false));
+    const sourceTokens = new Set(this.tokens(source));
     const overlap = wanted.filter((token) => sourceTokens.has(token)).length;
     const coverage = overlap / wanted.length;
     if (coverage === 1) return 0.9;
@@ -137,9 +124,7 @@ export class JobMatchService {
 
   private bestEvidence(terms: string[], sources: string[], ignoreGeneric = false) {
     let best = 0;
-    for (const term of terms.filter(Boolean)) {
-      for (const source of sources.filter(Boolean)) best = Math.max(best, this.phraseScore(term, source, ignoreGeneric));
-    }
+    for (const term of terms.filter(Boolean)) for (const source of sources.filter(Boolean)) best = Math.max(best, this.phraseScore(term, source, ignoreGeneric));
     return best;
   }
 
@@ -205,28 +190,17 @@ export class JobMatchService {
     const education = this.requirementScore(profile.requirements || [], candidate, ['EDUCATION','CERTIFICATION','LICENSE']);
     const other = this.requirementScore(profile.requirements || [], candidate, ['SKILL','OTHER']);
     const preferenceScore = this.locationScore(job, user);
-
     const effectiveTechnicalScore = Math.round(technicalScore * 0.82 + other.score * 0.18);
-    let score = Math.round(
-      occupationalScore * 0.35 +
-      effectiveTechnicalScore * 0.30 +
-      experience.score * 0.20 +
-      education.score * 0.10 +
-      preferenceScore * 0.05,
-    );
 
+    let score = Math.round(occupationalScore * 0.35 + effectiveTechnicalScore * 0.30 + experience.score * 0.20 + education.score * 0.10 + preferenceScore * 0.05);
     const criticalMissing = [
       ...missingTechnical,
       ...experience.missing.map((item) => item.label),
       ...education.missing.filter((item) => item.type === 'CERTIFICATION' || item.type === 'LICENSE').map((item) => item.label),
       ...other.missing.map((item) => item.label),
     ];
-    const missingRequirements = Array.from(new Set([
-      ...criticalMissing,
-      ...education.missing.map((item) => item.label),
-    ])).slice(0, 8);
+    const missingRequirements = Array.from(new Set([...criticalMissing, ...education.missing.map((item) => item.label)])).slice(0, 8);
 
-    // Guarda-corpos contra falsos positivos como "Operador de Caixa" x "Operador de Colhedora".
     if (occupationalScore < 20 && effectiveTechnicalScore < 20) score = Math.min(score, 20);
     if (criticalMissing.length >= 2) score = Math.min(score, 39);
     else if (criticalMissing.length === 1) score = Math.min(score, 49);
@@ -257,10 +231,15 @@ export class JobMatchService {
   }
 
   async getStatus(userId: string) {
-    const [product, entitlement] = await Promise.all([
-      this.payments.findProduct('JOB_MATCH_30D', true),
-      this.payments.getEntitlement(userId, 'JOB_MATCH_PREMIUM'),
-    ]);
+    const productPromise = this.payments.findProduct('JOB_MATCH_30D', true);
+    const entitlementPromise = this.dataSource.query(
+      `SELECT "startsAt", "expiresAt", "paymentId", ("expiresAt" > now()) AS active
+       FROM user_feature_entitlements
+       WHERE "userId" = $1 AND feature = 'JOB_MATCH_PREMIUM' LIMIT 1`,
+      [userId],
+    );
+    const [product, entitlementRows] = await Promise.all([productPromise, entitlementPromise]);
+    const entitlement = entitlementRows[0] || null;
     return { product, entitlement, active: Boolean(entitlement?.active) };
   }
 
@@ -273,36 +252,27 @@ export class JobMatchService {
     const jobs = await this.jobs.find({ where: { active: true }, order: { createdAt: 'DESC' } });
     if (!jobs.length) return { ...status, matches: [] };
     const jobIds = jobs.map((job) => job.id);
-    const profiles = await this.dataSource.query(
-      `SELECT * FROM job_match_profiles WHERE status = 'READY' AND "jobId" = ANY($1::uuid[])`,
-      [jobIds],
-    );
+    const profiles = await this.dataSource.query(`SELECT * FROM job_match_profiles WHERE status = 'READY' AND "jobId" = ANY($1::uuid[])`, [jobIds]);
     const profileMap = new Map(profiles.map((row: any) => [row.jobId, row]));
     const resumeFingerprint = this.resumeFingerprint(user);
-    const cached = await this.dataSource.query(
-      `SELECT * FROM job_match_results WHERE "userId" = $1 AND "jobId" = ANY($2::uuid[])`,
-      [userId, jobIds],
-    );
+    const cached = await this.dataSource.query(`SELECT * FROM job_match_results WHERE "userId" = $1 AND "jobId" = ANY($2::uuid[])`, [userId, jobIds]);
     const cacheMap = new Map(cached.map((row: any) => [row.jobId, row]));
     const matches: any[] = [];
 
     for (const job of jobs) {
-      const jobProfile = profileMap.get(job.id);
+      const jobProfile = profileMap.get(job.id) as any;
       if (!jobProfile?.profile) continue;
-      const existing = cacheMap.get(job.id);
+      const existing = cacheMap.get(job.id) as any;
       const cacheValid = existing && existing.resumeFingerprint === resumeFingerprint && existing.jobProfileFingerprint === jobProfile.sourceFingerprint && existing.algorithmVersion === JOB_MATCH_ALGORITHM_VERSION;
       let result = cacheValid ? existing.result : null;
       if (!result) {
         result = this.scoreJob(job, jobProfile.profile as JobMatchProfile, user);
         await this.dataSource.query(
-          `INSERT INTO job_match_results
-            ("userId", "jobId", "resumeFingerprint", "jobProfileFingerprint", "algorithmVersion", score, result, "updatedAt")
+          `INSERT INTO job_match_results ("userId", "jobId", "resumeFingerprint", "jobProfileFingerprint", "algorithmVersion", score, result, "updatedAt")
            VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,now())
            ON CONFLICT ("userId", "jobId") DO UPDATE SET
-             "resumeFingerprint" = EXCLUDED."resumeFingerprint",
-             "jobProfileFingerprint" = EXCLUDED."jobProfileFingerprint",
-             "algorithmVersion" = EXCLUDED."algorithmVersion",
-             score = EXCLUDED.score, result = EXCLUDED.result, "updatedAt" = now()`,
+             "resumeFingerprint" = EXCLUDED."resumeFingerprint", "jobProfileFingerprint" = EXCLUDED."jobProfileFingerprint",
+             "algorithmVersion" = EXCLUDED."algorithmVersion", score = EXCLUDED.score, result = EXCLUDED.result, "updatedAt" = now()`,
           [userId, job.id, resumeFingerprint, jobProfile.sourceFingerprint, JOB_MATCH_ALGORITHM_VERSION, result.score, JSON.stringify(result)],
         );
       }
