@@ -23,6 +23,8 @@ import { api } from "../lib/api";
 const LICENSE_CATEGORIES = ["ACC", "A", "B", "C", "D", "E"];
 const VEHICLE_TYPES = ["Carro", "Moto", "Caminhão", "Utilitário", "Outro"];
 
+type LocationNotice = { tone: "success" | "info" | "error"; text: string } | null;
+
 function parseLocation(value: string): WorkLocationPreference | null {
   const parts = value.split(",").map((item) => item.trim());
   if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
@@ -45,6 +47,7 @@ export function CandidateWorkPreferencesCard() {
   const [homeLocation, setHomeLocation] = useState("");
   const [pendingLocation, setPendingLocation] = useState("");
   const [preferredLocations, setPreferredLocations] = useState<WorkLocationPreference[]>([]);
+  const [locationNotice, setLocationNotice] = useState<LocationNotice>(null);
   const [hasDriverLicense, setHasDriverLicense] = useState<boolean | null>(null);
   const [driverLicenseCategories, setDriverLicenseCategories] = useState<string[]>([]);
   const [hasOwnVehicle, setHasOwnVehicle] = useState<boolean | null>(null);
@@ -78,15 +81,38 @@ export function CandidateWorkPreferencesCard() {
 
   const addPreferredLocation = () => {
     const next = parseLocation(pendingLocation);
-    if (!next) return;
+    if (!next) {
+      setLocationNotice({
+        tone: "error",
+        text: "Escolha o estado e a cidade antes de adicionar.",
+      });
+      return;
+    }
+
     if (home && sameLocation(home, next)) {
+      setLocationNotice({
+        tone: "info",
+        text: `${locationLabel(next)} já é sua cidade principal e já entra automaticamente nos seus matches.`,
+      });
       setPendingLocation("");
       return;
     }
-    setPreferredLocations((current) =>
-      current.some((item) => sameLocation(item, next)) ? current : [...current, next],
-    );
+
+    if (preferredLocations.some((item) => sameLocation(item, next))) {
+      setLocationNotice({
+        tone: "info",
+        text: `${locationLabel(next)} já está na sua lista de cidades aceitas.`,
+      });
+      setPendingLocation("");
+      return;
+    }
+
+    setPreferredLocations((current) => [...current, next]);
     setPendingLocation("");
+    setLocationNotice({
+      tone: "success",
+      text: `${locationLabel(next)} adicionada. Clique em “Salvar preferências” para confirmar as alterações.`,
+    });
   };
 
   const toggleListValue = (
@@ -120,11 +146,15 @@ export function CandidateWorkPreferencesCard() {
       return;
     }
 
+    const normalizedPreferredLocations = preferredLocations.filter(
+      (item) => !sameLocation(item, parsedHome),
+    );
+
     setSaving(true);
     setSaved(false);
     try {
       const jobPreferences: JobPreferences = {
-        preferredLocations,
+        preferredLocations: normalizedPreferredLocations,
         hasDriverLicense,
         driverLicenseCategories: hasDriverLicense ? driverLicenseCategories : [],
         hasOwnVehicle,
@@ -142,8 +172,10 @@ export function CandidateWorkPreferencesCard() {
         address: locationLabel(parsedHome),
         jobPreferences,
       });
+      setPreferredLocations(normalizedPreferredLocations);
       await refreshProfile();
       setSaved(true);
+      setLocationNotice({ tone: "success", text: "Preferências profissionais salvas." });
       window.setTimeout(() => setSaved(false), 2500);
     } catch (error) {
       console.error("Erro ao salvar preferências profissionais:", error);
@@ -177,37 +209,73 @@ export function CandidateWorkPreferencesCard() {
         <div className="space-y-5">
           <div>
             <label className="mb-2 block text-sm font-bold text-stone-800">Cidade onde você mora *</label>
-            <CityStateSelector initialValue={homeLocation} onLocationChange={setHomeLocation} />
+            <CityStateSelector
+              initialValue={homeLocation}
+              onLocationChange={(value) => {
+                setHomeLocation(value);
+                setLocationNotice(null);
+              }}
+            />
             <p className="mt-2 text-xs leading-relaxed text-stone-500">
-              Esta é sua localização principal e pode ser usada por empresas para filtrar candidatos.
+              Sua cidade principal sempre é considerada como uma cidade onde você pode trabalhar e pode ser usada por empresas para filtrar candidatos.
             </p>
           </div>
 
           <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
             <label className="block text-sm font-bold text-stone-800">Outras cidades onde aceita trabalhar</label>
-            <p className="mb-3 mt-1 text-xs text-stone-500">Você pode cadastrar quantas cidades fizerem sentido para sua rotina.</p>
+            <p className="mb-3 mt-1 text-xs text-stone-500">Adicione quantas cidades fizerem sentido. Sua cidade principal não precisa ser adicionada novamente.</p>
             <div className="space-y-2">
-              <CityStateSelector initialValue={pendingLocation} onLocationChange={setPendingLocation} />
+              <CityStateSelector
+                initialValue={pendingLocation}
+                onLocationChange={(value) => {
+                  setPendingLocation(value);
+                  setLocationNotice(null);
+                }}
+              />
               <button
                 type="button"
                 onClick={addPreferredLocation}
-                disabled={!pendingLocation}
-                className="inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-2.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-stone-800"
               >
                 <Plus className="h-4 w-4" /> Adicionar cidade
               </button>
             </div>
-            {preferredLocations.length > 0 && (
+
+            {locationNotice && (
+              <p
+                className={`mt-3 rounded-xl px-3 py-2.5 text-xs font-semibold leading-5 ${
+                  locationNotice.tone === "success"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : locationNotice.tone === "error"
+                      ? "bg-red-50 text-red-700"
+                      : "bg-amber-50 text-amber-700"
+                }`}
+              >
+                {locationNotice.text}
+              </p>
+            )}
+
+            {preferredLocations.length > 0 ? (
               <div className="mt-4 flex flex-wrap gap-2">
                 {preferredLocations.map((location) => (
                   <span key={locationLabel(location)} className="inline-flex items-center gap-1.5 rounded-full border border-terracotta-200 bg-terracotta-50 px-3 py-1.5 text-xs font-bold text-terracotta-800">
                     <MapPin className="h-3 w-3" /> {locationLabel(location)}
-                    <button type="button" onClick={() => setPreferredLocations((current) => current.filter((item) => !sameLocation(item, location)))} className="ml-1 text-terracotta-500 hover:text-red-600" aria-label={`Remover ${locationLabel(location)}`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreferredLocations((current) => current.filter((item) => !sameLocation(item, location)));
+                        setLocationNotice({ tone: "info", text: `${locationLabel(location)} removida da lista. Salve para confirmar.` });
+                      }}
+                      className="ml-1 text-terracotta-500 hover:text-red-600"
+                      aria-label={`Remover ${locationLabel(location)}`}
+                    >
                       <Trash2 className="h-3 w-3" />
                     </button>
                   </span>
                 ))}
               </div>
+            ) : (
+              <p className="mt-4 text-[11px] text-stone-400">Nenhuma cidade adicional cadastrada.</p>
             )}
           </div>
         </div>
