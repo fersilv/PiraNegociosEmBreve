@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import {
-  Activity,
   AlertTriangle,
+  BellRing,
   Briefcase,
   Building2,
   Cpu,
@@ -53,6 +53,7 @@ const groups: AdminNavGroup[] = [
   {
     label: "Plataforma",
     items: [
+      { to: "/admin/notificacoes", label: "Notificações", icon: <BellRing className="h-4 w-4" /> },
       { to: "/admin/publicidade", label: "Publicidade", icon: <Megaphone className="h-4 w-4" /> },
       { to: "/admin/api", label: "API v1", icon: <KeyRound className="h-4 w-4" /> },
       { to: "/admin/ai", label: "Inteligência Artificial", icon: <Cpu className="h-4 w-4" /> },
@@ -79,8 +80,8 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
       <AdminTheme />
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[286px] flex-col border-r border-white/[0.05] bg-[#171714] text-white md:flex">
         <div className="px-5 pb-5 pt-6">
-          <Link to="/" className="font-serif text-xl font-bold text-white">
-            PiraNegócios
+          <Link to="/" className="inline-flex max-w-[205px] items-center">
+            <img src="/brand/logo-horizontal-white.png" alt="PiraNegócios" className="h-8 w-auto max-w-full object-contain object-left" />
           </Link>
           <div className="mt-5 rounded-[22px] border border-white/[0.08] bg-white/[0.04] p-3.5">
             <div className="flex items-center gap-3">
@@ -136,7 +137,9 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
       <div className="min-h-screen md:pl-[286px]">
         <header className="sticky top-0 z-20 flex h-[68px] items-center justify-between border-b border-stone-200/80 bg-[#f4f3ef]/92 px-4 backdrop-blur-xl md:px-7">
           <div className="flex items-center gap-3">
-            <span className="hidden h-9 w-9 items-center justify-center rounded-xl bg-stone-900 text-white md:flex"><Activity className="h-4 w-4" /></span>
+            <span className="hidden h-9 w-9 items-center justify-center md:flex">
+              <img src="/brand/symbol-terracotta.png" alt="" aria-hidden="true" className="h-8 w-8 object-contain" />
+            </span>
             <div>
               <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-stone-400">Operação</p>
               <p className="text-sm font-bold text-stone-900">PiraNegócios Control Center</p>
@@ -183,6 +186,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
+              <MoreLink to="/admin/notificacoes" icon={<BellRing className="h-4 w-4" />} label="Notificações" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/vagas/sinalizadas" icon={<AlertTriangle className="h-4 w-4" />} label="Vagas sinalizadas" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/vinculos" icon={<Link2 className="h-4 w-4" />} label="Vínculos" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/publicidade" icon={<Megaphone className="h-4 w-4" />} label="Publicidade" close={() => setMoreOpen(false)} />
