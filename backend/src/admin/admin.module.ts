@@ -18,6 +18,7 @@ import { RegistrationInterest } from './entities/registration-interest.entity';
 import { SettingsService } from './settings.service';
 import { SettingsController } from './settings.controller';
 import { AdminAiController } from './admin-ai.controller';
+import { AdminImageAiController } from './admin-image-ai.controller';
 import { AdminJobDetailsController } from './admin-job-details.controller';
 import { AdminJobFlagsController } from './admin-job-flags.controller';
 import { AdminRegistrationController, PublicRegistrationController } from './registration.controller';
@@ -46,6 +47,7 @@ import { RegistrationService } from './registration.service';
     AdminJobFlagsController,
     SettingsController,
     AdminAiController,
+    AdminImageAiController,
     AdminRegistrationController,
     PublicRegistrationController,
   ],
