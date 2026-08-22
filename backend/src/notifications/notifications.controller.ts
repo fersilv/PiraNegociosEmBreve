@@ -19,6 +19,39 @@ export class NotificationsController {
     return this.notifsService.findAllForUser(req.user.uid);
   }
 
+  @Get('push-status')
+  pushStatus(@Req() req: any) {
+    return this.notifsService.pushStatus(req.user.uid);
+  }
+
+  @Put('push-installation')
+  registerPushInstallation(
+    @Req() req: any,
+    @Body() body: { installationId?: unknown; platform?: unknown; userAgent?: unknown },
+  ) {
+    if (typeof body?.installationId !== 'string' || !body.installationId.trim() || body.installationId.length > 255) {
+      throw new BadRequestException('Identificador de instalação inválido.');
+    }
+    return this.notifsService.registerPushInstallation(req.user.uid, {
+      installationId: body.installationId,
+      platform: typeof body.platform === 'string' ? body.platform : null,
+      userAgent: typeof body.userAgent === 'string' ? body.userAgent : null,
+    });
+  }
+
+  @Delete('push-installation')
+  unregisterPushInstallation(@Req() req: any, @Body('installationId') installationId: unknown) {
+    if (typeof installationId !== 'string' || !installationId.trim() || installationId.length > 255) {
+      throw new BadRequestException('Identificador de instalação inválido.');
+    }
+    return this.notifsService.unregisterPushInstallation(req.user.uid, installationId.trim());
+  }
+
+  @Post('push-test')
+  sendTestPush(@Req() req: any) {
+    return this.notifsService.sendTestPush(req.user.uid);
+  }
+
   @Post()
   create(@Req() req: any, @Body() createData: Partial<Notification>) {
     if (createData.userId !== req.user.uid) {
