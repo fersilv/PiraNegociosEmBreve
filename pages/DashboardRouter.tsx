@@ -13,6 +13,7 @@ import { UserJobsPage } from "./UserJobsPage";
 import { UserPreferencesPage } from "./UserPreferencesPage";
 import { UserProfessionalProfilePage } from "./UserProfessionalProfilePage";
 import { UserAccountSettingsPage } from "./UserAccountSettingsPage";
+import { NotificationPreferencesPage } from "./NotificationPreferencesPage";
 import { AdminDashboard, ApiV1Panel } from "./AdminDashboard";
 import { AdminOverview } from "./AdminOverview";
 import { AdminAccountPage } from "./AdminAccountPage";
@@ -44,6 +45,7 @@ function AdminRoutes() {
       <Route path="publicidade" element={<AdminPage><AdminDashboard mode="moderation" section="advertising" /></AdminPage>} />
       <Route path="api" element={<AdminPage><div className="mx-auto max-w-7xl space-y-6 admin-standalone-page"><header><p className="text-xs font-bold uppercase tracking-[0.18em] text-terracotta-600">Infraestrutura · Integrações</p><h1 className="mt-1 text-3xl font-serif font-bold text-stone-900">API v1</h1><p className="mt-1 max-w-3xl text-stone-500">Gerencie chaves, origens, auditoria e a documentação da API de vagas.</p></header><section className="rounded-2xl border border-stone-200 bg-white shadow-sm admin-primary-surface"><ApiV1Panel /></section></div></AdminPage>} />
       <Route path="ai" element={<AdminPage><div className="mx-auto max-w-7xl space-y-6 admin-standalone-page admin-ai-page"><AiIntegrationsPanel /></div></AdminPage>} />
+      <Route path="notificacoes" element={<AdminPage><NotificationPreferencesPage /></AdminPage>} />
       <Route path="conta" element={<AdminPage><AdminAccountPage /></AdminPage>} />
       <Route path="*" element={<Navigate to="/admin" replace />} />
     </Routes>
@@ -58,6 +60,7 @@ function UserRoutes() {
       <Route path="vagas" element={<UserJobsPage />} />
       <Route path="curriculo" element={<ResumeWorkspace />} />
       <Route path="preferencias" element={<UserPreferencesPage />} />
+      <Route path="notificacoes" element={<NotificationPreferencesPage />} />
       <Route path="perfil" element={<UserProfessionalProfilePage />} />
       <Route path="configuracoes" element={<UserAccountSettingsPage />} />
       <Route path="admissao/:appId" element={<CandidateOnboardingPage />} />
@@ -77,6 +80,7 @@ function CompanyRoutes({ hasCompany }: { hasCompany: boolean }) {
       <Route path="vagas/:jobId" element={companyOnly(<CompanyJobPage />)} />
       <Route path="talentos" element={companyOnly(<TalentSearchPage />)} />
       <Route path="contratacao" element={companyOnly(<CompanyHiringConfig />)} />
+      <Route path="notificacoes" element={companyOnly(<NotificationPreferencesPage />)} />
       <Route path="perfil" element={<CompanyProfilePage />} />
       <Route path="*" element={<Navigate to={hasCompany ? "/company" : "/company/perfil"} replace />} />
     </Routes>
