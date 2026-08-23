@@ -14,6 +14,8 @@ const STOP_WORDS = new Set(['a','o','as','os','de','da','do','das','dos','em','p
 
 @Injectable()
 export class JobMatchService {
+  private readonly stagedProvidedProfiles = new Map<string, unknown>();
+
   constructor(
     @InjectRepository(Job) private readonly jobs: Repository<Job>,
     @InjectRepository(User) private readonly users: Repository<User>,
@@ -53,7 +55,51 @@ export class JobMatchService {
     });
   }
 
+  stageProvidedProfile(jobId: string, rawProfile: unknown) {
+    if (jobId && rawProfile !== undefined) this.stagedProvidedProfiles.set(jobId, rawProfile);
+  }
+
+  clearStagedProvidedProfile(jobId: string) {
+    this.stagedProvidedProfiles.delete(jobId);
+  }
+
+  private async storeProvidedProfile(job: Job, rawProfile: unknown) {
+    try {
+      const profile = this.ai.normalizeProvidedProfile(rawProfile);
+      const sourceFingerprint = this.jobFingerprint(job);
+      const rows = await this.dataSource.query(
+        `INSERT INTO job_match_profiles
+          ("jobId", status, "algorithmVersion", "sourceFingerprint", profile, error, "analyzedAt", "updatedAt")
+         VALUES ($1, 'READY', $2, $3, $4::jsonb, NULL, now(), now())
+         ON CONFLICT ("jobId") DO UPDATE SET
+           status = 'READY', "algorithmVersion" = EXCLUDED."algorithmVersion",
+           "sourceFingerprint" = EXCLUDED."sourceFingerprint", profile = EXCLUDED.profile,
+           error = NULL, "analyzedAt" = now(), "updatedAt" = now()
+         RETURNING *`,
+        [job.id, JOB_MATCH_ALGORITHM_VERSION, sourceFingerprint, JSON.stringify(profile)],
+      );
+      return { accepted: true, source: 'PROVIDED', profile: rows[0] || null };
+    } catch (error: any) {
+      return { accepted: false, source: 'PROVIDED', reason: String(error?.message || 'matchProfile inválido').slice(0, 1000) };
+    }
+  }
+
+  async acceptProvidedProfile(jobId: string, rawProfile: unknown) {
+    const job = await this.jobs.findOne({ where: { id: jobId } });
+    if (!job) throw new NotFoundException('Vaga não encontrada.');
+    this.clearStagedProvidedProfile(jobId);
+    return this.storeProvidedProfile(job, rawProfile);
+  }
+
   async analyzeActiveJob(job: Job, force = false) {
+    const staged = this.stagedProvidedProfiles.get(job.id);
+    if (staged !== undefined) {
+      this.stagedProvidedProfiles.delete(job.id);
+      const provided = await this.storeProvidedProfile(job, staged);
+      if (provided.accepted) return provided.profile;
+      console.warn(`Provided job match profile rejected for ${job.id}: ${provided.reason}`);
+    }
+
     if (!job.active) return null;
     const sourceFingerprint = this.jobFingerprint(job);
     const existing = await this.dataSource.query(`SELECT * FROM job_match_profiles WHERE "jobId" = $1 LIMIT 1`, [job.id]);
