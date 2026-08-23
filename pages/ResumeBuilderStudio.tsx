@@ -7,6 +7,13 @@ export function ResumeBuilderStudio() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    let redirectingLegacyModal = false;
+    const goToEvolution = () => {
+      if (redirectingLegacyModal) return;
+      redirectingLegacyModal = true;
+      navigate("/user/curriculo/evolucao");
+    };
+
     const interceptLegacyScoreActions = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
       const button = target?.closest("button");
@@ -20,11 +27,26 @@ export function ResumeBuilderStudio() {
       if (!legacyAction) return;
       event.preventDefault();
       event.stopPropagation();
-      navigate("/user/curriculo/evolucao");
+      goToEvolution();
     };
 
+    const redirectMountedLegacyModal = () => {
+      const legacyModal = Array.from(document.querySelectorAll<HTMLElement>("div.fixed.inset-0")).find((element) => {
+        const text = element.textContent || "";
+        return text.includes("Seu currículo está pronto.") && text.includes("Quero ver minha pontuação");
+      });
+      if (legacyModal) goToEvolution();
+    };
+
+    const observer = new MutationObserver(redirectMountedLegacyModal);
     document.addEventListener("click", interceptLegacyScoreActions, true);
-    return () => document.removeEventListener("click", interceptLegacyScoreActions, true);
+    observer.observe(document.body, { childList: true, subtree: true });
+    redirectMountedLegacyModal();
+
+    return () => {
+      document.removeEventListener("click", interceptLegacyScoreActions, true);
+      observer.disconnect();
+    };
   }, [navigate]);
 
   return (
