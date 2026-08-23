@@ -6,6 +6,12 @@ export function openBase64InNewTab(base64Data: string, title: string = 'Visualiz
   if (!base64Data) return;
 
   try {
+    if (base64Data.startsWith('structured://') || base64Data.startsWith('stored://')) {
+      console.warn('Internal resume marker cannot be opened as a browser URL:', base64Data);
+      alert('Este currículo usa uma versão estruturada do PiraNegócios. Abra a versão publicada pelo perfil do candidato.');
+      return;
+    }
+
     // If standard web URL, open in new tab
     if (!base64Data.startsWith('data:')) {
       window.open(base64Data, '_blank');
@@ -55,6 +61,11 @@ export function downloadBase64File(base64Data: string, filename: string = 'docum
   if (!base64Data) return;
 
   try {
+    if (base64Data.startsWith('structured://') || base64Data.startsWith('stored://')) {
+      console.warn('Internal resume marker cannot be downloaded as a file:', base64Data);
+      return;
+    }
+
     if (!base64Data.startsWith('data:')) {
       const tempLink = document.createElement('a');
       tempLink.href = base64Data;
@@ -97,4 +108,3 @@ export function downloadBase64File(base64Data: string, filename: string = 'docum
     console.error('Error downloading file:', err);
   }
 }
-
