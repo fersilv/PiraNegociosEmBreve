@@ -8,6 +8,7 @@ import { DataSource } from 'typeorm';
 import { PaymentProviderVaultService } from './payment-provider-vault.service';
 
 export type PaymentProviderCode = 'EFI' | 'MERCADO_PAGO';
+export type PaymentType = 'PIX' | 'PIX_AUTOMATICO';
 
 export interface EfiProviderConfig extends Record<string, unknown> {
   clientId?: string;
@@ -41,12 +42,20 @@ export class PaymentProviderConfigService {
     private readonly vault: PaymentProviderVaultService,
   ) {}
 
-  private normalizeCode(value: string): PaymentProviderCode {
+  normalizeCode(value: string): PaymentProviderCode {
     const code = String(value || '').trim().toUpperCase();
     if (!['EFI', 'MERCADO_PAGO'].includes(code)) {
       throw new BadRequestException('Forma de pagamento não suportada.');
     }
     return code as PaymentProviderCode;
+  }
+
+  normalizePaymentType(value: string): PaymentType {
+    const type = String(value || '').trim().toUpperCase();
+    if (!['PIX', 'PIX_AUTOMATICO'].includes(type)) {
+      throw new BadRequestException('Tipo de pagamento não suportado.');
+    }
+    return type as PaymentType;
   }
 
   private text(value: unknown, max = 4000) {
@@ -179,19 +188,37 @@ export class PaymentProviderConfigService {
       publicKeyConfigured: Boolean(config.publicKey),
       webhookSecretConfigured: Boolean(config.webhookSecret),
       publicApiBaseUrl: config.publicApiBaseUrl || null,
-      capabilities: ['PIX', 'SUBSCRIPTIONS'],
+      capabilities: ['PIX', 'PIX_AUTOMATICO'],
+      checkoutApi: 'ORDERS',
+      recurringApi: 'SUBSCRIPTIONS',
       sdk: 'mercadopago',
     };
+  }
+
+  private supportsType(code: PaymentProviderCode, config: Record<string, any>, type: PaymentType) {
+    if (type === 'PIX') return true;
+    if (code === 'EFI') return config.pixAutomaticEnabled === true;
+    return code === 'MERCADO_PAGO';
+  }
+
+  private async activeTypesFor(code: PaymentProviderCode) {
+    const rows = await this.dataSource.query(
+      `SELECT "paymentType" FROM payment_provider_routes WHERE enabled = true AND "providerCode" = $1 ORDER BY "paymentType"`,
+      [code],
+    );
+    return rows.map((row: any) => this.normalizePaymentType(row.paymentType));
   }
 
   private async presentRow(row: any) {
     const code = this.normalizeCode(row.code);
     const config = this.vault.decrypt<Record<string, any>>(row.encryptedConfig);
+    const activeFor = await this.activeTypesFor(code);
     return {
       code,
       name: row.name,
       description: row.description,
-      active: row.active === true,
+      active: activeFor.length > 0,
+      activeFor,
       configured: Boolean(row.encryptedConfig),
       configVersion: Number(row.configVersion || 0),
       lastHealthCheckAt: row.lastHealthCheckAt,
@@ -213,6 +240,32 @@ export class PaymentProviderConfigService {
     return this.presentRow(await this.getRow(code));
   }
 
+  async listRoutesSafe() {
+    const rows = await this.dataSource.query(
+      `SELECT r."paymentType", r.enabled, r."providerCode", r."activatedAt", p.name AS "providerName"
+       FROM payment_provider_routes r
+       LEFT JOIN payment_providers p ON p.code = r."providerCode"
+       ORDER BY CASE r."paymentType" WHEN 'PIX' THEN 1 ELSE 2 END`,
+    );
+    return rows.map((row: any) => ({
+      paymentType: this.normalizePaymentType(row.paymentType),
+      enabled: row.enabled === true,
+      providerCode: row.enabled && row.providerCode ? this.normalizeCode(row.providerCode) : null,
+      providerName: row.enabled ? row.providerName || null : null,
+      activatedAt: row.activatedAt || null,
+    }));
+  }
+
+  async publicRoutes() {
+    const routes = await this.listRoutesSafe();
+    return routes.reduce((result: Record<string, any>, route: any) => {
+      result[route.paymentType] = route.enabled && route.providerCode
+        ? { available: true, code: route.providerCode, name: route.providerName }
+        : { available: false, code: null, name: null };
+      return result;
+    }, {});
+  }
+
   async saveConfig(codeInput: string, input: Record<string, unknown>, adminUserId: string) {
     const code = this.normalizeCode(codeInput);
     const row = await this.getRow(code);
@@ -223,6 +276,11 @@ export class PaymentProviderConfigService {
     const encrypted = this.vault.encrypt(next);
 
     await this.dataSource.transaction(async (manager) => {
+      await manager.query(
+        `UPDATE payment_provider_routes SET enabled = false, "providerCode" = NULL, "activatedAt" = NULL, "updatedBy" = $2, "updatedAt" = now()
+         WHERE "providerCode" = $1`,
+        [code, adminUserId],
+      );
       await manager.query(
         `UPDATE payment_providers SET
            active = false,
@@ -241,7 +299,7 @@ export class PaymentProviderConfigService {
       await manager.query(
         `INSERT INTO payment_provider_audit ("providerCode", action, "actorUserId", metadata)
          VALUES ($1,'CONFIG_UPDATED',$2,$3::jsonb)`,
-        [code, adminUserId, JSON.stringify({ configVersion: Number(row.configVersion || 0) + 1 })],
+        [code, adminUserId, JSON.stringify({ configVersion: Number(row.configVersion || 0) + 1, routesDisabled: true })],
       );
     });
     return this.getSafe(code);
@@ -275,51 +333,67 @@ export class PaymentProviderConfigService {
     return this.getSafe(code);
   }
 
-  async activate(codeInput: string, adminUserId: string) {
+  async activateRoute(codeInput: string, paymentTypeInput: string, adminUserId: string) {
     const code = this.normalizeCode(codeInput);
-    return this.dataSource.transaction(async (manager) => {
-      const rows = await manager.query(
-        `SELECT * FROM payment_providers WHERE code = $1 FOR UPDATE`,
-        [code],
-      );
-      const row = rows[0];
-      if (!row) throw new NotFoundException('Forma de pagamento não encontrada.');
-      if (row.lastHealthCheckOk !== true) {
-        throw new BadRequestException('Esta forma de pagamento precisa passar pelo teste operacional antes de ser ativada.');
+    const paymentType = this.normalizePaymentType(paymentTypeInput);
+    const row = await this.getRow(code);
+    if (row.lastHealthCheckOk !== true) {
+      throw new BadRequestException('Este provedor precisa passar pelo teste operacional antes de ser habilitado.');
+    }
+    const config = this.vault.decrypt<Record<string, any>>(row.encryptedConfig);
+    if (!this.supportsType(code, config, paymentType)) {
+      if (code === 'EFI' && paymentType === 'PIX_AUTOMATICO') {
+        throw new BadRequestException('Ative e configure o Pix Automático dentro da Efí antes de selecionar este roteamento.');
       }
-      await manager.query(`UPDATE payment_providers SET active = false, "activatedAt" = NULL WHERE active = true`);
+      throw new BadRequestException('Este provedor não está configurado para este tipo de pagamento.');
+    }
+
+    await this.dataSource.transaction(async (manager) => {
       await manager.query(
-        `UPDATE payment_providers SET active = true, "activatedAt" = now(), "updatedBy" = $2, "updatedAt" = now() WHERE code = $1`,
-        [code, adminUserId],
+        `INSERT INTO payment_provider_routes ("paymentType","providerCode",enabled,"activatedAt","updatedBy","updatedAt")
+         VALUES ($1,$2,true,now(),$3,now())
+         ON CONFLICT ("paymentType") DO UPDATE SET
+           "providerCode" = EXCLUDED."providerCode", enabled = true, "activatedAt" = now(), "updatedBy" = EXCLUDED."updatedBy", "updatedAt" = now()`,
+        [paymentType, code, adminUserId],
       );
       await manager.query(
         `INSERT INTO payment_provider_audit ("providerCode", action, "actorUserId", metadata)
-         VALUES ($1,'ACTIVATED',$2,'{}'::jsonb)`,
-        [code, adminUserId],
+         VALUES ($1,'ROUTE_ACTIVATED',$2,$3::jsonb)`,
+        [code, adminUserId, JSON.stringify({ paymentType })],
       );
-      return { code, active: true };
     });
+    return this.listRoutesSafe();
   }
 
-  async deactivate(codeInput: string, adminUserId: string) {
-    const code = this.normalizeCode(codeInput);
-    await this.dataSource.query(
-      `UPDATE payment_providers SET active = false, "activatedAt" = NULL, "updatedBy" = $2, "updatedAt" = now() WHERE code = $1`,
-      [code, adminUserId],
-    );
-    await this.dataSource.query(
-      `INSERT INTO payment_provider_audit ("providerCode", action, "actorUserId", metadata)
-       VALUES ($1,'DEACTIVATED',$2,'{}'::jsonb)`,
-      [code, adminUserId],
-    );
-    return this.getSafe(code);
-  }
-
-  async activeProvider() {
+  async deactivateRoute(paymentTypeInput: string, adminUserId: string) {
+    const paymentType = this.normalizePaymentType(paymentTypeInput);
     const rows = await this.dataSource.query(
-      `SELECT * FROM payment_providers WHERE active = true LIMIT 1`,
+      `SELECT "providerCode" FROM payment_provider_routes WHERE "paymentType" = $1 LIMIT 1`,
+      [paymentType],
     );
-    return rows[0] ? this.normalizeCode(rows[0].code) : null;
+    const providerCode = rows[0]?.providerCode ? this.normalizeCode(rows[0].providerCode) : null;
+    await this.dataSource.query(
+      `UPDATE payment_provider_routes SET enabled = false, "providerCode" = NULL, "activatedAt" = NULL, "updatedBy" = $2, "updatedAt" = now()
+       WHERE "paymentType" = $1`,
+      [paymentType, adminUserId],
+    );
+    if (providerCode) {
+      await this.dataSource.query(
+        `INSERT INTO payment_provider_audit ("providerCode", action, "actorUserId", metadata)
+         VALUES ($1,'ROUTE_DEACTIVATED',$2,$3::jsonb)`,
+        [providerCode, adminUserId, JSON.stringify({ paymentType })],
+      );
+    }
+    return this.listRoutesSafe();
+  }
+
+  async activeProvider(paymentTypeInput: string) {
+    const paymentType = this.normalizePaymentType(paymentTypeInput);
+    const rows = await this.dataSource.query(
+      `SELECT "providerCode" FROM payment_provider_routes WHERE "paymentType" = $1 AND enabled = true LIMIT 1`,
+      [paymentType],
+    );
+    return rows[0]?.providerCode ? this.normalizeCode(rows[0].providerCode) : null;
   }
 
   vaultStatus() {
