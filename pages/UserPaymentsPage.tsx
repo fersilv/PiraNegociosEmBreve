@@ -27,6 +27,7 @@ export function UserPaymentsPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [credits, setCredits] = useState<Record<string, number>>({});
   const [billing, setBilling] = useState<any>({ lifetimeFree: false, isOpenToWork: false, entitlements: [], subscriptions: [] });
+  const [activeProvider, setActiveProvider] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState<string | null>(null);
   const [checkout, setCheckout] = useState<any>(null);
@@ -38,16 +39,18 @@ export function UserPaymentsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const [paymentsResponse, catalogResponse, creditsResponse, billingResponse] = await Promise.all([
+      const [paymentsResponse, catalogResponse, creditsResponse, billingResponse, providerResponse] = await Promise.all([
         api.get("/payments/me"),
         api.get("/payments/catalog"),
         api.get("/payments/me/credits"),
         api.get("/payments/me/billing-status"),
+        api.get("/payments/provider").catch(() => ({ data: null })),
       ]);
       setPayments(Array.isArray(paymentsResponse.data) ? paymentsResponse.data : []);
       setProducts(Array.isArray(catalogResponse.data) ? catalogResponse.data : []);
       setCredits(creditsResponse.data || {});
       setBilling(billingResponse.data || {});
+      setActiveProvider(providerResponse.data || null);
     } finally {
       setLoading(false);
     }
@@ -73,6 +76,7 @@ export function UserPaymentsPage() {
   const boostAccess = activeEntitlement("RESUME_BOOST");
   const earlyAlertAccess = activeEntitlement("EARLY_JOB_ALERTS");
   const activeSubscription = (billing.subscriptions || []).find((item: any) => item.status === "ACTIVE" && new Date(item.currentPeriodEnd).getTime() > Date.now());
+  const mercadoPagoActive = activeProvider?.code === "MERCADO_PAGO";
 
   const buy = async (productCode: string) => {
     const product = products.find((item) => item.code === productCode);
@@ -84,13 +88,26 @@ export function UserPaymentsPage() {
       if (!accepted) return;
     }
 
+    const needsPayerData = product?.billingType === "RECURRING" || mercadoPagoActive;
+    if (needsPayerData) {
+      const cpf = payerCpf.replace(/\D/g, "");
+      if (cpf.length !== 11) {
+        setMessage("Informe um CPF com 11 dígitos para gerar esta cobrança Pix.");
+        return;
+      }
+      if (product?.billingType === "RECURRING" && payerName.trim().length < 3) {
+        setMessage("Informe o nome completo para autorizar o Pix Automático.");
+        return;
+      }
+    }
+
     setBuying(productCode);
     setMessage("");
     setCheckout(null);
     setCopied(false);
     try {
       const payload: any = { productCode };
-      if (product?.billingType === "RECURRING") {
+      if (needsPayerData) {
         payload.payer = { name: payerName.trim(), document: payerCpf.replace(/\D/g, "") };
       }
       const response = await api.post("/payments/pix", payload);
@@ -102,7 +119,7 @@ export function UserPaymentsPage() {
       }
       setCheckout(response.data);
       if (!response.data?.checkoutReady) {
-        setMessage("A cobrança foi criada, mas a Efí não devolveu um QR Code utilizável. Confira a configuração do provedor.");
+        setMessage(`A cobrança foi criada, mas ${activeProvider?.name || "o provedor"} não devolveu um QR Code utilizável.`);
       }
       await load();
     } catch (error: any) {
@@ -133,7 +150,7 @@ export function UserPaymentsPage() {
           <h1 className="mt-1 font-serif text-3xl font-bold text-stone-900">Pagamentos e benefícios</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Compras, consultas de IA, Match Inteligente, impulso do currículo e assinatura ficam reunidos aqui. Os pagamentos aceitos são exclusivamente Pix.</p>
         </div>
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800"><QrCode className="mr-2 inline h-4 w-4" /> Pix via Efí Bank</div>
+        <div className={`rounded-2xl border px-4 py-3 text-sm font-bold ${activeProvider ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}><QrCode className="mr-2 inline h-4 w-4" /> {activeProvider ? `Pix via ${activeProvider.name}` : "Pix temporariamente indisponível"}</div>
       </div>
 
       {billing.lifetimeFree && (
@@ -174,25 +191,29 @@ export function UserPaymentsPage() {
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {availableProducts.map((product) => {
             const recurring = product.billingType === "RECURRING";
+            const recurringUnavailable = recurring && mercadoPagoActive && !billing.lifetimeFree;
+            const needsPayerData = !billing.lifetimeFree && (recurring || mercadoPagoActive);
             return (
               <div key={product.code} className={`rounded-2xl border p-4 ${product.code === "PREMIUM_MONTHLY" ? "border-violet-200 bg-violet-50/40" : "border-stone-200 bg-[#fffdfa]"}`}>
                 <div className="flex items-start justify-between gap-3">
-                  <div><p className="font-bold text-stone-900">{product.name}</p><p className="mt-1 text-xs leading-5 text-stone-500">{product.description}</p>{product.durationDays && <p className="mt-2 text-[10px] font-black uppercase tracking-wider text-violet-600">{recurring ? `Pix Automático · ciclo de ${product.durationDays} dias` : `Validade: ${product.durationDays} dias`}</p>}</div>
+                  <div><p className="font-bold text-stone-900">{product.name}</p><p className="mt-1 text-xs leading-5 text-stone-500">{product.description}</p>{product.durationDays && <p className="mt-2 text-[10px] font-black uppercase tracking-wider text-violet-600">{recurring ? `${activeProvider?.code === "EFI" ? "Pix Automático" : "Recorrente"} · ciclo de ${product.durationDays} dias` : `Validade: ${product.durationDays} dias`}</p>}</div>
                   <div className="text-right">{product.promotionActive && <p className="text-[10px] font-bold text-stone-400 line-through">{money(product.originalPriceCents)}</p>}<p className="text-xl font-black text-stone-900">{billing.lifetimeFree ? "Grátis" : money(product.effectivePriceCents)}</p>{recurring && !billing.lifetimeFree && <p className="text-[9px] font-bold text-stone-400">por ciclo</p>}</div>
                 </div>
 
-                {recurring && !billing.lifetimeFree && (
+                {needsPayerData && !recurringUnavailable && (
                   <div className="mt-4 rounded-xl border border-violet-100 bg-white/80 p-3">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-violet-700">Dados para o Pix Automático</p>
-                    <p className="mt-1 text-[11px] leading-4 text-stone-500">No ambiente real, a Efí usa estes dados para vincular a autorização da cobrança mensal. Em DEV a simulação continua funcionando sem cobrança.</p>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-violet-700">Dados do pagador</p>
+                    <p className="mt-1 text-[11px] leading-4 text-stone-500">{recurring ? "A Efí usa nome e CPF para criar a autorização do Pix Automático." : "O Mercado Pago exige o CPF para gerar a cobrança Pix. O e-mail vem da sua conta."}</p>
                     <div className="mt-3 grid gap-2">
-                      <input value={payerName} onChange={(event) => setPayerName(event.target.value)} placeholder="Nome completo" autoComplete="name" className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-violet-300" />
+                      {recurring && <input value={payerName} onChange={(event) => setPayerName(event.target.value)} placeholder="Nome completo" autoComplete="name" className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-violet-300" />}
                       <input value={payerCpf} onChange={(event) => setPayerCpf(event.target.value)} placeholder="CPF" inputMode="numeric" autoComplete="off" className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-violet-300" />
                     </div>
                   </div>
                 )}
 
-                <button type="button" onClick={() => void buy(product.code)} disabled={buying === product.code} className="mt-4 w-full rounded-xl bg-[#2b211c] px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{buying === product.code ? "Processando..." : billing.lifetimeFree ? "Ativar grátis" : recurring ? "Autorizar Pix Automático" : "Pagar com Pix"}</button>
+                {recurringUnavailable && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-4 text-amber-800">O Mercado Pago está ativo para Pix avulso, mas este plano mensal usa Pix Automático. No momento, ative a Efí para contratar este produto.</div>}
+
+                <button type="button" onClick={() => void buy(product.code)} disabled={buying === product.code || recurringUnavailable || (!activeProvider && !billing.lifetimeFree)} className="mt-4 w-full rounded-xl bg-[#2b211c] px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{buying === product.code ? "Processando..." : billing.lifetimeFree ? "Ativar grátis" : recurringUnavailable ? "Indisponível com Mercado Pago" : recurring ? "Autorizar Pix Automático" : "Pagar com Pix"}</button>
               </div>
             );
           })}
@@ -203,13 +224,13 @@ export function UserPaymentsPage() {
         {checkout?.pixCopyPaste && (
           <div className="mt-5 rounded-[24px] border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div><p className="text-[10px] font-black uppercase tracking-[.16em] text-emerald-700">Cobrança Efí criada</p><h3 className="mt-1 font-bold text-stone-950">Escaneie o QR ou use o Pix copia e cola</h3><p className="mt-1 text-xs text-stone-500">{checkout.product?.billingType === "RECURRING" ? "Este primeiro Pix também inicia a autorização do seu plano com Pix Automático." : "A liberação acontece automaticamente quando a Efí confirmar o pagamento."}</p></div>
+              <div><p className="text-[10px] font-black uppercase tracking-[.16em] text-emerald-700">Cobrança Pix criada</p><h3 className="mt-1 font-bold text-stone-950">Escaneie o QR ou use o Pix copia e cola</h3><p className="mt-1 text-xs text-stone-500">{checkout.product?.billingType === "RECURRING" ? "Este primeiro Pix também inicia a autorização do seu plano com Pix Automático." : `A liberação acontece automaticamente quando ${activeProvider?.name || "o provedor"} confirmar o pagamento.`}</p></div>
               {checkout.expiresAt && <span className="rounded-full bg-white px-3 py-1.5 text-[10px] font-bold text-stone-500">Expira {dateLabel(checkout.expiresAt)}</span>}
             </div>
             <div className="mt-4 grid gap-4 md:grid-cols-[220px_1fr] md:items-center">
               {checkout.qrCodeBase64 ? (
                 <div className="flex min-h-[210px] items-center justify-center rounded-2xl border border-emerald-100 bg-white p-3">
-                  <img src={checkout.qrCodeBase64} alt="QR Code Pix Efí" className="h-auto max-h-[190px] w-auto max-w-full" />
+                  <img src={String(checkout.qrCodeBase64).startsWith("data:") ? checkout.qrCodeBase64 : `data:image/png;base64,${checkout.qrCodeBase64}`} alt="QR Code Pix" className="h-auto max-h-[190px] w-auto max-w-full" />
                 </div>
               ) : (
                 <div className="flex min-h-[160px] items-center justify-center rounded-2xl border border-dashed border-emerald-200 bg-white/70 p-4 text-center text-xs text-stone-400">Use o código Pix ao lado para pagar.</div>
