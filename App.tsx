@@ -6,6 +6,7 @@ import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
 import { CookieConsent } from "./components/CookieConsent";
 import { AnalyticsTracker } from "./components/AnalyticsTracker";
 import { ResumeQualificationOrchestrator } from "./components/ResumeQualificationOrchestrator";
+import { PublishedResumeCompanyBridge } from "./components/PublishedResumeCompanyBridge";
 
 const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() =>
@@ -56,6 +57,7 @@ export default function App() {
           <AnalyticsTracker />
           {!isEmbed && <ContextualUtilityLink />}
           {!isEmbed && <ResumeQualificationOrchestrator />}
+          {!isEmbed && <PublishedResumeCompanyBridge />}
           <Suspense fallback={<RouteLoader />}>
             <Routes>
               <Route path="/" element={<Home />} />
