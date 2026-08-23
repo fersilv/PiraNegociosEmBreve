@@ -22,6 +22,7 @@ import {
   Phone,
   Laptop,
   AlertTriangle,
+  Zap,
 } from "lucide-react";
 import { sendNotificationToUser } from "../lib/notifications";
 import { openBase64InNewTab } from "../lib/fileViewer";
@@ -675,11 +676,16 @@ export function CompanyJobPage() {
                     {activeApps.map((app) => (
                       <tr
                         key={app.id}
-                        className="hover:bg-stone-50 transition-colors"
+                        className={`transition-colors ${app.boosted ? "bg-violet-50/45 hover:bg-violet-50" : "hover:bg-stone-50"}`}
                       >
                         <td className="px-4 py-4">
-                          <div className="font-bold text-stone-900">
-                            {app.candidateName}
+                          <div className="flex flex-wrap items-center gap-2 font-bold text-stone-900">
+                            <span>{app.candidateName}</span>
+                            {app.boosted && (
+                              <span title="Candidatura com Impulso ativo" className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-violet-700">
+                                <Zap className="h-3 w-3" /> Em destaque
+                              </span>
+                            )}
                           </div>
                           {app.candidateProfile?.email && (
                             <div className="text-xs text-stone-500">
