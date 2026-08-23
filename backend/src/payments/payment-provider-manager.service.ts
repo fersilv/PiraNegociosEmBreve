@@ -88,11 +88,20 @@ export class PaymentProviderManagerService {
 
     if (code === 'EFI') {
       try {
-        await this.efi.configureWebhooks();
+        await this.efi.configureWebhooks(paymentType);
       } catch (error: any) {
-        const message = error?.message || 'A Efí respondeu, mas o Webhook não pôde ser registrado.';
-        await this.providerConfig.recordHealth(code, false, String(message), { stage: 'WEBHOOK_CONFIGURATION' }, adminUserId);
-        throw new BadRequestException(`Efí não habilitada: ${message}`);
+        const responseMessage = error?.response?.message;
+        const message = typeof responseMessage === 'string'
+          ? responseMessage
+          : error?.message || 'A Efí respondeu, mas o Webhook não pôde ser registrado.';
+        await this.providerConfig.recordHealth(
+          code,
+          false,
+          String(message),
+          { stage: 'WEBHOOK_CONFIGURATION', paymentType },
+          adminUserId,
+        );
+        throw new BadRequestException(`Efí não habilitada para ${paymentType === 'PIX' ? 'Pix avulso' : 'Pix Automático'}: ${message}`);
       }
     }
 
