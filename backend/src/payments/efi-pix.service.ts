@@ -45,6 +45,11 @@ interface EfiRecurrenceResponse {
   loc?: { id?: number; location?: string; idRec?: string };
 }
 
+type RecurrenceMetaRow = {
+  row: any;
+  metadata: Record<string, any>;
+};
+
 export interface EfiPayerInput {
   name?: string;
   document?: string;
@@ -290,7 +295,9 @@ export class EfiPixService {
     const config = await this.config();
     this.assertConfigured(config);
     const webhookUrl = this.webhookUrl(config);
-    const headers = config.skipMtlsChecking === true ? { 'x-skip-mtls-checking': 'true' } : {};
+    const headers: Record<string, string> = config.skipMtlsChecking === true
+      ? { 'x-skip-mtls-checking': 'true' }
+      : {};
     const encodedKey = encodeURIComponent(String(config.pixKey));
     const pix = await this.api<any>(config, 'PUT', `/v2/webhook/${encodedKey}`, { webhookUrl }, headers);
     let recurrence: any = null;
@@ -359,7 +366,7 @@ export class EfiPixService {
         `SELECT p.*, pp.name AS "productName" FROM payments p LEFT JOIN payment_products pp ON pp.code = p."productCode"
          WHERE p.provider = 'EFI' AND p.metadata->>'efiRecurrenceId' = $1 ORDER BY p."createdAt" ASC`, [idRec]);
       if (!rows.length) return { created: false, reason: 'payment_not_found' } as any;
-      const metaRows = rows.map((row: any) => ({ row, metadata: this.parseMetadata(row.metadata) }));
+      const metaRows: RecurrenceMetaRow[] = rows.map((row: any) => ({ row, metadata: this.parseMetadata(row.metadata) }));
       const first = metaRows.find((item) => !item.metadata.efiAutomaticRenewal)?.row || rows[0];
       if (first.status !== 'PAID') return { created: false, reason: 'initial_payment_pending' } as any;
       const recurrenceStatus = String([...metaRows].reverse().find((item) => item.metadata.efiRecurrenceStatus)?.metadata.efiRecurrenceStatus || '').toUpperCase();
