@@ -5,6 +5,7 @@ import { MercadoPagoService, type MercadoPagoPayerInput } from './mercado-pago.s
 import {
   PaymentProviderConfigService,
   type PaymentProviderCode,
+  type PaymentType,
 } from './payment-provider-config.service';
 
 export interface PaymentCheckoutPayer extends EfiPayerInput, MercadoPagoPayerInput {}
@@ -20,6 +21,14 @@ export class PaymentProviderManagerService {
 
   list() {
     return this.providerConfig.listSafe();
+  }
+
+  routes() {
+    return this.providerConfig.listRoutesSafe();
+  }
+
+  publicRoutes() {
+    return this.providerConfig.publicRoutes();
   }
 
   get(code: string) {
@@ -41,7 +50,7 @@ export class PaymentProviderManagerService {
   }
 
   async test(codeInput: string, adminUserId?: string) {
-    const code = String(codeInput || '').trim().toUpperCase() as PaymentProviderCode;
+    const code = this.providerConfig.normalizeCode(codeInput);
     try {
       const adapter: any = this.adapter(code);
       const result = await adapter.healthCheck();
@@ -67,8 +76,9 @@ export class PaymentProviderManagerService {
     }
   }
 
-  async activate(codeInput: string, adminUserId: string) {
-    const code = String(codeInput || '').trim().toUpperCase() as PaymentProviderCode;
+  async activate(codeInput: string, paymentTypeInput: string, adminUserId: string) {
+    const code = this.providerConfig.normalizeCode(codeInput);
+    const paymentType = this.providerConfig.normalizePaymentType(paymentTypeInput);
     const tested = await this.test(code, adminUserId);
     if (tested.lastHealthCheckOk !== true) {
       throw new BadRequestException(
@@ -82,26 +92,31 @@ export class PaymentProviderManagerService {
       } catch (error: any) {
         const message = error?.message || 'A Efí respondeu, mas o Webhook não pôde ser registrado.';
         await this.providerConfig.recordHealth(code, false, String(message), { stage: 'WEBHOOK_CONFIGURATION' }, adminUserId);
-        throw new BadRequestException(`Efí não ativada: ${message}`);
+        throw new BadRequestException(`Efí não habilitada: ${message}`);
       }
     }
 
-    await this.providerConfig.activate(code, adminUserId);
-    return this.providerConfig.getSafe(code);
+    const routes = await this.providerConfig.activateRoute(code, paymentType, adminUserId);
+    return { provider: await this.providerConfig.getSafe(code), routes };
   }
 
-  deactivate(code: string, adminUserId: string) {
-    return this.providerConfig.deactivate(code, adminUserId);
+  deactivate(paymentType: string, adminUserId: string) {
+    return this.providerConfig.deactivateRoute(paymentType, adminUserId);
   }
 
   async createCheckout(
     payment: any,
     payerInput: PaymentCheckoutPayer = {},
   ) {
-    const active = await this.providerConfig.activeProvider();
+    const paymentType: PaymentType = payment.product?.billingType === 'RECURRING'
+      ? 'PIX_AUTOMATICO'
+      : 'PIX';
+    const active = await this.providerConfig.activeProvider(paymentType);
     if (!active) {
       throw new ServiceUnavailableException(
-        'Nenhuma forma de pagamento está ativa. Um administrador precisa testar e ativar uma integração em Formas de pagamento.',
+        paymentType === 'PIX_AUTOMATICO'
+          ? 'Nenhum provedor está habilitado para Pix Automático. Configure a rota em Formas de pagamento.'
+          : 'Nenhum provedor está habilitado para Pix. Configure a rota em Formas de pagamento.',
       );
     }
 
@@ -117,7 +132,7 @@ export class PaymentProviderManagerService {
     };
 
     if (active === 'EFI') {
-      return payment.product?.billingType === 'RECURRING'
+      return paymentType === 'PIX_AUTOMATICO'
         ? this.efi.createMonthlyAutomaticCharge(
             Number(payment.amountCents),
             payment.id,
@@ -132,17 +147,21 @@ export class PaymentProviderManagerService {
     }
 
     if (active === 'MERCADO_PAGO') {
-      if (payment.product?.billingType === 'RECURRING') {
-        return this.mercadoPago.createRecurringCheckout();
-      }
-      return this.mercadoPago.createImmediateCharge(
-        Number(payment.amountCents),
-        payment.id,
-        payment.product?.name || payment.productCode,
-        payer,
-      );
+      return paymentType === 'PIX_AUTOMATICO'
+        ? this.mercadoPago.createRecurringCheckout(
+            Number(payment.amountCents),
+            payment.id,
+            payment.product?.name || payment.productCode,
+            payer,
+          )
+        : this.mercadoPago.createImmediateCharge(
+            Number(payment.amountCents),
+            payment.id,
+            payment.product?.name || payment.productCode,
+            payer,
+          );
     }
 
-    throw new ServiceUnavailableException('A forma de pagamento ativa não possui adapter carregado.');
+    throw new ServiceUnavailableException('A forma de pagamento selecionada não possui adapter carregado.');
   }
 }
