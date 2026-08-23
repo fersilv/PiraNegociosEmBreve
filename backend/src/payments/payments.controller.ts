@@ -58,7 +58,24 @@ export class PaymentsController {
         message: 'Conta vitalícia: este recurso não exige pagamento.',
       };
     }
-    return this.payments.createPixPayment(req.user.uid, productCode);
+
+    const payment = await this.payments.createPixPayment(req.user.uid, productCode);
+    const devMode = await this.payments.getDevMode();
+    if (devMode.enabled) {
+      const settled = await this.payments.simulatePayment(payment.id, req.user.uid);
+      return {
+        ...payment,
+        ...settled,
+        product: payment.product,
+        paymentRequired: false,
+        checkoutReady: false,
+        providerConfigured: false,
+        devSimulation: true,
+        message: 'Modo DEV: pagamento simulado e benefício liberado automaticamente, sem contabilizar receita real.',
+      };
+    }
+
+    return payment;
   }
 
   @Get('me/resume-history')
