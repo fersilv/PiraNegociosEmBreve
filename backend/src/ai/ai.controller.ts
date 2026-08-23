@@ -51,7 +51,7 @@ export class AiController {
 
   @Get('status')
   async getStatus(@Req() req: any) {
-    const [status, user, reanalysisProduct, improvementProduct, importProduct, credits, lifetimeFree] = await Promise.all([
+    const [status, user, reanalysisProduct, improvementProduct, importProduct, credits, lifetimeFree, devMode] = await Promise.all([
       this.aiService.getStatus(),
       this.usersRepository.findOne({ where: { id: req.user.uid } }),
       this.paymentsService.findProduct('RESUME_REANALYSIS', true),
@@ -59,7 +59,9 @@ export class AiController {
       this.paymentsService.findProduct('RESUME_AI_IMPORT', true),
       this.paymentsService.getCredits(req.user.uid),
       this.billingSupport.isLifetimeFree(req.user.uid),
+      this.paymentsService.getDevMode(),
     ]);
+    const paymentAccessOverride = lifetimeFree || devMode.enabled;
 
     const analysisCount = Number(user?.aiAnalysisCount || 0);
     const freeAnalysisLimit = user?.aiAnalysisLimit ?? Number(reanalysisProduct.freeUses ?? 1);
@@ -67,7 +69,7 @@ export class AiController {
     const hasSavedResumeAnalysis = Boolean(user?.aiAnalysis && user?.hasAiAnalyzed);
     const reanalysisFreeNow = Boolean(reanalysisProduct.enabled) && Number(reanalysisProduct.effectivePriceCents || 0) === 0;
     const resumeReanalysisPaymentRequired =
-      !lifetimeFree &&
+      !paymentAccessOverride &&
       Boolean(reanalysisProduct.enabled) &&
       Number(reanalysisProduct.effectivePriceCents || 0) > 0 &&
       !freeResumeAnalysisAvailable &&
@@ -80,7 +82,7 @@ export class AiController {
     const freeResumeImportAvailable = importCount < freeImportLimit;
     const importFreeNow = Boolean(importProduct.enabled) && Number(importProduct.effectivePriceCents || 0) === 0;
     const resumeImportPaymentRequired =
-      !lifetimeFree &&
+      !paymentAccessOverride &&
       Boolean(importProduct.enabled) &&
       Number(importProduct.effectivePriceCents || 0) > 0 &&
       !freeResumeImportAvailable &&
@@ -88,7 +90,7 @@ export class AiController {
 
     const improvementFreeNow = Boolean(improvementProduct.enabled) && Number(improvementProduct.effectivePriceCents || 0) === 0;
     const resumeImprovementPaymentRequired =
-      !lifetimeFree &&
+      !paymentAccessOverride &&
       Boolean(improvementProduct.enabled) &&
       Number(improvementProduct.effectivePriceCents || 0) > 0 &&
       Number(credits.RESUME_AI_IMPROVEMENT || 0) <= 0;
@@ -96,6 +98,8 @@ export class AiController {
     return {
       ...status,
       lifetimeFree,
+      devMode: devMode.enabled,
+      paymentAccessOverride,
       resumeScorePaymentRequired,
       resumeReanalysisPaymentRequired,
       resumeImprovementPaymentRequired,
@@ -112,27 +116,29 @@ export class AiController {
         import: importProduct,
       },
       availability: {
-        reanalysis: lifetimeFree || freeResumeAnalysisAvailable || reanalysisFreeNow || Number(credits.RESUME_REANALYSIS || 0) > 0 || Boolean(reanalysisProduct.enabled),
-        improvement: lifetimeFree || improvementFreeNow || Number(credits.RESUME_AI_IMPROVEMENT || 0) > 0 || Boolean(improvementProduct.enabled),
-        import: lifetimeFree || freeResumeImportAvailable || importFreeNow || Number(credits.RESUME_AI_IMPORT || 0) > 0 || Boolean(importProduct.enabled),
+        reanalysis: paymentAccessOverride || freeResumeAnalysisAvailable || reanalysisFreeNow || Number(credits.RESUME_REANALYSIS || 0) > 0 || Boolean(reanalysisProduct.enabled),
+        improvement: paymentAccessOverride || improvementFreeNow || Number(credits.RESUME_AI_IMPROVEMENT || 0) > 0 || Boolean(improvementProduct.enabled),
+        import: paymentAccessOverride || freeResumeImportAvailable || importFreeNow || Number(credits.RESUME_AI_IMPORT || 0) > 0 || Boolean(importProduct.enabled),
       },
     };
   }
 
   private async runResumeImport(userId: string, documents: ResumeSourceDocumentInput[]) {
-    const [user, product, credits, lifetimeFree] = await Promise.all([
+    const [user, product, credits, lifetimeFree, devMode] = await Promise.all([
       this.requireUser(userId),
       this.paymentsService.findProduct('RESUME_AI_IMPORT', true),
       this.paymentsService.getCredits(userId),
       this.billingSupport.isLifetimeFree(userId),
+      this.paymentsService.getDevMode(),
     ]);
+    const paymentAccessOverride = lifetimeFree || devMode.enabled;
     const count = Number(user.aiImportCount || 0);
     const freeLimit = user.aiImportLimit ?? Number(product.freeUses ?? 1);
     const freeAvailable = count < freeLimit;
     const freeNow = Boolean(product.enabled) && Number(product.effectivePriceCents || 0) === 0;
     const paidCreditAvailable = Number(credits.RESUME_AI_IMPORT || 0) > 0;
 
-    if (!lifetimeFree && !freeAvailable && !freeNow && !paidCreditAvailable) {
+    if (!paymentAccessOverride && !freeAvailable && !freeNow && !paidCreditAvailable) {
       if (!product.enabled) {
         throw new ForbiddenException({
           code: 'AI_IMPORT_UNAVAILABLE',
@@ -148,7 +154,7 @@ export class AiController {
     }
 
     let consumed = false;
-    if (!lifetimeFree && !freeAvailable && !freeNow && paidCreditAvailable) {
+    if (!paymentAccessOverride && !freeAvailable && !freeNow && paidCreditAvailable) {
       await this.paymentsService.consumeCredit(userId, 'RESUME_AI_IMPORT');
       consumed = true;
     }
@@ -195,19 +201,21 @@ export class AiController {
       throw new BadRequestException('Envie os dados do currículo para avaliação.');
     }
 
-    const [user, product, credits, lifetimeFree] = await Promise.all([
+    const [user, product, credits, lifetimeFree, devMode] = await Promise.all([
       this.requireUser(req.user.uid),
       this.paymentsService.findProduct('RESUME_REANALYSIS', true),
       this.paymentsService.getCredits(req.user.uid),
       this.billingSupport.isLifetimeFree(req.user.uid),
+      this.paymentsService.getDevMode(),
     ]);
+    const paymentAccessOverride = lifetimeFree || devMode.enabled;
 
     const analysisCount = Number(user.aiAnalysisCount || 0);
     const freeAnalysisLimit = user.aiAnalysisLimit ?? Number(product.freeUses ?? 1);
     const freeAvailable = analysisCount < freeAnalysisLimit;
     const freeNow = Boolean(product.enabled) && Number(product.effectivePriceCents || 0) === 0;
     const paidCreditAvailable = Number(credits.RESUME_REANALYSIS || 0) > 0;
-    const canRunNewAnalysis = lifetimeFree || freeAvailable || freeNow || paidCreditAvailable;
+    const canRunNewAnalysis = paymentAccessOverride || freeAvailable || freeNow || paidCreditAvailable;
 
     if (!canRunNewAnalysis) {
       if (!product.enabled) {
@@ -225,7 +233,7 @@ export class AiController {
     }
 
     let consumed = false;
-    if (!lifetimeFree && !freeAvailable && !freeNow && paidCreditAvailable) {
+    if (!paymentAccessOverride && !freeAvailable && !freeNow && paidCreditAvailable) {
       await this.paymentsService.consumeCredit(req.user.uid, 'RESUME_REANALYSIS');
       consumed = true;
     }
@@ -251,15 +259,17 @@ export class AiController {
 
   @Post('improve-resume')
   async improveResume(@Req() req: any) {
-    const [user, product, credits, lifetimeFree] = await Promise.all([
+    const [user, product, credits, lifetimeFree, devMode] = await Promise.all([
       this.requireUser(req.user.uid),
       this.paymentsService.findProduct('RESUME_AI_IMPROVEMENT', true),
       this.paymentsService.getCredits(req.user.uid),
       this.billingSupport.isLifetimeFree(req.user.uid),
+      this.paymentsService.getDevMode(),
     ]);
+    const paymentAccessOverride = lifetimeFree || devMode.enabled;
     const freeNow = Boolean(product.enabled) && Number(product.effectivePriceCents || 0) === 0;
     const paidCreditAvailable = Number(credits.RESUME_AI_IMPROVEMENT || 0) > 0;
-    if (!lifetimeFree && !freeNow && !paidCreditAvailable) {
+    if (!paymentAccessOverride && !freeNow && !paidCreditAvailable) {
       if (!product.enabled) {
         throw new ForbiddenException({ code: 'IMPROVEMENT_UNAVAILABLE', message: 'A otimização profissional por IA está temporariamente indisponível.' });
       }
@@ -272,7 +282,7 @@ export class AiController {
     }
 
     let consumed = false;
-    if (!lifetimeFree && !freeNow && paidCreditAvailable) {
+    if (!paymentAccessOverride && !freeNow && paidCreditAvailable) {
       await this.paymentsService.consumeCredit(req.user.uid, 'RESUME_AI_IMPROVEMENT');
       consumed = true;
     }
