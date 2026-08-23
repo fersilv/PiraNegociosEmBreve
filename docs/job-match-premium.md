@@ -90,6 +90,47 @@ A chave de cache deve considerar, no mínimo:
 
 O resultado só é recalculado quando currículo, vaga ou algoritmo mudar. Isso transforma o produto de `IA por pageview` em `IA por mudança relevante`, mantendo custo previsível.
 
+## Ficha de Match fornecida pela API externa
+
+Fontes que já usam IA para estruturar a vaga podem enviar opcionalmente `matchProfile` no `POST /v1/jobs`, no `PATCH /v1/jobs/:id` e, quando necessário, na verificação. Quando a ficha é válida, ela é persistida como `READY` com o fingerprint atual da vaga e evita uma nova chamada da IA interna.
+
+O endpoint autenticado `GET /v1/jobs/match-profile-schema` devolve o schema e um exemplo atualizado para agentes de ingestão.
+
+Estrutura aceita:
+
+```json
+{
+  "matchProfile": {
+    "canonicalRole": "Operador de Colhedora",
+    "occupationalFamily": "Operação de máquinas agrícolas e colheita mecanizada",
+    "occupationKeywords": ["colhedora", "máquinas agrícolas", "colheita mecanizada"],
+    "technicalSkills": [
+      {
+        "name": "Operação de colhedora",
+        "required": true,
+        "weight": 2,
+        "evidenceTerms": ["colhedora", "máquina de colheita"]
+      }
+    ],
+    "requirements": [
+      {
+        "label": "Experiência com operação de colhedora",
+        "type": "EXPERIENCE",
+        "required": true,
+        "weight": 2,
+        "evidenceTerms": ["operação de colhedora", "colheita mecanizada"]
+      }
+    ],
+    "softSkills": ["Trabalho em equipe"],
+    "summary": "Perfil para operação segura de colhedoras e apoio à colheita mecanizada."
+  }
+}
+```
+
+`canonicalRole` e `occupationalFamily` são obrigatórios quando `matchProfile` for enviado. A ficha descreve somente a vaga. Ela nunca pode enviar ou definir score de candidato; a compatibilidade continua sendo calculada pelo PiraNegócios contra cada currículo.
+
+Se a ficha externa for inválida, ela é rejeitada e o fluxo interno continua disponível como fallback. Em atualização de vaga ativa, a ficha fornecida é preparada antes do subscriber para evitar uma chamada duplicada quando for válida.
+
 ## Próximo passo técnico
 
 Criar `job_match_results` com score estruturado, explicações, hashes/versões e timestamps. Depois substituir a nota local do frontend pelos resultados persistidos do backend e só então ativar o produto de 30 dias.
