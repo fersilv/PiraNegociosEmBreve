@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminGuard } from '../admin/admin.guard';
+import { JobMatchModule } from '../job-match/job-match.module';
 import { Job } from '../jobs/entities/job.entity';
 import { User } from '../users/entities/user.entity';
 import { ApiKeyGuard } from './api-key.guard';
@@ -12,6 +13,7 @@ import { ExternalApiRequest } from './entities/external-api-request.entity';
 
 @Module({
   imports: [
+    JobMatchModule,
     TypeOrmModule.forFeature([
       ExternalApiClient,
       ExternalApiRequest,
