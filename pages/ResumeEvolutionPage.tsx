@@ -53,6 +53,8 @@ export function ResumeEvolutionPage() {
   const reanalysisCredit = Number(aiStatus?.credits?.RESUME_REANALYSIS || 0);
   const improvementCredit = Number(aiStatus?.credits?.RESUME_AI_IMPROVEMENT || 0);
   const freeAnalysis = Boolean(aiStatus?.freeResumeAnalysisAvailable);
+  const paymentAccessOverride = Boolean(aiStatus?.paymentAccessOverride);
+  const accessLabel = aiStatus?.devMode ? "Liberado em DEV" : aiStatus?.lifetimeFree ? "Incluído no vitalício" : "Disponível";
 
   const bestScore = useMemo(() => analyses.reduce((best: number, item: any) => Math.max(best, Number(item.score || 0)), currentScore || 0), [analyses, currentScore]);
   const firstScore = analyses.length > 0 ? Number(analyses[analyses.length - 1]?.score || 0) : currentScore;
@@ -63,12 +65,12 @@ export function ResumeEvolutionPage() {
     setMessage("");
     try {
       const response = await api.post("/payments/pix", { productCode });
-      if (response.data?.checkoutReady && response.data?.pixCopyPaste) {
-        navigate("/user/pagamentos");
-      } else {
-        setMessage("O pedido Pix foi registrado. Abra Pagamentos para acompanhar a cobrança; o QR Code depende da conexão do provedor Pix.");
-        navigate("/user/pagamentos");
+      if (response.data?.paymentRequired === false) {
+        await load();
+        setMessage(response.data?.message || "Recurso liberado sem cobrança.");
+        return;
       }
+      navigate("/user/pagamentos");
     } catch (error: any) {
       setMessage(error?.response?.data?.message || "Não foi possível criar o Pix agora.");
     } finally {
@@ -78,7 +80,7 @@ export function ResumeEvolutionPage() {
 
   const reanalyze = async () => {
     if (!profile) return;
-    const canRun = freeAnalysis || reanalysisCredit > 0 || Number(reanalysisProduct?.effectivePriceCents || 0) === 0;
+    const canRun = paymentAccessOverride || freeAnalysis || reanalysisCredit > 0 || Number(reanalysisProduct?.effectivePriceCents || 0) === 0;
     if (!canRun) return void buy("RESUME_REANALYSIS");
     setWorking("reanalyze");
     setMessage("");
@@ -96,7 +98,7 @@ export function ResumeEvolutionPage() {
   };
 
   const requestImprovement = async () => {
-    const canRun = improvementCredit > 0 || Number(improvementProduct?.effectivePriceCents || 0) === 0;
+    const canRun = paymentAccessOverride || improvementCredit > 0 || Number(improvementProduct?.effectivePriceCents || 0) === 0;
     if (!canRun) return void buy("RESUME_AI_IMPROVEMENT");
     setWorking("improve");
     setMessage("");
@@ -166,6 +168,11 @@ export function ResumeEvolutionPage() {
         <Link to="/user/pagamentos" className="inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-xs font-bold text-stone-700 shadow-sm"><QrCode className="h-4 w-4" /> Pagamentos</Link>
       </header>
 
+      {paymentAccessOverride && (
+        <div className={`rounded-2xl border p-4 text-sm font-semibold ${aiStatus?.devMode ? "border-violet-200 bg-violet-50 text-violet-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+          {aiStatus?.devMode ? "Modo DEV ativo: análises e melhorias podem ser testadas sem cobrança nem consumo de créditos." : "Conta vitalícia: análises e melhorias estão liberadas sem cobrança nem consumo de créditos."}
+        </div>
+      )}
       {message && <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">{message}</div>}
 
       <section className="grid gap-3 sm:grid-cols-3">
@@ -183,15 +190,15 @@ export function ResumeEvolutionPage() {
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <ActionCard
               title={currentScore === null ? "Fazer primeira análise" : "Reavaliar currículo"}
-              description={freeAnalysis ? "Sua primeira análise é gratuita." : reanalysisCredit > 0 ? `Você tem ${reanalysisCredit} crédito disponível.` : "Atualize a pontuação depois das suas mudanças."}
-              price={freeAnalysis || reanalysisCredit > 0 ? "Disponível" : money(reanalysisProduct?.effectivePriceCents || 199)}
+              description={paymentAccessOverride ? (aiStatus?.devMode ? "Teste liberado pelo modo DEV." : "Incluído no acesso vitalício.") : freeAnalysis ? "Sua primeira análise é gratuita." : reanalysisCredit > 0 ? `Você tem ${reanalysisCredit} crédito disponível.` : "Atualize a pontuação depois das suas mudanças."}
+              price={paymentAccessOverride ? accessLabel : freeAnalysis || reanalysisCredit > 0 ? "Disponível" : money(reanalysisProduct?.effectivePriceCents || 199)}
               loading={working === "reanalyze" || working === "RESUME_REANALYSIS"}
               onClick={() => void reanalyze()}
             />
             <ActionCard
               title="Melhorar com IA"
-              description="Receba sugestões profissionais, escolha quais aceitar e ganhe nova análise ao final."
-              price={improvementCredit > 0 ? `${improvementCredit} crédito` : money(improvementProduct?.effectivePriceCents || 499)}
+              description={paymentAccessOverride ? (aiStatus?.devMode ? "Teste liberado pelo modo DEV, sem consumir crédito." : "Incluído no acesso vitalício.") : "Receba sugestões profissionais, escolha quais aceitar e ganhe nova análise ao final."}
+              price={paymentAccessOverride ? accessLabel : improvementCredit > 0 ? `${improvementCredit} crédito` : money(improvementProduct?.effectivePriceCents || 499)}
               loading={working === "improve" || working === "RESUME_AI_IMPROVEMENT"}
               featured
               onClick={() => void requestImprovement()}
