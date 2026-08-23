@@ -173,11 +173,10 @@ export class PaymentsService {
       throw new BadRequestException('Este recurso não exige pagamento no momento.');
     }
 
-    const provider = String(process.env.PIX_PROVIDER || 'EFI').trim().toUpperCase() || 'EFI';
     const rows = await this.dataSource.query(
       `INSERT INTO payments
         ("userId", "productCode", method, status, "originalAmountCents", "amountCents", "discountCents", provider, metadata)
-       VALUES ($1, $2, 'PIX', 'PENDING', $3, $4, $5, $6, $7::jsonb)
+       VALUES ($1, $2, 'PIX', 'PENDING', $3, $4, $5, NULL, $6::jsonb)
        RETURNING *`,
       [
         userId,
@@ -185,7 +184,6 @@ export class PaymentsService {
         Number(product.originalPriceCents || amountCents),
         amountCents,
         Number(product.discountCents || 0),
-        provider,
         JSON.stringify({ promotionActive: Boolean(product.promotionActive) }),
       ],
     );
@@ -193,8 +191,8 @@ export class PaymentsService {
     return {
       ...rows[0],
       product,
-      checkoutReady: Boolean(rows[0].pixCopyPaste || rows[0].qrCodeBase64),
-      providerConfigured: Boolean(provider),
+      checkoutReady: false,
+      providerConfigured: false,
     };
   }
 
@@ -222,7 +220,7 @@ export class PaymentsService {
        RETURNING *`,
       [
         paymentId,
-        String(checkout.provider || 'EFI').toUpperCase(),
+        String(checkout.provider || '').toUpperCase(),
         checkout.providerPaymentId,
         checkout.pixCopyPaste || null,
         checkout.qrCodeBase64 || null,
