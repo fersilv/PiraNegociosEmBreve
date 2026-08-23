@@ -224,22 +224,26 @@ export class ResumeImprovementService {
   private async generate(config: RuntimeConfig, prompt: string, system: string) {
     if (config.provider === 'OPENAI') {
       const openai = new OpenAI({ apiKey: config.apiKey });
-      const response = await openai.responses.create({
+      const response: any = await openai.responses.create({
         model: config.model,
         instructions: system,
         input: prompt,
-        max_output_tokens: 5000,
+        max_output_tokens: 8000,
       });
+      if (response?.status === 'incomplete') {
+        throw new Error(`AI_JSON_TRUNCATED:${response?.incomplete_details?.reason || 'incomplete'}`);
+      }
       return this.parseJson(response.output_text || '{}');
     }
     if (config.provider === 'ANTHROPIC') {
       const anthropic = new Anthropic({ apiKey: config.apiKey });
-      const response = await anthropic.messages.create({
+      const response: any = await anthropic.messages.create({
         model: config.model,
         system,
-        max_tokens: 5000,
+        max_tokens: 8000,
         messages: [{ role: 'user', content: prompt }],
       });
+      if (response?.stop_reason === 'max_tokens') throw new Error('AI_JSON_TRUNCATED:max_tokens');
       const text = response.content.filter((block: any) => block.type === 'text').map((block: any) => block.text).join('\n');
       return this.parseJson(text || '{}');
     }
@@ -251,14 +255,20 @@ export class ResumeImprovementService {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 5000 },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8000 },
         }),
       },
     );
     const raw = await response.text();
     if (!response.ok) throw new Error(`Google Gemini respondeu HTTP ${response.status}${raw ? `: ${raw.slice(0, 400)}` : ''}`);
-    const data = JSON.parse(raw || '{}') as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-    const text = (data.candidates || []).flatMap((candidate) => candidate.content?.parts || []).map((part) => part.text || '').filter(Boolean).join('\n');
+    const data = JSON.parse(raw || '{}') as {
+      candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const candidate = data.candidates?.[0];
+    if (String(candidate?.finishReason || '').toUpperCase() === 'MAX_TOKENS') {
+      throw new Error('AI_JSON_TRUNCATED:MAX_TOKENS');
+    }
+    const text = (data.candidates || []).flatMap((item) => item.content?.parts || []).map((part) => part.text || '').filter(Boolean).join('\n');
     return this.parseJson(text || '{}');
   }
 
@@ -345,7 +355,23 @@ export class ResumeImprovementService {
     const system = await this.systemInstruction(input);
     const prompt = `Analise o currículo estruturado abaixo e proponha mudanças atômicas, para que o usuário possa aceitar uma por uma. Priorize clareza, objetividade, força do resumo, descrição profissional das experiências e palavras-chave relevantes que JÁ estejam sustentadas pelo conteúdo. Não invente nada.\n\nCURRÍCULO: ${JSON.stringify(input).slice(0, 42000)}\n\nRetorne EXCLUSIVAMENTE este JSON:\n{"summary":"resumo curto do que pode melhorar","changes":[{"id":"bio-1","type":"BIO|HEADLINE|GLOBAL_SKILLS|EXPERIENCE_DESCRIPTION|STAGE_DESCRIPTION","label":"nome amigável da mudança","experienceIndex":0,"stageIndex":0,"before":"texto atual ou array atual","after":"texto sugerido ou array sugerido","reason":"por que esta mudança ajuda"}]}\n\nRegras de alvo:\n- BIO não usa experienceIndex/stageIndex;\n- HEADLINE não usa índices;\n- GLOBAL_SKILLS usa arrays em before/after;\n- EXPERIENCE_DESCRIPTION usa experienceIndex;\n- STAGE_DESCRIPTION usa experienceIndex e stageIndex;\n- preserve fatos, datas, empresas e cargos;\n- não crie métricas ou conquistas não informadas;\n- no máximo 24 mudanças;\n- JSON estritamente válido, sem Markdown e sem texto antes ou depois do objeto.`;
     try {
-      return this.normalize(await this.generate(config, prompt, system), profile);
+      let generated: Record<string, unknown>;
+      try {
+        generated = await this.generate(config, prompt, system);
+      } catch (firstError) {
+        const firstMessage = firstError instanceof Error ? firstError.message : String(firstError || '');
+        const retryable = firstMessage.includes('AI_JSON_TRUNCATED')
+          || firstMessage.includes('JSON inválido')
+          || firstMessage.includes('Unterminated string')
+          || firstMessage.includes('Expected');
+        if (!retryable) throw firstError;
+        generated = await this.generate(
+          config,
+          `${prompt}\n\nIMPORTANTE: gere uma resposta mais compacta. Se necessário, reduza a quantidade de mudanças para concluir integralmente o JSON.`,
+          `${system}\n\nA tentativa anterior veio truncada ou com JSON inválido. Gere novamente do zero e finalize obrigatoriamente todo o objeto JSON.`,
+        );
+      }
+      return this.normalize(generated, profile);
     } catch (error: any) {
       if (error instanceof ServiceUnavailableException) throw error;
       console.error('AI resume improvement error:', error);
