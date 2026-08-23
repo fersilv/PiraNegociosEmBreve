@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Notification } from './entities/notification.entity';
@@ -23,7 +23,9 @@ export type AdminBroadcastInput = {
 };
 
 @Injectable()
-export class NotificationsService {
+export class NotificationsService implements OnModuleInit, OnModuleDestroy {
+  private jobAlertTimer?: NodeJS.Timeout;
+
   constructor(
     @InjectRepository(Notification)
     private notifRepo: Repository<Notification>,
@@ -33,6 +35,18 @@ export class NotificationsService {
     private userRepo: Repository<User>,
     private firebaseService: FirebaseService,
   ) {}
+
+  onModuleInit() {
+    this.jobAlertTimer = setInterval(() => {
+      void this.processDueJobAlerts().catch((error) => console.warn('Falha ao processar alertas agendados de vagas:', error));
+    }, 60_000);
+    this.jobAlertTimer.unref?.();
+    void this.processDueJobAlerts().catch(() => undefined);
+  }
+
+  onModuleDestroy() {
+    if (this.jobAlertTimer) clearInterval(this.jobAlertTimer);
+  }
 
   async findAllForUser(userId: string): Promise<Notification[]> {
     return this.notifRepo.find({ where: { userId }, order: { createdAt: 'DESC' } });
@@ -131,7 +145,7 @@ export class NotificationsService {
     const prefs = user.notificationPreferences || {};
     if (prefs.pushEnabled === false) return false;
     const type = String(notif.type || '').toLowerCase();
-    if (type === 'new_job' && prefs.newJobs === false) return false;
+    if ((type === 'new_job' || type === 'new_job_early') && prefs.newJobs === false) return false;
     if ((type.includes('status') || type.includes('application')) && user.companyId && prefs.hiringUpdates === false) return false;
     if ((type.includes('status') || type.includes('application')) && !user.companyId && prefs.applicationUpdates === false) return false;
     if (type.includes('document') && prefs.documents === false) return false;
@@ -274,17 +288,127 @@ export class NotificationsService {
     return { sent, recipients: recipients.length };
   }
 
-  async notifyNewJob(jobData: any): Promise<void> {
-    const users = await this.userRepo.find({ where: { isOpenToWork: true } });
-    const candidates = users.filter((user) => user.type !== UserType.ADMIN);
-    await Promise.all(
-      candidates.map((candidate) => this.notifyUser(candidate.id, {
-        title: 'Nova vaga na região',
-        message: `A empresa \"${jobData.companyName}\" publicou a vaga \"${jobData.jobTitle}\" em ${jobData.location || 'localização informada na vaga'}.`,
-        type: 'new_job',
-        jobId: jobData.jobId,
-        link: jobData.slug ? `/vagas/${jobData.slug}` : `/user/vaga/${jobData.jobId}`,
-      })),
+  private jobAlertLink(jobData: any) {
+    return jobData.slug ? `/vagas/${jobData.slug}` : `/user/vaga/${jobData.jobId}`;
+  }
+
+  private jobAlertMessage(jobData: any) {
+    const company = jobData.companyName || 'Uma empresa';
+    const title = jobData.jobTitle || jobData.title || 'nova oportunidade';
+    const location = jobData.location || [jobData.city, jobData.state].filter(Boolean).join('/') || 'localização informada na vaga';
+    return `${company} publicou “${title}” em ${location}.`;
+  }
+
+  async scheduleNewJobAlerts(jobData: any, earlyRecipientIds: string[] = []) {
+    const jobId = String(jobData?.jobId || jobData?.id || '').trim();
+    if (!jobId) return { scheduled: false, reason: 'missing_job_id' };
+    const earlyIds = Array.from(new Set(earlyRecipientIds.map(String).filter(Boolean)));
+    const delayMinutes = Math.max(1, Math.min(1440, Number(process.env.EARLY_JOB_ALERT_MINUTES || 30)));
+    const releaseAt = new Date(Date.now() + delayMinutes * 60_000);
+    const payload = {
+      jobId,
+      jobTitle: jobData.jobTitle || jobData.title || null,
+      companyName: jobData.companyName || null,
+      location: jobData.location || null,
+      city: jobData.city || null,
+      state: jobData.state || null,
+      slug: jobData.slug || null,
+    };
+
+    const rows = await this.userRepo.manager.query(
+      `INSERT INTO scheduled_job_alerts ("jobId", payload, "earlyRecipientIds", "releaseAt")
+       VALUES ($1,$2::jsonb,$3::jsonb,$4)
+       ON CONFLICT ("jobId") DO NOTHING
+       RETURNING *`,
+      [jobId, JSON.stringify(payload), JSON.stringify(earlyIds), releaseAt],
     );
+    if (!rows[0]) return { scheduled: false, duplicate: true };
+
+    if (earlyIds.length) {
+      const results = await Promise.allSettled(earlyIds.map((userId) => this.notifyUser(userId, {
+        title: '⚡ Vaga compatível em primeira mão',
+        message: `${this.jobAlertMessage(payload)} Você está recebendo este aviso antecipado pelo Plano Destaque.`,
+        type: 'new_job_early',
+        jobId,
+        link: this.jobAlertLink(payload),
+      })));
+      await this.userRepo.manager.query(
+        `UPDATE scheduled_job_alerts SET "earlyDispatchedAt" = now(), "updatedAt" = now() WHERE id = $1`,
+        [rows[0].id],
+      );
+      return { scheduled: true, earlyRecipients: earlyIds.length, earlySent: results.filter((item) => item.status === 'fulfilled').length, releaseAt };
+    }
+
+    return { scheduled: true, earlyRecipients: 0, releaseAt };
+  }
+
+  private jsonArray(value: unknown): string[] {
+    if (Array.isArray(value)) return value.map(String).filter(Boolean);
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  async processDueJobAlerts() {
+    let rows: any[] = [];
+    try {
+      rows = await this.userRepo.manager.query(
+        `UPDATE scheduled_job_alerts SET "processingAt" = now(), "updatedAt" = now()
+         WHERE id IN (
+           SELECT id FROM scheduled_job_alerts
+           WHERE "generalDispatchedAt" IS NULL AND "releaseAt" <= now()
+             AND ("processingAt" IS NULL OR "processingAt" < now() - interval '5 minutes')
+           ORDER BY "releaseAt" ASC
+           LIMIT 10
+           FOR UPDATE SKIP LOCKED
+         )
+         RETURNING *`,
+      );
+    } catch (error: any) {
+      if (String(error?.message || '').includes('scheduled_job_alerts')) return { processed: 0, migrationPending: true };
+      throw error;
+    }
+
+    let processed = 0;
+    for (const row of rows) {
+      try {
+        const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : (row.payload || {});
+        const earlyIds = new Set(this.jsonArray(row.earlyRecipientIds));
+        const users = await this.userRepo.find({ where: { isOpenToWork: true } });
+        const recipients = users.filter((user) => user.type !== UserType.ADMIN && !user.companyId && !earlyIds.has(user.id));
+        for (let offset = 0; offset < recipients.length; offset += 100) {
+          const batch = recipients.slice(offset, offset + 100);
+          await Promise.allSettled(batch.map((candidate) => this.notifyUser(candidate.id, {
+            title: 'Nova vaga na região',
+            message: this.jobAlertMessage(payload),
+            type: 'new_job',
+            jobId: payload.jobId,
+            link: this.jobAlertLink(payload),
+          })));
+        }
+        await this.userRepo.manager.query(
+          `UPDATE scheduled_job_alerts SET "generalDispatchedAt" = now(), "processingAt" = NULL, "updatedAt" = now() WHERE id = $1`,
+          [row.id],
+        );
+        processed += 1;
+      } catch (error) {
+        await this.userRepo.manager.query(
+          `UPDATE scheduled_job_alerts SET "processingAt" = NULL, "updatedAt" = now() WHERE id = $1`,
+          [row.id],
+        ).catch(() => undefined);
+        console.warn(`Falha ao liberar alerta geral da vaga ${row.jobId}:`, error);
+      }
+    }
+    return { processed };
+  }
+
+  async notifyNewJob(jobData: any, earlyRecipientIds: string[] = []): Promise<void> {
+    await this.scheduleNewJobAlerts(jobData, earlyRecipientIds);
   }
 }
