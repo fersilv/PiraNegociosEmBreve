@@ -15,6 +15,7 @@ import { AdminGuard } from '../admin/admin.guard';
 import { PaymentsService, type FeatureCredit } from './payments.service';
 import { BillingSupportService, type TimedFeature } from './billing-support.service';
 import { ProductDurationService } from './product-duration.service';
+import { EfiPixService, type EfiPayerInput } from './efi-pix.service';
 
 @Controller('payments')
 @UseGuards(FirebaseAuthGuard)
@@ -22,6 +23,7 @@ export class PaymentsController {
   constructor(
     private readonly payments: PaymentsService,
     private readonly billingSupport: BillingSupportService,
+    private readonly efiPix: EfiPixService,
   ) {}
 
   @Get('catalog')
@@ -45,7 +47,10 @@ export class PaymentsController {
   }
 
   @Post('pix')
-  async createPix(@Req() req: any, @Body() body: { productCode?: string }) {
+  async createPix(
+    @Req() req: any,
+    @Body() body: { productCode?: string; payer?: EfiPayerInput },
+  ) {
     const productCode = String(body?.productCode || '').trim();
     if (!productCode) throw new BadRequestException('Informe o produto que deseja comprar.');
 
@@ -75,7 +80,37 @@ export class PaymentsController {
       };
     }
 
-    return payment;
+    const provider = String(process.env.PIX_PROVIDER || 'EFI').trim().toUpperCase() || 'EFI';
+    if (provider !== 'EFI') {
+      await this.payments.cancelProviderCheckout(payment.id, `Provedor Pix não suportado: ${provider}`);
+      throw new BadRequestException('O provedor Pix configurado não é suportado. Use PIX_PROVIDER=EFI.');
+    }
+
+    try {
+      const checkout = payment.product?.billingType === 'RECURRING'
+        ? await this.efiPix.createMonthlyAutomaticCharge(
+            Number(payment.amountCents),
+            payment.id,
+            payment.product?.name || productCode,
+            body?.payer || {},
+          )
+        : await this.efiPix.createImmediateCharge(
+            Number(payment.amountCents),
+            payment.id,
+            payment.product?.name || productCode,
+          );
+      const stored = await this.payments.attachProviderCheckout(payment.id, checkout);
+      return {
+        ...stored,
+        product: payment.product,
+        checkoutReady: Boolean(stored.pixCopyPaste || stored.qrCodeBase64),
+        providerConfigured: true,
+        paymentRequired: true,
+      };
+    } catch (error) {
+      await this.payments.cancelProviderCheckout(payment.id, error).catch(() => undefined);
+      throw error;
+    }
   }
 
   @Get('me/resume-history')
@@ -89,6 +124,21 @@ export class PaymentsController {
   }
 }
 
+@Controller('payments/webhooks/efi')
+export class EfiPaymentsWebhookController {
+  constructor(private readonly efiPix: EfiPixService) {}
+
+  @Post()
+  async receive(@Body() body: any, @Query('hmac') hmac?: string) {
+    if (Array.isArray(body?.pix)) return this.efiPix.handlePixWebhook(body, hmac);
+    if (Array.isArray(body?.recs) || Array.isArray(body?.rec)) {
+      return this.efiPix.handleAutomaticRecurrenceWebhook(body, hmac);
+    }
+    if (Array.isArray(body?.cobsr)) return this.efiPix.handleAutomaticChargeWebhook(body, hmac);
+    return { ok: true, test: true };
+  }
+}
+
 @Controller('admin/payments')
 @UseGuards(FirebaseAuthGuard, AdminGuard)
 export class AdminPaymentsController {
@@ -96,6 +146,7 @@ export class AdminPaymentsController {
     private readonly payments: PaymentsService,
     private readonly billingSupport: BillingSupportService,
     private readonly productDuration: ProductDurationService,
+    private readonly efiPix: EfiPixService,
   ) {}
 
   @Get('dev-mode')
@@ -107,6 +158,16 @@ export class AdminPaymentsController {
   setDevMode(@Body() body: { enabled?: boolean }) {
     if (typeof body?.enabled !== 'boolean') throw new BadRequestException('enabled deve ser true ou false.');
     return this.payments.setDevMode(body.enabled);
+  }
+
+  @Get('provider/efi')
+  getEfiStatus() {
+    return this.efiPix.getConfigurationStatus();
+  }
+
+  @Post('provider/efi/configure-webhooks')
+  configureEfiWebhooks() {
+    return this.efiPix.configureWebhooks();
   }
 
   @Get('performance')
