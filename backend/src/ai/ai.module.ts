@@ -6,6 +6,7 @@ import { JobSkillsService } from './job-skills.service';
 import { ResumeImportService } from './resume-import.service';
 import { ResumeReviewService } from './resume-review.service';
 import { ResumeImprovementService } from './resume-improvement.service';
+import { AlignedResumeImprovementService } from './aligned-resume-improvement.service';
 import { PhotoAiController } from './photo-ai.controller';
 import { PhotoAiService } from './photo-ai.service';
 import { AdminModule } from '../admin/admin.module';
@@ -20,7 +21,11 @@ import { User } from '../users/entities/user.entity';
     JobSkillsService,
     ResumeImportService,
     ResumeReviewService,
-    ResumeImprovementService,
+    AlignedResumeImprovementService,
+    {
+      provide: ResumeImprovementService,
+      useExisting: AlignedResumeImprovementService,
+    },
     PhotoAiService,
   ],
   exports: [
