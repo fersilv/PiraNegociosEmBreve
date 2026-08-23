@@ -38,6 +38,11 @@ export class AdminJobMatchController {
     return this.adminMatch.overview();
   }
 
+  @Get('backfill/queue')
+  backfillQueue(@Query('limit') limit?: string) {
+    return this.adminMatch.backfillQueue(Number(limit || 100));
+  }
+
   @Patch('config')
   updateConfig(@Body() body: { durationDays?: unknown }) {
     return this.adminMatch.updateConfig(body || {});
@@ -46,6 +51,11 @@ export class AdminJobMatchController {
   @Post('backfill')
   backfill(@Query('limit') limit?: string) {
     return this.adminMatch.backfill(Number(limit || 25));
+  }
+
+  @Post('backfill/jobs/:id')
+  prepareOne(@Param('id') id: string) {
+    return this.adminMatch.prepareOne(id);
   }
 
   @Post('jobs/:id/reanalyze')
