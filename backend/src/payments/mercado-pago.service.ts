@@ -50,45 +50,86 @@ export class MercadoPagoService {
     }
   }
 
-  private client(sdk: any, config: MercadoPagoProviderConfig) {
-    if (!sdk?.MercadoPagoConfig) throw new ServiceUnavailableException('SDK Mercado Pago incompatível com esta integração.');
-    return new sdk.MercadoPagoConfig({
-      accessToken: String(config.accessToken),
-      options: { timeout: 15000 },
-    });
-  }
-
   private webhookUrl(config: MercadoPagoProviderConfig) {
     const base = String(config.publicApiBaseUrl || '').trim().replace(/\/$/, '');
     if (!base) throw new ServiceUnavailableException('Informe a URL pública da API para receber Webhooks do Mercado Pago.');
     return `${base}/payments/webhooks/mercado-pago`;
   }
 
+  private returnUrl(config: MercadoPagoProviderConfig) {
+    const apiBase = String(config.publicApiBaseUrl || '').trim().replace(/\/$/, '');
+    if (!apiBase) throw new ServiceUnavailableException('Informe a URL pública da API para concluir a assinatura.');
+    const siteBase = apiBase.endsWith('/api') ? apiBase.slice(0, -4) : apiBase;
+    return `${siteBase}/user/pagamentos`;
+  }
+
+  private async request<T>(
+    config: MercadoPagoProviderConfig,
+    method: string,
+    path: string,
+    body?: unknown,
+    idempotencyKey?: string,
+  ): Promise<T> {
+    this.assertConfigured(config);
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      Authorization: `Bearer ${String(config.accessToken)}`,
+    };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (idempotencyKey) headers['X-Idempotency-Key'] = idempotencyKey;
+
+    const response = await fetch(`https://api.mercadopago.com${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(20000),
+    });
+    const text = await response.text().catch(() => '');
+    let parsed: any = {};
+    try { parsed = text ? JSON.parse(text) : {}; } catch { parsed = { message: text }; }
+    if (!response.ok) {
+      const detail = parsed?.message || parsed?.error || parsed?.cause?.[0]?.description || `HTTP ${response.status}`;
+      throw new ServiceUnavailableException({
+        code: 'MERCADO_PAGO_ERROR',
+        provider: 'MERCADO_PAGO',
+        status: response.status,
+        message: `Mercado Pago: ${detail}`,
+        providerResponse: parsed,
+      });
+    }
+    return parsed as T;
+  }
+
   async healthCheck() {
     const config = await this.config();
     this.assertConfigured(config);
     const sdk = await this.sdk();
-    this.client(sdk, config);
-    const response = await fetch('https://api.mercadopago.com/users/me', {
-      headers: { Authorization: `Bearer ${String(config.accessToken)}` },
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new ServiceUnavailableException(`Mercado Pago recusou as credenciais (${response.status}). ${body.slice(0, 300)}`);
+    if (!sdk?.WebhookSignatureValidator) {
+      throw new ServiceUnavailableException('SDK Mercado Pago instalado, mas sem validador de assinatura Webhook compatível.');
     }
-    const me: any = await response.json().catch(() => ({}));
+    const me: any = await this.request<any>(config, 'GET', '/users/me');
     return {
       operational: true,
-      message: 'Mercado Pago respondeu com credenciais válidas e o SDK oficial está disponível.',
+      message: 'Mercado Pago respondeu com credenciais válidas; Orders, Assinaturas e validação de Webhook estão disponíveis.',
       details: {
         userId: me?.id || null,
         nickname: me?.nickname || null,
         webhookUrl: this.webhookUrl(config),
         sdk: 'mercadopago',
-        capabilities: ['PIX'],
+        checkoutApi: 'ORDERS',
+        recurringApi: 'SUBSCRIPTIONS',
+        capabilities: ['PIX', 'PIX_AUTOMATICO'],
       },
     };
+  }
+
+  private amount(cents: number) {
+    return (Math.max(0, Math.round(cents)) / 100).toFixed(2);
+  }
+
+  private decimalToCents(value: unknown) {
+    const parsed = Number(String(value ?? '').replace(',', '.'));
+    return Number.isFinite(parsed) ? Math.round(parsed * 100) : -1;
   }
 
   async createImmediateCharge(
@@ -98,57 +139,110 @@ export class MercadoPagoService {
     payer: MercadoPagoPayerInput,
   ) {
     const config = await this.config();
-    this.assertConfigured(config);
     const email = String(payer.email || '').trim();
-    const document = String(payer.document || '').replace(/\D/g, '');
     if (!email || !email.includes('@')) {
       throw new BadRequestException('O Mercado Pago exige o e-mail do pagador para gerar o Pix.');
     }
-    if (document.length !== 11) {
-      throw new BadRequestException('O Mercado Pago exige um CPF válido para gerar o Pix.');
-    }
 
-    const sdk = await this.sdk();
-    const Payment = sdk?.Payment;
-    if (!Payment) throw new ServiceUnavailableException('Classe Payment não encontrada no SDK Mercado Pago.');
-    const paymentClient = new Payment(this.client(sdk, config));
-    const response: any = await paymentClient.create({
-      body: {
-        transaction_amount: Math.max(0, Math.round(amountCents)) / 100,
-        description: String(productName || 'PiraNegócios').slice(0, 220),
-        payment_method_id: 'pix',
+    const amount = this.amount(amountCents);
+    const order: any = await this.request<any>(
+      config,
+      'POST',
+      '/v1/orders',
+      {
+        type: 'online',
+        total_amount: amount,
         external_reference: paymentId,
-        notification_url: this.webhookUrl(config),
-        payer: {
-          email,
-          identification: { type: 'CPF', number: document },
+        processing_mode: 'automatic',
+        transactions: {
+          payments: [{
+            amount,
+            payment_method: { id: 'pix', type: 'bank_transfer' },
+            expiration_time: 'PT1H',
+          }],
         },
+        payer: { email },
       },
-      requestOptions: { idempotencyKey: paymentId },
-    });
+      paymentId,
+    );
 
-    const providerPaymentId = String(response?.id || '').trim();
-    if (!providerPaymentId) throw new ServiceUnavailableException('O Mercado Pago não retornou o ID do pagamento.');
-    const transactionData = response?.point_of_interaction?.transaction_data || {};
+    const providerPaymentId = String(order?.id || '').trim();
+    if (!providerPaymentId) throw new ServiceUnavailableException('O Mercado Pago não retornou o ID da order.');
+    const transaction = Array.isArray(order?.transactions?.payments) ? order.transactions.payments[0] || {} : {};
+    const paymentMethod = transaction?.payment_method || {};
     return {
       provider: 'MERCADO_PAGO',
       providerPaymentId,
-      pixCopyPaste: transactionData.qr_code || null,
-      qrCodeBase64: transactionData.qr_code_base64 || null,
-      expiresAt: response?.date_of_expiration || null,
+      pixCopyPaste: paymentMethod.qr_code || null,
+      qrCodeBase64: paymentMethod.qr_code_base64 || null,
+      expiresAt: null,
       metadata: {
-        mercadoPagoStatus: response?.status || null,
-        mercadoPagoStatusDetail: response?.status_detail || null,
-        ticketUrl: transactionData.ticket_url || null,
+        mercadoPagoOrderId: providerPaymentId,
+        mercadoPagoOrderStatus: order?.status || null,
+        mercadoPagoTransactionId: transaction?.id || null,
+        mercadoPagoTransactionStatus: transaction?.status || null,
+        mercadoPagoStatusDetail: transaction?.status_detail || null,
+        ticketUrl: paymentMethod.ticket_url || null,
         externalReference: paymentId,
+        checkoutApi: 'ORDERS',
       },
     };
   }
 
-  async createRecurringCheckout(): Promise<never> {
-    throw new ServiceUnavailableException(
-      'Neste adapter, o Mercado Pago está habilitado para Pix avulso. Para o Plano Destaque mensal com Pix Automático, use a Efí Bank.',
+  async createRecurringCheckout(
+    amountCents: number,
+    paymentId: string,
+    productName: string,
+    payer: MercadoPagoPayerInput,
+  ) {
+    const config = await this.config();
+    const email = String(payer.email || '').trim();
+    if (!email || !email.includes('@')) {
+      throw new BadRequestException('O Mercado Pago exige o e-mail da conta para iniciar a assinatura.');
+    }
+
+    const subscription: any = await this.request<any>(
+      config,
+      'POST',
+      '/preapproval',
+      {
+        reason: String(productName || 'Plano mensal PiraNegócios').slice(0, 180),
+        external_reference: paymentId,
+        payer_email: email,
+        auto_recurring: {
+          frequency: 1,
+          frequency_type: 'months',
+          transaction_amount: Math.max(0, Math.round(amountCents)) / 100,
+          currency_id: 'BRL',
+        },
+        back_url: this.returnUrl(config),
+        status: 'pending',
+      },
+      `subscription-${paymentId}`,
     );
+
+    const providerPaymentId = String(subscription?.id || '').trim();
+    const initPoint = String(subscription?.init_point || '').trim();
+    if (!providerPaymentId || !initPoint) {
+      throw new ServiceUnavailableException('O Mercado Pago não retornou a jornada de autorização da assinatura.');
+    }
+    return {
+      provider: 'MERCADO_PAGO',
+      providerPaymentId,
+      pixCopyPaste: null,
+      qrCodeBase64: null,
+      expiresAt: null,
+      metadata: {
+        mercadoPagoSubscriptionId: providerPaymentId,
+        mercadoPagoSubscriptionStatus: subscription?.status || 'pending',
+        subscriptionCheckoutUrl: initPoint,
+        ticketUrl: initPoint,
+        externalReference: paymentId,
+        recurringApi: 'SUBSCRIPTIONS',
+        paymentType: 'PIX_AUTOMATICO',
+        requiresAuthorization: true,
+      },
+    };
   }
 
   private async validateSignature(
@@ -173,29 +267,202 @@ export class MercadoPagoService {
     }
   }
 
-  async handleWebhook(
-    body: any,
-    query: Record<string, unknown>,
-    headers: Record<string, string | string[] | undefined>,
-  ) {
-    const config = await this.config();
-    const dataId = String(query?.['data.id'] || body?.data?.id || '').trim();
-    await this.validateSignature(
-      config,
-      String(headers['x-signature'] || ''),
-      String(headers['x-request-id'] || ''),
-      dataId,
+  private async findPaymentByExternalReference(externalReference: unknown) {
+    const id = String(externalReference || '').trim();
+    if (!id) return null;
+    const rows = await this.dataSource.query(
+      `SELECT * FROM payments WHERE id = $1 AND provider = 'MERCADO_PAGO' LIMIT 1`,
+      [id],
     );
+    return rows[0] || null;
+  }
 
-    const type = String(query?.type || body?.type || '').toLowerCase();
-    if (!dataId || !['payment', 'payments'].includes(type)) {
-      return { ok: true, ignored: true, type, dataId };
+  private async handleOrder(dataId: string, config: MercadoPagoProviderConfig) {
+    const order: any = await this.request<any>(config, 'GET', `/v1/orders/${encodeURIComponent(dataId)}`);
+    const local = await this.findPaymentByExternalReference(order?.external_reference)
+      || (await this.dataSource.query(
+        `SELECT * FROM payments WHERE provider = 'MERCADO_PAGO' AND "providerPaymentId" = $1 LIMIT 1`,
+        [dataId],
+      ))[0];
+    if (!local) return { ok: true, ignored: true, reason: 'payment_not_found', dataId };
+
+    const expectedCents = Number(local.amountCents);
+    const receivedCents = this.decimalToCents(order?.total_amount);
+    if (receivedCents !== expectedCents) {
+      return { ok: true, ignored: true, reason: 'amount_mismatch', dataId };
     }
 
-    const sdk = await this.sdk();
-    const Payment = sdk?.Payment;
-    if (!Payment) throw new ServiceUnavailableException('Classe Payment não encontrada no SDK Mercado Pago.');
-    const detail: any = await new Payment(this.client(sdk, config)).get({ id: dataId });
+    const transaction = Array.isArray(order?.transactions?.payments) ? order.transactions.payments[0] || {} : {};
+    const status = String(transaction?.status || order?.status || '').toLowerCase();
+    const statusDetail = String(transaction?.status_detail || '').toLowerCase();
+    if (status === 'processed' && statusDetail === 'accredited') {
+      const settled = await this.payments.confirmProviderPayment(local.id, {
+        provider: 'MERCADO_PAGO',
+        mercadoPagoOrderId: dataId,
+        mercadoPagoTransactionId: transaction?.id || null,
+        mercadoPagoTransactionStatus: status,
+        mercadoPagoStatusDetail: statusDetail,
+        confirmationMode: 'MERCADO_PAGO_ORDER_WEBHOOK',
+      });
+      return { ok: true, paymentId: local.id, status: settled.status };
+    }
+
+    await this.dataSource.query(
+      `UPDATE payments SET metadata = coalesce(metadata,'{}'::jsonb) || $2::jsonb, "updatedAt" = now() WHERE id = $1`,
+      [local.id, JSON.stringify({
+        mercadoPagoOrderStatus: order?.status || null,
+        mercadoPagoTransactionStatus: status || null,
+        mercadoPagoStatusDetail: statusDetail || null,
+      })],
+    );
+    return { ok: true, paymentId: local.id, status: status || order?.status || null };
+  }
+
+  private async handleSubscription(dataId: string, config: MercadoPagoProviderConfig) {
+    const subscription: any = await this.request<any>(config, 'GET', `/preapproval/${encodeURIComponent(dataId)}`);
+    const externalReference = String(subscription?.external_reference || '').trim();
+    const local = await this.findPaymentByExternalReference(externalReference)
+      || (await this.dataSource.query(
+        `SELECT * FROM payments WHERE provider = 'MERCADO_PAGO' AND metadata->>'mercadoPagoSubscriptionId' = $1 ORDER BY "createdAt" ASC LIMIT 1`,
+        [dataId],
+      ))[0];
+    if (!local) return { ok: true, ignored: true, reason: 'subscription_payment_not_found', dataId };
+
+    const status = String(subscription?.status || '').toLowerCase();
+    await this.dataSource.query(
+      `UPDATE payments SET metadata = coalesce(metadata,'{}'::jsonb) || $2::jsonb, "updatedAt" = now() WHERE id = $1`,
+      [local.id, JSON.stringify({
+        mercadoPagoSubscriptionId: dataId,
+        mercadoPagoSubscriptionStatus: status,
+        mercadoPagoNextPaymentDate: subscription?.next_payment_date || null,
+      })],
+    );
+
+    const localSubscriptionStatus = status === 'cancelled' || status === 'canceled'
+      ? 'CANCELED'
+      : status === 'paused'
+        ? 'PAST_DUE'
+        : null;
+    if (localSubscriptionStatus) {
+      await this.dataSource.query(
+        `UPDATE subscriptions SET status = $2, "updatedAt" = now(),
+           metadata = coalesce(metadata,'{}'::jsonb) || $3::jsonb
+         WHERE "providerSubscriptionId" = $1 OR id = (SELECT "subscriptionId" FROM payments WHERE id = $4)
+         RETURNING id`,
+        [dataId, localSubscriptionStatus, JSON.stringify({ mercadoPagoSubscriptionStatus: status }), local.id],
+      ).catch(() => undefined);
+    }
+    return { ok: true, paymentId: local.id, subscriptionId: dataId, status };
+  }
+
+  private async ensureAuthorizedPaymentRow(invoice: any) {
+    const externalReference = String(invoice?.external_reference || '').trim();
+    const preapprovalId = String(invoice?.preapproval_id || '').trim();
+    const invoiceId = String(invoice?.id || '').trim();
+    const providerPaymentId = String(invoice?.payment?.id || invoiceId).trim();
+
+    let base = await this.findPaymentByExternalReference(externalReference);
+    if (!base && preapprovalId) {
+      const rows = await this.dataSource.query(
+        `SELECT * FROM payments WHERE provider = 'MERCADO_PAGO' AND metadata->>'mercadoPagoSubscriptionId' = $1 ORDER BY "createdAt" ASC LIMIT 1`,
+        [preapprovalId],
+      );
+      base = rows[0] || null;
+    }
+    if (!base) return null;
+
+    const amountCents = this.decimalToCents(invoice?.transaction_amount);
+    if (amountCents !== Number(base.amountCents)) return { mismatch: true, payment: base };
+
+    if (base.status === 'PENDING') return { payment: base, renewal: false };
+
+    const existing = await this.dataSource.query(
+      `SELECT * FROM payments WHERE provider = 'MERCADO_PAGO'
+       AND ("providerPaymentId" = $1 OR metadata->>'mercadoPagoAuthorizedPaymentId' = $2)
+       LIMIT 1`,
+      [providerPaymentId, invoiceId],
+    );
+    if (existing[0]) return { payment: existing[0], renewal: true };
+
+    const inserted = await this.dataSource.query(
+      `INSERT INTO payments
+        ("userId","productCode",method,status,"originalAmountCents","amountCents","discountCents",provider,"providerPaymentId",metadata)
+       VALUES ($1,$2,'PIX','PENDING',$3,$4,$5,'MERCADO_PAGO',$6,$7::jsonb)
+       RETURNING *`,
+      [
+        base.userId,
+        base.productCode,
+        Number(base.originalAmountCents),
+        Number(base.amountCents),
+        Number(base.discountCents || 0),
+        providerPaymentId,
+        JSON.stringify({
+          mercadoPagoAutomaticRenewal: true,
+          mercadoPagoSubscriptionId: preapprovalId || null,
+          mercadoPagoAuthorizedPaymentId: invoiceId || null,
+          parentPaymentId: base.id,
+          recurringApi: 'SUBSCRIPTIONS',
+          paymentType: 'PIX_AUTOMATICO',
+        }),
+      ],
+    );
+    return { payment: inserted[0], renewal: true };
+  }
+
+  private async handleAuthorizedPayment(dataId: string, config: MercadoPagoProviderConfig) {
+    const invoice: any = await this.request<any>(config, 'GET', `/authorized_payments/${encodeURIComponent(dataId)}`);
+    const prepared: any = await this.ensureAuthorizedPaymentRow(invoice);
+    if (!prepared) return { ok: true, ignored: true, reason: 'subscription_payment_not_found', dataId };
+    if (prepared.mismatch) return { ok: true, ignored: true, reason: 'amount_mismatch', dataId };
+
+    const paymentStatus = String(invoice?.payment?.status || '').toLowerCase();
+    const statusDetail = String(invoice?.payment?.status_detail || '').toLowerCase();
+    const payment = prepared.payment;
+    if (paymentStatus !== 'approved') {
+      await this.dataSource.query(
+        `UPDATE payments SET metadata = coalesce(metadata,'{}'::jsonb) || $2::jsonb, "updatedAt" = now() WHERE id = $1`,
+        [payment.id, JSON.stringify({
+          mercadoPagoAuthorizedPaymentId: String(invoice?.id || dataId),
+          mercadoPagoSubscriptionId: invoice?.preapproval_id || null,
+          mercadoPagoInvoiceStatus: invoice?.status || null,
+          mercadoPagoPaymentStatus: paymentStatus || null,
+          mercadoPagoStatusDetail: statusDetail || null,
+        })],
+      );
+      return { ok: true, paymentId: payment.id, status: paymentStatus || invoice?.status || null };
+    }
+
+    const settled = await this.payments.confirmProviderPayment(payment.id, {
+      provider: 'MERCADO_PAGO',
+      mercadoPagoAuthorizedPaymentId: String(invoice?.id || dataId),
+      mercadoPagoSubscriptionId: invoice?.preapproval_id || null,
+      mercadoPagoPaymentId: invoice?.payment?.id || null,
+      mercadoPagoPaymentStatus: paymentStatus,
+      mercadoPagoStatusDetail: statusDetail,
+      mercadoPagoDebitDate: invoice?.debit_date || null,
+      automaticRenewal: prepared.renewal === true,
+      confirmationMode: 'MERCADO_PAGO_SUBSCRIPTION_WEBHOOK',
+    });
+
+    await this.dataSource.query(
+      `UPDATE subscriptions SET provider = 'MERCADO_PAGO', "providerSubscriptionId" = $1, "updatedAt" = now(),
+         metadata = coalesce(metadata,'{}'::jsonb) || $2::jsonb
+       WHERE id = (SELECT "subscriptionId" FROM payments WHERE id = $3)
+          OR ("userId" = $4 AND "productCode" = $5 AND status = 'ACTIVE')`,
+      [
+        invoice?.preapproval_id || null,
+        JSON.stringify({ mercadoPagoSubscriptionStatus: 'authorized' }),
+        payment.id,
+        payment.userId,
+        payment.productCode,
+      ],
+    ).catch(() => undefined);
+
+    return { ok: true, paymentId: payment.id, status: settled.status, renewal: prepared.renewal === true };
+  }
+
+  private async handleLegacyPayment(dataId: string, config: MercadoPagoProviderConfig) {
+    const detail: any = await this.request<any>(config, 'GET', `/v1/payments/${encodeURIComponent(dataId)}`);
     const localId = String(detail?.external_reference || '').trim();
     let rows: any[] = [];
     if (localId) {
@@ -212,26 +479,39 @@ export class MercadoPagoService {
     }
     const payment = rows[0];
     if (!payment) return { ok: true, ignored: true, reason: 'payment_not_found', dataId };
-
     const paidCents = Math.round(Number(detail?.transaction_amount || 0) * 100);
-    if (paidCents !== Number(payment.amountCents)) {
-      return { ok: true, ignored: true, reason: 'amount_mismatch', dataId };
-    }
+    if (paidCents !== Number(payment.amountCents)) return { ok: true, ignored: true, reason: 'amount_mismatch', dataId };
     const status = String(detail?.status || '').toLowerCase();
-    if (status !== 'approved') {
-      await this.dataSource.query(
-        `UPDATE payments SET metadata = coalesce(metadata,'{}'::jsonb) || $2::jsonb, "updatedAt" = now() WHERE id = $1`,
-        [payment.id, JSON.stringify({ mercadoPagoStatus: status, mercadoPagoStatusDetail: detail?.status_detail || null })],
-      );
-      return { ok: true, paymentId: payment.id, status };
-    }
-
+    if (status !== 'approved') return { ok: true, paymentId: payment.id, status };
     const settled = await this.payments.confirmProviderPayment(payment.id, {
       provider: 'MERCADO_PAGO',
       mercadoPagoPaymentId: dataId,
       mercadoPagoStatus: status,
-      confirmationMode: 'MERCADO_PAGO_WEBHOOK',
+      confirmationMode: 'MERCADO_PAGO_LEGACY_PAYMENT_WEBHOOK',
     });
     return { ok: true, paymentId: payment.id, status: settled.status };
+  }
+
+  async handleWebhook(
+    body: any,
+    query: Record<string, unknown>,
+    headers: Record<string, string | string[] | undefined>,
+  ) {
+    const config = await this.config();
+    const dataId = String(query?.['data.id'] || query?.data_id || body?.data?.id || '').trim();
+    await this.validateSignature(
+      config,
+      String(headers['x-signature'] || ''),
+      String(headers['x-request-id'] || ''),
+      dataId,
+    );
+
+    const type = String(query?.type || body?.type || '').toLowerCase();
+    if (!dataId) return { ok: true, ignored: true, reason: 'missing_data_id', type };
+    if (type === 'order' || type === 'orders') return this.handleOrder(dataId, config);
+    if (type === 'subscription_preapproval') return this.handleSubscription(dataId, config);
+    if (type === 'subscription_authorized_payment') return this.handleAuthorizedPayment(dataId, config);
+    if (type === 'payment' || type === 'payments') return this.handleLegacyPayment(dataId, config);
+    return { ok: true, ignored: true, type, dataId };
   }
 }
