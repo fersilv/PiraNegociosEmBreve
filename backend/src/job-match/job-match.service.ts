@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash } from 'crypto';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { Job } from '../jobs/entities/job.entity';
 import { User, UserType } from '../users/entities/user.entity';
 import { PaymentsService } from '../payments/payments.service';
@@ -304,6 +304,38 @@ export class JobMatchService {
 
     matches.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
     return { ...status, matches };
+  }
+
+  async getEarlyAlertRecipientsForJob(jobId: string): Promise<string[]> {
+    const [job, profileRows, entitlementRows] = await Promise.all([
+      this.jobs.findOne({ where: { id: jobId, active: true } }),
+      this.dataSource.query(`SELECT * FROM job_match_profiles WHERE "jobId" = $1 AND status = 'READY' LIMIT 1`, [jobId]),
+      this.dataSource.query(
+        `SELECT DISTINCT e."userId"
+         FROM user_feature_entitlements e
+         JOIN users u ON u.id = e."userId"
+         WHERE e.feature = 'EARLY_JOB_ALERTS' AND e."expiresAt" > now()
+           AND u."isOpenToWork" = true
+           AND (u.type IS NULL OR u.type = 'CANDIDATE')`,
+      ),
+    ]);
+    const jobProfile = profileRows[0];
+    const userIds = entitlementRows.map((row: any) => String(row.userId)).filter(Boolean);
+    if (!job || !jobProfile?.profile || !userIds.length) return [];
+
+    const candidates = await this.users.find({ where: { id: In(userIds) } });
+    const cachedRows = await this.dataSource.query(
+      `SELECT * FROM job_match_results WHERE "jobId" = $1 AND "userId" = ANY($2::varchar[])`,
+      [jobId, userIds],
+    );
+    const cacheMap = new Map(cachedRows.map((row: any) => [row.userId, row]));
+    const recipients: string[] = [];
+
+    for (const candidate of candidates) {
+      const result = await this.cachedScoreForUserJob(candidate, job, jobProfile, cacheMap.get(candidate.id));
+      if (Number(result.score || 0) >= 55) recipients.push(candidate.id);
+    }
+    return recipients;
   }
 
   async getCompanyCandidatesForJob(requestingUserId: string, jobId: string) {
