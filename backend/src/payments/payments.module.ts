@@ -8,6 +8,7 @@ import {
   EfiPaymentsWebhookController,
   MercadoPagoPaymentsWebhookController,
 } from './payments.controller';
+import { PaymentProviderPublicController } from './payment-provider-public.controller';
 import { PaymentsService } from './payments.service';
 import { BillingSupportService } from './billing-support.service';
 import { ProductDurationService } from './product-duration.service';
@@ -21,6 +22,7 @@ import { PaymentProviderManagerService } from './payment-provider-manager.servic
   imports: [TypeOrmModule.forFeature([User])],
   controllers: [
     PaymentsController,
+    PaymentProviderPublicController,
     EfiPaymentsWebhookController,
     MercadoPagoPaymentsWebhookController,
     AdminPaymentsController,
