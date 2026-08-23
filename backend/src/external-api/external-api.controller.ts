@@ -27,6 +27,40 @@ export class ExternalApiController {
     private readonly jobMatch: JobMatchService,
   ) {}
 
+  @Get('match-profile-schema')
+  matchProfileSchema() {
+    return {
+      field: 'matchProfile',
+      optional: true,
+      purpose: 'Permite que uma IA de ingestão envie a ficha estruturada da vaga e evite uma segunda chamada de IA interna quando a ficha for aceita.',
+      requiredFields: ['canonicalRole', 'occupationalFamily'],
+      requirementTypes: ['SKILL', 'EXPERIENCE', 'EDUCATION', 'CERTIFICATION', 'LICENSE', 'OTHER'],
+      schema: {
+        canonicalRole: 'string',
+        occupationalFamily: 'string',
+        occupationKeywords: ['string'],
+        technicalSkills: [{ name: 'string', required: 'boolean', weight: 'number 0.1..5', evidenceTerms: ['string'] }],
+        requirements: [{ label: 'string', type: 'SKILL|EXPERIENCE|EDUCATION|CERTIFICATION|LICENSE|OTHER', required: 'boolean', weight: 'number 0.1..5', evidenceTerms: ['string'] }],
+        softSkills: ['string'],
+        summary: 'string',
+      },
+      example: {
+        canonicalRole: 'Operador de Colhedora',
+        occupationalFamily: 'Operação de máquinas agrícolas e colheita mecanizada',
+        occupationKeywords: ['colhedora', 'máquinas agrícolas', 'colheita mecanizada'],
+        technicalSkills: [
+          { name: 'Operação de colhedora', required: true, weight: 2, evidenceTerms: ['colhedora', 'máquina de colheita'] },
+        ],
+        requirements: [
+          { label: 'Experiência com operação de colhedora', type: 'EXPERIENCE', required: true, weight: 2, evidenceTerms: ['operação de colhedora', 'colheita mecanizada'] },
+        ],
+        softSkills: ['Trabalho em equipe'],
+        summary: 'Perfil para operação segura de colhedoras e apoio à colheita mecanizada.',
+      },
+      note: 'A ficha descreve a vaga. Ela nunca define score de candidato; a compatibilidade continua sendo calculada internamente contra cada currículo.',
+    };
+  }
+
   @Get()
   list(@Req() req: any, @Query() query: JobCatalogQuery) {
     return this.jobs.list(query, req.apiClient);
