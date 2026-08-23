@@ -4,6 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { Onboarding } from "./Onboarding";
 import { WorkspaceLayout } from "../components/WorkspaceLayout";
 import { AdminWorkspaceLayout } from "../components/AdminWorkspaceLayout";
+import { BoostVisibilityBanner } from "../components/BoostVisibilityBanner";
 import { CompanyJobsManagementPage } from "./CompanyJobsManagementPage";
 import { CompanyHomePage } from "./CompanyHomePage";
 import { CompanyNewJobPage } from "./CompanyNewJobPage";
@@ -159,6 +160,6 @@ export function Dashboard() {
   if (isAdminRoute) return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
   if (isCompanyRoute) return <WorkspaceLayout workspace="company"><CompanyRoutes hasCompany={Boolean(profile?.companyId)} /></WorkspaceLayout>;
   if (isResumeStudioRoute) return <ResumeWorkspace />;
-  if (isUserRoute) return <WorkspaceLayout workspace="user"><UserRoutes /></WorkspaceLayout>;
+  if (isUserRoute) return <WorkspaceLayout workspace="user"><BoostVisibilityBanner /><UserRoutes /></WorkspaceLayout>;
   return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
 }
