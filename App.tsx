@@ -40,26 +40,6 @@ function ContextualUtilityLink() {
       </Link>
     );
   }
-  if (location.pathname === "/admin/pagamentos") {
-    return (
-      <Link
-        to="/admin/pagamentos/suporte"
-        className="fixed bottom-20 right-4 z-[75] rounded-full border border-violet-200 bg-white/95 px-4 py-2.5 text-xs font-black text-violet-700 shadow-xl backdrop-blur md:bottom-5 md:right-5"
-      >
-        🛟 Suporte financeiro
-      </Link>
-    );
-  }
-  if (location.pathname.startsWith("/admin") && !location.pathname.startsWith("/admin/pagamentos")) {
-    return (
-      <Link
-        to="/admin/pagamentos"
-        className="fixed bottom-20 right-4 z-[75] rounded-full border border-emerald-200 bg-white/95 px-4 py-2.5 text-xs font-black text-emerald-700 shadow-xl backdrop-blur md:bottom-5 md:right-5"
-      >
-        ◈ Pix & pagamentos
-      </Link>
-    );
-  }
   return null;
 }
 
