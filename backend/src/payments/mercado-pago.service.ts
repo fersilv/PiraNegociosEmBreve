@@ -145,7 +145,7 @@ export class MercadoPagoService {
     };
   }
 
-  async createRecurringCheckout() {
+  async createRecurringCheckout(): Promise<never> {
     throw new ServiceUnavailableException(
       'Neste adapter, o Mercado Pago está habilitado para Pix avulso. Para o Plano Destaque mensal com Pix Automático, use a Efí Bank.',
     );
