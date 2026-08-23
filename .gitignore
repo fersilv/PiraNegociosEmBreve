@@ -21,6 +21,8 @@ backend/serviceAccountKey.json
 *.pem
 *.key
 backend/certs/
+.secrets/
+backend/.secrets/
 
 # Editor directories and files
 .vscode/*
