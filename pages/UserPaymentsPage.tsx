@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CalendarClock, CheckCircle2, Clock3, Crown, QrCode, ReceiptText, Sparkles, Zap } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BellRing, CalendarClock, CheckCircle2, Clock3, Crown, Eye, EyeOff, QrCode, ReceiptText, Sparkles, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 
@@ -26,7 +26,7 @@ export function UserPaymentsPage() {
   const [payments, setPayments] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [credits, setCredits] = useState<Record<string, number>>({});
-  const [billing, setBilling] = useState<any>({ lifetimeFree: false, entitlements: [], subscriptions: [] });
+  const [billing, setBilling] = useState<any>({ lifetimeFree: false, isOpenToWork: false, entitlements: [], subscriptions: [] });
   const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState<string | null>(null);
   const [checkout, setCheckout] = useState<any>(null);
@@ -58,6 +58,7 @@ export function UserPaymentsPage() {
       "RESUME_AI_IMPROVEMENT",
       "RESUME_AI_IMPORT",
       "JOB_MATCH_30D",
+      "RESUME_BOOST_7D",
       "RESUME_BOOST_15D",
       "PREMIUM_MONTHLY",
     ].includes(product.code)),
@@ -67,9 +68,19 @@ export function UserPaymentsPage() {
   const activeEntitlement = (feature: string) => (billing.entitlements || []).find((item: any) => item.feature === feature && item.active);
   const matchAccess = activeEntitlement("JOB_MATCH_PREMIUM");
   const boostAccess = activeEntitlement("RESUME_BOOST");
+  const earlyAlertAccess = activeEntitlement("EARLY_JOB_ALERTS");
   const activeSubscription = (billing.subscriptions || []).find((item: any) => item.status === "ACTIVE" && new Date(item.currentPeriodEnd).getTime() > Date.now());
 
   const buy = async (productCode: string) => {
+    const product = products.find((item) => item.code === productCode);
+    const includesBoost = Array.isArray(product?.benefits) && product.benefits.some((benefit: any) => benefit?.kind === "ENTITLEMENT" && benefit?.feature === "RESUME_BOOST");
+    if (includesBoost && !billing.isOpenToWork) {
+      const accepted = window.confirm(
+        "Seu perfil está oculto do Banco de Talentos. Ao ativar este Impulso, a opção “Estou buscando oportunidades” será ligada automaticamente para que seu currículo possa receber destaque. Você poderá ocultá-lo novamente quando quiser; nesse caso, o Impulso continuará funcionando normalmente nas candidaturas, mas deixará de aparecer no Banco de Talentos. Deseja continuar?",
+      );
+      if (!accepted) return;
+    }
+
     setBuying(productCode);
     setMessage("");
     try {
@@ -110,15 +121,32 @@ export function UserPaymentsPage() {
         <section className="flex items-start gap-3 rounded-[26px] border border-amber-300 bg-amber-50 p-5"><Crown className="mt-0.5 h-6 w-6 shrink-0 text-amber-500" /><div><p className="text-[10px] font-black uppercase tracking-[.16em] text-amber-700">Conta Vitalícia</p><h2 className="mt-1 font-bold text-stone-950">Recursos pagos sem custo</h2><p className="mt-1 text-sm leading-6 text-stone-600">Análises e Match não exigem créditos ou pagamento. Produtos temporários, como Impulso, podem ser ativados normalmente sem gerar Pix.</p></div></section>
       )}
 
+      {boostAccess && (
+        <section className={`relative overflow-hidden rounded-[28px] border p-5 shadow-sm ${billing.isOpenToWork ? "border-emerald-300 bg-gradient-to-br from-emerald-50 to-lime-50" : "border-orange-300 bg-gradient-to-br from-orange-50 to-amber-50"}`}>
+          <div className={`pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full blur-2xl ${billing.isOpenToWork ? "bg-emerald-300/30" : "bg-orange-300/35"}`} />
+          <div className="relative flex items-start gap-4">
+            <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${billing.isOpenToWork ? "bg-emerald-600 text-white" : "bg-orange-500 text-white"}`}><Zap className="h-5 w-5 animate-pulse" /></span>
+            <div className="min-w-0 flex-1">
+              <p className={`text-[10px] font-black uppercase tracking-[.16em] ${billing.isOpenToWork ? "text-emerald-700" : "text-orange-700"}`}>Impulso ativo</p>
+              <h2 className="mt-1 font-bold text-stone-950">{billing.isOpenToWork ? "Seu currículo está recebendo mais exposição" : "Seu currículo está oculto do Banco de Talentos"}</h2>
+              <p className="mt-1 text-sm leading-6 text-stone-600">{billing.isOpenToWork ? `Destaque ativo no Banco de Talentos e nas suas candidaturas até ${dateLabel(boostAccess.expiresAt)}.` : `O Impulso continua ativo até ${dateLabel(boostAccess.expiresAt)} e suas candidaturas continuam destacadas. Como “Estou buscando oportunidades” está desligado, seu currículo não aparece no Banco de Talentos.`}</p>
+              {!billing.isOpenToWork && <Link to="/user/perfil" className="mt-3 inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-xs font-black text-white"><Eye className="h-4 w-4" /> Ativar exibição do currículo</Link>}
+            </div>
+            {billing.isOpenToWork ? <Eye className="h-5 w-5 text-emerald-600" /> : <EyeOff className="h-5 w-5 text-orange-600" />}
+          </div>
+        </section>
+      )}
+
       <section className="grid gap-3 sm:grid-cols-3">
         <CreditCardValue label="Reanálises" value={credits.RESUME_REANALYSIS || 0} />
         <CreditCardValue label="Otimizações com IA" value={credits.RESUME_AI_IMPROVEMENT || 0} />
         <CreditCardValue label="Novas importações por IA" value={credits.RESUME_AI_IMPORT || 0} />
       </section>
 
-      <section className="grid gap-3 md:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <AccessCard icon={<Sparkles className="h-5 w-5" />} label="Match Inteligente" active={billing.lifetimeFree || Boolean(matchAccess)} detail={billing.lifetimeFree ? "Incluído no vitalício" : matchAccess ? `Até ${dateLabel(matchAccess.expiresAt)}` : "Não ativo"} />
-        <AccessCard icon={<Zap className="h-5 w-5" />} label="Impulso do currículo" active={Boolean(boostAccess)} detail={boostAccess ? `Até ${dateLabel(boostAccess.expiresAt)}` : "Não ativo"} />
+        <AccessCard icon={<Zap className="h-5 w-5" />} label="Impulso do currículo" active={Boolean(boostAccess)} warning={Boolean(boostAccess && !billing.isOpenToWork)} detail={boostAccess ? billing.isOpenToWork ? `Até ${dateLabel(boostAccess.expiresAt)}` : "Ativo nas candidaturas · banco oculto" : "Não ativo"} />
+        <AccessCard icon={<BellRing className="h-5 w-5" />} label="Vagas em primeira mão" active={Boolean(earlyAlertAccess)} detail={earlyAlertAccess ? `Até ${dateLabel(earlyAlertAccess.expiresAt)}` : "Benefício do plano mensal"} />
         <AccessCard icon={<CalendarClock className="h-5 w-5" />} label="Plano Destaque" active={Boolean(activeSubscription)} detail={activeSubscription ? `Até ${dateLabel(activeSubscription.currentPeriodEnd)}` : "Sem assinatura ativa"} />
       </section>
 
@@ -135,7 +163,7 @@ export function UserPaymentsPage() {
             </div>
           ))}
         </div>
-        {message && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">{message}</div>}
+        {message && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800"><AlertTriangle className="mr-1.5 inline h-3.5 w-3.5" />{message}</div>}
         {checkout?.pixCopyPaste && <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Pix copia e cola</p><div className="mt-2 break-all rounded-xl bg-white p-3 font-mono text-xs text-stone-700">{checkout.pixCopyPaste}</div></div>}
       </section>
 
@@ -151,6 +179,9 @@ function CreditCardValue({ label, value }: { label: string; value: number }) {
   return <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"><p className="text-[10px] font-black uppercase tracking-[.14em] text-stone-400">{label}</p><p className="mt-2 text-3xl font-black text-stone-900">{value}</p><p className="mt-1 text-xs text-stone-400">crédito(s) disponível(is)</p></div>;
 }
 
-function AccessCard({ icon, label, active, detail }: { icon: React.ReactNode; label: string; active: boolean; detail: string }) {
-  return <div className={`rounded-2xl border p-4 shadow-sm ${active ? "border-emerald-200 bg-emerald-50" : "border-stone-200 bg-white"}`}><div className={`flex items-center gap-2 ${active ? "text-emerald-700" : "text-stone-400"}`}>{icon}<p className="text-xs font-black uppercase tracking-wider">{label}</p></div><p className={`mt-2 text-sm font-bold ${active ? "text-emerald-800" : "text-stone-500"}`}>{detail}</p></div>;
+function AccessCard({ icon, label, active, warning = false, detail }: { icon: React.ReactNode; label: string; active: boolean; warning?: boolean; detail: string }) {
+  const shell = warning ? "border-orange-200 bg-orange-50" : active ? "border-emerald-200 bg-emerald-50" : "border-stone-200 bg-white";
+  const accent = warning ? "text-orange-700" : active ? "text-emerald-700" : "text-stone-400";
+  const text = warning ? "text-orange-800" : active ? "text-emerald-800" : "text-stone-500";
+  return <div className={`rounded-2xl border p-4 shadow-sm ${shell}`}><div className={`flex items-center gap-2 ${accent}`}>{icon}<p className="text-xs font-black uppercase tracking-wider">{label}</p></div><p className={`mt-2 text-sm font-bold ${text}`}>{detail}</p></div>;
 }
