@@ -11,6 +11,7 @@ import {
   LockKeyhole,
   Pencil,
   RefreshCw,
+  Route,
   ShieldCheck,
   Upload,
   WalletCards,
@@ -19,21 +20,30 @@ import {
 import { api } from "../lib/api";
 
 type ProviderCode = "EFI" | "MERCADO_PAGO";
+type PaymentType = "PIX" | "PIX_AUTOMATICO";
 
 type Provider = {
   code: ProviderCode;
   name: string;
   description?: string;
   active: boolean;
+  activeFor?: PaymentType[];
   configured: boolean;
   configVersion: number;
   lastHealthCheckAt?: string | null;
   lastHealthCheckOk?: boolean | null;
   lastHealthCheckMessage?: string | null;
   lastHealthCheckDetails?: Record<string, unknown>;
-  activatedAt?: string | null;
   updatedAt?: string | null;
   config?: Record<string, any>;
+};
+
+type ProviderRoute = {
+  paymentType: PaymentType;
+  enabled: boolean;
+  providerCode?: ProviderCode | null;
+  providerName?: string | null;
+  activatedAt?: string | null;
 };
 
 function dateLabel(value?: string | null) {
@@ -47,21 +57,25 @@ function providerLabel(code: ProviderCode) {
   return code === "EFI" ? "Efí Bank" : "Mercado Pago";
 }
 
+function paymentTypeLabel(type: PaymentType) {
+  return type === "PIX" ? "Pix avulso" : "Pix Automático";
+}
+
 function capabilities(provider: Provider) {
-  if (provider.code === "EFI") return ["Pix", "Pix Automático"];
-  return ["Pix", "SDK oficial"];
+  if (provider.code === "EFI") return ["Pix", "Pix Automático", "API Pix"];
+  return ["Pix", "Pix Automático", "Orders", "Assinaturas"];
 }
 
 function statusOf(provider: Provider) {
-  if (provider.active) return { label: "Ativa", className: "bg-emerald-100 text-emerald-700", icon: <CheckCircle2 className="h-3.5 w-3.5" /> };
   if (!provider.configured) return { label: "Não configurada", className: "bg-stone-100 text-stone-500", icon: <CircleOff className="h-3.5 w-3.5" /> };
-  if (provider.lastHealthCheckOk === true) return { label: "Operacional", className: "bg-sky-100 text-sky-700", icon: <CheckCircle2 className="h-3.5 w-3.5" /> };
+  if (provider.lastHealthCheckOk === true) return { label: "Operacional", className: "bg-emerald-100 text-emerald-700", icon: <CheckCircle2 className="h-3.5 w-3.5" /> };
   if (provider.lastHealthCheckOk === false) return { label: "Falha na API", className: "bg-red-100 text-red-700", icon: <AlertTriangle className="h-3.5 w-3.5" /> };
   return { label: "Aguardando teste", className: "bg-amber-100 text-amber-700", icon: <FlaskConical className="h-3.5 w-3.5" /> };
 }
 
 export function PaymentMethodsPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [routes, setRoutes] = useState<ProviderRoute[]>([]);
   const [vault, setVault] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState<string | null>(null);
@@ -76,11 +90,13 @@ export function PaymentMethodsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const [providerResponse, vaultResponse] = await Promise.all([
+      const [providerResponse, routeResponse, vaultResponse] = await Promise.all([
         api.get("/admin/payments/providers"),
+        api.get("/admin/payments/providers/routes"),
         api.get("/admin/payments/providers/vault-status"),
       ]);
       setProviders(Array.isArray(providerResponse.data) ? providerResponse.data : []);
+      setRoutes(Array.isArray(routeResponse.data) ? routeResponse.data : []);
       setVault(vaultResponse.data || null);
     } finally {
       setLoading(false);
@@ -90,6 +106,13 @@ export function PaymentMethodsPage() {
   useEffect(() => {
     void load().catch((requestError) => setError(requestError?.response?.data?.message || "Não foi possível carregar as formas de pagamento."));
   }, []);
+
+  const routeFor = (type: PaymentType) => routes.find((route) => route.paymentType === type);
+  const eligibleFor = (provider: Provider, type: PaymentType) => {
+    if (!provider.configured) return false;
+    if (type === "PIX_AUTOMATICO" && provider.code === "EFI" && provider.config?.pixAutomaticEnabled !== true) return false;
+    return true;
+  };
 
   const openEditor = (provider: Provider) => {
     const config = provider.config || {};
@@ -174,10 +197,11 @@ export function PaymentMethodsPage() {
         secretIfFilled(body, "publicKey", draft.publicKey);
         secretIfFilled(body, "webhookSecret", draft.webhookSecret);
       }
+      const savedName = editing.name;
       await api.patch(`/admin/payments/providers/${editing.code}`, body);
       setEditing(null);
       setCertificate(null);
-      setMessage(`${providerLabel(editing.code)} salva. Por segurança, a integração foi desativada e precisa ser testada novamente antes de ativar.`);
+      setMessage(`${savedName} salva. Qualquer rota que usava esse provedor foi desligada por segurança; teste e selecione novamente os tipos de pagamento.`);
       await load();
     } catch (requestError: any) {
       setError(requestError?.response?.data?.message || "Não foi possível salvar a forma de pagamento.");
@@ -205,28 +229,28 @@ export function PaymentMethodsPage() {
     }
   };
 
-  const toggleActive = async (provider: Provider, next: boolean) => {
+  const changeRoute = async (paymentType: PaymentType, providerCode: string) => {
     if (working) return;
-    if (next) {
-      const accepted = window.confirm(
-        `Ativar ${provider.name}? A plataforma vai testar a API novamente agora. Se estiver operacional, qualquer outra forma de pagamento ativa será desativada automaticamente.`,
-      );
-      if (!accepted) return;
-    }
-    setWorking(`active:${provider.code}`);
+    setWorking(`route:${paymentType}`);
     setMessage("");
     setError("");
     try {
-      if (next) {
-        await api.post(`/admin/payments/providers/${provider.code}/activate`);
-        setMessage(`${provider.name} testada e ativada para novos pagamentos.`);
+      if (!providerCode) {
+        await api.post(`/admin/payments/providers/routes/${paymentType}/deactivate`);
+        setMessage(`${paymentTypeLabel(paymentType)} desativado para novas cobranças.`);
       } else {
-        await api.post(`/admin/payments/providers/${provider.code}/deactivate`);
-        setMessage(`${provider.name} desativada. Nenhuma cobrança nova será enviada por ela.`);
+        const provider = providers.find((item) => item.code === providerCode);
+        if (!provider) throw new Error("Provedor não encontrado.");
+        const accepted = window.confirm(
+          `Usar ${provider.name} para ${paymentTypeLabel(paymentType)}? A API será testada novamente antes de ativar esta rota.`,
+        );
+        if (!accepted) return;
+        await api.post(`/admin/payments/providers/${provider.code}/activate`, { paymentType });
+        setMessage(`${paymentTypeLabel(paymentType)} agora será processado por ${provider.name}.`);
       }
       await load();
     } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || "A forma de pagamento não pôde ser ativada.");
+      setError(requestError?.response?.data?.message || requestError?.message || "Não foi possível alterar o roteamento.");
       await load().catch(() => undefined);
     } finally {
       setWorking(null);
@@ -239,7 +263,7 @@ export function PaymentMethodsPage() {
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-terracotta-600">Financeiro · Integrações</p>
           <h1 className="mt-1 font-serif text-3xl font-bold text-stone-900">Formas de pagamento</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Cadastre credenciais, certificados e Webhooks dos provedores. Somente uma integração pode ficar ativa e ela precisa passar por uma checagem operacional antes da ativação.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Configure os provedores e escolha separadamente quem processa cada tipo de pagamento. Pix avulso e Pix Automático podem usar o mesmo provedor ou provedores diferentes.</p>
         </div>
         <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-sm font-bold text-stone-700 shadow-sm disabled:opacity-50">
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Atualizar status
@@ -253,7 +277,7 @@ export function PaymentMethodsPage() {
             <div>
               <p className="text-[10px] font-black uppercase tracking-[.15em] text-violet-700">Cofre de credenciais</p>
               <h2 className="mt-1 font-bold text-stone-950">Segredos criptografados no banco</h2>
-              <p className="mt-1 max-w-3xl text-sm leading-6 text-stone-600">Client Secret, Access Token, chave Pix, assinatura de Webhook e o próprio certificado da Efí são armazenados criptografados. A chave-mestra fica separada do banco e é gerada localmente no servidor.</p>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-stone-600">Client Secret, Access Token, chave Pix, assinatura de Webhook e o certificado da Efí ficam criptografados. A chave-mestra permanece separada do banco e fora do repositório.</p>
             </div>
           </div>
         </div>
@@ -270,25 +294,54 @@ export function PaymentMethodsPage() {
         </div>
       )}
 
+      <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700"><Route className="h-5 w-5" /></span>
+          <div><h2 className="font-bold text-stone-950">Roteamento por tipo de pagamento</h2><p className="mt-1 text-xs leading-5 text-stone-500">Ao selecionar um provedor, a plataforma testa a API novamente. Apenas a rota escolhida é alterada; a outra continua independente.</p></div>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          {(["PIX", "PIX_AUTOMATICO"] as PaymentType[]).map((type) => {
+            const route = routeFor(type);
+            return (
+              <div key={type} className="rounded-2xl border border-stone-200 bg-[#fffdfa] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div><p className="text-[10px] font-black uppercase tracking-[.14em] text-stone-400">{type === "PIX" ? "Pagamento imediato" : "Pagamento recorrente"}</p><h3 className="mt-1 font-bold text-stone-950">{paymentTypeLabel(type)}</h3><p className="mt-1 text-xs leading-5 text-stone-500">{type === "PIX" ? "QR Code e Pix copia e cola para compras avulsas." : "Autorização única e cobranças recorrentes do plano mensal."}</p></div>
+                  {route?.enabled && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black text-emerald-700">ATIVO</span>}
+                </div>
+                <label className="mt-4 block">
+                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-stone-400">Provedor</span>
+                  <select value={route?.enabled ? route.providerCode || "" : ""} disabled={Boolean(working)} onChange={(event) => void changeRoute(type, event.target.value)} className="w-full rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm font-bold text-stone-700 outline-none focus:border-emerald-400 disabled:opacity-60">
+                    <option value="">Desativado</option>
+                    {providers.map((provider) => <option key={provider.code} value={provider.code} disabled={!eligibleFor(provider, type)}>{provider.name}{!provider.configured ? " · configure primeiro" : type === "PIX_AUTOMATICO" && provider.code === "EFI" && provider.config?.pixAutomaticEnabled !== true ? " · Pix Automático desativado" : provider.lastHealthCheckOk === false ? " · último teste falhou" : ""}</option>)}
+                  </select>
+                </label>
+                {working === `route:${type}` && <p className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-emerald-700"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Testando e atualizando rota...</p>}
+                {route?.enabled && <p className="mt-2 text-[10px] text-stone-400">Em uso desde {dateLabel(route.activatedAt)}.</p>}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
       <section className="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-sm">
         <div className="border-b border-stone-200 p-5 sm:p-6">
           <h2 className="font-bold text-stone-950">Provedores disponíveis</h2>
-          <p className="mt-1 text-xs text-stone-500">Editar uma configuração invalida o teste anterior e desativa aquela integração até uma nova checagem.</p>
+          <p className="mt-1 text-xs text-stone-500">Credenciais e saúde da API são próprias de cada provedor. Editar credenciais desliga somente as rotas que dependiam dele.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
-            <thead><tr className="border-b border-stone-200 bg-stone-50 text-[10px] uppercase tracking-wider text-stone-400"><th className="px-4 py-3">Forma</th><th className="px-4 py-3">Recursos</th><th className="px-4 py-3">Configuração</th><th className="px-4 py-3">API</th><th className="px-4 py-3">Último teste</th><th className="px-4 py-3 text-center">Ativa</th><th className="px-4 py-3"></th></tr></thead>
+            <thead><tr className="border-b border-stone-200 bg-stone-50 text-[10px] uppercase tracking-wider text-stone-400"><th className="px-4 py-3">Provedor</th><th className="px-4 py-3">Recursos</th><th className="px-4 py-3">Configuração</th><th className="px-4 py-3">API</th><th className="px-4 py-3">Em uso</th><th className="px-4 py-3">Último teste</th><th className="px-4 py-3"></th></tr></thead>
             <tbody>
               {providers.map((provider) => {
                 const status = statusOf(provider);
                 return (
                   <tr key={provider.code} className="border-b border-stone-100 last:border-0">
-                    <td className="px-4 py-4"><div className="flex items-start gap-3"><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${provider.active ? "bg-emerald-100 text-emerald-700" : "bg-stone-100 text-stone-500"}`}><WalletCards className="h-5 w-5" /></span><div><p className="font-bold text-stone-900">{provider.name}</p><p className="mt-0.5 text-[10px] text-stone-400">{provider.code === "MERCADO_PAGO" ? "Ecossistema Mercado Livre" : "Banco e API Pix"}</p></div></div></td>
-                    <td className="px-4 py-4"><div className="flex flex-wrap gap-1.5">{capabilities(provider).map((item) => <span key={item} className="rounded-full bg-stone-100 px-2.5 py-1 text-[10px] font-bold text-stone-600">{item}</span>)}</div></td>
+                    <td className="px-4 py-4"><div className="flex items-start gap-3"><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${provider.activeFor?.length ? "bg-emerald-100 text-emerald-700" : "bg-stone-100 text-stone-500"}`}><WalletCards className="h-5 w-5" /></span><div><p className="font-bold text-stone-900">{provider.name}</p><p className="mt-0.5 text-[10px] text-stone-400">{provider.code === "MERCADO_PAGO" ? "Mercado Pago / Mercado Livre" : "Banco e API Pix"}</p></div></div></td>
+                    <td className="px-4 py-4"><div className="flex max-w-xs flex-wrap gap-1.5">{capabilities(provider).map((item) => <span key={item} className="rounded-full bg-stone-100 px-2.5 py-1 text-[10px] font-bold text-stone-600">{item}</span>)}</div></td>
                     <td className="px-4 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${provider.configured ? "bg-sky-100 text-sky-700" : "bg-stone-100 text-stone-500"}`}>{provider.configured ? "SALVA" : "PENDENTE"}</span><p className="mt-1 text-[10px] text-stone-400">v{provider.configVersion || 0}</p></td>
                     <td className="px-4 py-4"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-black ${status.className}`}>{status.icon}{status.label}</span>{provider.lastHealthCheckMessage && <p className="mt-2 max-w-xs text-[10px] leading-4 text-stone-500">{provider.lastHealthCheckMessage}</p>}</td>
+                    <td className="px-4 py-4"><div className="flex max-w-48 flex-wrap gap-1.5">{provider.activeFor?.length ? provider.activeFor.map((type) => <span key={type} className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black text-emerald-700">{paymentTypeLabel(type)}</span>) : <span className="text-xs text-stone-400">Nenhuma rota</span>}</div></td>
                     <td className="px-4 py-4 text-xs text-stone-500">{dateLabel(provider.lastHealthCheckAt)}</td>
-                    <td className="px-4 py-4 text-center"><Switch checked={provider.active} disabled={Boolean(working)} onChange={(next) => void toggleActive(provider, next)} label={`Ativar ${provider.name}`} /></td>
                     <td className="px-4 py-4"><div className="flex justify-end gap-2"><button type="button" disabled={!provider.configured || Boolean(working)} onClick={() => void testProvider(provider)} className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-bold text-stone-600 disabled:opacity-40">{working === `test:${provider.code}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />} Testar</button><button type="button" onClick={() => openEditor(provider)} className="inline-flex items-center gap-1.5 rounded-lg bg-stone-900 px-3 py-2 text-xs font-black text-white"><Pencil className="h-3.5 w-3.5" /> Editar</button></div></td>
                   </tr>
                 );
@@ -328,23 +381,23 @@ export function PaymentMethodsPage() {
                   <SecretField label="Senha do certificado, se houver" configured={editing.config?.certificateHasPassphrase} value={draft.certificatePassphrase || ""} onChange={(value) => setDraft((current) => ({ ...current, certificatePassphrase: value }))} />
 
                   <div className="rounded-2xl border border-stone-200 p-4">
-                    <div className="flex items-start justify-between gap-4"><div><p className="font-bold text-stone-900">Pix Automático</p><p className="mt-1 text-xs leading-5 text-stone-500">Ative para permitir a assinatura mensal com autorização recorrente oficial da Efí.</p></div><Switch checked={draft.pixAutomaticEnabled === true} onChange={(value) => setDraft((current) => ({ ...current, pixAutomaticEnabled: value }))} label="Pix Automático" /></div>
+                    <div className="flex items-start justify-between gap-4"><div><p className="font-bold text-stone-900">Pix Automático</p><p className="mt-1 text-xs leading-5 text-stone-500">Ative para que a Efí possa ser selecionada na rota de pagamentos recorrentes.</p></div><Switch checked={draft.pixAutomaticEnabled === true} onChange={(value) => setDraft((current) => ({ ...current, pixAutomaticEnabled: value }))} label="Pix Automático" /></div>
                     {draft.pixAutomaticEnabled && <div className="mt-4 grid gap-4 sm:grid-cols-3"><SecretField label="Agência recebedora" configured={editing.config?.receiverAccountConfigured} value={draft.receiverAgency || ""} onChange={(value) => setDraft((current) => ({ ...current, receiverAgency: value }))} /><SecretField label="Conta recebedora" configured={editing.config?.receiverAccountConfigured} value={draft.receiverAccount || ""} onChange={(value) => setDraft((current) => ({ ...current, receiverAccount: value }))} /><SelectField label="Tipo da conta" value={draft.receiverAccountType || "PAGAMENTO"} onChange={(value) => setDraft((current) => ({ ...current, receiverAccountType: value }))} options={[{ value: "PAGAMENTO", label: "Pagamento" }, { value: "CORRENTE", label: "Corrente" }, { value: "POUPANCA", label: "Poupança" }]} /></div>}
                   </div>
 
-                  <label className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4"><input type="checkbox" checked={draft.skipMtlsChecking === true} onChange={(event) => setDraft((current) => ({ ...current, skipMtlsChecking: event.target.checked }))} className="mt-1" /><span><strong className="text-sm text-amber-900">Ignorar validação mTLS do Webhook na Efí</strong><span className="mt-1 block text-xs leading-5 text-amber-800/80">Use apenas se o seu proxy não consegue receber o certificado cliente da Efí. Em produção, prefira manter desligado.</span></span></label>
+                  <label className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4"><input type="checkbox" checked={draft.skipMtlsChecking === true} onChange={(event) => setDraft((current) => ({ ...current, skipMtlsChecking: event.target.checked }))} className="mt-1" /><span><strong className="text-sm text-amber-900">Ignorar validação mTLS do Webhook na Efí</strong><span className="mt-1 block text-xs leading-5 text-amber-800/80">Use apenas se o proxy não consegue receber o certificado cliente da Efí. Em produção, prefira manter desligado.</span></span></label>
                 </>
               ) : (
                 <>
                   <MercadoPagoInstructions />
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="URL pública da API" value={draft.publicApiBaseUrl || ""} onChange={(value) => setDraft((current) => ({ ...current, publicApiBaseUrl: value }))} placeholder={defaultApiBaseUrl} />
-                    <div className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5"><p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Webhook calculado</p><p className="mt-1 break-all text-xs font-bold text-stone-600">{`${String(draft.publicApiBaseUrl || defaultApiBaseUrl).replace(/\/$/, "")}/payments/webhooks/mercado-pago`}</p></div>
+                    <div className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5"><p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Webhook</p><p className="mt-1 break-all text-xs font-bold text-stone-600">{`${String(draft.publicApiBaseUrl || defaultApiBaseUrl).replace(/\/$/, "")}/payments/webhooks/mercado-pago`}</p></div>
                     <SecretField label="Access Token" configured={editing.config?.accessTokenConfigured} value={draft.accessToken || ""} onChange={(value) => setDraft((current) => ({ ...current, accessToken: value }))} />
                     <SecretField label="Public Key" configured={editing.config?.publicKeyConfigured} value={draft.publicKey || ""} onChange={(value) => setDraft((current) => ({ ...current, publicKey: value }))} />
                     <div className="sm:col-span-2"><SecretField label="Assinatura secreta do Webhook" configured={editing.config?.webhookSecretConfigured} value={draft.webhookSecret || ""} onChange={(value) => setDraft((current) => ({ ...current, webhookSecret: value }))} /></div>
                   </div>
-                  <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-800"><strong>Escopo atual do adapter:</strong> Pix avulso via SDK oficial. Para o Plano Destaque mensal por Pix Automático, mantenha a Efí ativa. O suporte de assinatura Mercado Pago será expandido quando a jornada recorrente Pix puder ser vinculada ao nosso ciclo com a mesma garantia de confirmação.</div>
+                  <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-800"><strong>Integração:</strong> Pix avulso usa Checkout Transparente com API de Orders. Pix Automático usa a API de Assinaturas; a autorização é concluída na jornada segura do Mercado Pago e as cobranças futuras são conciliadas pelos eventos de assinatura.</div>
                 </>
               )}
             </div>
@@ -361,11 +414,11 @@ export function PaymentMethodsPage() {
 }
 
 function EfiInstructions() {
-  return <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4"><div className="flex gap-3"><FileKey2 className="mt-0.5 h-5 w-5 shrink-0 text-violet-700" /><div><p className="font-bold text-violet-950">Onde pegar o certificado da Efí?</p><ol className="mt-2 list-decimal space-y-1 pl-4 text-xs leading-5 text-violet-800"><li>Entre na sua conta Efí e abra <strong>API</strong>.</li><li>Acesse <strong>Meus Certificados</strong>.</li><li>Escolha <strong>Produção</strong> ou <strong>Homologação</strong>, conforme as credenciais usadas.</li><li>Clique em <strong>Novo Certificado</strong>, dê um nome e gere.</li><li>Baixe o arquivo <strong>.p12</strong> e envie aqui.</li></ol><p className="mt-2 rounded-lg bg-white/70 p-2 text-[11px] font-semibold text-violet-800">⚠️ Guarde uma cópia segura. A Efí informa que o mesmo certificado não fica disponível para baixar novamente depois.</p><a href="https://dev.efipay.com.br/docs/api-pix/credenciais/" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-black text-violet-700 underline">Abrir documentação oficial <ExternalLink className="h-3.5 w-3.5" /></a></div></div></div>;
+  return <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4"><div className="flex gap-3"><FileKey2 className="mt-0.5 h-5 w-5 shrink-0 text-violet-700" /><div><p className="font-bold text-violet-950">Onde pegar o certificado da Efí?</p><ol className="mt-2 list-decimal space-y-1 pl-4 text-xs leading-5 text-violet-800"><li>Entre na sua conta Efí e abra <strong>API</strong>.</li><li>Acesse <strong>Meus Certificados</strong>.</li><li>Escolha <strong>Produção</strong> ou <strong>Homologação</strong>.</li><li>Clique em <strong>Novo Certificado</strong>, dê um nome e gere.</li><li>Baixe o arquivo <strong>.p12</strong> e envie aqui.</li></ol><p className="mt-2 rounded-lg bg-white/70 p-2 text-[11px] font-semibold text-violet-800">⚠️ Guarde uma cópia segura. O certificado não deve ser enviado pelo chat.</p><a href="https://dev.efipay.com.br/docs/api-pix/credenciais/" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-black text-violet-700 underline">Abrir documentação oficial <ExternalLink className="h-3.5 w-3.5" /></a></div></div></div>;
 }
 
 function MercadoPagoInstructions() {
-  return <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4"><div className="flex gap-3"><KeyRound className="mt-0.5 h-5 w-5 shrink-0 text-sky-700" /><div><p className="font-bold text-sky-950">Credenciais Mercado Pago</p><ol className="mt-2 list-decimal space-y-1 pl-4 text-xs leading-5 text-sky-800"><li>Acesse <strong>Mercado Pago Developers → Suas integrações</strong> e selecione sua aplicação.</li><li>Em <strong>Dados da integração / Credenciais</strong>, copie o Access Token correspondente ao ambiente.</li><li>Em <strong>Webhooks → Configurar notificações</strong>, cadastre a URL exibida abaixo e habilite eventos de pagamento.</li><li>Depois de salvar o Webhook, revele a <strong>assinatura secreta</strong> e cole aqui.</li></ol><a href="https://www.mercadopago.com.br/developers/panel/app" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-black text-sky-700 underline">Abrir Suas integrações <ExternalLink className="h-3.5 w-3.5" /></a></div></div></div>;
+  return <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4"><div className="flex gap-3"><KeyRound className="mt-0.5 h-5 w-5 shrink-0 text-sky-700" /><div><p className="font-bold text-sky-950">Credenciais Mercado Pago</p><ol className="mt-2 list-decimal space-y-1 pl-4 text-xs leading-5 text-sky-800"><li>Em <strong>Mercado Pago Developers → Suas integrações</strong>, abra a aplicação do Checkout Transparente.</li><li>Em <strong>Credenciais</strong>, copie o Access Token do ambiente correto.</li><li>Em <strong>Webhooks</strong>, use a URL exibida abaixo.</li><li>Para Pix avulso, habilite <strong>Order (Mercado Pago)</strong>. Para recorrência, habilite os eventos de <strong>Planos e assinaturas</strong>, incluindo assinatura e pagamento recorrente.</li><li>Salve, revele a <strong>assinatura secreta</strong> e cadastre-a aqui.</li></ol><a href="https://www.mercadopago.com.br/developers/panel/app" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-black text-sky-700 underline">Abrir Suas integrações <ExternalLink className="h-3.5 w-3.5" /></a></div></div></div>;
 }
 
 function Switch({ checked, onChange, disabled = false, label }: { checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean; label: string }) {
