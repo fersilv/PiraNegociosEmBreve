@@ -53,35 +53,51 @@ export class JobMatchAiService {
     return { provider, model, apiKey };
   }
 
-  private parseJson(text: string): any {
-    const cleaned = String(text || '{}').replace(/```json/gi, '').replace(/```/g, '').trim();
-    try { return JSON.parse(cleaned); } catch {
-      const start = cleaned.indexOf('{');
-      const end = cleaned.lastIndexOf('}');
-      if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1));
-      throw new Error('A IA retornou uma ficha de vaga inválida.');
-    }
+  private jsonCandidates(text: string) {
+    const cleaned = String(text || '{}')
+      .replace(/```json/gi, '')
+      .replace(/```/g, '')
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .trim();
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    const sliced = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
+    const withoutTrailingCommas = sliced.replace(/,\s*([}\]])/g, '$1');
+    return Array.from(new Set([cleaned, sliced, withoutTrailingCommas])).filter(Boolean);
   }
 
-  private async generate(config: RuntimeConfig, prompt: string, system: string) {
+  private parseJson(text: string): any {
+    let lastError: unknown = null;
+    for (const candidate of this.jsonCandidates(text)) {
+      try {
+        return JSON.parse(candidate);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    const detail = lastError instanceof Error ? lastError.message : 'JSON inválido';
+    throw new Error(`A IA retornou uma ficha de vaga inválida: ${detail}`);
+  }
+
+  private async rawGenerate(config: RuntimeConfig, prompt: string, system: string, maxTokens = 3200) {
     if (config.provider === 'OPENAI') {
       const response = await new OpenAI({ apiKey: config.apiKey }).responses.create({
         model: config.model,
         instructions: system,
         input: prompt,
-        max_output_tokens: 3200,
+        max_output_tokens: maxTokens,
       });
-      return this.parseJson(response.output_text || '{}');
+      return response.output_text || '';
     }
     if (config.provider === 'ANTHROPIC') {
       const response = await new Anthropic({ apiKey: config.apiKey }).messages.create({
         model: config.model,
         system,
-        max_tokens: 3200,
+        max_tokens: maxTokens,
         messages: [{ role: 'user', content: prompt }],
       });
-      const text = response.content.filter((block: any) => block.type === 'text').map((block: any) => block.text).join('\n');
-      return this.parseJson(text || '{}');
+      return response.content.filter((block: any) => block.type === 'text').map((block: any) => block.text).join('\n');
     }
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.model)}:generateContent?key=${encodeURIComponent(config.apiKey)}`,
@@ -91,15 +107,38 @@ export class JobMatchAiService {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 3200 },
+          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: maxTokens },
         }),
       },
     );
     const raw = await response.text();
     if (!response.ok) throw new Error(`Gemini respondeu HTTP ${response.status}: ${raw.slice(0, 400)}`);
     const data = JSON.parse(raw || '{}') as any;
-    const text = (data.candidates || []).flatMap((candidate: any) => candidate.content?.parts || []).map((part: any) => part.text || '').join('\n');
-    return this.parseJson(text || '{}');
+    return (data.candidates || []).flatMap((candidate: any) => candidate.content?.parts || []).map((part: any) => part.text || '').join('\n');
+  }
+
+  private async generate(config: RuntimeConfig, prompt: string, system: string) {
+    const first = await this.rawGenerate(config, prompt, system);
+    try {
+      return this.parseJson(first);
+    } catch (firstError) {
+      const repairSystem = [
+        'Você é um reparador estrito de JSON.',
+        'Receberá uma resposta que deveria ser JSON, mas está sintaticamente inválida.',
+        'Corrija somente a sintaxe necessária para produzir JSON válido.',
+        'Não acrescente fatos, requisitos, habilidades ou conteúdo novo.',
+        'Responda exclusivamente com o JSON corrigido, sem markdown ou explicações.',
+      ].join('\n');
+      const repairPrompt = `Corrija o JSON abaixo sem alterar seu significado:\n\n${String(first).slice(0, 14000)}`;
+      const repaired = await this.rawGenerate(config, repairPrompt, repairSystem);
+      try {
+        return this.parseJson(repaired);
+      } catch (repairError) {
+        const original = firstError instanceof Error ? firstError.message : 'JSON inválido';
+        const repairedDetail = repairError instanceof Error ? repairError.message : 'JSON inválido após reparo';
+        throw new Error(`${original}. A tentativa automática de reparo também falhou: ${repairedDetail}`);
+      }
+    }
   }
 
   private strings(value: unknown, limit: number, maxLength = 120): string[] {
@@ -153,6 +192,17 @@ export class JobMatchAiService {
     };
   }
 
+  normalizeProvidedProfile(raw: unknown): JobMatchProfile {
+    const source = typeof raw === 'string' ? this.parseJson(raw) : raw;
+    if (!source || typeof source !== 'object' || Array.isArray(source)) {
+      throw new Error('matchProfile precisa ser um objeto JSON.');
+    }
+    const profile = this.normalizeProfile(source);
+    if (!profile.canonicalRole) throw new Error('matchProfile.canonicalRole é obrigatório.');
+    if (!profile.occupationalFamily) throw new Error('matchProfile.occupationalFamily é obrigatório.');
+    return profile;
+  }
+
   async analyze(job: Job): Promise<JobMatchProfile> {
     const config = await this.config();
     const system = [
@@ -180,6 +230,6 @@ export class JobMatchAiService {
       type: job.type,
       workModel: job.workModel,
     })}`;
-    return this.normalizeProfile(await this.generate(config, prompt, system));
+    return this.normalizeProvidedProfile(await this.generate(config, prompt, system));
   }
 }
