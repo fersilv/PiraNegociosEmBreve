@@ -152,9 +152,9 @@ export class PaymentsService {
     });
     const bySales = [...products].sort((a, b) => b.sales - a.sales || b.revenue - a.revenue);
     const byRevenue = [...products].sort((a, b) => b.revenue - a.revenue || b.sales - a.sales);
-    const conversionPool = products.some((item) => item.checkouts >= 3)
-      ? products.filter((item) => item.checkouts >= 3)
-      : products.filter((item) => item.checkouts > 0);
+    const conversionPool = products.some((item: any) => item.checkouts >= 3)
+      ? products.filter((item: any) => item.checkouts >= 3)
+      : products.filter((item: any) => item.checkouts > 0);
     const byConversion = [...conversionPool].sort((a, b) => b.conversionPercent - a.conversionPercent || b.sales - a.sales);
     return {
       products,
