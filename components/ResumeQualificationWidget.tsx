@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Info,
   Loader2,
   RefreshCw,
   Sparkles,
@@ -17,18 +18,83 @@ import { api } from '../lib/api';
 
 type OfferAction = 'improve' | 'review' | null;
 
-function signaturePayload(profile: any) {
-  const preferences = profile?.resumePreferences && typeof profile.resumePreferences === 'object'
+function cleanText(value: unknown, max = 3500) {
+  return String(value || '').trim().slice(0, max);
+}
+
+function cleanSkills(value: unknown, limit = 40) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((item) => cleanText(item, 160)).filter(Boolean))).slice(0, limit);
+}
+
+function signaturePayload(value: any) {
+  const profile = value && typeof value === 'object' ? value : {};
+  const preferences = profile.resumePreferences && typeof profile.resumePreferences === 'object'
     ? profile.resumePreferences
     : {};
+
+  const experiences = Array.isArray(profile.experiences)
+    ? profile.experiences.slice(0, 30).map((experience: any) => ({
+        company: cleanText(experience?.company, 240),
+        role: cleanText(experience?.role, 240),
+        startDate: cleanText(experience?.startDate, 80),
+        endDate: cleanText(experience?.endDate, 80),
+        current: Boolean(experience?.current),
+        description: cleanText(experience?.description, 3500),
+        skills: cleanSkills(experience?.skills, 30),
+        timeline: Array.isArray(experience?.timeline)
+          ? experience.timeline.slice(0, 20).map((stage: any) => ({
+              role: cleanText(stage?.role, 240),
+              startDate: cleanText(stage?.startDate, 80),
+              endDate: cleanText(stage?.endDate, 80),
+              current: Boolean(stage?.current),
+              description: cleanText(stage?.description, 3000),
+              skills: cleanSkills(stage?.skills, 24),
+            }))
+          : [],
+      }))
+    : [];
+
+  const education = Array.isArray(profile.education)
+    ? profile.education.slice(0, 20).map((item: any) => ({
+        institution: cleanText(item?.institution, 240),
+        degree: cleanText(item?.degree, 240),
+        fieldOfStudy: cleanText(item?.fieldOfStudy, 240),
+        startYear: cleanText(item?.startYear, 40),
+        endYear: cleanText(item?.endYear, 40),
+        current: Boolean(item?.current),
+        status: cleanText(item?.status, 80),
+        description: cleanText(item?.description, 1800),
+        skills: cleanSkills(item?.skills, 20),
+      }))
+    : [];
+
+  const courses = Array.isArray(profile.courses)
+    ? profile.courses.slice(0, 30).map((item: any) => ({
+        name: cleanText(item?.name, 240),
+        institution: cleanText(item?.institution, 240),
+        year: cleanText(item?.year, 40),
+        type: cleanText(item?.type, 80),
+        description: cleanText(item?.description, 1200),
+        skills: cleanSkills(item?.skills, 20),
+      }))
+    : [];
+
+  const languages = Array.isArray(profile.languages)
+    ? profile.languages.slice(0, 20).map((item: any) => ({
+        name: cleanText(item?.name, 120),
+        level: cleanText(item?.level, 120),
+      }))
+    : [];
+
   return {
-    headline: String(preferences.headline || '').trim(),
-    bio: String(profile?.bio || '').trim(),
-    experiences: Array.isArray(profile?.experiences) ? profile.experiences : [],
-    education: Array.isArray(profile?.education) ? profile.education : [],
-    skills: Array.isArray(profile?.skills) ? profile.skills : [],
-    courses: Array.isArray(profile?.courses) ? profile.courses : [],
-    languages: Array.isArray(profile?.languages) ? profile.languages : [],
+    headline: cleanText(preferences.headline, 320),
+    bio: cleanText(profile.bio, 4000),
+    experiences,
+    education,
+    skills: cleanSkills(profile.skills, 60),
+    courses,
+    languages,
   };
 }
 
@@ -69,18 +135,18 @@ function boundedScore(value: unknown) {
 
 function scoreHeadline(score: number | null) {
   if (score === null) return 'Descubra a força do seu currículo';
-  if (score >= 85) return 'Currículo forte, com espaço para lapidar';
-  if (score >= 70) return 'Boa base. Dá para ganhar mais impacto';
-  if (score >= 50) return 'Seu currículo pode ficar bem mais competitivo';
+  if (score >= 90) return 'Currículo forte. Agora é lapidação';
+  if (score >= 75) return 'Boa base. Ainda há espaço para ganhar impacto';
+  if (score >= 50) return 'Seu currículo pode ficar mais competitivo';
   return 'Há oportunidades claras de evolução';
 }
 
 function scoreCopy(score: number | null, stale: boolean) {
-  if (stale) return 'Você alterou o currículo. A nota continua salva, mas representa a versão anterior.';
+  if (stale) return 'Você alterou o conteúdo depois da última análise. A nota mostrada ainda representa a versão anterior.';
   if (score === null) return 'A primeira qualificação identifica pontos fortes e mostra onde vale melhorar.';
-  if (score >= 85) return 'A IA encontrou ajustes pontuais para reforçar clareza, evidências e leitura por recrutadores.';
-  if (score >= 70) return 'A IA já encontrou melhorias práticas para deixar o documento mais direto e convincente.';
-  return 'A qualificação encontrou pontos concretos que podem fortalecer apresentação, conteúdo e leitura ATS.';
+  if (score >= 90) return 'As próximas melhorias tendem a ser refinamentos. Elas podem deixar o currículo melhor sem necessariamente aumentar a nota.';
+  if (score >= 75) return 'A IA encontrou oportunidades práticas para deixar o documento mais claro, direto e convincente.';
+  return 'A qualificação encontrou pontos concretos que podem fortalecer conteúdo, apresentação e leitura ATS.';
 }
 
 export function ResumeQualificationWidget() {
@@ -104,7 +170,19 @@ export function ResumeQualificationWidget() {
   const hasAnalysis = Boolean(profile?.hasAiAnalyzed && analysis);
   const storedSignature = String(analysis?.resumeSignature || '');
   const liveSignature = useMemo(() => profile ? currentResumeSignature(profile) : '', [profile]);
-  const analysisStale = Boolean(hasAnalysis && (!storedSignature || storedSignature !== liveSignature));
+
+  // Análises antigas não tinham assinatura. Elas não devem ser marcadas como
+  // desatualizadas só por isso. A partir das novas análises, a comparação passa
+  // a ser exata e considera apenas conteúdo curricular avaliado pela rubrica.
+  const analysisStale = Boolean(
+    hasAnalysis
+    && storedSignature
+    && liveSignature
+    && storedSignature !== liveSignature,
+  );
+
+  const suggestions = Array.isArray(analysis?.suggestions) ? analysis.suggestions : [];
+  const nearCeiling = score !== null && score >= 90;
 
   const loadStatus = useCallback(async () => {
     if (!onResumePage) return;
@@ -167,7 +245,7 @@ export function ResumeQualificationWidget() {
     };
 
     syncMount();
-    const timer = window.setInterval(syncMount, 900);
+    const timer = window.setInterval(syncMount, 1400);
 
     return () => {
       window.clearInterval(timer);
@@ -241,17 +319,16 @@ export function ResumeQualificationWidget() {
   const improvementCredits = Number(status?.credits?.RESUME_AI_IMPROVEMENT || 0);
   const accessOverride = Boolean(status?.paymentAccessOverride);
 
-  const primaryAction = !hasAnalysis
-    ? 'review'
-    : analysisStale
-      ? 'review'
-      : 'improve';
+  const improvementLabel = hasAnalysis
+    ? `Aplicar novas melhorias${improvementPrice ? ` · ${improvementPrice}` : ''}`
+    : `Aplicar melhorias${improvementPrice ? ` · ${improvementPrice}` : ''}`;
 
+  const primaryAction: 'review' | 'improve' = !hasAnalysis || analysisStale ? 'review' : 'improve';
   const primaryLabel = !hasAnalysis
     ? 'Analisar currículo grátis'
     : analysisStale
       ? `Atualizar nota${reanalysisPrice ? ` · ${reanalysisPrice}` : ''}`
-      : `Aplicar melhorias${improvementPrice ? ` · ${improvementPrice}` : ''}`;
+      : improvementLabel;
 
   const handlePrimary = () => {
     if (reviewing) return;
@@ -315,25 +392,26 @@ export function ResumeQualificationWidget() {
 
         <p className="mt-2.5 text-[11px] leading-[1.45] text-white/55">{scoreCopy(score, analysisStale)}</p>
 
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 grid gap-2">
           <button
             type="button"
             onClick={handlePrimary}
             disabled={reviewing || !status?.enabled}
-            className={`inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[11px] font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${analysisStale ? 'bg-amber-500 text-stone-950 hover:bg-amber-400' : 'bg-white text-stone-950 hover:bg-stone-100'}`}
+            className={`inline-flex min-w-0 w-full items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[11px] font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${analysisStale ? 'bg-amber-500 text-stone-950 hover:bg-amber-400' : 'bg-white text-stone-950 hover:bg-stone-100'}`}
           >
             {reviewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : primaryAction === 'improve' ? <WandSparkles className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
             <span className="truncate">{primaryLabel}</span>
           </button>
+
           {hasAnalysis && analysisStale && (
             <button
               type="button"
               onClick={() => setOfferAction('improve')}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-violet-200 transition hover:bg-white/10"
-              title="Aplicar melhorias mesmo sem atualizar a nota"
-              aria-label="Aplicar melhorias"
+              disabled={reviewing || !status?.enabled}
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/12 bg-white/5 px-3 py-2.5 text-[11px] font-black text-white/85 transition hover:bg-white/10 disabled:opacity-50"
             >
-              <WandSparkles className="h-3.5 w-3.5" />
+              <WandSparkles className="h-3.5 w-3.5 text-violet-200" />
+              <span className="truncate">{improvementLabel}</span>
             </button>
           )}
         </div>
@@ -342,7 +420,7 @@ export function ResumeQualificationWidget() {
           <div className="mt-3 max-h-[280px] overflow-y-auto border-t border-white/8 pt-3 pr-1">
             {analysisStale && (
               <div className="mb-3 rounded-xl border border-amber-300/15 bg-amber-300/10 px-3 py-2 text-[10px] leading-4 text-amber-100">
-                A nota atual avalia a versão anterior. Reavalie para comparar a evolução com precisão.
+                A nota atual avalia a versão anterior. Você pode apenas atualizar a nota ou seguir direto para uma nova melhoria, que fará sua própria avaliação interna.
               </div>
             )}
             {analysis?.feedbackText ? (
@@ -353,10 +431,10 @@ export function ResumeQualificationWidget() {
             ) : (
               <p className="text-[11px] text-white/45">A análise detalhada aparecerá aqui quando a qualificação terminar.</p>
             )}
-            {Array.isArray(analysis?.suggestions) && analysis.suggestions.length > 0 && (
+            {suggestions.length > 0 && (
               <div className="mt-3 space-y-2">
                 <p className="text-[9px] font-black uppercase tracking-[.14em] text-white/35">Onde vale evoluir</p>
-                {analysis.suggestions.slice(0, 3).map((suggestion: string, index: number) => (
+                {suggestions.slice(0, 3).map((suggestion: string, index: number) => (
                   <div key={`${suggestion}-${index}`} className="flex items-start gap-2 rounded-xl bg-white/5 px-2.5 py-2 text-[10px] leading-4 text-white/62">
                     <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-violet-200" />
                     <span>{suggestion}</span>
@@ -417,7 +495,7 @@ export function ResumeQualificationWidget() {
 
       {offerAction && (
         <div className="fixed inset-0 z-[210] flex items-center justify-center bg-stone-950/35 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true">
-          <div className="w-full max-w-[390px] overflow-hidden rounded-3xl border border-stone-200 bg-white text-stone-900 shadow-2xl">
+          <div className="w-full max-w-[410px] overflow-hidden rounded-3xl border border-stone-200 bg-white text-stone-900 shadow-2xl">
             <div className="border-b border-stone-100 bg-[linear-gradient(145deg,#faf5ff,#fff)] p-5">
               <div className="flex items-start gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
@@ -427,13 +505,13 @@ export function ResumeQualificationWidget() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="text-[9px] font-black uppercase tracking-[.15em] text-violet-600">{offerIsImprovement ? 'Melhoria com IA' : 'Nova qualificação'}</p>
-                      <h2 className="mt-1 text-base font-black text-stone-950">{offerIsImprovement ? 'Aplique melhorias guiadas pela sua análise' : 'Atualize a nota da versão atual'}</h2>
+                      <h2 className="mt-1 text-base font-black text-stone-950">{offerIsImprovement ? 'Uma nova rodada de melhorias' : 'Atualize a nota da versão atual'}</h2>
                     </div>
                     <button type="button" onClick={() => setOfferAction(null)} className="text-stone-400 hover:text-stone-700" aria-label="Fechar"><X className="h-4 w-4" /></button>
                   </div>
                   <p className="mt-2 text-xs leading-5 text-stone-500">
                     {offerIsImprovement
-                      ? 'A IA usa os pontos da qualificação como checklist, mostra cada antes × depois e só aplica o que você aprovar.'
+                      ? 'A IA analisa a versão atual, procura oportunidades que ainda façam sentido e mostra cada antes × depois para você decidir.'
                       : 'A nova análise considera as alterações feitas no currículo e atualiza nota, diagnóstico e recomendações.'}
                   </p>
                 </div>
@@ -445,16 +523,53 @@ export function ResumeQualificationWidget() {
                 <span className="text-xs font-bold text-stone-600">Valor</span>
                 <strong className="text-sm font-black text-stone-950">{accessOverride || offerCredits > 0 ? 'Incluído no seu acesso' : offerPrice || 'Sem cobrança'}</strong>
               </div>
+
               {offerCredits > 0 && !accessOverride && (
                 <p className="rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">Você já possui {offerCredits} crédito(s) para esta ação.</p>
               )}
+
               {offerIsImprovement && (
-                <div className="grid gap-1.5 text-[11px] leading-5 text-stone-600">
-                  <span>✓ Usa o diagnóstico atual como plano de trabalho</span>
-                  <span>✓ Mostra as alterações antes de aplicar</span>
-                  <span>✓ Não inventa experiências, resultados ou formação</span>
-                  <span>✓ Nova qualificação já incluída ao final</span>
-                </div>
+                <>
+                  <div className={`rounded-2xl border px-3.5 py-3 ${nearCeiling ? 'border-amber-200 bg-amber-50' : 'border-violet-100 bg-violet-50/70'}`}>
+                    <div className="flex items-start gap-2.5">
+                      <Info className={`mt-0.5 h-4 w-4 shrink-0 ${nearCeiling ? 'text-amber-600' : 'text-violet-600'}`} />
+                      <div>
+                        <p className={`text-[11px] font-black ${nearCeiling ? 'text-amber-900' : 'text-violet-900'}`}>
+                          {nearCeiling ? 'Seu currículo já está em uma faixa forte' : 'Melhoria não é promessa de aumentar a nota'}
+                        </p>
+                        <p className={`mt-1 text-[10px] leading-4 ${nearCeiling ? 'text-amber-800' : 'text-violet-700'}`}>
+                          Se melhorias já foram aplicadas, uma nova rodada pode encontrar apenas refinamentos. O texto pode ficar melhor e a pontuação permanecer igual. Você decide se esse refinamento vale uma nova compra.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-1.5 text-[11px] leading-5 text-stone-600">
+                    <span>✓ Usa a qualificação atual como ponto de partida</span>
+                    <span>✓ Evita repetir problemas que já foram resolvidos</span>
+                    <span>✓ Mostra as alterações antes de aplicar</span>
+                    <span>✓ Não inventa experiências, resultados ou formação</span>
+                    <span>✓ Faz uma nova qualificação ao final da melhoria</span>
+                  </div>
+
+                  {analysisStale ? (
+                    <button
+                      type="button"
+                      onClick={() => setOfferAction('review')}
+                      className="flex w-full items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-left transition hover:bg-amber-100"
+                    >
+                      <span>
+                        <span className="block text-[11px] font-black text-amber-900">Quer medir suas alterações antes?</span>
+                        <span className="mt-0.5 block text-[10px] leading-4 text-amber-700">Você pode apenas atualizar a nota e decidir sobre a melhoria depois.</span>
+                      </span>
+                      <span className="ml-3 shrink-0 text-[10px] font-black text-amber-900">{reanalysisPrice || 'Reavaliar'}</span>
+                    </button>
+                  ) : (
+                    <div className="rounded-2xl bg-stone-50 px-3.5 py-3 text-[10px] leading-4 text-stone-500">
+                      Sua nota já corresponde à versão atual. A reavaliação avulsa volta a fazer sentido quando você editar o currículo por conta própria{reanalysisPrice ? ` e custa ${reanalysisPrice}` : ''}.
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
