@@ -5,6 +5,7 @@ import { AiService } from './ai.service';
 import { JobSkillsService } from './job-skills.service';
 import { ResumeImportService } from './resume-import.service';
 import { ResumeReviewService } from './resume-review.service';
+import { TrackedResumeReviewService } from './tracked-resume-review.service';
 import { ResumeImprovementService } from './resume-improvement.service';
 import { AlignedResumeImprovementService } from './aligned-resume-improvement.service';
 import { PhotoAiController } from './photo-ai.controller';
@@ -20,7 +21,11 @@ import { User } from '../users/entities/user.entity';
     AiService,
     JobSkillsService,
     ResumeImportService,
-    ResumeReviewService,
+    TrackedResumeReviewService,
+    {
+      provide: ResumeReviewService,
+      useExisting: TrackedResumeReviewService,
+    },
     AlignedResumeImprovementService,
     {
       provide: ResumeImprovementService,
