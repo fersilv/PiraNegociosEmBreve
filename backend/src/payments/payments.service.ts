@@ -81,6 +81,9 @@ export class PaymentsService {
     if (promotionalPriceCents !== null && promotionalPriceCents > priceCents) {
       throw new BadRequestException('O preço promocional não pode ser maior que o preço normal.');
     }
+    if (promotionStartsAt && promotionEndsAt && new Date(String(promotionEndsAt)).getTime() < new Date(String(promotionStartsAt)).getTime()) {
+      throw new BadRequestException('O fim da promoção não pode ser anterior ao início.');
+    }
 
     const rows = await this.dataSource.query(
       `UPDATE payment_products
@@ -91,6 +94,76 @@ export class PaymentsService {
       [code, name, description, priceCents, promotionalPriceCents, promotionStartsAt, promotionEndsAt, enabled, freeUses],
     );
     return this.presentProduct(rows[0]);
+  }
+
+  async getDevMode() {
+    const rows = await this.dataSource.query(
+      `SELECT value FROM settings WHERE key = 'PAYMENTS_DEV_MODE' LIMIT 1`,
+    );
+    return { enabled: String(rows[0]?.value || 'false') === 'true' };
+  }
+
+  async setDevMode(enabled: boolean) {
+    await this.dataSource.query(
+      `INSERT INTO settings (key, value, description, "isPublic")
+       VALUES ('PAYMENTS_DEV_MODE', $1, 'Permite simular aprovação de pagamentos Pix no painel administrativo.', false)
+       ON CONFLICT (key) DO UPDATE
+       SET value = EXCLUDED.value, description = EXCLUDED.description, "isPublic" = false, "updatedAt" = now()`,
+      [enabled ? 'true' : 'false'],
+    );
+    return { enabled };
+  }
+
+  async productPerformance() {
+    const rows = await this.dataSource.query(`
+      SELECT
+        pp.code,
+        pp.name,
+        pp.enabled,
+        pp."billingType",
+        pp."priceCents",
+        pp."promotionalPriceCents",
+        count(p.id) FILTER (WHERE p."isSimulation" = false)::int AS checkouts,
+        count(p.id) FILTER (WHERE p.status = 'PAID' AND p."isSimulation" = false)::int AS sales,
+        count(DISTINCT p."userId") FILTER (WHERE p.status = 'PAID' AND p."isSimulation" = false)::int AS buyers,
+        coalesce(sum(p."amountCents") FILTER (WHERE p.status = 'PAID' AND p."isSimulation" = false), 0)::int AS revenue,
+        count(p.id) FILTER (WHERE p.status = 'PENDING' AND p."isSimulation" = false)::int AS pending,
+        count(p.id) FILTER (WHERE p.status IN ('EXPIRED','CANCELED') AND p."isSimulation" = false)::int AS abandoned
+      FROM payment_products pp
+      LEFT JOIN payments p ON p."productCode" = pp.code
+      GROUP BY pp.code, pp.name, pp.enabled, pp."billingType", pp."priceCents", pp."promotionalPriceCents", pp."sortOrder"
+      ORDER BY pp."sortOrder" ASC, pp.name ASC
+    `);
+    const totalSales = rows.reduce((sum: number, row: any) => sum + Number(row.sales || 0), 0);
+    const products = rows.map((row: any) => {
+      const checkouts = Number(row.checkouts || 0);
+      const sales = Number(row.sales || 0);
+      return {
+        ...row,
+        checkouts,
+        sales,
+        buyers: Number(row.buyers || 0),
+        revenue: Number(row.revenue || 0),
+        pending: Number(row.pending || 0),
+        abandoned: Number(row.abandoned || 0),
+        conversionPercent: checkouts > 0 ? Math.round((sales / checkouts) * 1000) / 10 : 0,
+        salesSharePercent: totalSales > 0 ? Math.round((sales / totalSales) * 1000) / 10 : 0,
+      };
+    });
+    const bySales = [...products].sort((a, b) => b.sales - a.sales || b.revenue - a.revenue);
+    const byRevenue = [...products].sort((a, b) => b.revenue - a.revenue || b.sales - a.sales);
+    const conversionPool = products.some((item) => item.checkouts >= 3)
+      ? products.filter((item) => item.checkouts >= 3)
+      : products.filter((item) => item.checkouts > 0);
+    const byConversion = [...conversionPool].sort((a, b) => b.conversionPercent - a.conversionPercent || b.sales - a.sales);
+    return {
+      products,
+      highlights: {
+        topSelling: bySales[0] || null,
+        topRevenue: byRevenue[0] || null,
+        topConversion: byConversion[0] || null,
+      },
+    };
   }
 
   async createPixPayment(userId: string, productCode: string) {
@@ -213,6 +286,10 @@ export class PaymentsService {
   }
 
   async simulatePayment(paymentId: string, adminUserId: string) {
+    const devMode = await this.getDevMode();
+    if (!devMode.enabled) {
+      throw new BadRequestException('O modo DEV de pagamentos está desativado. Ative-o no painel financeiro para usar simulações.');
+    }
     return this.settlePayment(
       paymentId,
       {
