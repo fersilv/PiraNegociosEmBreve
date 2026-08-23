@@ -7,18 +7,24 @@ export function ResumeBuilderStudio() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const interceptLegacyReanalysis = (event: MouseEvent) => {
+    const interceptLegacyScoreActions = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
       const button = target?.closest("button");
       if (!button) return;
-      if (!button.textContent?.includes("Reavaliar currículo")) return;
+      const label = button.textContent || "";
+      const legacyAction = [
+        "Reavaliar currículo",
+        "Descobrir minha pontuação",
+        "Quero ver minha pontuação",
+      ].some((text) => label.includes(text));
+      if (!legacyAction) return;
       event.preventDefault();
       event.stopPropagation();
       navigate("/user/curriculo/evolucao");
     };
 
-    document.addEventListener("click", interceptLegacyReanalysis, true);
-    return () => document.removeEventListener("click", interceptLegacyReanalysis, true);
+    document.addEventListener("click", interceptLegacyScoreActions, true);
+    return () => document.removeEventListener("click", interceptLegacyScoreActions, true);
   }, [navigate]);
 
   return (
