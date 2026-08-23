@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, BellRing, CalendarClock, CheckCircle2, Clock3, Copy, Crown, Eye, EyeOff, QrCode, ReceiptText, Sparkles, Zap } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BellRing, CalendarClock, CheckCircle2, Clock3, Copy, Crown, Eye, EyeOff, ReceiptText, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 
@@ -119,7 +119,7 @@ export function UserPaymentsPage() {
       }
       setCheckout(response.data);
       if (!response.data?.checkoutReady) {
-        setMessage(`A cobrança foi criada, mas ${activeProvider?.name || "o provedor"} não devolveu um QR Code utilizável.`);
+        setMessage("A cobrança foi criada, mas não recebemos um QR Code utilizável.");
       }
       await load();
     } catch (error: any) {
@@ -150,7 +150,9 @@ export function UserPaymentsPage() {
           <h1 className="mt-1 font-serif text-3xl font-bold text-stone-900">Pagamentos e benefícios</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Compras, consultas de IA, Match Inteligente, impulso do currículo e assinatura ficam reunidos aqui. Os pagamentos aceitos são exclusivamente Pix.</p>
         </div>
-        <div className={`rounded-2xl border px-4 py-3 text-sm font-bold ${activeProvider ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}><QrCode className="mr-2 inline h-4 w-4" /> {activeProvider ? `Pix via ${activeProvider.name}` : "Pix temporariamente indisponível"}</div>
+        <div className={`flex h-12 min-w-20 items-center justify-center rounded-2xl border px-4 ${activeProvider ? "border-emerald-200 bg-emerald-50" : "border-stone-200 bg-stone-100 opacity-45"}`} title={activeProvider ? "Pix" : "Pix temporariamente indisponível"}>
+          <img src="/brand/pix.svg" alt="Pix" className="h-7 w-auto" />
+        </div>
       </div>
 
       {billing.lifetimeFree && (
@@ -203,7 +205,7 @@ export function UserPaymentsPage() {
                 {needsPayerData && !recurringUnavailable && (
                   <div className="mt-4 rounded-xl border border-violet-100 bg-white/80 p-3">
                     <p className="text-[10px] font-black uppercase tracking-wider text-violet-700">Dados do pagador</p>
-                    <p className="mt-1 text-[11px] leading-4 text-stone-500">{recurring ? "A Efí usa nome e CPF para criar a autorização do Pix Automático." : "O Mercado Pago exige o CPF para gerar a cobrança Pix. O e-mail vem da sua conta."}</p>
+                    <p className="mt-1 text-[11px] leading-4 text-stone-500">{recurring ? "Nome e CPF são necessários para autorizar o Pix Automático." : "O CPF é necessário para gerar esta cobrança Pix. O e-mail vem da sua conta."}</p>
                     <div className="mt-3 grid gap-2">
                       {recurring && <input value={payerName} onChange={(event) => setPayerName(event.target.value)} placeholder="Nome completo" autoComplete="name" className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-violet-300" />}
                       <input value={payerCpf} onChange={(event) => setPayerCpf(event.target.value)} placeholder="CPF" inputMode="numeric" autoComplete="off" className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-violet-300" />
@@ -211,9 +213,9 @@ export function UserPaymentsPage() {
                   </div>
                 )}
 
-                {recurringUnavailable && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-4 text-amber-800">O Mercado Pago está ativo para Pix avulso, mas este plano mensal usa Pix Automático. No momento, ative a Efí para contratar este produto.</div>}
+                {recurringUnavailable && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-4 text-amber-800">A forma de pagamento ativa aceita Pix avulso, mas ainda não oferece Pix Automático para este plano mensal.</div>}
 
-                <button type="button" onClick={() => void buy(product.code)} disabled={buying === product.code || recurringUnavailable || (!activeProvider && !billing.lifetimeFree)} className="mt-4 w-full rounded-xl bg-[#2b211c] px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{buying === product.code ? "Processando..." : billing.lifetimeFree ? "Ativar grátis" : recurringUnavailable ? "Indisponível com Mercado Pago" : recurring ? "Autorizar Pix Automático" : "Pagar com Pix"}</button>
+                <button type="button" onClick={() => void buy(product.code)} disabled={buying === product.code || recurringUnavailable || (!activeProvider && !billing.lifetimeFree)} className="mt-4 w-full rounded-xl bg-[#2b211c] px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{buying === product.code ? "Processando..." : billing.lifetimeFree ? "Ativar grátis" : recurringUnavailable ? "Pix Automático indisponível" : recurring ? "Autorizar Pix Automático" : "Pagar com Pix"}</button>
               </div>
             );
           })}
@@ -224,7 +226,7 @@ export function UserPaymentsPage() {
         {checkout?.pixCopyPaste && (
           <div className="mt-5 rounded-[24px] border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div><p className="text-[10px] font-black uppercase tracking-[.16em] text-emerald-700">Cobrança Pix criada</p><h3 className="mt-1 font-bold text-stone-950">Escaneie o QR ou use o Pix copia e cola</h3><p className="mt-1 text-xs text-stone-500">{checkout.product?.billingType === "RECURRING" ? "Este primeiro Pix também inicia a autorização do seu plano com Pix Automático." : `A liberação acontece automaticamente quando ${activeProvider?.name || "o provedor"} confirmar o pagamento.`}</p></div>
+              <div><p className="text-[10px] font-black uppercase tracking-[.16em] text-emerald-700">Cobrança Pix criada</p><h3 className="mt-1 font-bold text-stone-950">Escaneie o QR ou use o Pix copia e cola</h3><p className="mt-1 text-xs text-stone-500">{checkout.product?.billingType === "RECURRING" ? "Este primeiro Pix também inicia a autorização do seu plano com Pix Automático." : "A liberação acontece automaticamente após a confirmação do pagamento."}</p></div>
               {checkout.expiresAt && <span className="rounded-full bg-white px-3 py-1.5 text-[10px] font-bold text-stone-500">Expira {dateLabel(checkout.expiresAt)}</span>}
             </div>
             <div className="mt-4 grid gap-4 md:grid-cols-[220px_1fr] md:items-center">
@@ -241,13 +243,19 @@ export function UserPaymentsPage() {
                 <button type="button" onClick={() => void copyPix()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-black text-white"><Copy className="h-3.5 w-3.5" /> {copied ? "Copiado!" : "Copiar código Pix"}</button>
               </div>
             </div>
+            {activeProvider?.name && (
+              <div className="mt-4 flex items-center justify-center gap-2 border-t border-emerald-200/70 pt-3 text-[10px] font-semibold text-stone-500">
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                Pagamento processado com segurança por <span className="font-black text-stone-700">{activeProvider.name}</span>
+              </div>
+            )}
           </div>
         )}
       </section>
 
       <section className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex items-center gap-3"><ReceiptText className="h-5 w-5 text-stone-500" /><div><h2 className="font-bold text-stone-900">Histórico de pagamentos</h2><p className="text-xs text-stone-500">Seu registro financeiro dentro do PiraNegócios.</p></div></div>
-        {loading ? <p className="mt-5 text-sm text-stone-400">Carregando...</p> : payments.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-stone-500">Você ainda não realizou nenhuma compra.</p> : <div className="mt-5 space-y-2">{payments.map((payment) => <div key={payment.id} className="flex flex-col gap-3 rounded-2xl border border-stone-200 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><span className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl ${payment.status === "PAID" ? "bg-emerald-100 text-emerald-700" : payment.status === "CANCELED" || payment.status === "EXPIRED" ? "bg-stone-100 text-stone-500" : "bg-amber-100 text-amber-700"}`}>{payment.status === "PAID" ? <CheckCircle2 className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}</span><div><p className="text-sm font-bold text-stone-900">{payment.productName || payment.productCode}</p><p className="mt-1 text-xs text-stone-400">{dateLabel(payment.createdAt)} · Pix{payment.provider ? ` ${payment.provider}` : ""} · {statusLabel[payment.status] || payment.status}</p></div></div><p className="text-lg font-black text-stone-900">{money(payment.amountCents)}</p></div>)}</div>}
+        {loading ? <p className="mt-5 text-sm text-stone-400">Carregando...</p> : payments.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-stone-500">Você ainda não realizou nenhuma compra.</p> : <div className="mt-5 space-y-2">{payments.map((payment) => <div key={payment.id} className="flex flex-col gap-3 rounded-2xl border border-stone-200 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><span className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl ${payment.status === "PAID" ? "bg-emerald-100 text-emerald-700" : payment.status === "CANCELED" || payment.status === "EXPIRED" ? "bg-stone-100 text-stone-500" : "bg-amber-100 text-amber-700"}`}>{payment.status === "PAID" ? <CheckCircle2 className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}</span><div><p className="text-sm font-bold text-stone-900">{payment.productName || payment.productCode}</p><p className="mt-1 text-xs text-stone-400">{dateLabel(payment.createdAt)} · Pix · {statusLabel[payment.status] || payment.status}</p></div></div><p className="text-lg font-black text-stone-900">{money(payment.amountCents)}</p></div>)}</div>}
       </section>
     </div>
   );
