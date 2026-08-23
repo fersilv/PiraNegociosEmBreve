@@ -55,21 +55,147 @@ export class ResumeReviewService {
     return { provider, model, apiKey };
   }
 
-  private parseJson(text: string): Record<string, unknown> {
-    const cleaned = String(text || '{}')
-      .replace(/```json/gi, '')
-      .replace(/```/g, '')
-      .trim();
-    try {
-      return JSON.parse(cleaned) as Record<string, unknown>;
-    } catch {
-      const start = cleaned.indexOf('{');
-      const end = cleaned.lastIndexOf('}');
-      if (start >= 0 && end > start) {
-        return JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>;
+  private extractJsonObject(text: string) {
+    const start = text.indexOf('{');
+    if (start < 0) return text;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < text.length; index += 1) {
+      const char = text[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
       }
-      throw new Error('O provedor retornou uma avaliação fora do formato JSON.');
+      if (char === '"') {
+        inString = true;
+        continue;
+      }
+      if (char === '{') depth += 1;
+      if (char === '}') {
+        depth -= 1;
+        if (depth === 0) return text.slice(start, index + 1);
+      }
     }
+    return text.slice(start);
+  }
+
+  private normalizeJsonControls(text: string) {
+    let result = '';
+    let inString = false;
+    let escaped = false;
+    for (const char of text) {
+      if (inString) {
+        if (escaped) {
+          result += char;
+          escaped = false;
+          continue;
+        }
+        if (char === '\\') {
+          result += char;
+          escaped = true;
+          continue;
+        }
+        if (char === '"') {
+          result += char;
+          inString = false;
+          continue;
+        }
+        if (char === '\n') {
+          result += '\\n';
+          continue;
+        }
+        if (char === '\r') {
+          result += '\\r';
+          continue;
+        }
+        if (char === '\t') {
+          result += '\\t';
+          continue;
+        }
+        result += char;
+        continue;
+      }
+      if (char === '"') inString = true;
+      result += char;
+    }
+    return result;
+  }
+
+  private removeTrailingJsonCommas(text: string) {
+    let result = '';
+    let inString = false;
+    let escaped = false;
+    for (let index = 0; index < text.length; index += 1) {
+      const char = text[index];
+      if (inString) {
+        result += char;
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') {
+        inString = true;
+        result += char;
+        continue;
+      }
+      if (char === ',') {
+        let next = index + 1;
+        while (next < text.length && /\s/.test(text[next])) next += 1;
+        if (text[next] === ']' || text[next] === '}') continue;
+      }
+      result += char;
+    }
+    return result;
+  }
+
+  private repairJsonAtParsePosition(text: string, error: unknown) {
+    const message = error instanceof Error ? error.message : String(error || '');
+    const match = message.match(/position\s+(\d+)/i);
+    if (!match) return null;
+    const position = Number(match[1]);
+    if (!Number.isInteger(position) || position < 0 || position > text.length) return null;
+    if (/Expected ',' or '[}\]]' after/i.test(message) || /Expected ',' or '}' after property value/i.test(message)) {
+      let cursor = position;
+      while (cursor < text.length && /\s/.test(text[cursor])) cursor += 1;
+      const next = text[cursor];
+      if (!next || next === ']' || next === '}' || next === ',') return null;
+      return `${text.slice(0, cursor)},${text.slice(cursor)}`;
+    }
+    return null;
+  }
+
+  private parseJson(text: string): Record<string, unknown> {
+    const withoutFences = String(text || '{}')
+      .replace(/^\s*```(?:json)?\s*/i, '')
+      .replace(/\s*```\s*$/i, '')
+      .replace(/^\uFEFF/, '')
+      .trim();
+    let candidate = this.normalizeJsonControls(this.extractJsonObject(withoutFences).trim());
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      try {
+        return JSON.parse(candidate) as Record<string, unknown>;
+      } catch (error) {
+        lastError = error;
+        const noTrailing = this.removeTrailingJsonCommas(candidate);
+        if (noTrailing !== candidate) {
+          candidate = noTrailing;
+          continue;
+        }
+        const repaired = this.repairJsonAtParsePosition(candidate, error);
+        if (repaired && repaired !== candidate) {
+          candidate = repaired;
+          continue;
+        }
+        break;
+      }
+    }
+    const detail = lastError instanceof Error ? lastError.message : 'JSON inválido';
+    throw new Error(`O provedor retornou uma avaliação em JSON inválido (${detail}).`);
   }
 
   private stringArray(value: unknown, limit: number): string[] {
@@ -105,7 +231,7 @@ export class ResumeReviewService {
       ),
     ]);
     return [
-      'Você avalia a QUALIDADE DO CURRÍCULO, nunca o valor, potencial ou empregabilidade da pessoa. A nota mede apenas clareza, completude, consistência, evidências profissionais, organização e utilidade do documento para recrutamento. Não invente informações ausentes. Responda exclusivamente JSON válido.',
+      'Você avalia a QUALIDADE DO CURRÍCULO, nunca o valor, potencial ou empregabilidade da pessoa. A nota mede apenas clareza, completude, consistência, evidências profissionais, organização e utilidade do documento para recrutamento. Não invente informações ausentes. Responda exclusivamente JSON válido, compacto, sem Markdown e sem texto fora do objeto.',
       behavior.name ? `Identidade configurada: ${behavior.name}.` : '',
       behavior.tone ? `Tom configurado: ${behavior.tone}` : '',
       behavior.instructions ? `Instruções gerais do administrador:\n${behavior.instructions}` : '',
@@ -116,35 +242,39 @@ export class ResumeReviewService {
       .join('\n\n');
   }
 
-  private async generate(
+  private async generateRaw(
     config: RuntimeConfig,
     prompt: string,
     systemInstruction: string,
-  ) {
+    maxTokens: number,
+  ): Promise<string> {
     if (config.provider === 'OPENAI') {
       const openai = new OpenAI({ apiKey: config.apiKey });
-      const response = await openai.responses.create({
+      const response: any = await openai.responses.create({
         model: config.model,
         instructions: systemInstruction,
         input: prompt,
-        max_output_tokens: 1800,
+        max_output_tokens: maxTokens,
       });
-      return this.parseJson(response.output_text || '{}');
+      if (response?.status === 'incomplete') {
+        throw new Error(`AI_JSON_TRUNCATED:${response?.incomplete_details?.reason || 'incomplete'}`);
+      }
+      return String(response?.output_text || '{}');
     }
 
     if (config.provider === 'ANTHROPIC') {
       const anthropic = new Anthropic({ apiKey: config.apiKey });
-      const response = await anthropic.messages.create({
+      const response: any = await anthropic.messages.create({
         model: config.model,
         system: systemInstruction,
-        max_tokens: 1800,
+        max_tokens: maxTokens,
         messages: [{ role: 'user', content: prompt }],
       });
-      const text = response.content
+      if (response?.stop_reason === 'max_tokens') throw new Error('AI_JSON_TRUNCATED:max_tokens');
+      return (response.content || [])
         .filter((block: any) => block.type === 'text')
         .map((block: any) => block.text)
         .join('\n');
-      return this.parseJson(text || '{}');
     }
 
     const response = await fetch(
@@ -157,7 +287,7 @@ export class ResumeReviewService {
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
           generationConfig: {
             responseMimeType: 'application/json',
-            maxOutputTokens: 1800,
+            maxOutputTokens: maxTokens,
           },
         }),
       },
@@ -169,20 +299,53 @@ export class ResumeReviewService {
       );
     }
     const data = JSON.parse(raw || '{}') as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      candidates?: Array<{
+        finishReason?: string;
+        content?: { parts?: Array<{ text?: string }> };
+      }>;
     };
-    const text = (data.candidates || [])
-      .flatMap((candidate) => candidate.content?.parts || [])
+    const candidate = data.candidates?.[0];
+    if (String(candidate?.finishReason || '').toUpperCase() === 'MAX_TOKENS') {
+      throw new Error('AI_JSON_TRUNCATED:MAX_TOKENS');
+    }
+    return (data.candidates || [])
+      .flatMap((item) => item.content?.parts || [])
       .map((part) => part.text || '')
       .filter(Boolean)
       .join('\n');
-    return this.parseJson(text || '{}');
+  }
+
+  private async generate(
+    config: RuntimeConfig,
+    prompt: string,
+    systemInstruction: string,
+  ) {
+    let lastError: unknown = null;
+    const budgets = [3200, 8000];
+    for (let attempt = 0; attempt < budgets.length; attempt += 1) {
+      try {
+        const retryInstruction = attempt === 0
+          ? systemInstruction
+          : `${systemInstruction}\n\nA resposta anterior falhou por JSON inválido ou truncado. Gere novamente do zero, de forma mais compacta, e finalize obrigatoriamente todo o objeto JSON.`;
+        const text = await this.generateRaw(config, prompt, retryInstruction, budgets[attempt]);
+        return this.parseJson(text || '{}');
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error || '');
+        const retryable = message.includes('AI_JSON_TRUNCATED')
+          || message.includes('JSON inválido')
+          || message.includes('Unterminated string')
+          || message.includes('Expected');
+        if (!retryable || attempt === budgets.length - 1) throw error;
+      }
+    }
+    throw lastError;
   }
 
   async review(profile: unknown): Promise<ResumeReviewResult> {
     const config = await this.getRuntimeConfig();
     const systemInstruction = await this.buildSystemInstruction(profile);
-    const prompt = `Avalie o currículo estruturado abaixo.\n\nCURRÍCULO: ${this.serialize(profile, 30000)}\n\nCritérios da nota (0 a 100): completude das seções relevantes, clareza das descrições, coerência de datas e progressão, evidências de atividades/conquistas, organização das habilidades e qualidade do resumo. Não penalize a pessoa por ser iniciante ou ter pouca experiência; avalie se o documento representa bem o que ela realmente possui.\n\nRetorne EXCLUSIVAMENTE:\n{"score":0,"strengths":[""],"suggestions":[""],"feedbackText":"","missingSections":[""]}`;
+    const prompt = `Avalie o currículo estruturado abaixo.\n\nCURRÍCULO: ${this.serialize(profile, 30000)}\n\nCritérios da nota (0 a 100): completude das seções relevantes, clareza das descrições, coerência de datas e progressão, evidências de atividades/conquistas, organização das habilidades e qualidade do resumo. Não penalize a pessoa por ser iniciante ou ter pouca experiência; avalie se o documento representa bem o que ela realmente possui.\n\nRetorne EXCLUSIVAMENTE:\n{"score":0,"strengths":[""],"suggestions":[""],"feedbackText":"","missingSections":[""]}\n\nUse textos objetivos e mantenha o JSON compacto para garantir que a resposta seja concluída.`;
 
     try {
       return this.normalize(await this.generate(config, prompt, systemInstruction));
