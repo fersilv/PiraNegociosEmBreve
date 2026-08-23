@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BrainCircuit, Loader2, RefreshCw, Sparkles, WandSparkles, X } from 'lucide-react';
+import { Loader2, Sparkles, WandSparkles, X } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
@@ -48,6 +48,21 @@ function money(cents: unknown) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value / 100);
 }
 
+function findResumeScoreCard() {
+  const heading = Array.from(document.querySelectorAll<HTMLElement>('p')).find(
+    (element) => (element.textContent || '').trim() === 'Qualidade do currículo',
+  );
+  return heading?.closest<HTMLElement>('section') || null;
+}
+
+function findScorePrimaryButton(section: HTMLElement) {
+  return Array.from(section.querySelectorAll<HTMLButtonElement>('button')).find((button) => {
+    if (button.dataset.resumeScoreCollapse === 'true') return false;
+    const label = (button.textContent || '').trim();
+    return label.includes('Reavaliar currículo') || label.includes('Analisar meu currículo');
+  }) || null;
+}
+
 export function ResumeQualificationOrchestrator() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -57,6 +72,7 @@ export function ResumeQualificationOrchestrator() {
   const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState('');
   const [firstResult, setFirstResult] = useState<any>(null);
+  const [improvementOfferOpen, setImprovementOfferOpen] = useState(false);
   const autoAttemptedRef = useRef(false);
   const onResumePage = location.pathname === '/user/curriculo';
 
@@ -158,6 +174,12 @@ export function ResumeQualificationOrchestrator() {
   }, [firstQualificationEligible, previewVisible, reviewing, runReview]);
 
   useEffect(() => {
+    if (!firstResult) return;
+    const timer = window.setTimeout(() => setFirstResult(null), 6500);
+    return () => window.clearTimeout(timer);
+  }, [firstResult]);
+
+  useEffect(() => {
     if (!onResumePage) {
       delete document.body.dataset.resumeAnalysisStale;
       delete document.body.dataset.resumeQualificationRunning;
@@ -173,87 +195,275 @@ export function ResumeQualificationOrchestrator() {
     };
   }, [analysisStale, onResumePage, reviewing]);
 
+  useEffect(() => {
+    if (!onResumePage) return;
+
+    const syncCard = () => {
+      const section = findResumeScoreCard();
+      if (!section) return;
+
+      section.classList.add('resume-score-card-managed');
+      section.dataset.resumeScoreStale = analysisStale ? 'true' : 'false';
+
+      if (!section.dataset.resumeCollapseInitialized) {
+        section.dataset.resumeCollapseInitialized = 'true';
+        if (hasAnalysis) section.classList.add('resume-score-card-collapsed');
+      }
+
+      let toggle = section.querySelector<HTMLButtonElement>('[data-resume-score-collapse="true"]');
+      if (!toggle) {
+        toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.dataset.resumeScoreCollapse = 'true';
+        toggle.className = 'resume-score-card-toggle';
+        toggle.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const collapsed = section.classList.toggle('resume-score-card-collapsed');
+          toggle!.textContent = collapsed ? '+' : '−';
+          toggle!.title = collapsed ? 'Ver detalhes da qualificação' : 'Minimizar qualificação';
+          toggle!.setAttribute('aria-label', toggle!.title);
+        });
+        section.appendChild(toggle);
+      }
+
+      const collapsed = section.classList.contains('resume-score-card-collapsed');
+      toggle.textContent = collapsed ? '+' : '−';
+      toggle.title = collapsed ? 'Ver detalhes da qualificação' : 'Minimizar qualificação';
+      toggle.setAttribute('aria-label', toggle.title);
+
+      const primary = findScorePrimaryButton(section);
+      if (!primary) return;
+      if (hasAnalysis && !analysisStale) {
+        primary.dataset.resumeManagedAction = 'improve';
+        primary.title = 'Conheça e aplique as melhorias sugeridas pela sua qualificação';
+      } else if (hasAnalysis && analysisStale) {
+        primary.dataset.resumeManagedAction = 'review';
+        primary.title = 'Atualize a nota para considerar suas alterações';
+      } else {
+        delete primary.dataset.resumeManagedAction;
+        primary.removeAttribute('title');
+      }
+    };
+
+    const observer = new MutationObserver(syncCard);
+    observer.observe(document.body, { childList: true, subtree: true });
+    syncCard();
+    return () => observer.disconnect();
+  }, [analysisStale, hasAnalysis, onResumePage, previewVisible, profile?.aiAnalysis]);
+
+  useEffect(() => {
+    if (!onResumePage) return;
+    const interceptImprovement = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      const button = target?.closest<HTMLButtonElement>('button[data-resume-managed-action="improve"]');
+      if (!button) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      setImprovementOfferOpen(true);
+    };
+    window.addEventListener('click', interceptImprovement, true);
+    return () => window.removeEventListener('click', interceptImprovement, true);
+  }, [onResumePage]);
+
   if (!onResumePage) return null;
 
   const reanalysisPrice = money(status?.products?.reanalysis?.effectivePriceCents);
   const improvementPrice = money(status?.products?.improvement?.effectivePriceCents);
+  const improvementCredits = Number(status?.credits?.RESUME_AI_IMPROVEMENT || 0);
+  const improvementIncluded = Boolean(status?.paymentAccessOverride || improvementCredits > 0 || status?.resumeImprovementPaymentRequired === false);
 
-  const openImprovement = () => {
-    setFirstResult(null);
+  const continueToImprovement = () => {
+    setImprovementOfferOpen(false);
     const button = document.querySelector<HTMLButtonElement>('.resume-studio-ai-button');
-    if (button && !button.disabled) button.click();
+    if (button && !button.disabled) {
+      button.click();
+      return;
+    }
+    setError('Não foi possível iniciar as melhorias agora. Atualize a página e tente novamente.');
   };
 
   return (
     <>
       <style>{`
-        body[data-resume-analysis-stale="true"] .resume-studio-ai-button {
-          opacity: .46 !important;
-          filter: saturate(.45);
-          transform: scale(.98);
+        /* A melhoria vive no card de qualificação. O botão duplicado no topo fica fora da interface. */
+        .resume-studio-header .resume-studio-ai-button {
+          display: none !important;
         }
-        body[data-resume-analysis-stale="true"] .resume-studio-ai-button:hover {
-          opacity: .72 !important;
+
+        .resume-score-card-managed {
+          position: relative !important;
+          transition: padding .18s ease, border-color .18s ease, background .18s ease !important;
+        }
+
+        .resume-score-card-managed[data-resume-score-stale="true"] {
+          border-color: rgba(217,119,6,.42) !important;
+          background: linear-gradient(135deg, rgba(255,251,235,.98), rgba(255,255,255,.98)) !important;
+        }
+
+        .resume-score-card-toggle {
+          position: absolute;
+          top: 7px;
+          right: 7px;
+          z-index: 4;
+          display: flex;
+          width: 24px;
+          height: 24px;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid rgba(124,58,237,.14);
+          border-radius: 8px;
+          background: rgba(255,255,255,.86);
+          color: #7c3aed;
+          font-size: 15px;
+          font-weight: 900;
+          line-height: 1;
+          box-shadow: 0 4px 12px rgba(45,31,24,.06);
+        }
+
+        .resume-score-card-managed > div > .min-w-0.flex-1 > div:first-child {
+          padding-right: 25px;
+        }
+
+        .resume-score-card-managed.resume-score-card-collapsed {
+          padding: 9px !important;
+          border-radius: 15px !important;
+        }
+
+        .resume-score-card-managed.resume-score-card-collapsed > div {
+          gap: 8px !important;
+        }
+
+        .resume-score-card-managed.resume-score-card-collapsed > div > div:first-child {
+          width: 30px !important;
+          height: 30px !important;
+          border-radius: 10px !important;
+        }
+
+        .resume-score-card-managed.resume-score-card-collapsed > div > div:first-child svg {
+          width: 14px !important;
+          height: 14px !important;
+        }
+
+        .resume-score-card-managed.resume-score-card-collapsed > div > .min-w-0.flex-1 > .mt-3 {
+          display: none !important;
+        }
+
+        .resume-score-card-managed.resume-score-card-collapsed > div > .min-w-0.flex-1 > div:first-child p:last-child {
+          display: none !important;
+        }
+
+        .resume-score-card-managed.resume-score-card-collapsed > div > .min-w-0.flex-1 > div:first-child p:first-child {
+          font-size: 9px !important;
+          line-height: 1.15 !important;
+        }
+
+        .resume-score-card-managed.resume-score-card-collapsed > div > .min-w-0.flex-1 > div:first-child .text-2xl {
+          font-size: 18px !important;
+          line-height: 1 !important;
+        }
+
+        .resume-score-card-managed.resume-score-card-collapsed button[data-resume-managed-action],
+        .resume-score-card-managed.resume-score-card-collapsed > div > .min-w-0.flex-1 > button:last-child {
+          margin-top: 7px !important;
+          width: 100% !important;
+          justify-content: center !important;
+          padding: 7px 9px !important;
+          border-radius: 10px !important;
+        }
+
+        button[data-resume-managed-action="improve"],
+        button[data-resume-managed-action="review"] {
+          font-size: 0 !important;
+        }
+
+        button[data-resume-managed-action="improve"] svg,
+        button[data-resume-managed-action="review"] svg {
+          display: none !important;
+        }
+
+        button[data-resume-managed-action="improve"]::after,
+        button[data-resume-managed-action="review"]::after {
+          font-size: 11px;
+          font-weight: 800;
+          line-height: 1.2;
+        }
+
+        button[data-resume-managed-action="improve"]::after {
+          content: '✦  Aplicar melhorias';
+        }
+
+        button[data-resume-managed-action="review"]::after {
+          content: 'Reavaliar currículo${reanalysisPrice ? ` · ${reanalysisPrice}` : ''}';
+        }
+
+        .resume-score-card-managed[data-resume-score-stale="true"] button[data-resume-managed-action="review"] {
+          background: #d97706 !important;
         }
       `}</style>
 
       {reviewing && (
-        <div className="fixed inset-0 z-[140] flex items-start justify-end bg-stone-950/10 p-4 pt-24 backdrop-blur-[1px] cursor-progress">
-          <div className="w-full max-w-sm rounded-3xl border border-violet-200 bg-white p-5 shadow-2xl">
-            <div className="flex items-start gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
-                <Loader2 className="h-5 w-5 animate-spin" />
-              </span>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[.16em] text-violet-600">Qualificando currículo</p>
-                <p className="mt-1 text-sm font-black text-stone-900">Analisando a versão que está no preview</p>
-                <p className="mt-1 text-xs leading-5 text-stone-500">A nota, os 7 critérios e as sugestões serão atualizados juntos. Outras ações de IA ficam bloqueadas enquanto isso.</p>
-              </div>
+        <div className="fixed inset-0 z-[140] cursor-progress bg-transparent" aria-live="polite" role="status">
+          <div className="fixed bottom-5 right-5 flex max-w-[300px] items-center gap-3 rounded-2xl border border-violet-200 bg-white/95 px-4 py-3 shadow-xl backdrop-blur">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-violet-700" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[.13em] text-violet-600">Qualificando</p>
+              <p className="truncate text-xs font-bold text-stone-800">Atualizando nota e recomendações…</p>
             </div>
           </div>
         </div>
       )}
 
-      {!reviewing && firstResult && !analysisStale && previewVisible && (
-        <div className="fixed right-4 top-24 z-[84] w-[min(410px,calc(100vw-32px))] overflow-hidden rounded-3xl border border-violet-200 bg-white shadow-2xl">
-          <div className="bg-gradient-to-br from-violet-50 to-white p-5">
-            <div className="flex items-start gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><Sparkles className="h-5 w-5" /></span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                  <div><p className="text-[10px] font-black uppercase tracking-[.15em] text-violet-600">Primeira qualificação grátis</p><p className="mt-1 text-sm font-black text-stone-900">Agora você já sabe onde o currículo pode evoluir.</p></div>
-                  <button type="button" onClick={() => setFirstResult(null)} className="text-stone-400 hover:text-stone-700" aria-label="Fechar"><X className="h-4 w-4" /></button>
-                </div>
-                <div className="mt-4 flex items-end gap-3">
-                  <span className="text-4xl font-black tracking-tight text-stone-950">{Math.max(0, Math.min(100, Math.round(Number(firstResult.score || 0))))}<span className="text-sm text-stone-400">/100</span></span>
-                  <span className="pb-1 text-[11px] font-bold text-stone-500">qualidade do documento</span>
-                </div>
-                <p className="mt-3 text-xs leading-5 text-stone-500">A qualificação é o diagnóstico. O produto recomendado agora é a melhoria: ela usa exatamente esses pontos como checklist, aplica somente o que você aprovar e qualifica novamente no final.</p>
-                <button type="button" onClick={openImprovement} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-xs font-black text-white hover:bg-violet-700">
-                  <WandSparkles className="h-4 w-4" /> Melhorar com IA{improvementPrice ? ` · ${improvementPrice}` : ''}
-                </button>
-              </div>
-            </div>
+      {!reviewing && firstResult && previewVisible && (
+        <div className="fixed bottom-5 right-5 z-[84] flex items-center gap-3 rounded-2xl border border-violet-200 bg-white/95 px-3.5 py-3 shadow-xl backdrop-blur">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-100 text-violet-700"><Sparkles className="h-4 w-4" /></span>
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-[.12em] text-violet-600">Currículo qualificado</p>
+            <p className="text-sm font-black text-stone-900">{Math.max(0, Math.min(100, Math.round(Number(firstResult.score || 0))))}<span className="text-[10px] text-stone-400">/100</span></p>
           </div>
+          <button type="button" onClick={() => setFirstResult(null)} className="ml-1 text-stone-400 hover:text-stone-700" aria-label="Fechar"><X className="h-3.5 w-3.5" /></button>
         </div>
       )}
 
-      {!reviewing && analysisStale && previewVisible && (
-        <div className="fixed right-4 top-24 z-[82] w-[min(390px,calc(100vw-32px))] rounded-3xl border border-amber-200 bg-white p-4 shadow-2xl">
-          <div className="flex items-start gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
-              <RefreshCw className="h-4 w-4" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-black uppercase tracking-[.15em] text-amber-700">Currículo alterado</p>
-              <p className="mt-1 text-sm font-black text-stone-900">Sua nota continua salva, mas avalia a versão anterior.</p>
-              <p className="mt-1 text-xs leading-5 text-stone-500">Como você editou o currículo manualmente, o próximo passo em destaque é atualizar a qualificação. Melhorar com IA continua disponível, mas não é a ação principal agora.</p>
-              <button
-                type="button"
-                onClick={() => void runReview(false)}
-                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-xs font-black text-white hover:bg-amber-700"
-              >
-                <BrainCircuit className="h-4 w-4" /> Atualizar minha nota{reanalysisPrice ? ` · ${reanalysisPrice}` : ''}
+      {improvementOfferOpen && (
+        <div className="fixed inset-0 z-[170] flex items-center justify-center bg-stone-950/25 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-label="Aplicar melhorias no currículo">
+          <div className="w-full max-w-[390px] overflow-hidden rounded-3xl border border-violet-200 bg-white shadow-2xl">
+            <div className="border-b border-stone-100 bg-gradient-to-br from-violet-50 to-white p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><WandSparkles className="h-4.5 w-4.5" /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[9px] font-black uppercase tracking-[.15em] text-violet-600">Melhoria com IA</p>
+                      <h2 className="mt-1 text-base font-black text-stone-950">Aplicar melhorias sugeridas</h2>
+                    </div>
+                    <button type="button" onClick={() => setImprovementOfferOpen(false)} className="text-stone-400 hover:text-stone-700" aria-label="Fechar"><X className="h-4 w-4" /></button>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-stone-500">A IA usa a sua qualificação atual como checklist, prepara o antes × depois e você escolhe exatamente o que será aplicado.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 p-5">
+              <div className="flex items-center justify-between rounded-2xl bg-stone-50 px-4 py-3">
+                <span className="text-xs font-bold text-stone-600">Valor do serviço</span>
+                <strong className="text-sm font-black text-stone-950">{improvementPrice || 'Sem cobrança'}</strong>
+              </div>
+              {improvementCredits > 0 && <p className="rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">Você já possui {improvementCredits} crédito(s) para esta melhoria.</p>}
+              {status?.paymentAccessOverride && <p className="rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">Esta ação está incluída no seu acesso atual.</p>}
+              <div className="grid gap-1.5 text-[11px] leading-5 text-stone-600">
+                <span>✓ Ataca os pontos apontados na qualificação</span>
+                <span>✓ Mostra cada alteração antes de aplicar</span>
+                <span>✓ Não inventa experiência ou formação</span>
+                <span>✓ Nova qualificação já incluída no final</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2 border-t border-stone-100 bg-stone-50/70 p-4">
+              <button type="button" onClick={() => setImprovementOfferOpen(false)} className="flex-1 rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs font-black text-stone-600 hover:bg-stone-100">Agora não</button>
+              <button type="button" onClick={continueToImprovement} className="flex-[1.35] rounded-xl bg-violet-600 px-3 py-2.5 text-xs font-black text-white hover:bg-violet-700">
+                {improvementIncluded && improvementCredits > 0 ? 'Usar crédito e continuar' : improvementIncluded && status?.paymentAccessOverride ? 'Continuar' : `Continuar${improvementPrice ? ` · ${improvementPrice}` : ''}`}
               </button>
             </div>
           </div>
@@ -261,7 +471,7 @@ export function ResumeQualificationOrchestrator() {
       )}
 
       {!reviewing && error && (
-        <div className="fixed bottom-5 left-1/2 z-[145] w-[min(540px,calc(100vw-28px))] -translate-x-1/2 rounded-2xl border border-rose-200 bg-white px-4 py-3 text-xs text-rose-700 shadow-xl">
+        <div className="fixed bottom-5 left-1/2 z-[175] w-[min(540px,calc(100vw-28px))] -translate-x-1/2 rounded-2xl border border-rose-200 bg-white px-4 py-3 text-xs text-rose-700 shadow-xl">
           <div className="flex items-center gap-2"><Sparkles className="h-4 w-4 shrink-0" /> {error}</div>
         </div>
       )}
