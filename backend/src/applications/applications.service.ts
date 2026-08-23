@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Application, ApplicationStatus } from './entities/application.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -18,6 +18,7 @@ export class ApplicationsService {
     @InjectRepository(Job)
     private jobRepo: Repository<Job>,
     private notifications: NotificationsService,
+    private dataSource: DataSource,
   ) {}
 
   private asArray(value: unknown): unknown[] {
@@ -115,12 +116,30 @@ export class ApplicationsService {
     return applications.map((app) => this.normalizeApplication(app));
   }
 
-  async findAllForJob(jobId: string): Promise<Application[]> {
+  async findAllForJob(jobId: string): Promise<Array<Application & { boosted: boolean }>> {
     const applications = await this.appRepo.find({
       where: { jobId },
       order: { createdAt: 'DESC' },
     });
-    return applications.map((app) => this.normalizeApplication(app));
+    if (!applications.length) return [];
+
+    const candidateIds = Array.from(new Set(applications.map((app) => app.candidateId).filter(Boolean)));
+    const boostRows = candidateIds.length
+      ? await this.dataSource.query(
+          `SELECT "userId" FROM user_feature_entitlements
+           WHERE feature = 'RESUME_BOOST' AND "expiresAt" > now()
+             AND "userId" = ANY($1::varchar[])`,
+          [candidateIds],
+        )
+      : [];
+    const boostedIds = new Set(boostRows.map((row: any) => String(row.userId)));
+
+    return applications
+      .map((app) => ({ ...this.normalizeApplication(app), boosted: boostedIds.has(app.candidateId) }))
+      .sort((a, b) => {
+        if (a.boosted !== b.boosted) return Number(b.boosted) - Number(a.boosted);
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
   }
 
   async findOne(id: string): Promise<Application | null> {
