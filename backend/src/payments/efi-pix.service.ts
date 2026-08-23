@@ -291,7 +291,18 @@ export class EfiPixService {
     return url.toString();
   }
 
-  async configureWebhooks() {
+  private webhookError(error: any, label: string, requiredScope: string) {
+    const response = error?.response;
+    const payload = response?.providerResponse || response?.message || response;
+    const status = Number(payload?.status || response?.status || 0);
+    const detail = payload?.detail || payload?.message || error?.message || 'Falha desconhecida.';
+    if (status === 403 || String(detail).includes('403')) {
+      throw new ServiceUnavailableException(`${label} recusado pela Efí (403). Verifique se a aplicação possui o escopo ${requiredScope} no ambiente selecionado e se a conta está habilitada para esse recurso.`);
+    }
+    throw error;
+  }
+
+  async configureWebhooks(paymentType: 'PIX' | 'PIX_AUTOMATICO' = 'PIX_AUTOMATICO') {
     const config = await this.config();
     this.assertConfigured(config);
     const webhookUrl = this.webhookUrl(config);
@@ -299,14 +310,31 @@ export class EfiPixService {
       ? { 'x-skip-mtls-checking': 'true' }
       : {};
     const encodedKey = encodeURIComponent(String(config.pixKey));
-    const pix = await this.api<any>(config, 'PUT', `/v2/webhook/${encodedKey}`, { webhookUrl }, headers);
+    let pix: any = null;
+    try {
+      pix = await this.api<any>(config, 'PUT', `/v2/webhook/${encodedKey}`, { webhookUrl }, headers);
+    } catch (error: any) {
+      this.webhookError(error, 'Webhook do Pix', 'webhook.write');
+    }
+
     let recurrence: any = null;
     let recurringCharges: any = null;
-    if (this.automaticEnabled(config)) {
-      recurrence = await this.api<any>(config, 'PUT', '/v2/webhookrec', { webhookUrl }, headers);
-      recurringCharges = await this.api<any>(config, 'PUT', '/v2/webhookcobr', { webhookUrl }, headers);
+    if (paymentType === 'PIX_AUTOMATICO') {
+      if (!this.automaticEnabled(config)) {
+        throw new ServiceUnavailableException('Pix Automático da Efí está desativado na configuração deste provedor.');
+      }
+      try {
+        recurrence = await this.api<any>(config, 'PUT', '/v2/webhookrec', { webhookUrl }, headers);
+      } catch (error: any) {
+        this.webhookError(error, 'Webhook de recorrência do Pix Automático', 'webhookrec.write');
+      }
+      try {
+        recurringCharges = await this.api<any>(config, 'PUT', '/v2/webhookcobr', { webhookUrl }, headers);
+      } catch (error: any) {
+        this.webhookError(error, 'Webhook de cobrança do Pix Automático', 'webhookcobr.write');
+      }
     }
-    return { webhookUrl, pix, recurrence, recurringCharges, automaticEnabled: this.automaticEnabled(config) };
+    return { webhookUrl, pix, recurrence, recurringCharges, automaticEnabled: this.automaticEnabled(config), paymentType };
   }
 
   private validateWebhookSecret(config: EfiProviderConfig, received?: string) {
