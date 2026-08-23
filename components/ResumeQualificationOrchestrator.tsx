@@ -63,6 +63,10 @@ function findScorePrimaryButton(section: HTMLElement) {
   }) || null;
 }
 
+function setIfDifferent(element: HTMLElement, attribute: string, value: string) {
+  if (element.getAttribute(attribute) !== value) element.setAttribute(attribute, value);
+}
+
 export function ResumeQualificationOrchestrator() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -109,7 +113,16 @@ export function ResumeQualificationOrchestrator() {
       setPreviewVisible(false);
       return;
     }
-    const detect = () => setPreviewVisible(Boolean(document.querySelector('#resume-preview-area')));
+
+    let lastVisible: boolean | null = null;
+    const detect = () => {
+      const visible = Boolean(document.querySelector('#resume-preview-area'));
+      if (visible !== lastVisible) {
+        lastVisible = visible;
+        setPreviewVisible(visible);
+      }
+    };
+
     const observer = new MutationObserver(detect);
     observer.observe(document.body, { childList: true, subtree: true });
     detect();
@@ -118,6 +131,7 @@ export function ResumeQualificationOrchestrator() {
 
   useEffect(() => {
     if (!firstQualificationEligible || previewVisible || reviewing) return;
+
     const dismissLegacyOffer = () => {
       const modal = Array.from(document.querySelectorAll<HTMLElement>('div.fixed.inset-0')).find((element) => {
         const text = element.textContent || '';
@@ -127,6 +141,7 @@ export function ResumeQualificationOrchestrator() {
         .find((button) => (button.textContent || '').includes('Agora não'));
       if (later) later.click();
     };
+
     const observer = new MutationObserver(dismissLegacyOffer);
     observer.observe(document.body, { childList: true, subtree: true });
     dismissLegacyOffer();
@@ -198,12 +213,30 @@ export function ResumeQualificationOrchestrator() {
   useEffect(() => {
     if (!onResumePage) return;
 
+    let disposed = false;
+    let frame: number | null = null;
+
+    const updateToggle = (section: HTMLElement, toggle: HTMLButtonElement) => {
+      const collapsed = section.classList.contains('resume-score-card-collapsed');
+      const nextText = collapsed ? '+' : '−';
+      const nextTitle = collapsed ? 'Ver detalhes da qualificação' : 'Minimizar qualificação';
+      if (toggle.textContent !== nextText) toggle.textContent = nextText;
+      if (toggle.title !== nextTitle) toggle.title = nextTitle;
+      setIfDifferent(toggle, 'aria-label', nextTitle);
+    };
+
     const syncCard = () => {
+      if (disposed) return;
       const section = findResumeScoreCard();
       if (!section) return;
 
-      section.classList.add('resume-score-card-managed');
-      section.dataset.resumeScoreStale = analysisStale ? 'true' : 'false';
+      if (!section.classList.contains('resume-score-card-managed')) {
+        section.classList.add('resume-score-card-managed');
+      }
+      const staleValue = analysisStale ? 'true' : 'false';
+      if (section.dataset.resumeScoreStale !== staleValue) {
+        section.dataset.resumeScoreStale = staleValue;
+      }
 
       if (!section.dataset.resumeCollapseInitialized) {
         section.dataset.resumeCollapseInitialized = 'true';
@@ -219,60 +252,86 @@ export function ResumeQualificationOrchestrator() {
         toggle.addEventListener('click', (event) => {
           event.preventDefault();
           event.stopPropagation();
-          const collapsed = section.classList.toggle('resume-score-card-collapsed');
-          toggle!.textContent = collapsed ? '+' : '−';
-          toggle!.title = collapsed ? 'Ver detalhes da qualificação' : 'Minimizar qualificação';
-          toggle!.setAttribute('aria-label', toggle!.title);
+          section.classList.toggle('resume-score-card-collapsed');
+          updateToggle(section, toggle!);
         });
         section.appendChild(toggle);
       }
-
-      const collapsed = section.classList.contains('resume-score-card-collapsed');
-      toggle.textContent = collapsed ? '+' : '−';
-      toggle.title = collapsed ? 'Ver detalhes da qualificação' : 'Minimizar qualificação';
-      toggle.setAttribute('aria-label', toggle.title);
+      updateToggle(section, toggle);
 
       const primary = findScorePrimaryButton(section);
       if (!primary) return;
+
       if (hasAnalysis && !analysisStale) {
-        primary.dataset.resumeManagedAction = 'improve';
-        primary.title = 'Conheça e aplique as melhorias sugeridas pela sua qualificação';
+        if (primary.dataset.resumeManagedAction !== 'improve') primary.dataset.resumeManagedAction = 'improve';
+        if (primary.title !== 'Conheça e aplique as melhorias sugeridas pela sua qualificação') {
+          primary.title = 'Conheça e aplique as melhorias sugeridas pela sua qualificação';
+        }
       } else if (hasAnalysis && analysisStale) {
-        primary.dataset.resumeManagedAction = 'review';
-        primary.title = 'Atualize a nota para considerar suas alterações';
+        if (primary.dataset.resumeManagedAction !== 'review') primary.dataset.resumeManagedAction = 'review';
+        if (primary.title !== 'Atualize a nota para considerar suas alterações') {
+          primary.title = 'Atualize a nota para considerar suas alterações';
+        }
       } else {
-        delete primary.dataset.resumeManagedAction;
-        primary.removeAttribute('title');
+        if (primary.dataset.resumeManagedAction) delete primary.dataset.resumeManagedAction;
+        if (primary.hasAttribute('title')) primary.removeAttribute('title');
       }
     };
 
-    const observer = new MutationObserver(syncCard);
+    const scheduleSync = () => {
+      if (disposed || frame !== null) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        syncCard();
+      });
+    };
+
+    const observer = new MutationObserver(scheduleSync);
     observer.observe(document.body, { childList: true, subtree: true });
-    syncCard();
-    return () => observer.disconnect();
+    scheduleSync();
+
+    return () => {
+      disposed = true;
+      observer.disconnect();
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
   }, [analysisStale, hasAnalysis, onResumePage, previewVisible, profile?.aiAnalysis]);
 
   useEffect(() => {
     if (!onResumePage) return;
-    const interceptImprovement = (event: MouseEvent) => {
+
+    const interceptManagedAction = (event: MouseEvent) => {
       const target = event.target as Element | null;
-      const button = target?.closest<HTMLButtonElement>('button[data-resume-managed-action="improve"]');
+      const button = target?.closest<HTMLButtonElement>('button[data-resume-managed-action]');
       if (!button) return;
+      const action = button.dataset.resumeManagedAction;
+      if (action !== 'improve' && action !== 'review') return;
+
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-      setImprovementOfferOpen(true);
+
+      if (action === 'improve') {
+        setImprovementOfferOpen(true);
+      } else if (!reviewing) {
+        void runReview(false);
+      }
     };
-    window.addEventListener('click', interceptImprovement, true);
-    return () => window.removeEventListener('click', interceptImprovement, true);
-  }, [onResumePage]);
+
+    window.addEventListener('click', interceptManagedAction, true);
+    return () => window.removeEventListener('click', interceptManagedAction, true);
+  }, [onResumePage, reviewing, runReview]);
 
   if (!onResumePage) return null;
 
   const reanalysisPrice = money(status?.products?.reanalysis?.effectivePriceCents);
   const improvementPrice = money(status?.products?.improvement?.effectivePriceCents);
   const improvementCredits = Number(status?.credits?.RESUME_AI_IMPROVEMENT || 0);
-  const improvementIncluded = Boolean(status?.paymentAccessOverride || improvementCredits > 0 || status?.resumeImprovementPaymentRequired === false);
+  const improvementIncluded = Boolean(
+    status?.paymentAccessOverride
+    || improvementCredits > 0
+    || status?.resumeImprovementPaymentRequired === false,
+  );
 
   const continueToImprovement = () => {
     setImprovementOfferOpen(false);
@@ -287,7 +346,6 @@ export function ResumeQualificationOrchestrator() {
   return (
     <>
       <style>{`
-        /* A melhoria vive no card de qualificação. O botão duplicado no topo fica fora da interface. */
         .resume-studio-header .resume-studio-ai-button {
           display: none !important;
         }
