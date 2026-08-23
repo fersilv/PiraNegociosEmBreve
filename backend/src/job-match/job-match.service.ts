@@ -315,7 +315,6 @@ export class JobMatchService {
          FROM user_feature_entitlements e
          JOIN users u ON u.id = e."userId"
          WHERE e.feature = 'EARLY_JOB_ALERTS' AND e."expiresAt" > now()
-           AND u."isOpenToWork" = true
            AND (u.type IS NULL OR u.type = 'CANDIDATE')`,
       ),
     ]);
