@@ -55,7 +55,13 @@ export class CandidatesController {
     ).filter((candidate) => candidate.type !== UserType.ADMIN);
 
     return candidates.map((candidate) => {
-      const { aiAnalysis, ...candidateData } = candidate;
+      const {
+        aiAnalysis,
+        uploadedResumeFile: _uploadedResumeFile,
+        publishedResumeSnapshot,
+        resumeURL,
+        ...candidateData
+      } = candidate;
       const {
         pcdDeclaration: _pcdDeclaration,
         pcdDocumentationStatus: _pcdDocumentationStatus,
@@ -63,9 +69,15 @@ export class CandidatesController {
         includeExclusivePcdJobs: _includeExclusivePcdJobs,
         ...safeJobPreferences
       } = candidate.jobPreferences || {};
+      const published = candidate.resumeStatus === 'PUBLISHED' && Boolean(publishedResumeSnapshot);
 
       return {
         ...candidateData,
+        // O arquivo-base importado pelo usuário não é parte do currículo
+        // empresarial. Empresas recebem somente a versão que o candidato
+        // publicou conscientemente no PiraNegócios.
+        resumeURL: published ? resumeURL : '',
+        publishedResumeSnapshot: published ? publishedResumeSnapshot : null,
         // Autodeclaração PcD e situação de documentação são dados sensíveis.
         // O banco de talentos recebe apenas mobilidade/CNH/veículo. A empresa
         // não consegue inferir a resposta PcD pelo toggle de recomendações.
