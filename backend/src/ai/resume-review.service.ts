@@ -33,6 +33,7 @@ export interface ResumeReviewResult {
   feedbackText: string;
   missingSections: string[];
   parsedAt: string;
+  resumeSignature?: string;
 }
 
 @Injectable()
@@ -337,6 +338,15 @@ export class ResumeReviewService {
     return String(JSON.stringify(value ?? {}) || '{}');
   }
 
+  private fnv1a(value: string) {
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(16).padStart(8, '0');
+  }
+
   private async buildSystemInstruction(profile: unknown) {
     const [behavior, memory] = await Promise.all([
       this.settingsService.getAiBehavior(),
@@ -464,11 +474,15 @@ export class ResumeReviewService {
   async review(profile: unknown): Promise<ResumeReviewResult> {
     const config = await this.getRuntimeConfig();
     const reviewProfile = this.profileForReview(profile);
+    const resumeSignature = `resume-v1-${this.fnv1a(this.serialize(reviewProfile))}`;
     const systemInstruction = await this.buildSystemInstruction(reviewProfile);
     const prompt = `Avalie o currículo estruturado abaixo usando EXATAMENTE a rubrica definida nas instruções.\n\nCURRÍCULO ESTRUTURADO:\n${this.serialize(reviewProfile)}\n\nRetorne EXCLUSIVAMENTE este JSON:\n{"breakdown":{"summaryPositioning":0,"experienceStructure":0,"experienceEvidence":0,"skills":0,"educationCourses":0,"consistency":0,"readabilityAts":0},"strengths":[""],"suggestions":[""],"feedbackText":"","missingSections":[""]}\n\nRegras finais:\n- respeite os máximos 15,20,20,15,10,10,10;\n- não devolva score separado, o backend calcula a soma da rubrica;\n- sugestões somente sobre problemas realmente presentes nesta versão;\n- se experiences tiver itens, jamais diga que Experiência Profissional está ausente;\n- se skills tiver itens, jamais diga que Habilidades estão ausentes;\n- nunca mencione base64, imagem, arquivo ou PDF porque esses dados não fazem parte desta avaliação;\n- mantenha o JSON compacto e completo.`;
 
     try {
-      return this.normalize(await this.generate(config, prompt, systemInstruction));
+      return {
+        ...this.normalize(await this.generate(config, prompt, systemInstruction)),
+        resumeSignature,
+      };
     } catch (error: any) {
       if (error instanceof ServiceUnavailableException) throw error;
       console.error('AI resume review error:', error);
