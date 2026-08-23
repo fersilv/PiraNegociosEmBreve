@@ -13,6 +13,16 @@ import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 
+const BREAKDOWN_META = [
+  { key: "summaryPositioning", label: "Resumo e posicionamento", max: 15 },
+  { key: "experienceStructure", label: "Estrutura da experiência", max: 20 },
+  { key: "experienceEvidence", label: "Responsabilidades e evidências", max: 20 },
+  { key: "skills", label: "Habilidades", max: 15 },
+  { key: "educationCourses", label: "Formação e cursos", max: 10 },
+  { key: "consistency", label: "Consistência", max: 10 },
+  { key: "readabilityAts", label: "Clareza e leitura ATS", max: 10 },
+] as const;
+
 function dateLabel(value?: string | null) {
   if (!value) return "";
   const date = new Date(value);
@@ -56,6 +66,7 @@ export function ResumeEvolutionPage() {
     : analyses[0]?.score !== undefined
       ? Number(analyses[0].score)
       : null;
+  const currentBreakdown = ((profile?.aiAnalysis as any)?.breakdown || analyses[0]?.analysis?.breakdown || null) as Record<string, number> | null;
 
   const bestScore = useMemo(
     () => analyses.reduce((best: number, item: any) => Math.max(best, Number(item.score || 0)), currentScore || 0),
@@ -77,7 +88,7 @@ export function ResumeEvolutionPage() {
           <p className="text-[10px] font-black uppercase tracking-[.18em] text-terracotta-600">Currículo · Evolução</p>
           <h1 className="mt-1 font-serif text-3xl font-bold text-stone-900">Sua evolução, sem labirinto</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">
-            Aqui você só acompanha o que mudou. Reavaliar, melhorar com IA e escolher sugestões acontece diretamente no preview do currículo.
+            Aqui você acompanha o que mudou e entende de onde vem a nota. Reavaliar, melhorar com IA e escolher sugestões acontece diretamente no preview do currículo.
           </p>
         </div>
         <Link to="/user/curriculo" className="inline-flex items-center gap-2 rounded-xl bg-[#2b211c] px-4 py-2.5 text-xs font-black text-white shadow-sm">
@@ -98,7 +109,7 @@ export function ResumeEvolutionPage() {
               )}
             </div>
             <p className="mt-4 max-w-xl text-sm leading-6 text-white/55">
-              A nota mede a qualidade do documento. Uma otimização pode melhorar a redação sem necessariamente alterar a faixa da pontuação. Quando muda, o ganho aparece claramente aqui e na linha do tempo.
+              A nota mede a qualidade do documento. Ela é a soma de critérios fixos, não uma impressão genérica da IA.
             </p>
           </div>
           <div className="grid grid-cols-2 border-t border-white/10 lg:border-l lg:border-t-0">
@@ -108,6 +119,35 @@ export function ResumeEvolutionPage() {
             <DarkMetric label="Versões publicadas" value={`${publications.length}`} suffix="" />
           </div>
         </div>
+      </section>
+
+      <section className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[.15em] text-violet-600">Como a nota é formada</p>
+            <h2 className="mt-1 text-xl font-bold text-stone-900">7 critérios, soma máxima de 100 pontos</h2>
+            <p className="mt-1 text-xs leading-5 text-stone-500">Depois de cada nova análise, você consegue ver exatamente qual parte ficou forte e onde ainda há espaço para evoluir.</p>
+          </div>
+          <Sparkles className="h-5 w-5 text-violet-500" />
+        </div>
+        {currentBreakdown ? (
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            {BREAKDOWN_META.map((item) => {
+              const value = Math.max(0, Math.min(item.max, Math.round(Number(currentBreakdown[item.key] || 0))));
+              const percentage = item.max > 0 ? Math.round((value / item.max) * 100) : 0;
+              return (
+                <div key={item.key} className="rounded-2xl border border-stone-200 bg-[#fffdfa] p-4">
+                  <div className="flex items-center justify-between gap-3"><p className="text-xs font-bold text-stone-700">{item.label}</p><span className="text-xs font-black text-stone-900">{value}<span className="text-stone-400">/{item.max}</span></span></div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100"><div className="h-full rounded-full bg-violet-500 transition-all" style={{ width: `${percentage}%` }} /></div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="mt-5 rounded-2xl border border-dashed border-stone-200 bg-stone-50 p-5 text-sm text-stone-500">
+            Esta pontuação foi criada pela régua antiga. Faça uma nova análise no preview para gerar a decomposição pelos 7 critérios.
+          </div>
+        )}
       </section>
 
       <section className="grid gap-5 lg:grid-cols-[1.25fr_.75fr]">
