@@ -173,7 +173,7 @@ export class PaymentsService {
       throw new BadRequestException('Este recurso não exige pagamento no momento.');
     }
 
-    const provider = String(process.env.PIX_PROVIDER || '').trim() || null;
+    const provider = String(process.env.PIX_PROVIDER || 'EFI').trim().toUpperCase() || 'EFI';
     const rows = await this.dataSource.query(
       `INSERT INTO payments
         ("userId", "productCode", method, status, "originalAmountCents", "amountCents", "discountCents", provider, metadata)
@@ -196,6 +196,53 @@ export class PaymentsService {
       checkoutReady: Boolean(rows[0].pixCopyPaste || rows[0].qrCodeBase64),
       providerConfigured: Boolean(provider),
     };
+  }
+
+  async attachProviderCheckout(
+    paymentId: string,
+    checkout: {
+      provider: string;
+      providerPaymentId: string;
+      pixCopyPaste?: string | null;
+      qrCodeBase64?: string | null;
+      expiresAt?: Date | string | null;
+      metadata?: Record<string, unknown>;
+    },
+  ) {
+    const rows = await this.dataSource.query(
+      `UPDATE payments SET
+         provider = $2,
+         "providerPaymentId" = $3,
+         "pixCopyPaste" = $4,
+         "qrCodeBase64" = $5,
+         "expiresAt" = $6,
+         metadata = coalesce(metadata,'{}'::jsonb) || $7::jsonb,
+         "updatedAt" = now()
+       WHERE id = $1 AND status = 'PENDING'
+       RETURNING *`,
+      [
+        paymentId,
+        String(checkout.provider || 'EFI').toUpperCase(),
+        checkout.providerPaymentId,
+        checkout.pixCopyPaste || null,
+        checkout.qrCodeBase64 || null,
+        checkout.expiresAt || null,
+        JSON.stringify(checkout.metadata || {}),
+      ],
+    );
+    if (!rows[0]) throw new NotFoundException('Pagamento pendente não encontrado.');
+    return rows[0];
+  }
+
+  async cancelProviderCheckout(paymentId: string, error: unknown) {
+    const message = error instanceof Error ? error.message : String(error || 'Falha ao criar cobrança no provedor');
+    const rows = await this.dataSource.query(
+      `UPDATE payments SET status = 'CANCELED', "canceledAt" = now(), "updatedAt" = now(),
+         metadata = coalesce(metadata,'{}'::jsonb) || $2::jsonb
+       WHERE id = $1 AND status = 'PENDING' RETURNING *`,
+      [paymentId, JSON.stringify({ providerCheckoutError: message.slice(0, 1000) })],
+    );
+    return rows[0] || null;
   }
 
   async listUserPayments(userId: string) {
@@ -282,6 +329,10 @@ export class PaymentsService {
   }
 
   async confirmPayment(paymentId: string, metadata: Record<string, unknown> = {}) {
+    return this.settlePayment(paymentId, metadata, false);
+  }
+
+  async confirmProviderPayment(paymentId: string, metadata: Record<string, unknown> = {}) {
     return this.settlePayment(paymentId, metadata, false);
   }
 
