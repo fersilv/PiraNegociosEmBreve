@@ -21,25 +21,31 @@ export class JobMatchSubscriber implements EntitySubscriberInterface<Job> {
 
   private async safelyAnalyze(job: Job | undefined, notifyAsNew = false) {
     if (!job?.active) return;
+
+    let profile: any = null;
     try {
-      const profile = await this.jobMatch.analyzeActiveJob(job);
-      if (!notifyAsNew || !profile) return;
-      try {
-        const earlyRecipients = await this.jobMatch.getEarlyAlertRecipientsForJob(job.id);
-        await this.notifications.notifyNewJob({
-          jobId: job.id,
-          jobTitle: job.title,
-          companyName: job.companyName,
-          location: job.location,
-          city: job.city,
-          state: job.state,
-          slug: job.slug,
-        }, earlyRecipients);
-      } catch (error) {
-        console.error(`Não foi possível agendar os alertas da vaga ${job.id}:`, error);
-      }
+      profile = await this.jobMatch.analyzeActiveJob(job);
     } catch (error) {
       console.error(`Não foi possível preparar a vaga ${job.id} para o Match Inteligente:`, error);
+    }
+
+    if (!notifyAsNew) return;
+
+    try {
+      const earlyRecipients = profile
+        ? await this.jobMatch.getEarlyAlertRecipientsForJob(job.id)
+        : [];
+      await this.notifications.notifyNewJob({
+        jobId: job.id,
+        jobTitle: job.title,
+        companyName: job.companyName,
+        location: job.location,
+        city: job.city,
+        state: job.state,
+        slug: job.slug,
+      }, earlyRecipients);
+    } catch (error) {
+      console.error(`Não foi possível agendar os alertas da vaga ${job.id}:`, error);
     }
   }
 
