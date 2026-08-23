@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BrainCircuit, Loader2, RefreshCw, Sparkles } from 'lucide-react';
+import { BrainCircuit, Loader2, RefreshCw, Sparkles, WandSparkles, X } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
@@ -56,6 +56,7 @@ export function ResumeQualificationOrchestrator() {
   const [status, setStatus] = useState<any>(null);
   const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState('');
+  const [firstResult, setFirstResult] = useState<any>(null);
   const autoAttemptedRef = useRef(false);
   const onResumePage = location.pathname === '/user/curriculo';
 
@@ -135,6 +136,7 @@ export function ResumeQualificationOrchestrator() {
       await refreshProfile();
       await loadStatus();
       if (automatic && response.data?.score !== undefined) {
+        setFirstResult(response.data);
         window.dispatchEvent(new CustomEvent('resume:first-qualification-complete', { detail: response.data }));
       }
     } catch (requestError: any) {
@@ -174,6 +176,13 @@ export function ResumeQualificationOrchestrator() {
   if (!onResumePage) return null;
 
   const reanalysisPrice = money(status?.products?.reanalysis?.effectivePriceCents);
+  const improvementPrice = money(status?.products?.improvement?.effectivePriceCents);
+
+  const openImprovement = () => {
+    setFirstResult(null);
+    const button = document.querySelector<HTMLButtonElement>('.resume-studio-ai-button');
+    if (button && !button.disabled) button.click();
+  };
 
   return (
     <>
@@ -199,6 +208,30 @@ export function ResumeQualificationOrchestrator() {
                 <p className="text-[10px] font-black uppercase tracking-[.16em] text-violet-600">Qualificando currículo</p>
                 <p className="mt-1 text-sm font-black text-stone-900">Analisando a versão que está no preview</p>
                 <p className="mt-1 text-xs leading-5 text-stone-500">A nota, os 7 critérios e as sugestões serão atualizados juntos. Outras ações de IA ficam bloqueadas enquanto isso.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!reviewing && firstResult && !analysisStale && previewVisible && (
+        <div className="fixed right-4 top-24 z-[84] w-[min(410px,calc(100vw-32px))] overflow-hidden rounded-3xl border border-violet-200 bg-white shadow-2xl">
+          <div className="bg-gradient-to-br from-violet-50 to-white p-5">
+            <div className="flex items-start gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><Sparkles className="h-5 w-5" /></span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                  <div><p className="text-[10px] font-black uppercase tracking-[.15em] text-violet-600">Primeira qualificação grátis</p><p className="mt-1 text-sm font-black text-stone-900">Agora você já sabe onde o currículo pode evoluir.</p></div>
+                  <button type="button" onClick={() => setFirstResult(null)} className="text-stone-400 hover:text-stone-700" aria-label="Fechar"><X className="h-4 w-4" /></button>
+                </div>
+                <div className="mt-4 flex items-end gap-3">
+                  <span className="text-4xl font-black tracking-tight text-stone-950">{Math.max(0, Math.min(100, Math.round(Number(firstResult.score || 0))))}<span className="text-sm text-stone-400">/100</span></span>
+                  <span className="pb-1 text-[11px] font-bold text-stone-500">qualidade do documento</span>
+                </div>
+                <p className="mt-3 text-xs leading-5 text-stone-500">A qualificação é o diagnóstico. O produto recomendado agora é a melhoria: ela usa exatamente esses pontos como checklist, aplica somente o que você aprovar e qualifica novamente no final.</p>
+                <button type="button" onClick={openImprovement} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-xs font-black text-white hover:bg-violet-700">
+                  <WandSparkles className="h-4 w-4" /> Melhorar com IA{improvementPrice ? ` · ${improvementPrice}` : ''}
+                </button>
               </div>
             </div>
           </div>
