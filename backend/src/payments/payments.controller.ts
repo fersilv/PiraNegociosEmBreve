@@ -81,6 +81,22 @@ export class AdminPaymentsController {
     private readonly productDuration: ProductDurationService,
   ) {}
 
+  @Get('dev-mode')
+  getDevMode() {
+    return this.payments.getDevMode();
+  }
+
+  @Patch('dev-mode')
+  setDevMode(@Body() body: { enabled?: boolean }) {
+    if (typeof body?.enabled !== 'boolean') throw new BadRequestException('enabled deve ser true ou false.');
+    return this.payments.setDevMode(body.enabled);
+  }
+
+  @Get('performance')
+  performance() {
+    return this.payments.productPerformance();
+  }
+
   @Get('products')
   getProducts() {
     return this.payments.listCatalog(true);
