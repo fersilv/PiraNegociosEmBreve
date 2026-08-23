@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Job } from '../jobs/entities/job.entity';
@@ -24,7 +24,11 @@ export class JobMatchAdminService {
        LEFT JOIN job_match_profiles p ON p."jobId" = j.id`,
       [JOB_MATCH_ALGORITHM_VERSION],
     );
-    return rows[0] || { active: 0, ready: 0, pending: 0, error: 0, missing: 0 };
+    const result = rows[0] || { active: 0, ready: 0, pending: 0, error: 0, missing: 0 };
+    return {
+      ...result,
+      toPrepare: Number(result.error || 0) + Number(result.missing || 0),
+    };
   }
 
   async updateConfig(input: { durationDays?: unknown }) {
@@ -41,10 +45,12 @@ export class JobMatchAdminService {
     return rows[0];
   }
 
-  async backfill(limit = 25) {
-    const safeLimit = Math.min(100, Math.max(1, Math.round(limit || 25)));
-    const rows = await this.dataSource.query(
-      `SELECT j.id
+  async backfillQueue(limit = 100) {
+    const safeLimit = Math.min(500, Math.max(1, Math.round(limit || 100)));
+    return this.dataSource.query(
+      `SELECT
+         j.id, j.title, j."companyName", j."sourceName", j.city, j.state,
+         p.status, p.error, p."updatedAt" AS "profileUpdatedAt"
        FROM jobs j
        LEFT JOIN job_match_profiles p ON p."jobId" = j.id
        WHERE j.active = true
@@ -53,13 +59,50 @@ export class JobMatchAdminService {
        LIMIT $2`,
       [JOB_MATCH_ALGORITHM_VERSION, safeLimit],
     );
-    let processed = 0;
-    for (const row of rows) {
-      const job = await this.jobs.findOne({ where: { id: row.id } });
-      if (!job) continue;
-      await this.jobMatch.analyzeActiveJob(job);
-      processed += 1;
+  }
+
+  async prepareOne(jobId: string) {
+    const job = await this.jobs.findOne({ where: { id: jobId } });
+    if (!job) throw new NotFoundException('Vaga não encontrada.');
+    if (!job.active) throw new BadRequestException('Somente vagas ativas podem ser preparadas para o Match.');
+
+    const result = await this.jobMatch.reanalyzeJob(jobId);
+    const profileRows = await this.dataSource.query(
+      `SELECT status, error, "analyzedAt", "updatedAt" FROM job_match_profiles WHERE "jobId" = $1 LIMIT 1`,
+      [jobId],
+    );
+    const profile = profileRows[0] || null;
+    return {
+      jobId,
+      title: job.title,
+      success: Boolean(result && profile?.status === 'READY'),
+      status: profile?.status || 'ERROR',
+      error: profile?.error || null,
+    };
+  }
+
+  async backfill(limit = 25) {
+    const queue = await this.backfillQueue(Math.min(100, Math.max(1, Math.round(limit || 25))));
+    let succeeded = 0;
+    let failed = 0;
+    const errors: Array<{ jobId: string; title: string; error: string | null }> = [];
+
+    for (const item of queue) {
+      const result = await this.prepareOne(item.id);
+      if (result.success) succeeded += 1;
+      else {
+        failed += 1;
+        errors.push({ jobId: item.id, title: item.title, error: result.error });
+      }
     }
-    return { processed, overview: await this.overview() };
+
+    return {
+      processed: queue.length,
+      attempted: queue.length,
+      succeeded,
+      failed,
+      errors,
+      overview: await this.overview(),
+    };
   }
 }
