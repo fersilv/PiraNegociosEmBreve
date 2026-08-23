@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, BellRing, CalendarClock, CheckCircle2, Clock3, Crown, Eye, EyeOff, QrCode, ReceiptText, Sparkles, Zap } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BellRing, CalendarClock, CheckCircle2, Clock3, Copy, Crown, Eye, EyeOff, QrCode, ReceiptText, Sparkles, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 
@@ -31,6 +31,9 @@ export function UserPaymentsPage() {
   const [buying, setBuying] = useState<string | null>(null);
   const [checkout, setCheckout] = useState<any>(null);
   const [message, setMessage] = useState("");
+  const [payerName, setPayerName] = useState("");
+  const [payerCpf, setPayerCpf] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -83,8 +86,14 @@ export function UserPaymentsPage() {
 
     setBuying(productCode);
     setMessage("");
+    setCheckout(null);
+    setCopied(false);
     try {
-      const response = await api.post("/payments/pix", { productCode });
+      const payload: any = { productCode };
+      if (product?.billingType === "RECURRING") {
+        payload.payer = { name: payerName.trim(), document: payerCpf.replace(/\D/g, "") };
+      }
+      const response = await api.post("/payments/pix", payload);
       if (response.data?.paymentRequired === false) {
         setCheckout(null);
         setMessage(response.data?.message || "Recurso ativado sem cobrança.");
@@ -93,15 +102,25 @@ export function UserPaymentsPage() {
       }
       setCheckout(response.data);
       if (!response.data?.checkoutReady) {
-        setMessage(response.data?.product?.billingType === "RECURRING"
-          ? "A assinatura foi criada, mas o Pix recorrente ainda depende da conexão com o provedor de pagamentos."
-          : "O pedido Pix foi criado, mas a geração automática do QR Code ainda não está conectada neste ambiente.");
+        setMessage("A cobrança foi criada, mas a Efí não devolveu um QR Code utilizável. Confira a configuração do provedor.");
       }
       await load();
     } catch (error: any) {
-      setMessage(error?.response?.data?.message || "Não foi possível iniciar o pagamento Pix agora.");
+      const raw = error?.response?.data?.message;
+      setMessage(Array.isArray(raw) ? raw.join(" · ") : raw || "Não foi possível iniciar o pagamento Pix agora.");
     } finally {
       setBuying(null);
+    }
+  };
+
+  const copyPix = async () => {
+    if (!checkout?.pixCopyPaste) return;
+    try {
+      await navigator.clipboard.writeText(String(checkout.pixCopyPaste));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setMessage("Não foi possível copiar automaticamente. Selecione o código Pix abaixo e copie manualmente.");
     }
   };
 
@@ -114,7 +133,7 @@ export function UserPaymentsPage() {
           <h1 className="mt-1 font-serif text-3xl font-bold text-stone-900">Pagamentos e benefícios</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Compras, consultas de IA, Match Inteligente, impulso do currículo e assinatura ficam reunidos aqui. Os pagamentos aceitos são exclusivamente Pix.</p>
         </div>
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800"><QrCode className="mr-2 inline h-4 w-4" /> Somente Pix</div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800"><QrCode className="mr-2 inline h-4 w-4" /> Pix via Efí Bank</div>
       </div>
 
       {billing.lifetimeFree && (
@@ -153,23 +172,61 @@ export function UserPaymentsPage() {
       <section className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><Sparkles className="h-5 w-5" /></span><div><h2 className="font-bold text-stone-900">Recursos e planos</h2><p className="text-xs text-stone-500">Preços e promoções são administrados pela plataforma.</p></div></div>
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {availableProducts.map((product) => (
-            <div key={product.code} className={`rounded-2xl border p-4 ${product.code === "PREMIUM_MONTHLY" ? "border-violet-200 bg-violet-50/40" : "border-stone-200 bg-[#fffdfa]"}`}>
-              <div className="flex items-start justify-between gap-3">
-                <div><p className="font-bold text-stone-900">{product.name}</p><p className="mt-1 text-xs leading-5 text-stone-500">{product.description}</p>{product.durationDays && <p className="mt-2 text-[10px] font-black uppercase tracking-wider text-violet-600">{product.billingType === "RECURRING" ? `Renovação a cada ${product.durationDays} dias` : `Validade: ${product.durationDays} dias`}</p>}</div>
-                <div className="text-right">{product.promotionActive && <p className="text-[10px] font-bold text-stone-400 line-through">{money(product.originalPriceCents)}</p>}<p className="text-xl font-black text-stone-900">{billing.lifetimeFree ? "Grátis" : money(product.effectivePriceCents)}</p>{product.billingType === "RECURRING" && !billing.lifetimeFree && <p className="text-[9px] font-bold text-stone-400">por ciclo</p>}</div>
+          {availableProducts.map((product) => {
+            const recurring = product.billingType === "RECURRING";
+            return (
+              <div key={product.code} className={`rounded-2xl border p-4 ${product.code === "PREMIUM_MONTHLY" ? "border-violet-200 bg-violet-50/40" : "border-stone-200 bg-[#fffdfa]"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div><p className="font-bold text-stone-900">{product.name}</p><p className="mt-1 text-xs leading-5 text-stone-500">{product.description}</p>{product.durationDays && <p className="mt-2 text-[10px] font-black uppercase tracking-wider text-violet-600">{recurring ? `Pix Automático · ciclo de ${product.durationDays} dias` : `Validade: ${product.durationDays} dias`}</p>}</div>
+                  <div className="text-right">{product.promotionActive && <p className="text-[10px] font-bold text-stone-400 line-through">{money(product.originalPriceCents)}</p>}<p className="text-xl font-black text-stone-900">{billing.lifetimeFree ? "Grátis" : money(product.effectivePriceCents)}</p>{recurring && !billing.lifetimeFree && <p className="text-[9px] font-bold text-stone-400">por ciclo</p>}</div>
+                </div>
+
+                {recurring && !billing.lifetimeFree && (
+                  <div className="mt-4 rounded-xl border border-violet-100 bg-white/80 p-3">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-violet-700">Dados para o Pix Automático</p>
+                    <p className="mt-1 text-[11px] leading-4 text-stone-500">No ambiente real, a Efí usa estes dados para vincular a autorização da cobrança mensal. Em DEV a simulação continua funcionando sem cobrança.</p>
+                    <div className="mt-3 grid gap-2">
+                      <input value={payerName} onChange={(event) => setPayerName(event.target.value)} placeholder="Nome completo" autoComplete="name" className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-violet-300" />
+                      <input value={payerCpf} onChange={(event) => setPayerCpf(event.target.value)} placeholder="CPF" inputMode="numeric" autoComplete="off" className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-violet-300" />
+                    </div>
+                  </div>
+                )}
+
+                <button type="button" onClick={() => void buy(product.code)} disabled={buying === product.code} className="mt-4 w-full rounded-xl bg-[#2b211c] px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{buying === product.code ? "Processando..." : billing.lifetimeFree ? "Ativar grátis" : recurring ? "Autorizar Pix Automático" : "Pagar com Pix"}</button>
               </div>
-              <button type="button" onClick={() => void buy(product.code)} disabled={buying === product.code} className="mt-4 w-full rounded-xl bg-[#2b211c] px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{buying === product.code ? "Processando..." : billing.lifetimeFree ? "Ativar grátis" : product.billingType === "RECURRING" ? "Assinar com Pix" : "Pagar com Pix"}</button>
-            </div>
-          ))}
+            );
+          })}
         </div>
+
         {message && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800"><AlertTriangle className="mr-1.5 inline h-3.5 w-3.5" />{message}</div>}
-        {checkout?.pixCopyPaste && <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Pix copia e cola</p><div className="mt-2 break-all rounded-xl bg-white p-3 font-mono text-xs text-stone-700">{checkout.pixCopyPaste}</div></div>}
+
+        {checkout?.pixCopyPaste && (
+          <div className="mt-5 rounded-[24px] border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div><p className="text-[10px] font-black uppercase tracking-[.16em] text-emerald-700">Cobrança Efí criada</p><h3 className="mt-1 font-bold text-stone-950">Escaneie o QR ou use o Pix copia e cola</h3><p className="mt-1 text-xs text-stone-500">{checkout.product?.billingType === "RECURRING" ? "Este primeiro Pix também inicia a autorização do seu plano com Pix Automático." : "A liberação acontece automaticamente quando a Efí confirmar o pagamento."}</p></div>
+              {checkout.expiresAt && <span className="rounded-full bg-white px-3 py-1.5 text-[10px] font-bold text-stone-500">Expira {dateLabel(checkout.expiresAt)}</span>}
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-[220px_1fr] md:items-center">
+              {checkout.qrCodeBase64 ? (
+                <div className="flex min-h-[210px] items-center justify-center rounded-2xl border border-emerald-100 bg-white p-3">
+                  <img src={checkout.qrCodeBase64} alt="QR Code Pix Efí" className="h-auto max-h-[190px] w-auto max-w-full" />
+                </div>
+              ) : (
+                <div className="flex min-h-[160px] items-center justify-center rounded-2xl border border-dashed border-emerald-200 bg-white/70 p-4 text-center text-xs text-stone-400">Use o código Pix ao lado para pagar.</div>
+              )}
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Pix copia e cola</p>
+                <div className="mt-2 break-all rounded-xl bg-white p-3 font-mono text-xs leading-5 text-stone-700">{checkout.pixCopyPaste}</div>
+                <button type="button" onClick={() => void copyPix()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-black text-white"><Copy className="h-3.5 w-3.5" /> {copied ? "Copiado!" : "Copiar código Pix"}</button>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex items-center gap-3"><ReceiptText className="h-5 w-5 text-stone-500" /><div><h2 className="font-bold text-stone-900">Histórico de pagamentos</h2><p className="text-xs text-stone-500">Seu registro financeiro dentro do PiraNegócios.</p></div></div>
-        {loading ? <p className="mt-5 text-sm text-stone-400">Carregando...</p> : payments.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-stone-500">Você ainda não realizou nenhuma compra.</p> : <div className="mt-5 space-y-2">{payments.map((payment) => <div key={payment.id} className="flex flex-col gap-3 rounded-2xl border border-stone-200 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><span className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl ${payment.status === "PAID" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{payment.status === "PAID" ? <CheckCircle2 className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}</span><div><p className="text-sm font-bold text-stone-900">{payment.productName || payment.productCode}</p><p className="mt-1 text-xs text-stone-400">{dateLabel(payment.createdAt)} · Pix · {statusLabel[payment.status] || payment.status}</p></div></div><p className="text-lg font-black text-stone-900">{money(payment.amountCents)}</p></div>)}</div>}
+        {loading ? <p className="mt-5 text-sm text-stone-400">Carregando...</p> : payments.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-stone-500">Você ainda não realizou nenhuma compra.</p> : <div className="mt-5 space-y-2">{payments.map((payment) => <div key={payment.id} className="flex flex-col gap-3 rounded-2xl border border-stone-200 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><span className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl ${payment.status === "PAID" ? "bg-emerald-100 text-emerald-700" : payment.status === "CANCELED" || payment.status === "EXPIRED" ? "bg-stone-100 text-stone-500" : "bg-amber-100 text-amber-700"}`}>{payment.status === "PAID" ? <CheckCircle2 className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}</span><div><p className="text-sm font-bold text-stone-900">{payment.productName || payment.productCode}</p><p className="mt-1 text-xs text-stone-400">{dateLabel(payment.createdAt)} · Pix{payment.provider ? ` ${payment.provider}` : ""} · {statusLabel[payment.status] || payment.status}</p></div></div><p className="text-lg font-black text-stone-900">{money(payment.amountCents)}</p></div>)}</div>}
       </section>
     </div>
   );
