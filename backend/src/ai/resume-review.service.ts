@@ -15,8 +15,19 @@ type RuntimeConfig = {
   apiKey: string;
 };
 
+export interface ResumeReviewBreakdown {
+  summaryPositioning: number;
+  experienceStructure: number;
+  experienceEvidence: number;
+  skills: number;
+  educationCourses: number;
+  consistency: number;
+  readabilityAts: number;
+}
+
 export interface ResumeReviewResult {
   score: number;
+  breakdown: ResumeReviewBreakdown;
   strengths: string[];
   suggestions: string[];
   feedbackText: string;
@@ -206,9 +217,32 @@ export class ResumeReviewService {
       .slice(0, limit);
   }
 
+  private clampDimension(value: unknown, max: number) {
+    const numeric = Math.round(Number(value) || 0);
+    return Math.max(0, Math.min(max, numeric));
+  }
+
   private normalize(result: Record<string, unknown>): ResumeReviewResult {
+    const rawBreakdown = result.breakdown && typeof result.breakdown === 'object'
+      ? result.breakdown as Record<string, unknown>
+      : null;
+    const breakdown: ResumeReviewBreakdown = {
+      summaryPositioning: this.clampDimension(rawBreakdown?.summaryPositioning, 15),
+      experienceStructure: this.clampDimension(rawBreakdown?.experienceStructure, 20),
+      experienceEvidence: this.clampDimension(rawBreakdown?.experienceEvidence, 20),
+      skills: this.clampDimension(rawBreakdown?.skills, 15),
+      educationCourses: this.clampDimension(rawBreakdown?.educationCourses, 10),
+      consistency: this.clampDimension(rawBreakdown?.consistency, 10),
+      readabilityAts: this.clampDimension(rawBreakdown?.readabilityAts, 10),
+    };
+    const rubricScore = Object.values(breakdown).reduce((sum, value) => sum + value, 0);
+    const score = rawBreakdown
+      ? rubricScore
+      : Math.max(0, Math.min(100, Math.round(Number(result.score) || 0)));
+
     return {
-      score: Math.max(0, Math.min(100, Math.round(Number(result.score) || 0))),
+      score,
+      breakdown,
       strengths: this.stringArray(result.strengths, 6),
       suggestions: this.stringArray(result.suggestions, 8),
       feedbackText: String(result.feedbackText || '').trim().slice(0, 3000),
@@ -217,21 +251,106 @@ export class ResumeReviewService {
     };
   }
 
-  private serialize(value: unknown, limit: number): string {
-    return String(JSON.stringify(value ?? {}) || '{}').slice(0, limit);
+  private cleanText(value: unknown, max = 3500) {
+    return String(value || '').trim().slice(0, max);
+  }
+
+  private cleanSkills(value: unknown, limit = 40) {
+    if (!Array.isArray(value)) return [];
+    return Array.from(new Set(value.map((item) => this.cleanText(item, 160)).filter(Boolean))).slice(0, limit);
+  }
+
+  private profileForReview(value: unknown) {
+    const profile = value && typeof value === 'object'
+      ? value as Record<string, any>
+      : {};
+    const preferences = profile.resumePreferences && typeof profile.resumePreferences === 'object'
+      ? profile.resumePreferences as Record<string, unknown>
+      : {};
+
+    const experiences = Array.isArray(profile.experiences)
+      ? profile.experiences.slice(0, 30).map((experience: any) => ({
+          company: this.cleanText(experience?.company, 240),
+          role: this.cleanText(experience?.role, 240),
+          startDate: this.cleanText(experience?.startDate, 80),
+          endDate: this.cleanText(experience?.endDate, 80),
+          current: Boolean(experience?.current),
+          description: this.cleanText(experience?.description, 3500),
+          skills: this.cleanSkills(experience?.skills, 30),
+          timeline: Array.isArray(experience?.timeline)
+            ? experience.timeline.slice(0, 20).map((stage: any) => ({
+                role: this.cleanText(stage?.role, 240),
+                startDate: this.cleanText(stage?.startDate, 80),
+                endDate: this.cleanText(stage?.endDate, 80),
+                current: Boolean(stage?.current),
+                description: this.cleanText(stage?.description, 3000),
+                skills: this.cleanSkills(stage?.skills, 24),
+              }))
+            : [],
+        }))
+      : [];
+
+    const education = Array.isArray(profile.education)
+      ? profile.education.slice(0, 20).map((item: any) => ({
+          institution: this.cleanText(item?.institution, 240),
+          degree: this.cleanText(item?.degree, 240),
+          fieldOfStudy: this.cleanText(item?.fieldOfStudy, 240),
+          startYear: this.cleanText(item?.startYear, 40),
+          endYear: this.cleanText(item?.endYear, 40),
+          current: Boolean(item?.current),
+          status: this.cleanText(item?.status, 80),
+          description: this.cleanText(item?.description, 1800),
+          skills: this.cleanSkills(item?.skills, 20),
+        }))
+      : [];
+
+    const courses = Array.isArray(profile.courses)
+      ? profile.courses.slice(0, 30).map((item: any) => ({
+          name: this.cleanText(item?.name, 240),
+          institution: this.cleanText(item?.institution, 240),
+          year: this.cleanText(item?.year, 40),
+          type: this.cleanText(item?.type, 80),
+          description: this.cleanText(item?.description, 1200),
+          skills: this.cleanSkills(item?.skills, 20),
+        }))
+      : [];
+
+    const languages = Array.isArray(profile.languages)
+      ? profile.languages.slice(0, 20).map((item: any) => ({
+          name: this.cleanText(item?.name, 120),
+          level: this.cleanText(item?.level, 120),
+        }))
+      : [];
+
+    return {
+      headline: this.cleanText(preferences.headline, 320),
+      bio: this.cleanText(profile.bio, 4000),
+      experiences,
+      education,
+      skills: this.cleanSkills(profile.skills, 60),
+      courses,
+      languages,
+    };
+  }
+
+  private serialize(value: unknown): string {
+    return String(JSON.stringify(value ?? {}) || '{}');
   }
 
   private async buildSystemInstruction(profile: unknown) {
     const [behavior, memory] = await Promise.all([
       this.settingsService.getAiBehavior(),
       this.settingsService.findRelevantAiBrain(
-        `currículo análise profissional extração qualidade clareza experiência formação habilidades ${this.serialize(profile, 3500)}`,
+        `currículo análise profissional qualidade clareza experiência formação habilidades ${this.serialize(profile).slice(0, 3500)}`,
         5,
         3500,
       ),
     ]);
     return [
-      'Você avalia a QUALIDADE DO CURRÍCULO, nunca o valor, potencial ou empregabilidade da pessoa. A nota mede apenas clareza, completude, consistência, evidências profissionais, organização e utilidade do documento para recrutamento. Não invente informações ausentes. Responda exclusivamente JSON válido, compacto, sem Markdown e sem texto fora do objeto.',
+      'Você avalia exclusivamente a QUALIDADE DO CURRÍCULO estruturado fornecido, nunca o valor, potencial ou empregabilidade da pessoa. Você NÃO recebe foto, arquivo, base64, documento-base, contato técnico, snapshot ou metadados de transporte. Portanto nunca critique, mencione ou recomende remover base64, imagens, arquivos, URLs internas ou campos que não estejam explicitamente no currículo estruturado.',
+      'Use uma rubrica fixa e consistente. Cada dimensão tem um máximo e a soma obrigatória forma a nota final: summaryPositioning 0-15 (clareza e força do resumo/título), experienceStructure 0-20 (empresas, cargos, datas, progressão e organização), experienceEvidence 0-20 (qualidade das responsabilidades, escopo, resultados/evidências sem exigir números inexistentes), skills 0-15 (habilidades relevantes, organizadas e coerentes com a trajetória), educationCourses 0-10 (formação, cursos e certificações realmente informados), consistency 0-10 (coerência entre cargos, datas, descrições e habilidades), readabilityAts 0-10 (clareza textual, palavras-chave sustentadas, objetividade e leitura por recrutadores/ATS).',
+      'Não trate formação acadêmica, cursos ou qualquer seção como universalmente obrigatória. Se estiver ausente, apenas atribua a pontuação correspondente ao que de fato existe e sugira inclusão quando isso puder fortalecer o documento. Nunca diga que Experiência Profissional ou Habilidades estão ausentes quando os arrays correspondentes tiverem conteúdo. Não invente informações ausentes.',
+      'As sugestões devem apontar somente lacunas reais da versão recebida. Se uma melhoria anterior já resolveu um problema, não repita a mesma recomendação. Responda exclusivamente JSON válido, compacto, sem Markdown e sem texto fora do objeto.',
       behavior.name ? `Identidade configurada: ${behavior.name}.` : '',
       behavior.tone ? `Tom configurado: ${behavior.tone}` : '',
       behavior.instructions ? `Instruções gerais do administrador:\n${behavior.instructions}` : '',
@@ -344,8 +463,9 @@ export class ResumeReviewService {
 
   async review(profile: unknown): Promise<ResumeReviewResult> {
     const config = await this.getRuntimeConfig();
-    const systemInstruction = await this.buildSystemInstruction(profile);
-    const prompt = `Avalie o currículo estruturado abaixo.\n\nCURRÍCULO: ${this.serialize(profile, 30000)}\n\nCritérios da nota (0 a 100): completude das seções relevantes, clareza das descrições, coerência de datas e progressão, evidências de atividades/conquistas, organização das habilidades e qualidade do resumo. Não penalize a pessoa por ser iniciante ou ter pouca experiência; avalie se o documento representa bem o que ela realmente possui.\n\nRetorne EXCLUSIVAMENTE:\n{"score":0,"strengths":[""],"suggestions":[""],"feedbackText":"","missingSections":[""]}\n\nUse textos objetivos e mantenha o JSON compacto para garantir que a resposta seja concluída.`;
+    const reviewProfile = this.profileForReview(profile);
+    const systemInstruction = await this.buildSystemInstruction(reviewProfile);
+    const prompt = `Avalie o currículo estruturado abaixo usando EXATAMENTE a rubrica definida nas instruções.\n\nCURRÍCULO ESTRUTURADO:\n${this.serialize(reviewProfile)}\n\nRetorne EXCLUSIVAMENTE este JSON:\n{"breakdown":{"summaryPositioning":0,"experienceStructure":0,"experienceEvidence":0,"skills":0,"educationCourses":0,"consistency":0,"readabilityAts":0},"strengths":[""],"suggestions":[""],"feedbackText":"","missingSections":[""]}\n\nRegras finais:\n- respeite os máximos 15,20,20,15,10,10,10;\n- não devolva score separado, o backend calcula a soma da rubrica;\n- sugestões somente sobre problemas realmente presentes nesta versão;\n- se experiences tiver itens, jamais diga que Experiência Profissional está ausente;\n- se skills tiver itens, jamais diga que Habilidades estão ausentes;\n- nunca mencione base64, imagem, arquivo ou PDF porque esses dados não fazem parte desta avaliação;\n- mantenha o JSON compacto e completo.`;
 
     try {
       return this.normalize(await this.generate(config, prompt, systemInstruction));
