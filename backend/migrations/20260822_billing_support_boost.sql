@@ -130,11 +130,14 @@ RETURNS timestamptz AS $$
 DECLARE
   base_time timestamptz;
   next_expiry timestamptz;
+  was_active boolean := false;
 BEGIN
-  SELECT greatest(now(), coalesce("expiresAt", now())) INTO base_time
+  SELECT ("expiresAt" > now()), greatest(now(), coalesce("expiresAt", now()))
+    INTO was_active, base_time
   FROM user_feature_entitlements
   WHERE "userId" = p_user_id AND feature = p_feature;
   base_time := coalesce(base_time, now());
+  was_active := coalesce(was_active, false);
   next_expiry := base_time + make_interval(days => greatest(1, p_duration_days));
 
   INSERT INTO user_feature_entitlements
@@ -149,9 +152,11 @@ BEGIN
     note = p_note,
     "updatedAt" = now();
 
-  -- Ativar um Impulso também torna o currículo visível no Banco de Talentos.
-  -- O usuário pode ocultá-lo novamente depois; isso não pausa nem cancela o Impulso.
-  IF p_feature = 'RESUME_BOOST' THEN
+  -- Na primeira ativação do Impulso, ou quando o próprio usuário compra/ativa
+  -- novamente, o perfil é colocado no Banco de Talentos. Se ele ocultar o perfil
+  -- durante uma assinatura ainda ativa, a renovação recorrente não desfaz sua escolha.
+  IF p_feature = 'RESUME_BOOST'
+     AND (p_source <> 'SUBSCRIPTION' OR NOT was_active) THEN
     UPDATE users SET "isOpenToWork" = true, "updatedAt" = now() WHERE id = p_user_id;
   END IF;
 
