@@ -5,6 +5,7 @@ import { FeedbackProvider } from "./contexts/FeedbackContext";
 import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
 import { CookieConsent } from "./components/CookieConsent";
 import { AnalyticsTracker } from "./components/AnalyticsTracker";
+import { ResumeQualificationOrchestrator } from "./components/ResumeQualificationOrchestrator";
 
 const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() =>
@@ -54,6 +55,7 @@ export default function App() {
         <BrowserRouter>
           <AnalyticsTracker />
           {!isEmbed && <ContextualUtilityLink />}
+          {!isEmbed && <ResumeQualificationOrchestrator />}
           <Suspense fallback={<RouteLoader />}>
             <Routes>
               <Route path="/" element={<Home />} />
