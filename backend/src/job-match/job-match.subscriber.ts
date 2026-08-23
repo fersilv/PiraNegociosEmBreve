@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntitySubscriberInterface, EventSubscriber, InsertEvent, UpdateEvent } from 'typeorm';
 import { Job } from '../jobs/entities/job.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 import { JobMatchService } from './job-match.service';
 
 @Injectable()
@@ -9,6 +10,7 @@ export class JobMatchSubscriber implements EntitySubscriberInterface<Job> {
   constructor(
     dataSource: DataSource,
     private readonly jobMatch: JobMatchService,
+    private readonly notifications: NotificationsService,
   ) {
     dataSource.subscribers.push(this);
   }
@@ -17,20 +19,37 @@ export class JobMatchSubscriber implements EntitySubscriberInterface<Job> {
     return Job;
   }
 
-  private async safelyAnalyze(job: Job | undefined) {
+  private async safelyAnalyze(job: Job | undefined, notifyAsNew = false) {
     if (!job?.active) return;
     try {
-      await this.jobMatch.analyzeActiveJob(job);
+      const profile = await this.jobMatch.analyzeActiveJob(job);
+      if (!notifyAsNew || !profile) return;
+      try {
+        const earlyRecipients = await this.jobMatch.getEarlyAlertRecipientsForJob(job.id);
+        await this.notifications.notifyNewJob({
+          jobId: job.id,
+          jobTitle: job.title,
+          companyName: job.companyName,
+          location: job.location,
+          city: job.city,
+          state: job.state,
+          slug: job.slug,
+        }, earlyRecipients);
+      } catch (error) {
+        console.error(`Não foi possível agendar os alertas da vaga ${job.id}:`, error);
+      }
     } catch (error) {
       console.error(`Não foi possível preparar a vaga ${job.id} para o Match Inteligente:`, error);
     }
   }
 
   async afterInsert(event: InsertEvent<Job>) {
-    await this.safelyAnalyze(event.entity);
+    await this.safelyAnalyze(event.entity, event.entity?.active === true);
   }
 
   async afterUpdate(event: UpdateEvent<Job>) {
-    await this.safelyAnalyze(event.entity as Job | undefined);
+    const job = event.entity as Job | undefined;
+    const becameActive = job?.active === true && event.databaseEntity?.active !== true;
+    await this.safelyAnalyze(job, becameActive);
   }
 }
