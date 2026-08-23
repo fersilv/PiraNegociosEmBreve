@@ -15,6 +15,13 @@ dist-ssr
 backend/.env
 backend/serviceAccountKey.json
 
+# Payment/API certificates and private keys must never be committed.
+*.p12
+*.pfx
+*.pem
+*.key
+backend/certs/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
