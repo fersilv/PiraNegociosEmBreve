@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -15,7 +16,12 @@ import { AdminGuard } from '../admin/admin.guard';
 import { PaymentsService, type FeatureCredit } from './payments.service';
 import { BillingSupportService, type TimedFeature } from './billing-support.service';
 import { ProductDurationService } from './product-duration.service';
-import { EfiPixService, type EfiPayerInput } from './efi-pix.service';
+import { EfiPixService } from './efi-pix.service';
+import { MercadoPagoService } from './mercado-pago.service';
+import {
+  PaymentProviderManagerService,
+  type PaymentCheckoutPayer,
+} from './payment-provider-manager.service';
 
 @Controller('payments')
 @UseGuards(FirebaseAuthGuard)
@@ -23,7 +29,7 @@ export class PaymentsController {
   constructor(
     private readonly payments: PaymentsService,
     private readonly billingSupport: BillingSupportService,
-    private readonly efiPix: EfiPixService,
+    private readonly providers: PaymentProviderManagerService,
   ) {}
 
   @Get('catalog')
@@ -49,7 +55,7 @@ export class PaymentsController {
   @Post('pix')
   async createPix(
     @Req() req: any,
-    @Body() body: { productCode?: string; payer?: EfiPayerInput },
+    @Body() body: { productCode?: string; payer?: PaymentCheckoutPayer },
   ) {
     const productCode = String(body?.productCode || '').trim();
     if (!productCode) throw new BadRequestException('Informe o produto que deseja comprar.');
@@ -80,30 +86,13 @@ export class PaymentsController {
       };
     }
 
-    const provider = String(process.env.PIX_PROVIDER || 'EFI').trim().toUpperCase() || 'EFI';
-    if (provider !== 'EFI') {
-      await this.payments.cancelProviderCheckout(payment.id, `Provedor Pix não suportado: ${provider}`);
-      throw new BadRequestException('O provedor Pix configurado não é suportado. Use PIX_PROVIDER=EFI.');
-    }
-
     try {
-      const checkout = payment.product?.billingType === 'RECURRING'
-        ? await this.efiPix.createMonthlyAutomaticCharge(
-            Number(payment.amountCents),
-            payment.id,
-            payment.product?.name || productCode,
-            body?.payer || {},
-          )
-        : await this.efiPix.createImmediateCharge(
-            Number(payment.amountCents),
-            payment.id,
-            payment.product?.name || productCode,
-          );
+      const checkout = await this.providers.createCheckout(payment, body?.payer || {});
       const stored = await this.payments.attachProviderCheckout(payment.id, checkout);
       return {
         ...stored,
         product: payment.product,
-        checkoutReady: Boolean(stored.pixCopyPaste || stored.qrCodeBase64),
+        checkoutReady: Boolean(stored.pixCopyPaste || stored.qrCodeBase64 || (stored.metadata as any)?.ticketUrl),
         providerConfigured: true,
         paymentRequired: true,
       };
@@ -139,6 +128,20 @@ export class EfiPaymentsWebhookController {
   }
 }
 
+@Controller('payments/webhooks/mercado-pago')
+export class MercadoPagoPaymentsWebhookController {
+  constructor(private readonly mercadoPago: MercadoPagoService) {}
+
+  @Post()
+  receive(
+    @Body() body: any,
+    @Query() query: Record<string, unknown>,
+    @Headers() headers: Record<string, string | string[] | undefined>,
+  ) {
+    return this.mercadoPago.handleWebhook(body, query, headers);
+  }
+}
+
 @Controller('admin/payments')
 @UseGuards(FirebaseAuthGuard, AdminGuard)
 export class AdminPaymentsController {
@@ -146,7 +149,7 @@ export class AdminPaymentsController {
     private readonly payments: PaymentsService,
     private readonly billingSupport: BillingSupportService,
     private readonly productDuration: ProductDurationService,
-    private readonly efiPix: EfiPixService,
+    private readonly providers: PaymentProviderManagerService,
   ) {}
 
   @Get('dev-mode')
@@ -160,14 +163,43 @@ export class AdminPaymentsController {
     return this.payments.setDevMode(body.enabled);
   }
 
-  @Get('provider/efi')
-  getEfiStatus() {
-    return this.efiPix.getConfigurationStatus();
+  @Get('providers')
+  getProviders() {
+    return this.providers.list();
   }
 
-  @Post('provider/efi/configure-webhooks')
-  configureEfiWebhooks() {
-    return this.efiPix.configureWebhooks();
+  @Get('providers/vault-status')
+  getProviderVaultStatus() {
+    return this.providers.vaultStatus();
+  }
+
+  @Get('providers/:code')
+  getProvider(@Param('code') code: string) {
+    return this.providers.get(code);
+  }
+
+  @Patch('providers/:code')
+  saveProvider(
+    @Req() req: any,
+    @Param('code') code: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.providers.save(code, body || {}, req.user.uid);
+  }
+
+  @Post('providers/:code/test')
+  testProvider(@Req() req: any, @Param('code') code: string) {
+    return this.providers.test(code, req.user.uid);
+  }
+
+  @Post('providers/:code/activate')
+  activateProvider(@Req() req: any, @Param('code') code: string) {
+    return this.providers.activate(code, req.user.uid);
+  }
+
+  @Post('providers/:code/deactivate')
+  deactivateProvider(@Req() req: any, @Param('code') code: string) {
+    return this.providers.deactivate(code, req.user.uid);
   }
 
   @Get('performance')
@@ -221,8 +253,13 @@ export class AdminPaymentsController {
     @Param('feature') rawFeature: string,
     @Body() body: { quantity?: number; note?: string },
   ) {
-    const feature = rawFeature as FeatureCredit;
-    return this.billingSupport.setCreditBalance(userId, feature, Number(body?.quantity || 0), req.user.uid, body?.note);
+    return this.billingSupport.setCreditBalance(
+      userId,
+      rawFeature as FeatureCredit,
+      Number(body?.quantity || 0),
+      req.user.uid,
+      body?.note,
+    );
   }
 
   @Post('users/:userId/entitlements/:feature')
