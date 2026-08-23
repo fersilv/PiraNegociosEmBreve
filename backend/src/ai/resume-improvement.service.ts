@@ -55,16 +55,152 @@ export class ResumeImprovementService {
     return { provider, model, apiKey };
   }
 
-  private parseJson(text: string): Record<string, unknown> {
-    const cleaned = String(text || '{}').replace(/```json/gi, '').replace(/```/g, '').trim();
-    try {
-      return JSON.parse(cleaned) as Record<string, unknown>;
-    } catch {
-      const start = cleaned.indexOf('{');
-      const end = cleaned.lastIndexOf('}');
-      if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>;
-      throw new Error('O provedor retornou uma proposta fora do formato JSON.');
+  private extractJsonObject(text: string) {
+    const start = text.indexOf('{');
+    if (start < 0) return text;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < text.length; index += 1) {
+      const char = text[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') {
+        inString = true;
+        continue;
+      }
+      if (char === '{') depth += 1;
+      if (char === '}') {
+        depth -= 1;
+        if (depth === 0) return text.slice(start, index + 1);
+      }
     }
+    return text.slice(start);
+  }
+
+  private normalizeJsonControls(text: string) {
+    let result = '';
+    let inString = false;
+    let escaped = false;
+    for (const char of text) {
+      if (inString) {
+        if (escaped) {
+          result += char;
+          escaped = false;
+          continue;
+        }
+        if (char === '\\') {
+          result += char;
+          escaped = true;
+          continue;
+        }
+        if (char === '"') {
+          result += char;
+          inString = false;
+          continue;
+        }
+        if (char === '\n') {
+          result += '\\n';
+          continue;
+        }
+        if (char === '\r') {
+          result += '\\r';
+          continue;
+        }
+        if (char === '\t') {
+          result += '\\t';
+          continue;
+        }
+        result += char;
+        continue;
+      }
+      if (char === '"') inString = true;
+      result += char;
+    }
+    return result;
+  }
+
+  private removeTrailingJsonCommas(text: string) {
+    let result = '';
+    let inString = false;
+    let escaped = false;
+    for (let index = 0; index < text.length; index += 1) {
+      const char = text[index];
+      if (inString) {
+        result += char;
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') {
+        inString = true;
+        result += char;
+        continue;
+      }
+      if (char === ',') {
+        let next = index + 1;
+        while (next < text.length && /\s/.test(text[next])) next += 1;
+        if (text[next] === ']' || text[next] === '}') continue;
+      }
+      result += char;
+    }
+    return result;
+  }
+
+  private repairJsonAtParsePosition(text: string, error: unknown) {
+    const message = error instanceof Error ? error.message : String(error || '');
+    const match = message.match(/position\s+(\d+)/i);
+    if (!match) return null;
+    const position = Number(match[1]);
+    if (!Number.isInteger(position) || position < 0 || position > text.length) return null;
+
+    if (/Expected ',' or '[}\]]' after/i.test(message) || /Expected ',' or '}' after property value/i.test(message)) {
+      let cursor = position;
+      while (cursor < text.length && /\s/.test(text[cursor])) cursor += 1;
+      const next = text[cursor];
+      if (!next || next === ']' || next === '}' || next === ',') return null;
+      return `${text.slice(0, cursor)},${text.slice(cursor)}`;
+    }
+    return null;
+  }
+
+  private parseJson(text: string): Record<string, unknown> {
+    const withoutFences = String(text || '{}')
+      .replace(/^\s*```(?:json)?\s*/i, '')
+      .replace(/\s*```\s*$/i, '')
+      .replace(/^\uFEFF/, '')
+      .trim();
+    let candidate = this.extractJsonObject(withoutFences).trim();
+    candidate = this.normalizeJsonControls(candidate);
+
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      try {
+        return JSON.parse(candidate) as Record<string, unknown>;
+      } catch (error) {
+        lastError = error;
+        const withoutTrailingCommas = this.removeTrailingJsonCommas(candidate);
+        if (withoutTrailingCommas !== candidate) {
+          candidate = withoutTrailingCommas;
+          continue;
+        }
+        const repaired = this.repairJsonAtParsePosition(candidate, error);
+        if (repaired && repaired !== candidate) {
+          candidate = repaired;
+          continue;
+        }
+        break;
+      }
+    }
+
+    const detail = lastError instanceof Error ? lastError.message : 'JSON inválido';
+    throw new Error(`O provedor retornou uma proposta em JSON inválido e ela não pôde ser recuperada (${detail}).`);
   }
 
   private async systemInstruction(profile: unknown) {
@@ -77,7 +213,7 @@ export class ResumeImprovementService {
       ),
     ]);
     return [
-      'Você é um especialista em currículo e recrutamento. Sua função é PROPOR melhorias de redação e organização sem jamais inventar fatos. Você pode tornar a linguagem mais profissional, objetiva e compatível com buscas/ATS, mas toda competência, palavra-chave, responsabilidade, resultado, formação ou experiência precisa estar sustentada pelos dados fornecidos. Não crie números, resultados, tecnologias, ferramentas, cursos ou responsabilidades ausentes. O usuário escolherá individualmente quais alterações aceitar. Responda exclusivamente JSON válido.',
+      'Você é um especialista em currículo e recrutamento. Sua função é PROPOR melhorias de redação e organização sem jamais inventar fatos. Você pode tornar a linguagem mais profissional, objetiva e compatível com buscas/ATS, mas toda competência, palavra-chave, responsabilidade, resultado, formação ou experiência precisa estar sustentada pelos dados fornecidos. Não crie números, resultados, tecnologias, ferramentas, cursos ou responsabilidades ausentes. O usuário escolherá individualmente quais alterações aceitar. Responda exclusivamente JSON válido. Não use Markdown, comentários, trailing commas nem texto fora do objeto JSON. Garanta vírgula entre todos os elementos de arrays e propriedades de objetos.',
       behavior.tone ? `Tom configurado: ${behavior.tone}` : '',
       behavior.instructions ? `Instruções do administrador:\n${behavior.instructions}` : '',
       behavior.negativePrompt ? `Regras inegociáveis:\n${behavior.negativePrompt}` : '',
@@ -207,7 +343,7 @@ export class ResumeImprovementService {
     const config = await this.config();
     const input = this.profileForPrompt(profile);
     const system = await this.systemInstruction(input);
-    const prompt = `Analise o currículo estruturado abaixo e proponha mudanças atômicas, para que o usuário possa aceitar uma por uma. Priorize clareza, objetividade, força do resumo, descrição profissional das experiências e palavras-chave relevantes que JÁ estejam sustentadas pelo conteúdo. Não invente nada.\n\nCURRÍCULO: ${JSON.stringify(input).slice(0, 42000)}\n\nRetorne EXCLUSIVAMENTE este JSON:\n{"summary":"resumo curto do que pode melhorar","changes":[{"id":"bio-1","type":"BIO|HEADLINE|GLOBAL_SKILLS|EXPERIENCE_DESCRIPTION|STAGE_DESCRIPTION","label":"nome amigável da mudança","experienceIndex":0,"stageIndex":0,"before":"texto atual ou array atual","after":"texto sugerido ou array sugerido","reason":"por que esta mudança ajuda"}]}\n\nRegras de alvo:\n- BIO não usa experienceIndex/stageIndex;\n- HEADLINE não usa índices;\n- GLOBAL_SKILLS usa arrays em before/after;\n- EXPERIENCE_DESCRIPTION usa experienceIndex;\n- STAGE_DESCRIPTION usa experienceIndex e stageIndex;\n- preserve fatos, datas, empresas e cargos;\n- não crie métricas ou conquistas não informadas;\n- no máximo 24 mudanças.`;
+    const prompt = `Analise o currículo estruturado abaixo e proponha mudanças atômicas, para que o usuário possa aceitar uma por uma. Priorize clareza, objetividade, força do resumo, descrição profissional das experiências e palavras-chave relevantes que JÁ estejam sustentadas pelo conteúdo. Não invente nada.\n\nCURRÍCULO: ${JSON.stringify(input).slice(0, 42000)}\n\nRetorne EXCLUSIVAMENTE este JSON:\n{"summary":"resumo curto do que pode melhorar","changes":[{"id":"bio-1","type":"BIO|HEADLINE|GLOBAL_SKILLS|EXPERIENCE_DESCRIPTION|STAGE_DESCRIPTION","label":"nome amigável da mudança","experienceIndex":0,"stageIndex":0,"before":"texto atual ou array atual","after":"texto sugerido ou array sugerido","reason":"por que esta mudança ajuda"}]}\n\nRegras de alvo:\n- BIO não usa experienceIndex/stageIndex;\n- HEADLINE não usa índices;\n- GLOBAL_SKILLS usa arrays em before/after;\n- EXPERIENCE_DESCRIPTION usa experienceIndex;\n- STAGE_DESCRIPTION usa experienceIndex e stageIndex;\n- preserve fatos, datas, empresas e cargos;\n- não crie métricas ou conquistas não informadas;\n- no máximo 24 mudanças;\n- JSON estritamente válido, sem Markdown e sem texto antes ou depois do objeto.`;
     try {
       return this.normalize(await this.generate(config, prompt, system), profile);
     } catch (error: any) {
