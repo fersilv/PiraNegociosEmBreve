@@ -13,6 +13,7 @@ function dateLabel(value?: string | null) {
 export function BoostVisibilityBanner() {
   const { profile, refreshProfile } = useAuth();
   const [boost, setBoost] = useState<any>(null);
+  const [serverVisible, setServerVisible] = useState<boolean | null>(null);
   const [activating, setActivating] = useState(false);
 
   const load = async () => {
@@ -20,20 +21,23 @@ export function BoostVisibilityBanner() {
       const response = await api.get("/payments/me/billing-status");
       const entitlement = (response.data?.entitlements || []).find((item: any) => item.feature === "RESUME_BOOST" && item.active);
       setBoost(entitlement || null);
+      setServerVisible(response.data?.isOpenToWork === true);
     } catch {
       setBoost(null);
+      setServerVisible(null);
     }
   };
 
   useEffect(() => { void load(); }, [profile?.id]);
 
   if (!boost) return null;
-  const visible = profile?.isOpenToWork === true;
+  const visible = serverVisible ?? profile?.isOpenToWork === true;
 
   const activateVisibility = async () => {
     setActivating(true);
     try {
       await api.post("/users/me", { isOpenToWork: true });
+      setServerVisible(true);
       await refreshProfile();
       await load();
     } finally {
