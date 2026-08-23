@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, BellRing, CalendarClock, CheckCircle2, Clock3, Copy, Crown, Eye, EyeOff, ReceiptText, ShieldCheck, Sparkles, Zap } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BellRing, CalendarClock, CheckCircle2, Clock3, Copy, Crown, ExternalLink, Eye, EyeOff, ReceiptText, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 
@@ -12,6 +12,12 @@ function dateLabel(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+}
+
+function providerLabel(code?: string | null) {
+  if (code === "EFI") return "Efí Bank";
+  if (code === "MERCADO_PAGO") return "Mercado Pago";
+  return "provedor de pagamento";
 }
 
 const statusLabel: Record<string, string> = {
@@ -27,7 +33,7 @@ export function UserPaymentsPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [credits, setCredits] = useState<Record<string, number>>({});
   const [billing, setBilling] = useState<any>({ lifetimeFree: false, isOpenToWork: false, entitlements: [], subscriptions: [] });
-  const [activeProvider, setActiveProvider] = useState<any>(null);
+  const [paymentRoutes, setPaymentRoutes] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState<string | null>(null);
   const [checkout, setCheckout] = useState<any>(null);
@@ -44,13 +50,13 @@ export function UserPaymentsPage() {
         api.get("/payments/catalog"),
         api.get("/payments/me/credits"),
         api.get("/payments/me/billing-status"),
-        api.get("/payments/provider").catch(() => ({ data: null })),
+        api.get("/payments/provider").catch(() => ({ data: {} })),
       ]);
       setPayments(Array.isArray(paymentsResponse.data) ? paymentsResponse.data : []);
       setProducts(Array.isArray(catalogResponse.data) ? catalogResponse.data : []);
       setCredits(creditsResponse.data || {});
       setBilling(billingResponse.data || {});
-      setActiveProvider(providerResponse.data || null);
+      setPaymentRoutes(providerResponse.data || {});
     } finally {
       setLoading(false);
     }
@@ -76,10 +82,14 @@ export function UserPaymentsPage() {
   const boostAccess = activeEntitlement("RESUME_BOOST");
   const earlyAlertAccess = activeEntitlement("EARLY_JOB_ALERTS");
   const activeSubscription = (billing.subscriptions || []).find((item: any) => item.status === "ACTIVE" && new Date(item.currentPeriodEnd).getTime() > Date.now());
-  const mercadoPagoActive = activeProvider?.code === "MERCADO_PAGO";
+  const pixRoute = paymentRoutes?.PIX || { available: false };
+  const automaticRoute = paymentRoutes?.PIX_AUTOMATICO || { available: false };
+  const anyPixAvailable = pixRoute.available === true || automaticRoute.available === true;
 
   const buy = async (productCode: string) => {
     const product = products.find((item) => item.code === productCode);
+    const recurring = product?.billingType === "RECURRING";
+    const route = recurring ? automaticRoute : pixRoute;
     const includesBoost = Array.isArray(product?.benefits) && product.benefits.some((benefit: any) => benefit?.kind === "ENTITLEMENT" && benefit?.feature === "RESUME_BOOST");
     if (includesBoost && !billing.isOpenToWork) {
       const accepted = window.confirm(
@@ -88,14 +98,19 @@ export function UserPaymentsPage() {
       if (!accepted) return;
     }
 
-    const needsPayerData = product?.billingType === "RECURRING" || mercadoPagoActive;
-    if (needsPayerData) {
+    if (!billing.lifetimeFree && !route?.available) {
+      setMessage(recurring ? "Pix Automático está temporariamente indisponível." : "Pix está temporariamente indisponível.");
+      return;
+    }
+
+    const needsEfiRecurringData = !billing.lifetimeFree && recurring && route?.code === "EFI";
+    if (needsEfiRecurringData) {
       const cpf = payerCpf.replace(/\D/g, "");
       if (cpf.length !== 11) {
-        setMessage("Informe um CPF com 11 dígitos para gerar esta cobrança Pix.");
+        setMessage("Informe um CPF com 11 dígitos para autorizar o Pix Automático.");
         return;
       }
-      if (product?.billingType === "RECURRING" && payerName.trim().length < 3) {
+      if (payerName.trim().length < 3) {
         setMessage("Informe o nome completo para autorizar o Pix Automático.");
         return;
       }
@@ -107,7 +122,7 @@ export function UserPaymentsPage() {
     setCopied(false);
     try {
       const payload: any = { productCode };
-      if (needsPayerData) {
+      if (needsEfiRecurringData) {
         payload.payer = { name: payerName.trim(), document: payerCpf.replace(/\D/g, "") };
       }
       const response = await api.post("/payments/pix", payload);
@@ -119,7 +134,7 @@ export function UserPaymentsPage() {
       }
       setCheckout(response.data);
       if (!response.data?.checkoutReady) {
-        setMessage("A cobrança foi criada, mas não recebemos um QR Code utilizável.");
+        setMessage("A cobrança foi criada, mas não recebemos uma jornada de pagamento utilizável.");
       }
       await load();
     } catch (error: any) {
@@ -141,6 +156,10 @@ export function UserPaymentsPage() {
     }
   };
 
+  const checkoutMetadata = checkout?.metadata || {};
+  const authorizationUrl = checkoutMetadata.subscriptionCheckoutUrl || checkoutMetadata.ticketUrl || null;
+  const checkoutProviderName = providerLabel(checkout?.provider);
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -150,7 +169,7 @@ export function UserPaymentsPage() {
           <h1 className="mt-1 font-serif text-3xl font-bold text-stone-900">Pagamentos e benefícios</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Compras, consultas de IA, Match Inteligente, impulso do currículo e assinatura ficam reunidos aqui. Os pagamentos aceitos são exclusivamente Pix.</p>
         </div>
-        <div className={`flex h-12 min-w-20 items-center justify-center rounded-2xl border px-4 ${activeProvider ? "border-emerald-200 bg-emerald-50" : "border-stone-200 bg-stone-100 opacity-45"}`} title={activeProvider ? "Pix" : "Pix temporariamente indisponível"}>
+        <div className={`flex h-12 min-w-20 items-center justify-center rounded-2xl border px-4 ${anyPixAvailable ? "border-emerald-200 bg-emerald-50" : "border-stone-200 bg-stone-100 opacity-45"}`} title={anyPixAvailable ? "Pix" : "Pix temporariamente indisponível"}>
           <img src="/brand/pix.svg" alt="Pix" className="h-7 w-auto" />
         </div>
       </div>
@@ -193,29 +212,30 @@ export function UserPaymentsPage() {
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {availableProducts.map((product) => {
             const recurring = product.billingType === "RECURRING";
-            const recurringUnavailable = recurring && mercadoPagoActive && !billing.lifetimeFree;
-            const needsPayerData = !billing.lifetimeFree && (recurring || mercadoPagoActive);
+            const route = recurring ? automaticRoute : pixRoute;
+            const unavailable = !billing.lifetimeFree && route?.available !== true;
+            const needsEfiRecurringData = !billing.lifetimeFree && recurring && route?.code === "EFI";
             return (
               <div key={product.code} className={`rounded-2xl border p-4 ${product.code === "PREMIUM_MONTHLY" ? "border-violet-200 bg-violet-50/40" : "border-stone-200 bg-[#fffdfa]"}`}>
                 <div className="flex items-start justify-between gap-3">
-                  <div><p className="font-bold text-stone-900">{product.name}</p><p className="mt-1 text-xs leading-5 text-stone-500">{product.description}</p>{product.durationDays && <p className="mt-2 text-[10px] font-black uppercase tracking-wider text-violet-600">{recurring ? `${activeProvider?.code === "EFI" ? "Pix Automático" : "Recorrente"} · ciclo de ${product.durationDays} dias` : `Validade: ${product.durationDays} dias`}</p>}</div>
+                  <div><p className="font-bold text-stone-900">{product.name}</p><p className="mt-1 text-xs leading-5 text-stone-500">{product.description}</p>{product.durationDays && <p className="mt-2 text-[10px] font-black uppercase tracking-wider text-violet-600">{recurring ? `Pix Automático · ciclo de ${product.durationDays} dias` : `Validade: ${product.durationDays} dias`}</p>}</div>
                   <div className="text-right">{product.promotionActive && <p className="text-[10px] font-bold text-stone-400 line-through">{money(product.originalPriceCents)}</p>}<p className="text-xl font-black text-stone-900">{billing.lifetimeFree ? "Grátis" : money(product.effectivePriceCents)}</p>{recurring && !billing.lifetimeFree && <p className="text-[9px] font-bold text-stone-400">por ciclo</p>}</div>
                 </div>
 
-                {needsPayerData && !recurringUnavailable && (
+                {needsEfiRecurringData && (
                   <div className="mt-4 rounded-xl border border-violet-100 bg-white/80 p-3">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-violet-700">Dados do pagador</p>
-                    <p className="mt-1 text-[11px] leading-4 text-stone-500">{recurring ? "Nome e CPF são necessários para autorizar o Pix Automático." : "O CPF é necessário para gerar esta cobrança Pix. O e-mail vem da sua conta."}</p>
+                    <p className="text-[10px] font-black uppercase tracking-wider text-violet-700">Dados para autorização</p>
+                    <p className="mt-1 text-[11px] leading-4 text-stone-500">Nome e CPF são necessários para iniciar a autorização do Pix Automático.</p>
                     <div className="mt-3 grid gap-2">
-                      {recurring && <input value={payerName} onChange={(event) => setPayerName(event.target.value)} placeholder="Nome completo" autoComplete="name" className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-violet-300" />}
+                      <input value={payerName} onChange={(event) => setPayerName(event.target.value)} placeholder="Nome completo" autoComplete="name" className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-violet-300" />
                       <input value={payerCpf} onChange={(event) => setPayerCpf(event.target.value)} placeholder="CPF" inputMode="numeric" autoComplete="off" className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-violet-300" />
                     </div>
                   </div>
                 )}
 
-                {recurringUnavailable && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-4 text-amber-800">A forma de pagamento ativa aceita Pix avulso, mas ainda não oferece Pix Automático para este plano mensal.</div>}
+                {unavailable && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-4 text-amber-800">{recurring ? "Pix Automático está temporariamente indisponível." : "Pix está temporariamente indisponível."}</div>}
 
-                <button type="button" onClick={() => void buy(product.code)} disabled={buying === product.code || recurringUnavailable || (!activeProvider && !billing.lifetimeFree)} className="mt-4 w-full rounded-xl bg-[#2b211c] px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{buying === product.code ? "Processando..." : billing.lifetimeFree ? "Ativar grátis" : recurringUnavailable ? "Pix Automático indisponível" : recurring ? "Autorizar Pix Automático" : "Pagar com Pix"}</button>
+                <button type="button" onClick={() => void buy(product.code)} disabled={buying === product.code || unavailable} className="mt-4 w-full rounded-xl bg-[#2b211c] px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{buying === product.code ? "Processando..." : billing.lifetimeFree ? "Ativar grátis" : unavailable ? "Temporariamente indisponível" : recurring ? "Autorizar Pix Automático" : "Pagar com Pix"}</button>
               </div>
             );
           })}
@@ -223,30 +243,43 @@ export function UserPaymentsPage() {
 
         {message && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800"><AlertTriangle className="mr-1.5 inline h-3.5 w-3.5" />{message}</div>}
 
-        {checkout?.pixCopyPaste && (
+        {(checkout?.pixCopyPaste || authorizationUrl) && (
           <div className="mt-5 rounded-[24px] border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div><p className="text-[10px] font-black uppercase tracking-[.16em] text-emerald-700">Cobrança Pix criada</p><h3 className="mt-1 font-bold text-stone-950">Escaneie o QR ou use o Pix copia e cola</h3><p className="mt-1 text-xs text-stone-500">{checkout.product?.billingType === "RECURRING" ? "Este primeiro Pix também inicia a autorização do seu plano com Pix Automático." : "A liberação acontece automaticamente após a confirmação do pagamento."}</p></div>
-              {checkout.expiresAt && <span className="rounded-full bg-white px-3 py-1.5 text-[10px] font-bold text-stone-500">Expira {dateLabel(checkout.expiresAt)}</span>}
-            </div>
-            <div className="mt-4 grid gap-4 md:grid-cols-[220px_1fr] md:items-center">
-              {checkout.qrCodeBase64 ? (
-                <div className="flex min-h-[210px] items-center justify-center rounded-2xl border border-emerald-100 bg-white p-3">
-                  <img src={String(checkout.qrCodeBase64).startsWith("data:") ? checkout.qrCodeBase64 : `data:image/png;base64,${checkout.qrCodeBase64}`} alt="QR Code Pix" className="h-auto max-h-[190px] w-auto max-w-full" />
+            {checkout?.pixCopyPaste ? (
+              <>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div><p className="text-[10px] font-black uppercase tracking-[.16em] text-emerald-700">Cobrança Pix criada</p><h3 className="mt-1 font-bold text-stone-950">Escaneie o QR ou use o Pix copia e cola</h3><p className="mt-1 text-xs text-stone-500">{checkout.product?.billingType === "RECURRING" ? "Este primeiro Pix inicia a autorização do seu plano com Pix Automático." : "A liberação acontece automaticamente após a confirmação do pagamento."}</p></div>
+                  {checkout.expiresAt && <span className="rounded-full bg-white px-3 py-1.5 text-[10px] font-bold text-stone-500">Expira {dateLabel(checkout.expiresAt)}</span>}
                 </div>
-              ) : (
-                <div className="flex min-h-[160px] items-center justify-center rounded-2xl border border-dashed border-emerald-200 bg-white/70 p-4 text-center text-xs text-stone-400">Use o código Pix ao lado para pagar.</div>
-              )}
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Pix copia e cola</p>
-                <div className="mt-2 break-all rounded-xl bg-white p-3 font-mono text-xs leading-5 text-stone-700">{checkout.pixCopyPaste}</div>
-                <button type="button" onClick={() => void copyPix()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-black text-white"><Copy className="h-3.5 w-3.5" /> {copied ? "Copiado!" : "Copiar código Pix"}</button>
+                <div className="mt-4 grid gap-4 md:grid-cols-[220px_1fr] md:items-center">
+                  {checkout.qrCodeBase64 ? (
+                    <div className="flex min-h-[210px] items-center justify-center rounded-2xl border border-emerald-100 bg-white p-3">
+                      <img src={String(checkout.qrCodeBase64).startsWith("data:") ? checkout.qrCodeBase64 : `data:image/png;base64,${checkout.qrCodeBase64}`} alt="QR Code Pix" className="h-auto max-h-[190px] w-auto max-w-full" />
+                    </div>
+                  ) : (
+                    <div className="flex min-h-[160px] items-center justify-center rounded-2xl border border-dashed border-emerald-200 bg-white/70 p-4 text-center text-xs text-stone-400">Use o código Pix ao lado para pagar.</div>
+                  )}
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Pix copia e cola</p>
+                    <div className="mt-2 break-all rounded-xl bg-white p-3 font-mono text-xs leading-5 text-stone-700">{checkout.pixCopyPaste}</div>
+                    <button type="button" onClick={() => void copyPix()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-black text-white"><Copy className="h-3.5 w-3.5" /> {copied ? "Copiado!" : "Copiar código Pix"}</button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-2xl border border-emerald-100 bg-white p-5 text-center">
+                <img src="/brand/pix.svg" alt="Pix" className="mx-auto h-8 w-auto" />
+                <p className="mt-4 text-[10px] font-black uppercase tracking-[.16em] text-emerald-700">Pix Automático</p>
+                <h3 className="mt-1 font-bold text-stone-950">Conclua a autorização do pagamento recorrente</h3>
+                <p className="mx-auto mt-2 max-w-lg text-xs leading-5 text-stone-500">Você será direcionado para a jornada segura de autorização. Depois da confirmação, as próximas cobranças serão processadas automaticamente conforme o plano.</p>
+                <a href={authorizationUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white">Continuar autorização <ExternalLink className="h-4 w-4" /></a>
               </div>
-            </div>
-            {activeProvider?.name && (
+            )}
+
+            {checkout?.provider && (
               <div className="mt-4 flex items-center justify-center gap-2 border-t border-emerald-200/70 pt-3 text-[10px] font-semibold text-stone-500">
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                Pagamento processado com segurança por <span className="font-black text-stone-700">{activeProvider.name}</span>
+                Pagamento processado com segurança por <span className="font-black text-stone-700">{checkoutProviderName}</span>
               </div>
             )}
           </div>
