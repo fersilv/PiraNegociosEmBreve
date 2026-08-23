@@ -18,6 +18,7 @@ import {
   User,
   UserPlus,
   Users,
+  WalletCards,
   X,
 } from "lucide-react";
 import { auth } from "../lib/firebase";
@@ -57,6 +58,7 @@ const groups: AdminNavGroup[] = [
     label: "Financeiro",
     items: [
       { to: "/admin/pagamentos", label: "Pagamentos", icon: <CreditCard className="h-4 w-4" />, end: true },
+      { to: "/admin/pagamentos/formas", label: "Formas de pagamento", icon: <WalletCards className="h-4 w-4" /> },
       { to: "/admin/pagamentos/suporte", label: "Suporte financeiro", icon: <LifeBuoy className="h-4 w-4" /> },
     ],
   },
@@ -198,6 +200,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
             </div>
             <div className="grid grid-cols-2 gap-2">
               <MoreLink to="/admin/pagamentos" icon={<CreditCard className="h-4 w-4" />} label="Pagamentos" close={() => setMoreOpen(false)} />
+              <MoreLink to="/admin/pagamentos/formas" icon={<WalletCards className="h-4 w-4" />} label="Formas de pagamento" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/pagamentos/suporte" icon={<LifeBuoy className="h-4 w-4" />} label="Suporte financeiro" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/cadastros" icon={<UserPlus className="h-4 w-4" />} label="Novos cadastros" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/notificacoes" icon={<BellRing className="h-4 w-4" />} label="Notificações" close={() => setMoreOpen(false)} />
