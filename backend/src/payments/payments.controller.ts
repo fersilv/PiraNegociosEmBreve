@@ -37,6 +37,11 @@ export class PaymentsController {
     return this.payments.listCatalog(false);
   }
 
+  @Get('provider')
+  getPaymentRoutes() {
+    return this.providers.publicRoutes();
+  }
+
   @Get('me')
   getMine(@Req() req: any) {
     return this.payments.listUserPayments(req.user.uid);
@@ -89,10 +94,16 @@ export class PaymentsController {
     try {
       const checkout = await this.providers.createCheckout(payment, body?.payer || {});
       const stored = await this.payments.attachProviderCheckout(payment.id, checkout);
+      const metadata = stored.metadata as any;
       return {
         ...stored,
         product: payment.product,
-        checkoutReady: Boolean(stored.pixCopyPaste || stored.qrCodeBase64 || (stored.metadata as any)?.ticketUrl),
+        checkoutReady: Boolean(
+          stored.pixCopyPaste
+          || stored.qrCodeBase64
+          || metadata?.ticketUrl
+          || metadata?.subscriptionCheckoutUrl,
+        ),
         providerConfigured: true,
         paymentRequired: true,
       };
@@ -168,6 +179,11 @@ export class AdminPaymentsController {
     return this.providers.list();
   }
 
+  @Get('providers/routes')
+  getProviderRoutes() {
+    return this.providers.routes();
+  }
+
   @Get('providers/vault-status')
   getProviderVaultStatus() {
     return this.providers.vaultStatus();
@@ -193,13 +209,18 @@ export class AdminPaymentsController {
   }
 
   @Post('providers/:code/activate')
-  activateProvider(@Req() req: any, @Param('code') code: string) {
-    return this.providers.activate(code, req.user.uid);
+  activateProvider(
+    @Req() req: any,
+    @Param('code') code: string,
+    @Body() body: { paymentType?: string },
+  ) {
+    if (!body?.paymentType) throw new BadRequestException('Informe o tipo de pagamento que este provedor atenderá.');
+    return this.providers.activate(code, body.paymentType, req.user.uid);
   }
 
-  @Post('providers/:code/deactivate')
-  deactivateProvider(@Req() req: any, @Param('code') code: string) {
-    return this.providers.deactivate(code, req.user.uid);
+  @Post('providers/routes/:paymentType/deactivate')
+  deactivateProviderRoute(@Req() req: any, @Param('paymentType') paymentType: string) {
+    return this.providers.deactivate(paymentType, req.user.uid);
   }
 
   @Get('performance')
