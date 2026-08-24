@@ -127,6 +127,7 @@ export interface Language {
 }
 
 export interface UserProfile {
+  id?: string;
   name?: string;
   displayName?: string;
   fullName?: string;

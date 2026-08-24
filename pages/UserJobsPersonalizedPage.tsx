@@ -18,8 +18,10 @@ import { api, asArray } from "../lib/api";
 import { useAuth, WorkLocationPreference } from "../contexts/AuthContext";
 import { Job } from "../types/job";
 import { JobModal } from "../components/JobModal";
+import { safeApplicationUrl } from "../lib/jobApplication";
 
 type MatchMode = "recommended" | "recent" | "all" | "applied";
+type ApplicationChannel = "ALL" | "EXTERNAL" | "INTERNAL";
 
 type PremiumMatch = {
   jobId: string;
@@ -120,6 +122,7 @@ export function UserJobsPersonalizedPage() {
   const [search, setSearch] = useState("");
   const [location, setLocation] = useState("TODAS");
   const [workModel, setWorkModel] = useState("TODOS");
+  const [applicationChannel, setApplicationChannel] = useState<ApplicationChannel>("ALL");
   const [strongOnly, setStrongOnly] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -148,7 +151,7 @@ export function UserJobsPersonalizedPage() {
     return () => { active = false; };
   }, []);
 
-  useEffect(() => setCurrentPage(1), [search, location, workModel, strongOnly, mode]);
+  useEffect(() => setCurrentPage(1), [search, location, workModel, applicationChannel, strongOnly, mode]);
 
   const premiumActive = Boolean(matchStatus?.active);
   const matchProduct = matchStatus?.product;
@@ -189,6 +192,8 @@ export function UserJobsPersonalizedPage() {
     if (term) result = result.filter(({ job }) => normalize(`${job.title} ${job.companyName} ${job.location} ${job.description} ${job.requirements} ${(job.skills || []).join(" ")}`).includes(term));
     if (location !== "TODAS") result = result.filter(({ job }) => (job.location || [job.city, job.state].filter(Boolean).join(", ")) === location);
     if (workModel !== "TODOS") result = result.filter(({ job }) => normalize(job.workModel || "Presencial") === normalize(workModel));
+    if (applicationChannel === "EXTERNAL") result = result.filter(({ job }) => Boolean(safeApplicationUrl(job.applicationUrl)));
+    if (applicationChannel === "INTERNAL") result = result.filter(({ job }) => !safeApplicationUrl(job.applicationUrl));
     if (strongOnly && premiumActive) result = result.filter((item) => Number(item.premium?.score || 0) >= 70);
     if (mode === "applied") result = result.filter(({ job }) => appliedIds.has(job.id));
 
@@ -204,7 +209,7 @@ export function UserJobsPersonalizedPage() {
       result.sort((a, b) => getPostedAt(b.job) - getPostedAt(a.job));
     }
     return result;
-  }, [matches, search, location, workModel, strongOnly, premiumActive, mode, appliedIds, includeExclusivePcdJobs]);
+  }, [matches, search, location, workModel, applicationChannel, strongOnly, premiumActive, mode, appliedIds, includeExclusivePcdJobs]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const activePage = Math.min(currentPage, totalPages);
@@ -299,10 +304,11 @@ export function UserJobsPersonalizedPage() {
       )}
 
       <section id="user-jobs-results" className="scroll-mt-28 rounded-[30px] border border-stone-200 bg-white/85 p-4 shadow-sm md:p-6">
-        <div className="grid gap-3 lg:grid-cols-[1fr_220px_190px]">
+        <div className="grid gap-3 xl:grid-cols-[1fr_220px_190px_210px]">
           <div className="relative"><Search className="absolute left-4 top-3.5 h-4 w-4 text-stone-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cargo, empresa, habilidade..." className="w-full rounded-2xl border border-stone-200 bg-white py-3 pl-11 pr-4 text-sm outline-none focus:border-terracotta-400" /></div>
           <select value={location} onChange={(event) => setLocation(event.target.value)} className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm"><option value="TODAS">Todas as cidades</option>{locations.map((item) => <option key={item} value={item}>{item}</option>)}</select>
           <select value={workModel} onChange={(event) => setWorkModel(event.target.value)} className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm"><option value="TODOS">Todos os modelos</option><option>Presencial</option><option>Híbrido</option><option>Remoto</option></select>
+          <select value={applicationChannel} onChange={(event) => setApplicationChannel(event.target.value as ApplicationChannel)} className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm"><option value="ALL">Toda candidatura</option><option value="EXTERNAL">Site externo</option><option value="INTERNAL">PiraNegócios</option></select>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2 border-b border-stone-100 pb-4">

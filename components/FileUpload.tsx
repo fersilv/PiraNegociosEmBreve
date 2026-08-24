@@ -5,14 +5,13 @@ import {
   CheckCircle2,
   FileText,
   Loader2,
-  QrCode,
   Sparkles,
-  Smartphone,
   UploadCloud,
   X,
 } from 'lucide-react';
 import { useImageAiStatus } from '../hooks/useImageAiStatus';
 import { api } from '../lib/api';
+import { MobileUploadBridge, type MobileReceivedFile } from './MobileUploadBridge';
 
 interface FileUploadProps {
   label: string;
@@ -33,6 +32,12 @@ function readBlobAsDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+async function receivedFileToBrowserFile(file: MobileReceivedFile) {
+  const response = await fetch(file.dataUrl);
+  const blob = await response.blob();
+  return new File([blob], file.fileName, { type: file.mimeType || blob.type || 'application/octet-stream' });
+}
+
 export function FileUpload({
   label,
   accept,
@@ -46,7 +51,6 @@ export function FileUpload({
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [showQrModal, setShowQrModal] = useState(false);
   const [enhancingPhoto, setEnhancingPhoto] = useState(false);
   const [aiPhoto, setAiPhoto] = useState('');
   const [comparisonOpen, setComparisonOpen] = useState(false);
@@ -154,6 +158,16 @@ export function FileUpload({
     }
   };
 
+  const receiveFromMobile = async (received: MobileReceivedFile) => {
+    try {
+      const file = await receivedFileToBrowserFile(received);
+      await processFile(file);
+    } catch (mobileError) {
+      console.error(mobileError);
+      setError('O arquivo chegou do celular, mas não pôde ser processado neste dispositivo.');
+    }
+  };
+
   const imageForAi = async (current: string) => {
     if (current.startsWith('data:image/')) return current;
     try {
@@ -239,10 +253,6 @@ export function FileUpload({
     const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
     return `${(bytes / 1024 ** index).toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
   };
-
-  const pageQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
-    window.location.href,
-  )}`;
 
   return (
     <div className="space-y-2">
@@ -352,9 +362,12 @@ export function FileUpload({
             <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 rounded-xl bg-terracotta-600 px-3.5 py-2 text-xs font-bold text-white">
               <UploadCloud className="h-4 w-4" /> Selecionar arquivo
             </button>
-            <button type="button" onClick={() => setShowQrModal(true)} className="hidden items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3.5 py-2 text-xs font-bold text-stone-600 md:flex">
-              <Smartphone className="h-4 w-4" /> Usar celular
-            </button>
+            <MobileUploadBridge
+              purpose={type}
+              maxSizeKB={effectiveMaxSizeKB}
+              onReceived={receiveFromMobile}
+              className="hidden items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3.5 py-2 text-xs font-bold text-stone-600 md:flex"
+            />
           </div>
         </div>
       )}
@@ -386,22 +399,6 @@ export function FileUpload({
                 <Sparkles className="h-4 w-4" /> Usar versão da IA
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {showQrModal && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={() => setShowQrModal(false)}>
-          <div className="w-full max-w-sm rounded-[26px] bg-white p-6 text-center shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <button type="button" onClick={() => setShowQrModal(false)} className="ml-auto flex rounded-full bg-stone-100 p-2 text-stone-500">
-              <X className="h-4 w-4" />
-            </button>
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-terracotta-50 text-terracotta-600">
-              <QrCode className="h-6 w-6" />
-            </div>
-            <h3 className="font-serif text-xl font-bold text-stone-900">Abra esta página no celular</h3>
-            <p className="mt-2 text-xs leading-5 text-stone-500">Escaneie o QR Code e use a câmera ou a galeria do telefone.</p>
-            <img src={pageQrUrl} alt="QR Code" className="mx-auto mt-5 h-[210px] w-[210px] rounded-xl border border-stone-200 bg-white p-2" />
           </div>
         </div>
       )}

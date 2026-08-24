@@ -1,6 +1,7 @@
-import React from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { api } from "../lib/api";
 import { Onboarding } from "./Onboarding";
 import { WorkspaceLayout } from "../components/WorkspaceLayout";
 import { AdminWorkspaceLayout } from "../components/AdminWorkspaceLayout";
@@ -26,9 +27,11 @@ import { AdminFlaggedJobsPage } from "./AdminFlaggedJobsPage";
 import { AdminRegistrationPage } from "./AdminRegistrationPage";
 import { AdminPaymentsPage } from "./AdminPaymentsPage";
 import { AdminBillingSupportPage } from "./AdminBillingSupportPage";
+import { AdminPublicResumeBuilderPage } from "./AdminPublicResumeBuilderPage";
 import { PaymentMethodsPage } from "./PaymentMethodsPage";
 import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
 import { CompanyProfilePage } from "./CompanyProfilePage";
+import { CompanyPageBuilder } from "./CompanyPageBuilder";
 import { CompanyJobPage } from "./CompanyJobPage";
 import { CompanyHiringConfig } from "./CompanyHiringConfig";
 import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
@@ -52,6 +55,7 @@ function AdminRoutes() {
       <Route path="vinculos" element={<AdminPage><AdminDashboard mode="moderation" section="access" /></AdminPage>} />
       <Route path="cadastros" element={<AdminPage><AdminRegistrationPage /></AdminPage>} />
       <Route path="publicidade" element={<AdminPage><AdminDashboard mode="moderation" section="advertising" /></AdminPage>} />
+      <Route path="criador-publico" element={<AdminPage><AdminPublicResumeBuilderPage /></AdminPage>} />
       <Route path="pagamentos" element={<AdminPage><AdminPaymentsPage /></AdminPage>} />
       <Route path="pagamentos/formas" element={<AdminPage><PaymentMethodsPage /></AdminPage>} />
       <Route path="pagamentos/suporte" element={<AdminPage><AdminBillingSupportPage /></AdminPage>} />
@@ -84,7 +88,52 @@ function UserRoutes() {
   );
 }
 
-function CompanyRoutes({ hasCompany }: { hasCompany: boolean }) {
+function VerifiedCompanyPageRoute({ companyId }: { companyId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [verified, setVerified] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setFailed(false);
+    api.get(`/companies/${companyId}`)
+      .then((response) => {
+        if (!active) return;
+        setVerified(response.data?.verificationStatus === "VERIFIED");
+      })
+      .catch(() => {
+        if (!active) return;
+        setFailed(true);
+        setVerified(false);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [companyId]);
+
+  if (loading) {
+    return <div className="min-h-[50vh] flex items-center justify-center text-stone-500">Verificando acesso à Minha Página...</div>;
+  }
+  if (!verified) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-3xl border border-amber-200 bg-amber-50 p-7 text-amber-950 shadow-sm">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">Minha Página</p>
+        <h1 className="mt-2 font-serif text-3xl font-black">Disponível após a verificação da empresa</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-amber-900/80">
+          Apenas empresas verificadas podem criar e publicar uma página própria no PiraNegócios. Conclua ou acompanhe a verificação no Perfil da empresa.
+        </p>
+        {failed && <p className="mt-3 text-xs font-semibold text-amber-800">Não foi possível confirmar o status da empresa agora.</p>}
+        <Link to="/company/perfil" className="mt-5 inline-flex rounded-2xl bg-stone-900 px-4 py-3 text-xs font-black text-white">Ir para o Perfil da empresa</Link>
+      </div>
+    );
+  }
+  return <CompanyPageBuilder />;
+}
+
+function CompanyRoutes({ companyId }: { companyId?: string }) {
+  const hasCompany = Boolean(companyId);
   const companyOnly = (element: React.ReactNode) => hasCompany ? element : <Navigate to="/company/perfil" replace />;
   return (
     <Routes>
@@ -94,6 +143,7 @@ function CompanyRoutes({ hasCompany }: { hasCompany: boolean }) {
       <Route path="vagas/:jobId" element={companyOnly(<CompanyJobPage />)} />
       <Route path="talentos" element={companyOnly(<TalentSearchPage />)} />
       <Route path="contratacao" element={companyOnly(<CompanyHiringConfig />)} />
+      <Route path="pagina" element={companyOnly(companyId ? <VerifiedCompanyPageRoute companyId={companyId} /> : null)} />
       <Route path="notificacoes" element={companyOnly(<NotificationPreferencesPage />)} />
       <Route path="perfil" element={<CompanyProfilePage />} />
       <Route path="*" element={<Navigate to={hasCompany ? "/company" : "/company/perfil"} replace />} />
@@ -136,6 +186,7 @@ function LegacyDashboardRedirect() {
   }
   if (path === "/dashboard/curriculos") return <Navigate to="/company/talentos" replace />;
   if (path === "/dashboard/configuracao-contratacao") return <Navigate to="/company/contratacao" replace />;
+  if (path === "/dashboard/empresa/pagina") return <Navigate to="/company/pagina" replace />;
   if (path === "/dashboard/empresa") return <Navigate to="/company/perfil" replace />;
   if (path === "/dashboard/onboarding") return <Navigate to={profile?.type === "ADMIN" ? "/admin/onboarding" : "/user/onboarding"} replace />;
   if (profile?.type === "ADMIN") return <Navigate to="/admin" replace />;
@@ -161,7 +212,7 @@ export function Dashboard() {
     return <AdminWorkspaceLayout><AdminRoutes /></AdminWorkspaceLayout>;
   }
   if (isAdminRoute) return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
-  if (isCompanyRoute) return <WorkspaceLayout workspace="company"><CompanyRoutes hasCompany={Boolean(profile?.companyId)} /></WorkspaceLayout>;
+  if (isCompanyRoute) return <WorkspaceLayout workspace="company"><CompanyRoutes companyId={profile?.companyId} /></WorkspaceLayout>;
   if (isResumeStudioRoute) return <><ResumeImportEntitlementOrchestrator /><ResumeWorkspace /></>;
   if (isUserRoute) return <WorkspaceLayout workspace="user"><ResumeImportEntitlementOrchestrator /><BoostVisibilityBanner /><UserRoutes /></WorkspaceLayout>;
   return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;

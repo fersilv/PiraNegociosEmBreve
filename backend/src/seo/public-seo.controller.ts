@@ -224,6 +224,7 @@ export class PublicSeoController {
     const urls = [
       { loc: `${siteUrl()}/`, lastmod: new Date() },
       { loc: `${siteUrl()}/vagas`, lastmod: new Date() },
+      { loc: `${siteUrl()}/criador-de-curriculo`, lastmod: new Date() },
       ...Array.from(cityMap.entries()).map(([slug, city]) => ({
         loc: `${siteUrl()}/vagas-em/${slug}`,
         lastmod: city.lastmod,

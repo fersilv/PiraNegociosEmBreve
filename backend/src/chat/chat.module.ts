@@ -13,5 +13,6 @@ import { ChatMessage } from './entities/chat-message.entity';
   imports: [AuthModule, TypeOrmModule.forFeature([ChatMessage, Application, Job, User])],
   providers: [ChatService, ChatGateway],
   controllers: [ChatController],
+  exports: [ChatGateway],
 })
 export class ChatModule {}
