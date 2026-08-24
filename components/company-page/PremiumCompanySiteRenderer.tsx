@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   BadgeCheck,
-  BriefcaseBusiness,
   Building2,
   ExternalLink,
   Facebook,
@@ -12,7 +11,6 @@ import {
   MapPin,
   Music2,
   Phone,
-  Sparkles,
   Youtube,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -21,6 +19,9 @@ import { FullPageCompanySandbox } from './FullPageCompanySandbox';
 export type CompanyPageWidth = 'compact' | 'standard' | 'wide' | 'full';
 export type CompanyTemplateKey = 'aurora' | 'atlas' | 'pulse' | 'canvas' | 'noir' | 'essencial' | 'institucional' | 'vitrine' | 'editorial';
 export type CompanyEditorMode = 'visual' | 'code';
+export type CompanyTypography = 'clean' | 'editorial' | 'technical' | 'human';
+export type CompanyHeroLayout = 'split' | 'centered' | 'cover' | 'minimal';
+export type CompanyJobsLayout = 'list' | 'grid' | 'compact';
 
 export interface CompanyPageSection {
   id: string;
@@ -35,6 +36,32 @@ export interface CompanyPageConfig {
   templateKey?: CompanyTemplateKey | string;
   width?: CompanyPageWidth;
   theme?: { primary?: string; background?: string; text?: string; accent?: string };
+  branding?: {
+    typography?: CompanyTypography;
+    logoSize?: 'small' | 'medium' | 'large';
+    corners?: 'square' | 'soft' | 'round';
+  };
+  navigation?: {
+    enabled?: boolean;
+    sticky?: boolean;
+    transparent?: boolean;
+    jobsLabel?: string;
+  };
+  hero?: {
+    layout?: CompanyHeroLayout;
+    eyebrow?: string;
+    title?: string;
+    subtitle?: string;
+    jobsLabel?: string;
+  };
+  jobs?: {
+    title?: string;
+    intro?: string;
+    layout?: CompanyJobsLayout;
+  };
+  footer?: {
+    text?: string;
+  };
   cover?: { enabled?: boolean; url?: string; height?: 'small' | 'medium' | 'large'; position?: string; overlay?: number };
   about?: { title?: string; text?: string };
   contacts?: { phone?: string; secondaryPhone?: string; whatsapp?: string; email?: string; website?: string };
@@ -83,19 +110,19 @@ export const COMPANY_PAGE_TEMPLATES: Array<{
   eyebrow: string;
   bestFor: string;
 }> = [
-  { key: 'aurora', name: 'Aurora', eyebrow: 'Premium clean', description: 'Leve, sofisticado e com presença de marca sem parecer template pronto.', bestFor: 'Serviços, tecnologia, saúde e marcas modernas' },
-  { key: 'atlas', name: 'Atlas', eyebrow: 'Executive', description: 'Visual corporativo contemporâneo, sólido e elegante, com informação muito bem hierarquizada.', bestFor: 'Indústria, B2B, consultorias e empresas consolidadas' },
-  { key: 'pulse', name: 'Pulse', eyebrow: 'Recruitment first', description: 'Energia visual e oportunidades no centro da experiência, sem perder a identidade institucional.', bestFor: 'Empresas contratando com frequência e employer branding' },
-  { key: 'canvas', name: 'Canvas', eyebrow: 'Editorial', description: 'Tipografia grande, respiro e narrativa. Parece uma landing page desenhada sob medida.', bestFor: 'Arquitetura, moda, gastronomia, agências e negócios autorais' },
-  { key: 'noir', name: 'Noir', eyebrow: 'Dark luxury', description: 'Escuro, preciso e sofisticado. Um visual premium para marcas que querem presença.', bestFor: 'Automotivo, eventos, estética, tecnologia e marcas premium' },
+  { key: 'aurora', name: 'Aurora', eyebrow: 'Clean brand', description: 'Base clara e neutra. A identidade vem da marca, não do PiraNegócios.', bestFor: 'Serviços, tecnologia, saúde e marcas contemporâneas' },
+  { key: 'atlas', name: 'Atlas', eyebrow: 'Corporate', description: 'Estrutura sóbria com navegação e hierarquia de site institucional.', bestFor: 'Indústria, B2B, consultorias e empresas consolidadas' },
+  { key: 'pulse', name: 'Pulse', eyebrow: 'Bold careers', description: 'Marca forte e vagas em destaque, sem aparência de portal de empregos.', bestFor: 'Empresas com contratação recorrente e employer branding' },
+  { key: 'canvas', name: 'Canvas', eyebrow: 'Editorial', description: 'Tipografia, respiro e composição de landing page autoral.', bestFor: 'Moda, arquitetura, gastronomia, agências e negócios criativos' },
+  { key: 'noir', name: 'Noir', eyebrow: 'Dark brand', description: 'Escuro e preciso para identidades que pedem contraste e presença.', bestFor: 'Tecnologia, automotivo, eventos e marcas premium' },
 ];
 
 const DEFAULT_SECTIONS: CompanyPageSection[] = [
   { id: 'identity', type: 'identity', enabled: true, locked: true },
   { id: 'about', type: 'about', enabled: true },
+  { id: 'jobs', type: 'jobs', enabled: true, locked: true },
   { id: 'contact', type: 'contact', enabled: true },
   { id: 'socials', type: 'socials', enabled: true },
-  { id: 'jobs', type: 'jobs', enabled: true, locked: true },
   { id: 'legal', type: 'legal', enabled: true },
 ];
 
@@ -114,19 +141,12 @@ function normalizedUrl(value?: string) {
   return `https://${raw}`;
 }
 
-function widthClass(width: CompanyPageWidth = 'standard') {
-  if (width === 'compact') return 'max-w-4xl';
-  if (width === 'wide') return 'max-w-[1380px]';
-  if (width === 'full') return 'max-w-none';
-  return 'max-w-6xl';
+function companyLocation(company: PublicCompanyLike) {
+  return company.address || company.cityState || [company.city, company.state].filter(Boolean).join(', ');
 }
 
 function isVerified(company: PublicCompanyLike) {
   return Boolean(company.isVerified || company.verificationStatus === 'VERIFIED');
-}
-
-function companyLocation(company: PublicCompanyLike) {
-  return company.address || company.cityState || [company.city, company.state].filter(Boolean).join(', ');
 }
 
 function withPageOverrides(company: PublicCompanyLike, config: CompanyPageConfig): PublicCompanyLike {
@@ -141,239 +161,284 @@ function withPageOverrides(company: PublicCompanyLike, config: CompanyPageConfig
   };
 }
 
-export function CompanySiteRenderer({ company, jobs, page, preview = false }: { company: PublicCompanyLike; jobs: PublicJobLike[]; page?: CompanyPageConfig | null; preview?: boolean }) {
-  const config = page || {};
-  const mode: CompanyEditorMode = config.editorMode === 'code' ? 'code' : 'visual';
-
-  if (mode === 'code') {
-    const mergedCompany = withPageOverrides(company, config);
-    return (
-      <div className="w-full overflow-hidden bg-white">
-        <FullPageCompanySandbox
-          company={mergedCompany}
-          jobs={jobs}
-          html={config.codePage?.html || ''}
-          css={config.codePage?.css || ''}
-          js={config.codePage?.js || ''}
-        />
-      </div>
-    );
-  }
-
-  return <VisualCompanyPage company={company} jobs={jobs} config={config} preview={preview} />;
+function widthClass(width: CompanyPageWidth = 'standard') {
+  if (width === 'compact') return 'max-w-4xl';
+  if (width === 'wide') return 'max-w-[1380px]';
+  if (width === 'full') return 'max-w-none';
+  return 'max-w-6xl';
 }
 
-function VisualCompanyPage({ company, jobs, config, preview }: { company: PublicCompanyLike; jobs: PublicJobLike[]; config: CompanyPageConfig; preview: boolean }) {
+function typographyClass(value: CompanyTypography = 'clean') {
+  if (value === 'editorial') return 'font-serif';
+  if (value === 'technical') return 'font-mono';
+  if (value === 'human') return 'font-sans tracking-[.005em]';
+  return 'font-sans';
+}
+
+function radiusValue(value: CompanyPageConfig['branding'] extends infer T ? any : never) {
+  if (value === 'square') return '0px';
+  if (value === 'round') return '32px';
+  return '16px';
+}
+
+export function CompanySiteRenderer({ company, jobs, page, preview = false }: { company: PublicCompanyLike; jobs: PublicJobLike[]; page?: CompanyPageConfig | null; preview?: boolean }) {
+  const config = page || {};
+  if (config.editorMode === 'code') {
+    return (
+      <FullPageCompanySandbox
+        company={withPageOverrides(company, config)}
+        jobs={jobs}
+        html={config.codePage?.html || ''}
+        css={config.codePage?.css || ''}
+        js={config.codePage?.js || ''}
+      />
+    );
+  }
+  return <VisualCompanyMicrosite company={company} jobs={jobs} config={config} preview={preview} />;
+}
+
+function VisualCompanyMicrosite({ company, jobs, config, preview }: { company: PublicCompanyLike; jobs: PublicJobLike[]; config: CompanyPageConfig; preview: boolean }) {
   const template = templateKey(String(config.templateKey || 'aurora'));
-  const primary = config.theme?.primary || '#b84f38';
-  const accent = config.theme?.accent || '#2f4f46';
-  const background = config.theme?.background || '#f8f5f0';
-  const text = config.theme?.text || '#201d1b';
+  const dark = template === 'noir';
+  const primary = config.theme?.primary || (dark ? '#ffffff' : '#111111');
+  const accent = config.theme?.accent || primary;
+  const background = config.theme?.background || (dark ? '#09090b' : '#ffffff');
+  const text = config.theme?.text || (dark ? '#f5f5f4' : '#171717');
+  const typography = config.branding?.typography || (template === 'canvas' ? 'editorial' : template === 'noir' ? 'technical' : 'clean');
+  const radius = radiusValue(config.branding?.corners || (template === 'pulse' ? 'round' : 'soft'));
   const sections = Array.isArray(config.sections) && config.sections.length ? config.sections : DEFAULT_SECTIONS;
   const ordered = sections.filter((section) => section.type !== 'identity' && section.enabled !== false);
-  const sectionEnabled = (type: string) => sections.some((section) => section.type === type && section.enabled !== false);
-  const location = companyLocation(company);
   const aboutText = config.about?.text || company.description || '';
-  const dark = template === 'noir';
+  const location = companyLocation(company);
+  const shell = widthClass(config.width);
 
   const style = {
-    '--pn-primary': primary,
-    '--pn-accent': accent,
-    '--pn-bg': background,
-    '--pn-text': text,
+    '--company-primary': primary,
+    '--company-accent': accent,
+    '--company-bg': background,
+    '--company-text': text,
+    '--company-radius': radius,
   } as React.CSSProperties;
 
   return (
-    <div style={{ ...style, backgroundColor: dark ? '#0d0d0e' : background, color: dark ? '#f5f2ed' : text }} className="min-h-screen w-full overflow-hidden">
-      <div className={`mx-auto w-full ${widthClass(config.width)} ${config.width === 'full' ? '' : 'px-4 sm:px-6'} py-4 sm:py-7`}>
-        <PremiumHero template={template} company={company} config={config} location={location} primary={primary} accent={accent} aboutText={aboutText} />
+    <div style={{ ...style, backgroundColor: background, color: text }} className={`min-h-screen w-full ${typographyClass(typography)}`}>
+      {config.navigation?.enabled !== false && (
+        <SiteNavigation company={company} config={config} dark={dark} shell={shell} />
+      )}
 
-        <main className={`${template === 'canvas' ? 'mt-14 space-y-14' : 'mt-7 space-y-7'} ${config.width === 'full' ? 'px-4 sm:px-8' : ''}`}>
-          {ordered.map((section) => (
-            <React.Fragment key={section.id}>
-              {section.type === 'about' && aboutText ? <AboutSection template={template} title={config.about?.title || 'Sobre a empresa'} text={aboutText} primary={primary} /> : null}
-              {section.type === 'contact' ? <ContactSection template={template} company={company} config={config} primary={primary} /> : null}
-              {section.type === 'socials' ? <SocialSection template={template} company={company} config={config} primary={primary} /> : null}
-              {section.type === 'jobs' ? <JobsSection template={template} jobs={jobs} primary={primary} accent={accent} /> : null}
-              {section.type === 'legal' ? <LegalSection template={template} company={company} config={config} /> : null}
-            </React.Fragment>
-          ))}
+      <Hero company={company} config={config} template={template} aboutText={aboutText} location={location} shell={shell} dark={dark} />
 
-          {!sectionEnabled('jobs') && (
-            <div className="rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-900">
-              A prévia está sem o componente obrigatório de vagas. O rascunho pode ser salvo, mas não publicado.
-            </div>
-          )}
-        </main>
+      <main className={`mx-auto w-full ${shell} ${config.width === 'full' ? '' : 'px-5 sm:px-8'}`}>
+        {ordered.map((section) => {
+          if (section.type === 'about' && aboutText) return <AboutSection key={section.id} title={config.about?.title || 'Sobre'} text={aboutText} template={template} />;
+          if (section.type === 'jobs') return <JobsSection key={section.id} jobs={jobs} config={config} template={template} />;
+          if (section.type === 'contact') return <ContactSection key={section.id} company={company} config={config} template={template} />;
+          if (section.type === 'socials') return <SocialSection key={section.id} company={company} config={config} />;
+          if (section.type === 'legal') return <LegalSection key={section.id} config={config} />;
+          return null;
+        })}
+      </main>
 
-        <footer className={`mt-10 flex flex-wrap items-center justify-between gap-3 border-t py-6 text-[11px] font-semibold ${dark ? 'border-white/10 text-white/35' : 'border-stone-200 text-stone-400'} ${config.width === 'full' ? 'mx-4 sm:mx-8' : ''}`}>
-          <span>{preview ? 'Prévia privada · ' : ''}Site empresarial integrado ao PiraNegócios</span>
-          <span>Oportunidades sincronizadas automaticamente</span>
-        </footer>
+      <footer className={`mx-auto mt-16 w-full ${shell} ${config.width === 'full' ? 'px-5 sm:px-8' : 'px-5 sm:px-8'} pb-8`}>
+        <div className="flex flex-col gap-3 border-t pt-5 text-xs opacity-50 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: dark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.12)' }}>
+          <span>{config.footer?.text || `© ${new Date().getFullYear()} ${company.name || 'Empresa'}`}</span>
+          <span className="inline-flex items-center gap-1.5">{preview ? 'Prévia privada · ' : ''}<Link to="/" className="underline decoration-current/30 underline-offset-4 hover:opacity-80">Carreiras por PiraNegócios</Link></span>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+function SiteNavigation({ company, config, dark, shell }: { company: PublicCompanyLike; config: CompanyPageConfig; dark: boolean; shell: string }) {
+  const sticky = config.navigation?.sticky !== false;
+  const transparent = config.navigation?.transparent === true;
+  const jobsLabel = config.navigation?.jobsLabel || 'Vagas';
+  return (
+    <div className={`${sticky ? 'sticky top-0 z-50' : 'relative z-20'} border-b backdrop-blur-xl`} style={{ borderColor: dark ? 'rgba(255,255,255,.10)' : 'rgba(0,0,0,.08)', background: transparent ? 'transparent' : dark ? 'rgba(9,9,11,.9)' : 'rgba(255,255,255,.9)' }}>
+      <div className={`mx-auto flex w-full ${shell} items-center gap-4 px-5 py-3 sm:px-8`}>
+        <a href="#top" className="flex min-w-0 items-center gap-3">
+          <CompanyLogo company={company} size="small" />
+          <span className="truncate text-sm font-bold tracking-tight">{company.name}</span>
+          <VerifiedSeal company={company} inverted={dark} />
+        </a>
+        <nav className="ml-auto hidden items-center gap-6 text-sm font-medium opacity-70 sm:flex">
+          <a href="#sobre" className="hover:opacity-70">Sobre</a>
+          <a href="#vagas" className="hover:opacity-70">{jobsLabel}</a>
+          <a href="#contato" className="hover:opacity-70">Contato</a>
+        </nav>
+        <a href="#vagas" className="ml-auto rounded-full px-4 py-2 text-xs font-bold text-white sm:ml-0" style={{ backgroundColor: config.theme?.primary || '#111111' }}>{jobsLabel}</a>
       </div>
     </div>
   );
 }
 
-function PremiumHero({ template, company, config, location, primary, accent, aboutText }: { template: ReturnType<typeof templateKey>; company: PublicCompanyLike; config: CompanyPageConfig; location: string; primary: string; accent: string; aboutText: string }) {
-  const cover = Boolean(config.cover?.enabled && config.cover?.url);
-  const coverStyle = cover ? {
-    backgroundImage: `linear-gradient(110deg, rgba(8,8,10,.82), rgba(8,8,10,.18)), url(${config.cover?.url})`,
+function Hero({ company, config, template, aboutText, location, shell, dark }: { company: PublicCompanyLike; config: CompanyPageConfig; template: ReturnType<typeof templateKey>; aboutText: string; location: string; shell: string; dark: boolean }) {
+  const coverEnabled = Boolean(config.cover?.enabled && config.cover?.url);
+  const heroLayout = config.hero?.layout || (template === 'canvas' ? 'minimal' : template === 'pulse' ? 'centered' : template === 'noir' ? 'cover' : 'split');
+  const minHeight = config.cover?.height === 'small' ? '360px' : config.cover?.height === 'large' ? '650px' : '500px';
+  const overlay = Math.max(0, Math.min(80, Number(config.cover?.overlay ?? 34))) / 100;
+  const coverStyle = coverEnabled ? {
+    backgroundImage: `linear-gradient(rgba(0,0,0,${overlay}), rgba(0,0,0,${Math.min(.75, overlay + .12)})), url(${config.cover?.url})`,
     backgroundPosition: config.cover?.position || 'center',
     backgroundSize: 'cover',
+    minHeight,
   } : undefined;
+  const title = config.hero?.title || company.name || 'Sua empresa';
+  const subtitle = config.hero?.subtitle || aboutText;
+  const eyebrow = config.hero?.eyebrow || '';
+  const jobsLabel = config.hero?.jobsLabel || 'Ver oportunidades';
+  const heroTextColor = coverEnabled ? '#fff' : undefined;
 
-  if (template === 'canvas') {
+  if (heroLayout === 'minimal') {
     return (
-      <header className="relative border-y border-stone-300/70 bg-[#f5f0e7] px-6 py-10 sm:px-10 sm:py-14" style={cover ? coverStyle : undefined}>
-        <div className={`grid gap-10 lg:grid-cols-[1.25fr_.75fr] lg:items-end ${cover ? 'text-white' : 'text-stone-950'}`}>
-          <div>
-            <div className="mb-8 flex items-center gap-4">
-              <CompanyLogo company={company} className="h-16 w-16 rounded-full" />
-              <VerifiedBadge company={company} inverted={cover} />
-            </div>
-            <h1 className="max-w-4xl font-serif text-5xl font-black leading-[.95] tracking-[-.055em] sm:text-7xl lg:text-8xl">{company.name || 'Sua empresa'}</h1>
-          </div>
-          <div className="space-y-5 pb-1">
-            {location && <p className={`flex items-start gap-2 text-sm font-semibold ${cover ? 'text-white/75' : 'text-stone-500'}`}><MapPin className="mt-0.5 h-4 w-4 shrink-0" />{location}</p>}
-            {aboutText && <p className={`text-base leading-7 ${cover ? 'text-white/80' : 'text-stone-600'}`}>{aboutText.slice(0, 220)}{aboutText.length > 220 ? '…' : ''}</p>}
-          </div>
+      <section id="top" className={`mx-auto w-full ${shell} px-5 pb-16 pt-14 sm:px-8 sm:pb-24 sm:pt-20`} style={{ color: heroTextColor }}>
+        <div className="flex items-center gap-3"><CompanyLogo company={company} size="medium" /><VerifiedSeal company={company} inverted={coverEnabled || dark} /></div>
+        {eyebrow && <p className="mt-12 text-xs font-bold uppercase tracking-[.22em] opacity-50">{eyebrow}</p>}
+        <h1 className="mt-5 max-w-5xl text-5xl font-semibold leading-[.94] tracking-[-.055em] sm:text-7xl lg:text-8xl">{title}</h1>
+        <div className="mt-10 grid gap-8 border-t pt-8 lg:grid-cols-[.65fr_1.35fr]" style={{ borderColor: coverEnabled || dark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.14)' }}>
+          <div className="space-y-3 text-sm opacity-65">{location && <p className="flex gap-2"><MapPin className="h-4 w-4" />{location}</p>}</div>
+          <div>{subtitle && <p className="max-w-2xl text-lg leading-8 opacity-75">{subtitle}</p>}<a href="#vagas" className="mt-6 inline-flex items-center rounded-full px-5 py-3 text-sm font-bold text-white" style={{ backgroundColor: config.theme?.primary || '#111' }}>{jobsLabel}</a></div>
         </div>
-      </header>
+      </section>
     );
   }
 
-  if (template === 'noir') {
-    return (
-      <header className="relative overflow-hidden rounded-[34px] border border-white/10 bg-[#121214] px-6 py-8 text-white shadow-[0_35px_100px_rgba(0,0,0,.35)] sm:px-10 sm:py-11" style={cover ? coverStyle : undefined}>
-        <div className="absolute -right-24 -top-28 h-80 w-80 rounded-full blur-3xl opacity-40" style={{ background: `radial-gradient(circle, ${primary}, transparent 68%)` }} />
-        <div className="relative z-10 grid min-h-[360px] gap-10 lg:grid-cols-[1fr_.72fr] lg:items-end">
-          <div className="self-start">
-            <div className="flex items-center gap-4"><CompanyLogo company={company} className="h-14 w-14 rounded-2xl" /><VerifiedBadge company={company} inverted /></div>
-          </div>
-          <div className="lg:col-span-2 lg:grid lg:grid-cols-[1.2fr_.8fr] lg:items-end lg:gap-12">
-            <h1 className="max-w-4xl text-5xl font-black leading-[.92] tracking-[-.055em] sm:text-7xl">{company.name || 'Sua empresa'}</h1>
-            <div className="mt-8 space-y-4 lg:mt-0">
-              <p className="text-[11px] font-black uppercase tracking-[.26em] text-white/35">Presença empresarial</p>
-              {location && <p className="flex gap-2 text-sm font-semibold text-white/70"><MapPin className="h-4 w-4" />{location}</p>}
-              {aboutText && <p className="text-sm leading-6 text-white/50">{aboutText.slice(0, 180)}{aboutText.length > 180 ? '…' : ''}</p>}
-            </div>
-          </div>
-        </div>
-      </header>
-    );
-  }
-
-  if (template === 'pulse') {
-    return (
-      <header className="relative overflow-hidden rounded-[36px] text-white shadow-[0_30px_90px_rgba(38,20,15,.22)]" style={cover ? coverStyle : { background: `linear-gradient(125deg, ${accent}, ${primary} 62%, #f3a56f)` }}>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_85%_15%,rgba(255,255,255,.3),transparent_30%)]" />
-        <div className="relative z-10 grid min-h-[430px] gap-10 p-7 sm:p-11 lg:grid-cols-[1fr_320px] lg:items-end">
-          <div>
-            <div className="mb-8 flex items-center gap-4"><CompanyLogo company={company} className="h-16 w-16 rounded-[20px]" /><VerifiedBadge company={company} inverted /></div>
-            <p className="mb-4 text-[11px] font-black uppercase tracking-[.24em] text-white/60">Trabalhe com a gente</p>
-            <h1 className="max-w-4xl text-5xl font-black leading-[.95] tracking-[-.05em] sm:text-7xl">{company.name || 'Sua empresa'}</h1>
-          </div>
-          <div className="rounded-[26px] border border-white/20 bg-black/15 p-5 backdrop-blur-xl">
-            <Sparkles className="h-5 w-5 text-white/80" />
-            <p className="mt-5 text-sm font-bold leading-6 text-white/85">Conheça a empresa, acompanhe as oportunidades e candidate-se às vagas abertas.</p>
-            {location && <p className="mt-5 flex items-start gap-2 border-t border-white/15 pt-4 text-xs font-semibold text-white/60"><MapPin className="mt-0.5 h-4 w-4" />{location}</p>}
-          </div>
-        </div>
-      </header>
-    );
-  }
-
-  if (template === 'atlas') {
-    return (
-      <header className="relative overflow-hidden rounded-[32px] border border-slate-200 bg-slate-950 text-white shadow-[0_28px_80px_rgba(15,23,42,.18)]" style={cover ? coverStyle : undefined}>
-        <div className="grid lg:grid-cols-[.82fr_1.18fr]">
-          <div className="flex min-h-[360px] flex-col justify-between border-b border-white/10 p-7 sm:p-10 lg:border-b-0 lg:border-r">
-            <div className="flex items-center justify-between gap-4"><CompanyLogo company={company} className="h-14 w-14 rounded-2xl" /><VerifiedBadge company={company} inverted /></div>
-            <div className="mt-16">
-              <p className="text-[10px] font-black uppercase tracking-[.25em] text-white/35">Empresa</p>
-              <h1 className="mt-4 text-4xl font-black leading-[.98] tracking-[-.04em] sm:text-5xl">{company.name || 'Sua empresa'}</h1>
-            </div>
-          </div>
-          <div className="flex min-h-[360px] flex-col justify-end p-7 sm:p-10">
-            <div className="max-w-xl">
-              <div className="mb-8 h-1.5 w-16 rounded-full" style={{ backgroundColor: primary }} />
-              {aboutText && <p className="text-xl font-semibold leading-8 tracking-[-.02em] text-white/90">{aboutText.slice(0, 260)}{aboutText.length > 260 ? '…' : ''}</p>}
-              {location && <p className="mt-8 flex items-start gap-2 text-sm font-semibold text-white/45"><MapPin className="mt-0.5 h-4 w-4" />{location}</p>}
-            </div>
-          </div>
-        </div>
-      </header>
-    );
-  }
-
+  const centered = heroLayout === 'centered';
   return (
-    <header className="relative overflow-hidden rounded-[36px] border border-[#e8dfd7] bg-[#fffdf9] shadow-[0_28px_90px_rgba(57,41,31,.10)]" style={cover ? coverStyle : undefined}>
-      <div className={`relative z-10 grid min-h-[390px] gap-12 p-7 sm:p-11 lg:grid-cols-[1.15fr_.85fr] lg:items-end ${cover ? 'text-white' : ''}`}>
-        <div>
-          <div className="mb-10 flex items-center gap-4"><CompanyLogo company={company} className="h-16 w-16 rounded-[20px]" /><VerifiedBadge company={company} inverted={cover} /></div>
-          <p className={`mb-4 text-[10px] font-black uppercase tracking-[.25em] ${cover ? 'text-white/55' : 'text-stone-400'}`}>Página oficial</p>
-          <h1 className={`max-w-4xl text-5xl font-black leading-[.94] tracking-[-.055em] sm:text-7xl ${cover ? 'text-white' : 'text-stone-950'}`}>{company.name || 'Sua empresa'}</h1>
-        </div>
-        <div className={`rounded-[26px] p-5 ${cover ? 'border border-white/15 bg-black/15 backdrop-blur-xl' : 'border border-stone-200 bg-[#f7f1e9]'}`}>
-          {aboutText && <p className={`text-sm font-medium leading-6 ${cover ? 'text-white/80' : 'text-stone-600'}`}>{aboutText.slice(0, 200)}{aboutText.length > 200 ? '…' : ''}</p>}
-          {location && <p className={`mt-5 flex items-start gap-2 border-t pt-4 text-xs font-bold ${cover ? 'border-white/15 text-white/55' : 'border-stone-200 text-stone-500'}`}><MapPin className="mt-0.5 h-4 w-4" />{location}</p>}
+    <section id="top" className={`relative overflow-hidden ${coverEnabled ? '' : 'border-b'} ${coverEnabled && config.width !== 'full' ? `mx-auto mt-5 ${shell} rounded-[var(--company-radius)]` : ''}`} style={coverEnabled ? coverStyle : { borderColor: dark ? 'rgba(255,255,255,.10)' : 'rgba(0,0,0,.08)' }}>
+      <div className={`mx-auto flex w-full ${shell} ${centered ? 'items-center justify-center text-center' : 'items-end'} px-5 py-16 sm:px-8 sm:py-24`} style={{ minHeight: coverEnabled ? minHeight : template === 'pulse' ? '540px' : '460px', color: heroTextColor }}>
+        <div className={`${centered ? 'max-w-4xl' : 'grid w-full gap-12 lg:grid-cols-[1.25fr_.75fr] lg:items-end'}`}>
+          <div>
+            <div className={`flex items-center gap-3 ${centered ? 'justify-center' : ''}`}><CompanyLogo company={company} size={config.branding?.logoSize || 'large'} /><VerifiedSeal company={company} inverted={coverEnabled || dark} /></div>
+            {eyebrow && <p className="mt-8 text-xs font-bold uppercase tracking-[.22em] opacity-60">{eyebrow}</p>}
+            <h1 className="mt-5 text-5xl font-bold leading-[.94] tracking-[-.055em] sm:text-7xl lg:text-8xl">{title}</h1>
+          </div>
+          <div className={`${centered ? 'mx-auto mt-8 max-w-2xl' : ''}`}>
+            {location && <p className={`flex gap-2 text-sm font-medium opacity-65 ${centered ? 'justify-center' : ''}`}><MapPin className="h-4 w-4 shrink-0" />{location}</p>}
+            {subtitle && <p className="mt-5 text-base leading-7 opacity-75 sm:text-lg">{subtitle.length > 340 ? `${subtitle.slice(0, 340)}…` : subtitle}</p>}
+            <a href="#vagas" className="mt-7 inline-flex items-center rounded-full px-5 py-3 text-sm font-bold text-white" style={{ backgroundColor: config.theme?.primary || '#111' }}>{jobsLabel}</a>
+          </div>
         </div>
       </div>
-      {!cover && <div className="absolute -bottom-28 -right-20 h-72 w-72 rounded-full opacity-25 blur-3xl" style={{ background: `radial-gradient(circle, ${primary}, transparent 65%)` }} />}
-    </header>
+    </section>
   );
 }
 
-function CompanyLogo({ company, className }: { company: PublicCompanyLike; className: string }) {
-  if (company.logoURL) return <img src={company.logoURL} alt={`Logo ${company.name || ''}`} className={`${className} shrink-0 border border-white/20 bg-white object-cover p-1 shadow-xl`} />;
-  return <span className={`${className} flex shrink-0 items-center justify-center border border-white/20 bg-white text-xl font-black text-stone-800 shadow-xl`}><Building2 className="h-6 w-6" /></span>;
+function AboutSection({ title, text, template }: { title: string; text: string; template: ReturnType<typeof templateKey> }) {
+  return (
+    <section id="sobre" className={`py-16 sm:py-24 ${template === 'canvas' ? 'grid gap-10 lg:grid-cols-[.45fr_1fr]' : ''}`}>
+      <SectionLabel>{title}</SectionLabel>
+      <p className={`${template === 'canvas' ? 'text-2xl leading-10 sm:text-3xl sm:leading-[1.45]' : 'mt-6 max-w-4xl text-lg leading-8 opacity-75'}`}>{text}</p>
+    </section>
+  );
 }
 
-function VerifiedBadge({ company, inverted = false }: { company: PublicCompanyLike; inverted?: boolean }) {
-  const verified = isVerified(company);
-  return <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[9px] font-black uppercase tracking-[.12em] ${inverted ? 'border border-white/15 bg-white/10 text-white' : verified ? 'border border-emerald-200 bg-emerald-50 text-emerald-700' : 'border border-stone-200 bg-white text-stone-500'}`}><BadgeCheck className="h-3.5 w-3.5" />{verified ? 'Verificada' : 'Verificação pendente'}</span>;
+function JobsSection({ jobs, config, template }: { jobs: PublicJobLike[]; config: CompanyPageConfig; template: ReturnType<typeof templateKey> }) {
+  const layout = config.jobs?.layout || (template === 'pulse' ? 'grid' : template === 'canvas' ? 'list' : 'grid');
+  const title = config.jobs?.title || 'Oportunidades';
+  const intro = config.jobs?.intro || 'Conheça as vagas abertas e encontre a próxima oportunidade para fazer parte do nosso time.';
+  return (
+    <section id="vagas" className="py-16 sm:py-24">
+      <div className="grid gap-8 lg:grid-cols-[.7fr_1.3fr] lg:items-end">
+        <div><SectionLabel>{title}</SectionLabel></div>
+        <p className="max-w-2xl text-base leading-7 opacity-65">{intro}</p>
+      </div>
+      {jobs.length === 0 ? (
+        <div className="mt-10 border-y py-10 text-sm opacity-55" style={{ borderColor: 'rgba(127,127,127,.18)' }}>Nenhuma vaga aberta neste momento.</div>
+      ) : (
+        <div className={`mt-10 ${layout === 'list' || layout === 'compact' ? 'divide-y' : 'grid gap-4 md:grid-cols-2'}`} style={{ borderColor: 'rgba(127,127,127,.18)' }}>
+          {jobs.map((job) => <JobItem key={job.id || job.slug || job.title} job={job} layout={layout} />)}
+        </div>
+      )}
+    </section>
+  );
 }
 
-function SectionShell({ template, eyebrow, title, children }: { template: ReturnType<typeof templateKey>; eyebrow?: string; title: string; children: React.ReactNode }) {
-  if (template === 'canvas') return <section className="grid gap-7 border-t border-stone-300/80 pt-8 md:grid-cols-[220px_minmax(0,1fr)]"><div><p className="text-[10px] font-black uppercase tracking-[.22em] text-stone-400">{eyebrow}</p><h2 className="mt-2 font-serif text-3xl font-black tracking-[-.035em] text-stone-950">{title}</h2></div><div>{children}</div></section>;
-  if (template === 'noir') return <section className="rounded-[30px] border border-white/10 bg-white/[.045] p-6 shadow-[0_18px_55px_rgba(0,0,0,.18)] sm:p-8"><p className="text-[9px] font-black uppercase tracking-[.22em] text-white/30">{eyebrow}</p><h2 className="mt-2 text-2xl font-black tracking-[-.03em] text-white">{title}</h2><div className="mt-6">{children}</div></section>;
-  return <section className="rounded-[30px] border border-stone-200/80 bg-white/85 p-6 shadow-[0_16px_50px_rgba(41,37,36,.06)] backdrop-blur sm:p-8"><p className="text-[9px] font-black uppercase tracking-[.22em] text-stone-400">{eyebrow}</p><h2 className="mt-2 text-2xl font-black tracking-[-.035em] text-stone-950">{title}</h2><div className="mt-6">{children}</div></section>;
+function JobItem({ job, layout }: { job: PublicJobLike; layout: CompanyJobsLayout }) {
+  const href = job.slug ? `/vagas/${encodeURIComponent(job.slug)}` : '/vagas';
+  const location = job.location || [job.city, job.state].filter(Boolean).join(', ') || 'Local a combinar';
+  if (layout === 'list' || layout === 'compact') {
+    return (
+      <Link to={href} className={`group flex items-center gap-5 py-5 ${layout === 'compact' ? 'text-sm' : ''}`}>
+        <div className="min-w-0 flex-1"><h3 className={`${layout === 'compact' ? 'text-base' : 'text-xl'} font-semibold tracking-tight`}>{job.title || 'Oportunidade'}</h3><p className="mt-1 text-sm opacity-50">{location}{job.workModel ? ` · ${job.workModel}` : ''}</p></div>
+        {job.salary && <span className="hidden text-sm font-medium opacity-55 sm:block">{job.salary}</span>}
+        <ExternalLink className="h-4 w-4 opacity-35 transition group-hover:opacity-100" />
+      </Link>
+    );
+  }
+  return (
+    <Link to={href} className="group border p-6 transition hover:-translate-y-0.5" style={{ borderColor: 'rgba(127,127,127,.18)', borderRadius: 'var(--company-radius)' }}>
+      <div className="flex items-start justify-between gap-4"><h3 className="text-xl font-semibold tracking-tight">{job.title || 'Oportunidade'}</h3><ExternalLink className="h-4 w-4 shrink-0 opacity-35 transition group-hover:opacity-100" /></div>
+      <p className="mt-4 text-sm opacity-55">{location}</p>
+      <div className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-xs font-medium opacity-55">{job.type && <span>{job.type}</span>}{job.workModel && <span>{job.workModel}</span>}{job.salary && <span>{job.salary}</span>}</div>
+    </Link>
+  );
 }
 
-function AboutSection({ template, title, text, primary }: { template: ReturnType<typeof templateKey>; title: string; text: string; primary: string }) {
-  return <SectionShell template={template} eyebrow="Quem somos" title={title}><div className="grid gap-6 lg:grid-cols-[1fr_190px]"><p className={`${template === 'canvas' ? 'font-serif text-2xl leading-10 text-stone-700' : template === 'noir' ? 'text-base leading-8 text-white/62' : 'text-base leading-8 text-stone-600'} whitespace-pre-line`}>{text}</p>{template !== 'canvas' && <div className="hidden rounded-[24px] lg:block" style={{ background: `linear-gradient(145deg, ${primary}20, ${primary}06)` }} />}</div></SectionShell>;
+function ContactSection({ company, config, template }: { company: PublicCompanyLike; config: CompanyPageConfig; template: ReturnType<typeof templateKey> }) {
+  const phone = config.contacts?.phone || company.phone;
+  const email = config.contacts?.email;
+  const website = config.contacts?.website || company.website;
+  const whatsapp = config.contacts?.whatsapp;
+  const address = companyLocation(company);
+  const items = [
+    phone && { label: 'Telefone', value: phone, href: `tel:${phone.replace(/\D/g, '')}`, icon: <Phone className="h-4 w-4" /> },
+    whatsapp && { label: 'WhatsApp', value: whatsapp, href: `https://wa.me/55${whatsapp.replace(/\D/g, '')}`, icon: <Phone className="h-4 w-4" /> },
+    email && { label: 'E-mail', value: email, href: `mailto:${email}`, icon: <Mail className="h-4 w-4" /> },
+    website && { label: 'Site', value: website, href: normalizedUrl(website), icon: <Globe className="h-4 w-4" /> },
+    address && { label: 'Endereço', value: address, href: '', icon: <MapPin className="h-4 w-4" /> },
+  ].filter(Boolean) as Array<{ label: string; value: string; href: string; icon: React.ReactNode }>;
+  if (!items.length) return null;
+  return (
+    <section id="contato" className={`py-16 sm:py-24 ${template === 'atlas' ? 'border-t' : ''}`} style={{ borderColor: 'rgba(127,127,127,.18)' }}>
+      <SectionLabel>Contato</SectionLabel>
+      <div className="mt-8 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
+        {items.map((item) => (
+          <div key={`${item.label}-${item.value}`}><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.16em] opacity-40">{item.icon}{item.label}</div>{item.href ? <a href={item.href} target={item.href.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer" className="mt-2 block break-words text-base font-medium hover:opacity-65">{item.value}</a> : <p className="mt-2 text-base font-medium">{item.value}</p>}</div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
-function ContactSection({ template, company, config, primary }: { template: ReturnType<typeof templateKey>; company: PublicCompanyLike; config: CompanyPageConfig; primary: string }) {
-  const contacts = [
-    { icon: Phone, label: config.contacts?.phone || company.phone, href: `tel:${config.contacts?.phone || company.phone || ''}` },
-    { icon: Phone, label: config.contacts?.secondaryPhone, href: `tel:${config.contacts?.secondaryPhone || ''}` },
-    { icon: Phone, label: config.contacts?.whatsapp ? `WhatsApp · ${config.contacts.whatsapp}` : '', href: config.contacts?.whatsapp ? `https://wa.me/${config.contacts.whatsapp.replace(/\D/g, '')}` : '' },
-    { icon: Mail, label: config.contacts?.email, href: config.contacts?.email ? `mailto:${config.contacts.email}` : '' },
-    { icon: Globe, label: config.contacts?.website || company.website, href: normalizedUrl(config.contacts?.website || company.website) },
-  ].filter((item) => item.label);
-  if (!contacts.length) return null;
-  return <SectionShell template={template} eyebrow="Fale com a empresa" title="Contato"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{contacts.map((item, index) => { const Icon=item.icon; return <a key={`${item.label}-${index}`} href={item.href} target={item.href.startsWith('http') ? '_blank' : undefined} rel="noreferrer" className={`group flex items-center gap-3 rounded-[20px] border px-4 py-4 text-sm font-bold transition hover:-translate-y-0.5 ${template === 'noir' ? 'border-white/10 bg-white/[.04] text-white/75 hover:bg-white/[.07]' : 'border-stone-200 bg-white text-stone-700 hover:shadow-lg'}`}><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: `${primary}12`, color: primary }}><Icon className="h-4 w-4" /></span><span className="truncate">{item.label}</span></a>; })}</div></SectionShell>;
-}
-
-function SocialSection({ template, company, config, primary }: { template: ReturnType<typeof templateKey>; company: PublicCompanyLike; config: CompanyPageConfig; primary: string }) {
+function SocialSection({ company, config }: { company: PublicCompanyLike; config: CompanyPageConfig }) {
   const socials = [
-    { icon: Instagram, label: 'Instagram', value: config.socials?.instagram || company.socialInstagram },
-    { icon: Linkedin, label: 'LinkedIn', value: config.socials?.linkedin || company.socialLinkedin },
-    { icon: Facebook, label: 'Facebook', value: config.socials?.facebook || company.socialFacebook },
-    { icon: Youtube, label: 'YouTube', value: config.socials?.youtube },
-    { icon: Music2, label: 'TikTok', value: config.socials?.tiktok },
-  ].filter((item) => item.value);
+    ['Instagram', config.socials?.instagram || company.socialInstagram, <Instagram className="h-4 w-4" />],
+    ['LinkedIn', config.socials?.linkedin || company.socialLinkedin, <Linkedin className="h-4 w-4" />],
+    ['Facebook', config.socials?.facebook || company.socialFacebook, <Facebook className="h-4 w-4" />],
+    ['YouTube', config.socials?.youtube, <Youtube className="h-4 w-4" />],
+    ['TikTok', config.socials?.tiktok, <Music2 className="h-4 w-4" />],
+  ].filter((item) => Boolean(item[1])) as Array<[string, string, React.ReactNode]>;
   if (!socials.length) return null;
-  return <SectionShell template={template} eyebrow="Acompanhe" title="Redes sociais"><div className="flex flex-wrap gap-2.5">{socials.map((item) => { const Icon=item.icon; return <a key={item.label} href={normalizedUrl(item.value)} target="_blank" rel="noreferrer" className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-black transition hover:-translate-y-0.5 ${template === 'noir' ? 'border-white/10 bg-white/[.04] text-white/70' : 'border-stone-200 bg-white text-stone-700 shadow-sm'}`}><Icon className="h-4 w-4" style={{ color: primary }} />{item.label}</a>; })}</div></SectionShell>;
+  return (
+    <section className="pb-16 sm:pb-24"><div className="flex flex-wrap gap-3">{socials.map(([label, href, icon]) => <a key={label} href={normalizedUrl(href)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 border px-4 py-2 text-sm font-medium hover:opacity-65" style={{ borderColor: 'rgba(127,127,127,.18)', borderRadius: '999px' }}>{icon}{label}</a>)}</div></section>
+  );
 }
 
-function JobsSection({ template, jobs, primary, accent }: { template: ReturnType<typeof templateKey>; jobs: PublicJobLike[]; primary: string; accent: string }) {
-  return <SectionShell template={template} eyebrow="Oportunidades" title="Vagas abertas">{jobs.length ? <div className={`grid gap-3 ${template === 'pulse' ? 'md:grid-cols-2' : ''}`}>{jobs.map((job, index) => <Link key={job.id || job.slug || `${job.title}-${index}`} to={job.slug ? `/vagas/${job.slug}` : '/vagas'} className={`group relative overflow-hidden rounded-[22px] border p-5 transition hover:-translate-y-0.5 ${template === 'noir' ? 'border-white/10 bg-white/[.045] text-white hover:bg-white/[.07]' : template === 'pulse' ? 'border-stone-200 bg-white shadow-sm hover:shadow-xl' : 'border-stone-200 bg-white shadow-sm hover:shadow-lg'}`}><div className="relative z-10 flex items-start justify-between gap-5"><div className="min-w-0"><h3 className={`text-base font-black tracking-[-.02em] ${template === 'noir' ? 'text-white' : 'text-stone-950'}`}>{job.title || 'Oportunidade'}</h3><p className={`mt-2 text-sm ${template === 'noir' ? 'text-white/40' : 'text-stone-500'}`}>{job.location || [job.city, job.state].filter(Boolean).join(', ') || 'Local a combinar'}</p>{(job.type || job.workModel || job.salary) && <p className={`mt-3 text-[11px] font-bold ${template === 'noir' ? 'text-white/35' : 'text-stone-400'}`}>{[job.type, job.workModel, job.salary].filter(Boolean).join(' · ')}</p>}</div><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white shadow-lg transition group-hover:scale-105" style={{ background: `linear-gradient(135deg, ${primary}, ${accent})` }}><ExternalLink className="h-4 w-4" /></span></div></Link>)}</div> : <div className={`rounded-[24px] border border-dashed px-6 py-12 text-center ${template === 'noir' ? 'border-white/10 bg-white/[.025]' : 'border-stone-300 bg-white/60'}`}><BriefcaseBusiness className={`mx-auto h-7 w-7 ${template === 'noir' ? 'text-white/20' : 'text-stone-300'}`} /><p className={`mt-3 font-black ${template === 'noir' ? 'text-white/70' : 'text-stone-700'}`}>Nenhuma vaga aberta neste momento.</p><p className={`mt-1 text-sm ${template === 'noir' ? 'text-white/35' : 'text-stone-500'}`}>As próximas oportunidades aparecem aqui automaticamente.</p></div>}</SectionShell>;
+function LegalSection({ config }: { config: CompanyPageConfig }) {
+  const items = [
+    config.legal?.termsEnabled && config.legal.termsBody ? { title: config.legal.termsTitle || 'Termos de uso', body: config.legal.termsBody } : null,
+    config.legal?.privacyEnabled && config.legal.privacyBody ? { title: config.legal.privacyTitle || 'Política de privacidade', body: config.legal.privacyBody } : null,
+  ].filter(Boolean) as Array<{ title: string; body: string }>;
+  if (!items.length) return null;
+  return <section className="border-t py-10" style={{ borderColor: 'rgba(127,127,127,.18)' }}>{items.map((item) => <details key={item.title} className="border-b py-4" style={{ borderColor: 'rgba(127,127,127,.14)' }}><summary className="cursor-pointer text-sm font-semibold">{item.title}</summary><div className="mt-4 whitespace-pre-wrap text-sm leading-7 opacity-65">{item.body}</div></details>)}</section>;
 }
 
-function LegalSection({ template, company, config }: { template: ReturnType<typeof templateKey>; company: PublicCompanyLike; config: CompanyPageConfig }) {
-  if (!config.legal?.termsEnabled && !config.legal?.privacyEnabled) return null;
-  return <div className={`flex flex-wrap items-center justify-center gap-5 border-t py-6 text-xs font-bold ${template === 'noir' ? 'border-white/10 text-white/35' : 'border-stone-200 text-stone-500'}`}>{config.legal.termsEnabled && company.slug && <Link to={`/${company.slug}/termos`} className="hover:opacity-70">{config.legal.termsTitle || 'Termos de uso'}</Link>}{config.legal.privacyEnabled && company.slug && <Link to={`/${company.slug}/privacidade`} className="hover:opacity-70">{config.legal.privacyTitle || 'Política de privacidade'}</Link>}</div>;
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <h2 className="text-xs font-bold uppercase tracking-[.22em] opacity-45">{children}</h2>;
+}
+
+function CompanyLogo({ company, size = 'medium' }: { company: PublicCompanyLike; size?: 'small' | 'medium' | 'large' }) {
+  const sizeClass = size === 'small' ? 'h-9 w-9' : size === 'large' ? 'h-20 w-20 sm:h-24 sm:w-24' : 'h-14 w-14';
+  if (company.logoURL) return <img src={company.logoURL} alt={`Logo ${company.name || ''}`} className={`${sizeClass} shrink-0 object-contain`} />;
+  return <span className={`${sizeClass} flex shrink-0 items-center justify-center border`} style={{ borderColor: 'rgba(127,127,127,.18)', borderRadius: 'var(--company-radius)' }}><Building2 className="h-5 w-5 opacity-45" /></span>;
+}
+
+function VerifiedSeal({ company, inverted = false }: { company: PublicCompanyLike; inverted?: boolean }) {
+  if (!isVerified(company)) return null;
+  return (
+    <span title="Empresa verificada pelo PiraNegócios" aria-label="Empresa verificada pelo PiraNegócios" className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ color: inverted ? '#fff' : '#0f9f6e', background: inverted ? 'rgba(255,255,255,.12)' : 'rgba(16,185,129,.10)' }}>
+      <BadgeCheck className="h-5 w-5" />
+    </span>
+  );
 }
