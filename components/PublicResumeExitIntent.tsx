@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   ArrowRight,
   CheckCircle2,
@@ -84,10 +85,11 @@ function clickAiReviewAction() {
 
 export function PublicResumeExitIntent() {
   const { user } = useAuth();
+  const location = useLocation();
   const [visible, setVisible] = useState(false);
   const [reviewPriceCents, setReviewPriceCents] = useState(199);
   const mountedAt = useRef(Date.now());
-  const path = window.location.pathname.replace(/\/$/, '') || '/';
+  const path = location.pathname.replace(/\/$/, '') || '/';
   const isPublicResume = PUBLIC_RESUME_PATHS.has(path);
   const aiReady = isReadyForCurrentAiCheckout();
 
@@ -110,6 +112,7 @@ export function PublicResumeExitIntent() {
     if (!window.matchMedia?.('(pointer: fine)').matches) return;
     if (sessionStorage.getItem(EXIT_INTENT_KEY) === '1') return;
 
+    mountedAt.current = Date.now();
     const onMouseOut = (event: MouseEvent) => {
       if (visible) return;
       if (event.relatedTarget) return;
