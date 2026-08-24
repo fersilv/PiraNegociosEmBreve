@@ -35,9 +35,6 @@ export class TalentInviteEmailService {
     const from = (process.env.TRANSACTIONAL_EMAIL_FROM || '').trim();
     if (!apiKey || !from) return { status: 'NOT_CONFIGURED' };
 
-    const candidateGreeting = data.candidateName?.trim()
-      ? `Olá, ${escapeHtml(data.candidateName.trim())}!`
-      : 'Olá!';
     const expiresLabel = new Intl.DateTimeFormat('pt-BR', {
       dateStyle: 'long',
       timeZone: 'America/Sao_Paulo',
@@ -74,7 +71,7 @@ export class TalentInviteEmailService {
           </td></tr>
           <tr><td style="padding:34px 30px;">
             <h1 style="margin:0;font-family:Georgia,serif;font-size:29px;line-height:1.2;color:#251a15;">${companyName} quer conhecer você.</h1>
-            <p style="margin:18px 0 0;color:#57534e;font-size:15px;line-height:1.65;">${candidateGreeting} Estamos te convidando a participar do processo seletivo para a vaga de:</p>
+            <p style="margin:18px 0 0;color:#57534e;font-size:15px;line-height:1.65;">Olá, estamos te convidando a participar do processo seletivo para a vaga de:</p>
             <div style="margin:24px 0;padding:20px;border:1px solid #eadfd6;border-radius:16px;background:#faf7f3;">
               <div style="color:#c66a4b;font-size:10px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;">Oportunidade</div>
               <div style="margin-top:8px;font-family:Georgia,serif;font-size:21px;font-weight:700;color:#292524;">${jobTitle}</div>
@@ -96,11 +93,9 @@ export class TalentInviteEmailService {
     </table>
   </body>
 </html>`;
-    const text = `${data.candidateName?.trim() ? `Olá, ${data.candidateName.trim()}!` : 'Olá!'}
+    const text = `${data.companyName} quer conhecer você.
 
-${data.companyName} quer conhecer você.
-
-Estamos te convidando a participar do processo seletivo para a vaga de “${data.jobTitle}”.
+Olá, estamos te convidando a participar do processo seletivo para a vaga de “${data.jobTitle}”.
 ${data.jobLocation ? `Local: ${data.jobLocation}\n` : ''}
 Acesse o link abaixo e confira a vaga:
 ${data.inviteUrl}

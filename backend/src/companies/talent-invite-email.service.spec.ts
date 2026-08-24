@@ -52,7 +52,7 @@ describe('TalentInviteEmailService', () => {
       'https://piranegocios.com.br/brand/logo-horizontal-terracotta.png',
     );
     expect(body.html).toContain(
-      'Olá, Alex! Estamos te convidando a participar do processo seletivo para a vaga de:',
+      'Olá, estamos te convidando a participar do processo seletivo para a vaga de:',
     );
     expect(body.html).toContain('Acesse o link abaixo e confira a vaga.');
     expect(body.html).toContain('background:#f5f5f4');
