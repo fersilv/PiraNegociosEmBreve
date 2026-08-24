@@ -10,7 +10,7 @@
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "start:debug": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "migrate:mobility": "node scripts/run-sql-migration.cjs migrations/20260821_candidate_mobility_pcd_jobs.sql",
     "migrate:push": "node scripts/run-sql-migration.cjs migrations/20260822_push_notifications.sql",
