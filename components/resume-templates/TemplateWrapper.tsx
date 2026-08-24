@@ -163,8 +163,8 @@ export function TemplateWrapper({
             print-color-adjust: exact !important;
           }
 
-          #resume-preview-area,
-          #resume-preview-area > div {
+          html body #resume-builder-root #resume-preview-area,
+          html body #resume-builder-root #resume-preview-area > div {
             width: 194mm !important;
             min-width: 194mm !important;
             max-width: 194mm !important;
@@ -176,8 +176,8 @@ export function TemplateWrapper({
             background: white !important;
           }
 
-          #resume-preview-area > div > .resume-a4-document,
-          .resume-a4-document {
+          html body #resume-builder-root #resume-preview-area > div > .resume-a4-document,
+          html body .resume-a4-document {
             width: 194mm !important;
             min-width: 194mm !important;
             max-width: 194mm !important;
