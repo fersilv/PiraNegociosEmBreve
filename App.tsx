@@ -9,6 +9,7 @@ import { ResumeQualificationWidget } from "./components/ResumeQualificationWidge
 import { PublishedResumeCompanyBridge } from "./components/PublishedResumeCompanyBridge";
 import { PublicResumeAccountBridge } from "./components/PublicResumeAccountBridge";
 import { PublicResumeExitIntent } from "./components/PublicResumeExitIntent";
+import { PublicResumeResponsiveStyles } from "./components/PublicResumeResponsiveStyles";
 import { CompanyLegalPage } from "./pages/CompanyLegalPage";
 
 const Home = lazy(() => import("./pages/Home"));
@@ -50,6 +51,7 @@ export default function App() {
         <PublicResumeAccountBridge />
         <BrowserRouter>
           {!isMobileTransfer && !isCompanyPreview && <AnalyticsTracker />}
+          <PublicResumeResponsiveStyles />
           <PublicResumeExitIntent />
           {!isMinimalShell && <ResumeQualificationWidget />}
           {!isMinimalShell && <PublishedResumeCompanyBridge />}
