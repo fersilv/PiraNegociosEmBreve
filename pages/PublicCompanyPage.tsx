@@ -68,7 +68,7 @@ export default function PublicCompanyPage() {
   );
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-stone-50"><Loader2 className="w-8 h-8 animate-spin text-terracotta-600" /></div>;
+    return <div className="min-h-screen flex items-center justify-center bg-white"><Loader2 className="w-7 h-7 animate-spin text-stone-400" /></div>;
   }
 
   if (notFound || !company) {
@@ -89,7 +89,7 @@ export default function PublicCompanyPage() {
   return (
     <>
       <SeoHead
-        title={`${company.name} | PiraNegócios`}
+        title={`${company.name} | Carreiras`}
         description={description}
         canonical={canonical}
         structuredData={structuredData}
