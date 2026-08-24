@@ -12,6 +12,7 @@ export type PublicResumeProductCode =
   | 'PUBLIC_RESUME_AI_IMPROVEMENT'
   | 'PUBLIC_RESUME_REMOVE_WATERMARK';
 
+const PUBLIC_PAYMENT_USER_ID = 'public-resume-system';
 const PUBLIC_PRODUCTS = new Set<PublicResumeProductCode>([
   'PUBLIC_RESUME_AI_REVIEW',
   'PUBLIC_RESUME_AI_IMPROVEMENT',
@@ -195,117 +196,6 @@ export class PublicResumeService {
     return code;
   }
 
-  private async markOrderPaid(orderId: string, simulation = false) {
-    const rows = await this.dataSource.query(
-      `UPDATE public_resume_orders
-       SET status = 'PAID', "paidAt" = coalesce("paidAt", now()), "isSimulation" = $2, "updatedAt" = now()
-       WHERE id = $1 AND status = 'PENDING'
-       RETURNING *`,
-      [orderId, simulation],
-    );
-    const order = rows[0] || (await this.dataSource.query(`SELECT * FROM public_resume_orders WHERE id = $1 LIMIT 1`, [orderId]))[0];
-    if (!order) throw new NotFoundException('Pedido público não encontrado.');
-    if (order.status === 'PAID') {
-      if (order.productCode === 'PUBLIC_RESUME_REMOVE_WATERMARK') {
-        await this.dataSource.query(
-          `UPDATE public_resume_sessions SET "watermarkUnlocked" = true, "updatedAt" = now() WHERE id = $1`,
-          [order.sessionId],
-        );
-      }
-      await this.insertEvent(order.sessionId, 'CHECKOUT_PAID', {
-        productCode: order.productCode,
-        orderId: order.id,
-        amountCents: Number(order.amountCents || 0),
-      });
-    }
-    return order;
-  }
-
-  async createCheckout(
-    id: string,
-    token: string,
-    input: { productCode?: unknown; payer?: PaymentCheckoutPayer },
-  ) {
-    await this.sessionForToken(id, token);
-    const productCode = this.normalizeProductCode(input.productCode);
-    const product = await this.payments.findProduct(productCode, false);
-    const amountCents = Number(product.effectivePriceCents || 0);
-    if (amountCents <= 0) throw new BadRequestException('Este recurso não exige pagamento no momento.');
-
-    await this.insertEvent(id, 'CHECKOUT_STARTED', { productCode, amountCents });
-    const payerEmail = this.cleanString(input.payer?.email, 320);
-    const rows = await this.dataSource.query(
-      `INSERT INTO public_resume_orders
-        ("sessionId", "productCode", "originalAmountCents", "amountCents", "discountCents", "payerEmail", metadata)
-       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)
-       RETURNING *`,
-      [
-        id,
-        productCode,
-        Number(product.originalPriceCents || product.priceCents || amountCents),
-        amountCents,
-        Number(product.discountCents || 0),
-        payerEmail,
-        JSON.stringify({ promotionActive: Boolean(product.promotionActive) }),
-      ],
-    );
-    const order = rows[0];
-
-    const devMode = await this.payments.getDevMode();
-    if (devMode.enabled) {
-      const paid = await this.markOrderPaid(order.id, true);
-      return {
-        ...this.publicOrder(paid),
-        product,
-        checkoutReady: false,
-        paymentRequired: false,
-        devSimulation: true,
-      };
-    }
-
-    try {
-      const checkout = await this.providers.createCheckout(
-        { ...order, userId: '', product },
-        input.payer || {},
-      );
-      const storedRows = await this.dataSource.query(
-        `UPDATE public_resume_orders SET provider = $2, "providerPaymentId" = $3,
-           "pixCopyPaste" = $4, "qrCodeBase64" = $5, "expiresAt" = $6,
-           metadata = coalesce(metadata,'{}'::jsonb) || $7::jsonb, "updatedAt" = now()
-         WHERE id = $1 AND status = 'PENDING' RETURNING *`,
-        [
-          order.id,
-          String(checkout.provider || '').toUpperCase(),
-          checkout.providerPaymentId,
-          checkout.pixCopyPaste || null,
-          checkout.qrCodeBase64 || null,
-          checkout.expiresAt || null,
-          JSON.stringify(checkout.metadata || {}),
-        ],
-      );
-      const stored = storedRows[0];
-      await this.insertEvent(id, 'CHECKOUT_CREATED', {
-        productCode,
-        orderId: order.id,
-        amountCents,
-        method: 'PIX',
-      });
-      return {
-        ...this.publicOrder(stored),
-        product,
-        checkoutReady: Boolean(stored?.pixCopyPaste || stored?.qrCodeBase64 || (stored?.metadata || {})?.ticketUrl),
-        paymentRequired: true,
-      };
-    } catch (error) {
-      await this.dataSource.query(
-        `UPDATE public_resume_orders SET status = 'CANCELED', "canceledAt" = now(), "updatedAt" = now() WHERE id = $1 AND status = 'PENDING'`,
-        [order.id],
-      );
-      await this.insertEvent(id, 'CHECKOUT_CANCELED', { productCode, orderId: order.id, reason: 'provider_error' });
-      throw error;
-    }
-  }
-
   private publicOrder(order: any) {
     return {
       id: order.id,
@@ -322,22 +212,177 @@ export class PublicResumeService {
     };
   }
 
+  private async recordPaidEventOnce(order: any) {
+    const existing = await this.dataSource.query(
+      `SELECT id FROM public_resume_events
+       WHERE "sessionId" = $1 AND type = 'CHECKOUT_PAID' AND metadata->>'orderId' = $2 LIMIT 1`,
+      [order.sessionId, String(order.id)],
+    );
+    if (existing[0]) return;
+    await this.insertEvent(order.sessionId, 'CHECKOUT_PAID', {
+      productCode: order.productCode,
+      orderId: order.id,
+      amountCents: Number(order.amountCents || 0),
+    });
+  }
+
+  private async syncOrderFromPayment(orderId: string, sessionId?: string) {
+    const rows = await this.dataSource.query(
+      `SELECT o.*, p.status AS "paymentStatus", p.provider AS "paymentProvider",
+         p."providerPaymentId" AS "paymentProviderPaymentId", p."pixCopyPaste" AS "paymentPixCopyPaste",
+         p."qrCodeBase64" AS "paymentQrCodeBase64", p."expiresAt" AS "paymentExpiresAt",
+         p."paidAt" AS "paymentPaidAt", p."canceledAt" AS "paymentCanceledAt", p."isSimulation" AS "paymentIsSimulation"
+       FROM public_resume_orders o
+       LEFT JOIN payments p ON p.id = o."paymentId"
+       WHERE o.id = $1 ${sessionId ? 'AND o."sessionId" = $2' : ''} LIMIT 1`,
+      sessionId ? [orderId, sessionId] : [orderId],
+    );
+    const order = rows[0];
+    if (!order) throw new NotFoundException('Pedido público não encontrado.');
+    const nextStatus = String(order.paymentStatus || order.status || 'PENDING');
+    const previousStatus = String(order.status || 'PENDING');
+    const updatedRows = await this.dataSource.query(
+      `UPDATE public_resume_orders SET
+         status = $2,
+         provider = coalesce($3, provider),
+         "providerPaymentId" = coalesce($4, "providerPaymentId"),
+         "pixCopyPaste" = coalesce($5, "pixCopyPaste"),
+         "qrCodeBase64" = coalesce($6, "qrCodeBase64"),
+         "expiresAt" = coalesce($7, "expiresAt"),
+         "paidAt" = coalesce($8, "paidAt"),
+         "canceledAt" = coalesce($9, "canceledAt"),
+         "isSimulation" = coalesce($10, "isSimulation"),
+         "updatedAt" = now()
+       WHERE id = $1 RETURNING *`,
+      [
+        order.id,
+        nextStatus,
+        order.paymentProvider || null,
+        order.paymentProviderPaymentId || null,
+        order.paymentPixCopyPaste || null,
+        order.paymentQrCodeBase64 || null,
+        order.paymentExpiresAt || null,
+        order.paymentPaidAt || null,
+        order.paymentCanceledAt || null,
+        order.paymentIsSimulation ?? false,
+      ],
+    );
+    const updated = updatedRows[0] || order;
+    if (nextStatus === 'PAID') {
+      if (updated.productCode === 'PUBLIC_RESUME_REMOVE_WATERMARK') {
+        await this.dataSource.query(
+          `UPDATE public_resume_sessions SET "watermarkUnlocked" = true, "updatedAt" = now() WHERE id = $1`,
+          [updated.sessionId],
+        );
+      }
+      if (previousStatus !== 'PAID') await this.recordPaidEventOnce(updated);
+    }
+    if (nextStatus === 'EXPIRED' && previousStatus !== 'EXPIRED') {
+      await this.insertEvent(updated.sessionId, 'CHECKOUT_EXPIRED', {
+        productCode: updated.productCode,
+        orderId: updated.id,
+      });
+    }
+    if (nextStatus === 'CANCELED' && previousStatus !== 'CANCELED') {
+      await this.insertEvent(updated.sessionId, 'CHECKOUT_CANCELED', {
+        productCode: updated.productCode,
+        orderId: updated.id,
+      });
+    }
+    return updated;
+  }
+
+  async createCheckout(
+    sessionId: string,
+    token: string,
+    input: { productCode?: unknown; payer?: PaymentCheckoutPayer },
+  ) {
+    await this.sessionForToken(sessionId, token);
+    const productCode = this.normalizeProductCode(input.productCode);
+    const product = await this.payments.findProduct(productCode, false);
+    const amountCents = Number(product.effectivePriceCents || 0);
+    if (amountCents <= 0) throw new BadRequestException('Este recurso não exige pagamento no momento.');
+
+    await this.insertEvent(sessionId, 'CHECKOUT_STARTED', { productCode, amountCents });
+    const corePayment = await this.payments.createPixPayment(PUBLIC_PAYMENT_USER_ID, productCode);
+    const orderId = randomUUID();
+    const payerEmail = this.cleanString(input.payer?.email, 320);
+    await this.dataSource.query(
+      `INSERT INTO public_resume_orders
+        (id, "sessionId", "paymentId", "productCode", "originalAmountCents", "amountCents", "discountCents", "payerEmail", metadata)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`,
+      [
+        orderId,
+        sessionId,
+        corePayment.id,
+        productCode,
+        Number(corePayment.originalAmountCents || product.originalPriceCents || amountCents),
+        Number(corePayment.amountCents || amountCents),
+        Number(corePayment.discountCents || 0),
+        payerEmail,
+        JSON.stringify({ promotionActive: Boolean(product.promotionActive) }),
+      ],
+    );
+    await this.dataSource.query(
+      `UPDATE payments SET metadata = coalesce(metadata,'{}'::jsonb) || $2::jsonb, "updatedAt" = now() WHERE id = $1`,
+      [corePayment.id, JSON.stringify({ publicResume: true, publicResumeSessionId: sessionId, publicResumeOrderId: orderId })],
+    );
+
+    const devMode = await this.payments.getDevMode();
+    if (devMode.enabled) {
+      await this.payments.simulatePayment(corePayment.id, PUBLIC_PAYMENT_USER_ID);
+      const paid = await this.syncOrderFromPayment(orderId, sessionId);
+      return {
+        ...this.publicOrder(paid),
+        product,
+        checkoutReady: false,
+        paymentRequired: false,
+        devSimulation: true,
+      };
+    }
+
+    try {
+      const checkout = await this.providers.createCheckout(corePayment, input.payer || {});
+      await this.payments.attachProviderCheckout(corePayment.id, checkout);
+      const stored = await this.syncOrderFromPayment(orderId, sessionId);
+      await this.insertEvent(sessionId, 'CHECKOUT_CREATED', {
+        productCode,
+        orderId,
+        amountCents,
+        method: 'PIX',
+      });
+      return {
+        ...this.publicOrder(stored),
+        product,
+        checkoutReady: Boolean(stored?.pixCopyPaste || stored?.qrCodeBase64),
+        paymentRequired: true,
+      };
+    } catch (error) {
+      await this.payments.cancelProviderCheckout(corePayment.id, error).catch(() => undefined);
+      await this.syncOrderFromPayment(orderId, sessionId).catch(() => undefined);
+      await this.insertEvent(sessionId, 'CHECKOUT_CANCELED', {
+        productCode,
+        orderId,
+        reason: 'provider_error',
+      });
+      throw error;
+    }
+  }
+
   async getOrder(sessionId: string, token: string, orderId: string) {
     await this.sessionForToken(sessionId, token);
-    const rows = await this.dataSource.query(
-      `SELECT * FROM public_resume_orders WHERE id = $1 AND "sessionId" = $2 LIMIT 1`,
-      [orderId, sessionId],
-    );
-    let order = rows[0];
-    if (!order) throw new NotFoundException('Pedido público não encontrado.');
-    const expiresAt = order.expiresAt ? new Date(order.expiresAt).getTime() : new Date(order.createdAt).getTime() + 2 * 60 * 60 * 1000;
+    let order = await this.syncOrderFromPayment(orderId, sessionId);
+    const expiresAt = order.expiresAt
+      ? new Date(order.expiresAt).getTime()
+      : new Date(order.createdAt).getTime() + 2 * 60 * 60 * 1000;
     if (order.status === 'PENDING' && expiresAt < Date.now()) {
-      const updated = await this.dataSource.query(
-        `UPDATE public_resume_orders SET status = 'EXPIRED', "updatedAt" = now() WHERE id = $1 AND status = 'PENDING' RETURNING *`,
-        [orderId],
-      );
-      order = updated[0] || order;
-      await this.insertEvent(sessionId, 'CHECKOUT_EXPIRED', { productCode: order.productCode, orderId });
+      if (order.paymentId) {
+        await this.dataSource.query(
+          `UPDATE payments SET status = 'EXPIRED', "updatedAt" = now() WHERE id = $1 AND status = 'PENDING'`,
+          [order.paymentId],
+        );
+      }
+      order = await this.syncOrderFromPayment(orderId, sessionId);
     }
     const session = await this.dataSource.query(
       `SELECT "watermarkUnlocked" FROM public_resume_sessions WHERE id = $1`,
@@ -347,6 +392,7 @@ export class PublicResumeService {
   }
 
   private async claimPaidOrder(sessionId: string, orderId: string, productCode: PublicResumeProductCode) {
+    await this.syncOrderFromPayment(orderId, sessionId);
     const rows = await this.dataSource.query(
       `UPDATE public_resume_orders SET "consumedAt" = now(), "updatedAt" = now()
        WHERE id = $1 AND "sessionId" = $2 AND "productCode" = $3 AND status = 'PAID' AND "consumedAt" IS NULL
@@ -367,10 +413,16 @@ export class PublicResumeService {
   async reviewWithAi(sessionId: string, token: string, orderId: string, profile: unknown) {
     await this.sessionForToken(sessionId, token);
     await this.claimPaidOrder(sessionId, orderId, 'PUBLIC_RESUME_AI_REVIEW');
-    await this.insertEvent(sessionId, 'AI_REVIEW_STARTED', { orderId, productCode: 'PUBLIC_RESUME_AI_REVIEW' });
+    await this.insertEvent(sessionId, 'AI_REVIEW_STARTED', {
+      orderId,
+      productCode: 'PUBLIC_RESUME_AI_REVIEW',
+    });
     try {
       const analysis = await this.resumeReview.review(profile);
-      await this.insertEvent(sessionId, 'AI_REVIEW_COMPLETED', { orderId, resultScore: analysis.score });
+      await this.insertEvent(sessionId, 'AI_REVIEW_COMPLETED', {
+        orderId,
+        resultScore: analysis.score,
+      });
       return analysis;
     } catch (error) {
       await this.releaseClaim(orderId).catch(() => undefined);
@@ -381,7 +433,10 @@ export class PublicResumeService {
   async improveWithAi(sessionId: string, token: string, orderId: string, profile: unknown) {
     await this.sessionForToken(sessionId, token);
     await this.claimPaidOrder(sessionId, orderId, 'PUBLIC_RESUME_AI_IMPROVEMENT');
-    await this.insertEvent(sessionId, 'AI_IMPROVEMENT_STARTED', { orderId, productCode: 'PUBLIC_RESUME_AI_IMPROVEMENT' });
+    await this.insertEvent(sessionId, 'AI_IMPROVEMENT_STARTED', {
+      orderId,
+      productCode: 'PUBLIC_RESUME_AI_IMPROVEMENT',
+    });
     try {
       const proposal = await this.resumeImprovement.propose(profile as User);
       await this.insertEvent(sessionId, 'AI_IMPROVEMENT_COMPLETED', {
@@ -397,17 +452,18 @@ export class PublicResumeService {
 
   async unlockWatermark(sessionId: string, token: string, orderId: string) {
     await this.sessionForToken(sessionId, token);
-    const rows = await this.dataSource.query(
-      `SELECT * FROM public_resume_orders WHERE id = $1 AND "sessionId" = $2
-       AND "productCode" = 'PUBLIC_RESUME_REMOVE_WATERMARK' AND status = 'PAID' LIMIT 1`,
-      [orderId, sessionId],
-    );
-    if (!rows[0]) throw new BadRequestException('O pagamento para remover a marca ainda não foi confirmado.');
+    const order = await this.syncOrderFromPayment(orderId, sessionId);
+    if (order.productCode !== 'PUBLIC_RESUME_REMOVE_WATERMARK' || order.status !== 'PAID') {
+      throw new BadRequestException('O pagamento para remover a marca ainda não foi confirmado.');
+    }
     await this.dataSource.query(
       `UPDATE public_resume_sessions SET "watermarkUnlocked" = true, "updatedAt" = now() WHERE id = $1`,
       [sessionId],
     );
-    await this.insertEvent(sessionId, 'WATERMARK_REMOVED', { orderId, productCode: 'PUBLIC_RESUME_REMOVE_WATERMARK' });
+    await this.insertEvent(sessionId, 'WATERMARK_REMOVED', {
+      orderId,
+      productCode: 'PUBLIC_RESUME_REMOVE_WATERMARK',
+    });
     return { watermarkUnlocked: true };
   }
 
@@ -419,16 +475,69 @@ export class PublicResumeService {
       [sessionId, userId],
     );
     if (!rows[0]) throw new NotFoundException('Sessão pública não encontrada.');
-    await this.insertEvent(sessionId, 'ACCOUNT_CONVERTED', { source: 'authenticated_bridge' });
+    const already = await this.dataSource.query(
+      `SELECT id FROM public_resume_events WHERE "sessionId" = $1 AND type = 'ACCOUNT_CONVERTED' LIMIT 1`,
+      [sessionId],
+    );
+    if (!already[0]) await this.insertEvent(sessionId, 'ACCOUNT_CONVERTED', { source: 'authenticated_bridge' });
     return { ok: true };
+  }
+
+  private async syncAllOrders() {
+    await this.dataSource.query(`
+      UPDATE public_resume_orders o SET
+        status = p.status,
+        provider = coalesce(p.provider, o.provider),
+        "providerPaymentId" = coalesce(p."providerPaymentId", o."providerPaymentId"),
+        "pixCopyPaste" = coalesce(p."pixCopyPaste", o."pixCopyPaste"),
+        "qrCodeBase64" = coalesce(p."qrCodeBase64", o."qrCodeBase64"),
+        "expiresAt" = coalesce(p."expiresAt", o."expiresAt"),
+        "paidAt" = coalesce(p."paidAt", o."paidAt"),
+        "canceledAt" = coalesce(p."canceledAt", o."canceledAt"),
+        "isSimulation" = p."isSimulation",
+        "updatedAt" = now()
+      FROM payments p
+      WHERE p.id = o."paymentId" AND (
+        o.status IS DISTINCT FROM p.status OR
+        o.provider IS DISTINCT FROM p.provider OR
+        o."providerPaymentId" IS DISTINCT FROM p."providerPaymentId" OR
+        o."paidAt" IS DISTINCT FROM p."paidAt"
+      )
+    `);
+    await this.dataSource.query(`
+      UPDATE public_resume_sessions s SET "watermarkUnlocked" = true, "updatedAt" = now()
+      WHERE EXISTS (
+        SELECT 1 FROM public_resume_orders o
+        WHERE o."sessionId" = s.id
+          AND o."productCode" = 'PUBLIC_RESUME_REMOVE_WATERMARK'
+          AND o.status = 'PAID'
+      ) AND s."watermarkUnlocked" = false
+    `);
+    await this.dataSource.query(`
+      INSERT INTO public_resume_events ("sessionId", type, metadata)
+      SELECT o."sessionId", 'CHECKOUT_PAID', jsonb_build_object(
+        'productCode', o."productCode", 'orderId', o.id::text, 'amountCents', o."amountCents"
+      )
+      FROM public_resume_orders o
+      WHERE o.status = 'PAID'
+        AND NOT EXISTS (
+          SELECT 1 FROM public_resume_events e
+          WHERE e."sessionId" = o."sessionId" AND e.type = 'CHECKOUT_PAID'
+            AND e.metadata->>'orderId' = o.id::text
+        )
+    `);
   }
 
   async adminSummary(daysInput: number) {
     const days = Math.min(365, Math.max(1, Math.round(daysInput || 30)));
     await this.dataSource.query(
-      `UPDATE public_resume_orders SET status = 'EXPIRED', "updatedAt" = now()
-       WHERE status = 'PENDING' AND coalesce("expiresAt", "createdAt" + interval '2 hours') < now()`,
+      `UPDATE payments SET status = 'EXPIRED', "updatedAt" = now()
+       WHERE id IN (
+         SELECT o."paymentId" FROM public_resume_orders o
+         WHERE o.status = 'PENDING' AND coalesce(o."expiresAt", o."createdAt" + interval '2 hours') < now()
+       ) AND status = 'PENDING'`,
     );
+    await this.syncAllOrders();
 
     const [sessionRows, orderRows, funnelRows, productRows, sourceRows, templateRows, recentOrders, recentEvents] = await Promise.all([
       this.dataSource.query(`
@@ -522,7 +631,9 @@ export class PublicResumeService {
         sales: Number(row.sales || 0),
         revenueCents: Number(row.revenue || 0),
         abandoned: Number(row.abandoned || 0),
-        conversionPercent: Number(row.checkouts || 0) ? Math.round((Number(row.sales || 0) / Number(row.checkouts)) * 1000) / 10 : 0,
+        conversionPercent: Number(row.checkouts || 0)
+          ? Math.round((Number(row.sales || 0) / Number(row.checkouts)) * 1000) / 10
+          : 0,
       })),
       sources: sourceRows,
       templates: templateRows,
