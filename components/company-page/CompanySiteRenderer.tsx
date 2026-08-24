@@ -95,19 +95,30 @@ function paletteMatches(theme: CompanyPageConfig['theme'], palette: { primary?: 
 }
 
 /*
- * Compatibilidade apenas para páginas realmente antigas, que ainda carregam
- * a paleta neutra do construtor anterior. Presets atuais NÃO são reaplicados
- * em todo render, porque isso sobrescrevia largura, tipografia, hero, vagas e
- * navegação escolhidos manualmente no estúdio.
+ * Compatibilidade apenas para o estado inicial do construtor antigo.
+ * Assim que a pessoa altera uma decisão estrutural, o preset deixa de
+ * interferir e o estúdio passa a ser a fonte de verdade.
  */
-function hasLegacyNeutralPalette(page?: CompanyPageConfig | null) {
-  if (!page?.theme) return true;
-  return paletteMatches(page.theme, {
+function isUntouchedLegacyConfig(page?: CompanyPageConfig | null) {
+  if (!page) return true;
+  const neutralPalette = !page.theme || paletteMatches(page.theme, {
     primary: '#111111',
     accent: '#555555',
     background: '#ffffff',
     text: '#171717',
   });
+  if (!neutralPalette) return false;
+
+  return (page.width || 'wide') === 'wide'
+    && (page.branding?.typography || 'clean') === 'clean'
+    && (page.branding?.logoSize || 'large') === 'large'
+    && (page.branding?.corners || 'soft') === 'soft'
+    && page.navigation?.enabled !== false
+    && page.navigation?.sticky !== false
+    && !page.navigation?.transparent
+    && (page.navigation?.jobsLabel || 'Vagas') === 'Vagas'
+    && (page.hero?.layout || 'split') === 'split'
+    && (page.jobs?.layout || 'grid') === 'grid';
 }
 
 function institutionalKey(value?: string) {
@@ -141,7 +152,7 @@ export function CompanySiteRenderer({
   const key = String(config.templateKey || 'aurora');
 
   if (isExtraCompanyTheme(key) && config.editorMode !== 'code') {
-    const visualPage = hasLegacyNeutralPalette(config)
+    const visualPage = isUntouchedLegacyConfig(config)
       ? applyExtraCompanyThemePreset(config, key)
       : config;
     return (
@@ -157,7 +168,7 @@ export function CompanySiteRenderer({
 
   const visualPage = config.editorMode === 'code'
     ? config
-    : hasLegacyNeutralPalette(config)
+    : isUntouchedLegacyConfig(config)
       ? applyInstitutionalThemePreset(config, institutionalKey(key))
       : config;
 
