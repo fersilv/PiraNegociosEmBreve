@@ -27,10 +27,11 @@ export class ApplicationsController {
       this.jobsRepository.findOne({ where: { id: application.jobId } }),
     ]);
     if (!job) throw new BadRequestException('Vaga vinculada não encontrada.');
-    if (user?.type === UserType.ADMIN) return;
+    if (user?.type === UserType.ADMIN) return user;
     if (!user || (job.ownerId !== uid && !(user.companyId === job.companyId && user.isCompanyAdmin))) {
       throw new ForbiddenException('Você não tem permissão para administrar esta candidatura.');
     }
+    return user;
   }
 
   private parseStatus(status: unknown): ApplicationStatus {
@@ -38,6 +39,10 @@ export class ApplicationsController {
       'Enviado': ApplicationStatus.PENDING,
       'Em Análise': ApplicationStatus.REVIEWING,
       'Em Contratação': ApplicationStatus.DOCUMENTS_REQUESTED,
+      'Documentos em Análise': ApplicationStatus.DOCUMENTS_SUBMITTED,
+      'Aguardando Exame Médico': ApplicationStatus.DOCUMENTS_REQUESTED,
+      'Aprovado': ApplicationStatus.HIRED,
+      'Contratado': ApplicationStatus.HIRED,
       'Recusado': ApplicationStatus.REJECTED,
       'Não Classificado': ApplicationStatus.REJECTED,
       'Desistiu': ApplicationStatus.WITHDRAWN,
@@ -199,9 +204,12 @@ export class ApplicationsController {
   async updateByCompany(@Req() req: any, @Param('id') id: string, @Body() data: Partial<Application>) {
     const application = await this.appsService.findOne(id);
     if (!application) throw new BadRequestException('Candidatura não encontrada.');
-    await this.assertCanManageApplication(req.user.uid, application);
+    const manager = await this.assertCanManageApplication(req.user.uid, application);
     if (data.status !== undefined) data.status = this.parseStatus(data.status);
-    return this.appsService.updateByCompany(id, data);
+    return this.appsService.updateByCompany(id, data, {
+      id: manager.id,
+      name: manager.socialName || manager.displayName || manager.fullName || manager.email || 'Empresa',
+    });
   }
 
   @Put(':id/docs')

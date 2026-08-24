@@ -1,9 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { Application, ApplicationStatus } from './entities/application.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { User } from '../users/entities/user.entity';
 
 const COMPANY_MANAGED_FIELDS = [
   'status', 'priority', 'observations', 'onboardingDocs', 'customDocs',
@@ -17,6 +18,8 @@ export class ApplicationsService {
     private appRepo: Repository<Application>,
     @InjectRepository(Job)
     private jobRepo: Repository<Job>,
+    @InjectRepository(User)
+    private userRepo: Repository<User>,
     private notifications: NotificationsService,
     private dataSource: DataSource,
   ) {}
@@ -116,7 +119,7 @@ export class ApplicationsService {
     return applications.map((app) => this.normalizeApplication(app));
   }
 
-  async findAllForJob(jobId: string): Promise<Array<Application & { boosted: boolean }>> {
+  async findAllForJob(jobId: string): Promise<Array<Application & { boosted: boolean } & Record<string, unknown>>> {
     const applications = await this.appRepo.find({
       where: { jobId },
       order: { createdAt: 'DESC' },
@@ -124,18 +127,67 @@ export class ApplicationsService {
     if (!applications.length) return [];
 
     const candidateIds = Array.from(new Set(applications.map((app) => app.candidateId).filter(Boolean)));
-    const boostRows = candidateIds.length
-      ? await this.dataSource.query(
+    const [boostRows, candidates] = candidateIds.length
+      ? await Promise.all([this.dataSource.query(
           `SELECT "userId" FROM user_feature_entitlements
            WHERE feature = 'RESUME_BOOST' AND "expiresAt" > now()
              AND "userId" = ANY($1::varchar[])`,
           [candidateIds],
-        )
-      : [];
+        ), this.userRepo.findBy({ id: In(candidateIds) })])
+      : [[], []];
     const boostedIds = new Set(boostRows.map((row: any) => String(row.userId)));
+    const candidateMap = new Map(candidates.map((candidate) => [candidate.id, candidate]));
 
     return applications
-      .map((app) => ({ ...this.normalizeApplication(app), boosted: boostedIds.has(app.candidateId) }))
+      .map((app) => {
+        const normalized = this.normalizeApplication(app);
+        const candidate = candidateMap.get(app.candidateId);
+        const snapshot = normalized.resumeSnapshot || {};
+        const candidateName = candidate?.socialName || candidate?.displayName || candidate?.fullName || String(snapshot.socialName || snapshot.fullName || 'Candidato');
+        const candidateProfile = candidate ? {
+          id: candidate.id,
+          name: candidateName,
+          fullName: candidate.fullName,
+          socialName: candidate.socialName,
+          treatment: candidate.treatment,
+          email: candidate.email,
+          phone: candidate.phone,
+          photoURL: candidate.photoURL,
+          resumeURL: candidate.resumeURL,
+          resumeStatus: candidate.resumeStatus,
+          publishedResumeSnapshot: normalized.resumeSnapshot || candidate.publishedResumeSnapshot,
+          linkedinURL: candidate.linkedinURL,
+          additionalPhones: candidate.additionalPhones,
+          bio: candidate.bio,
+          experiences: candidate.experiences,
+          skills: candidate.skills,
+          courses: candidate.courses,
+          education: candidate.education,
+          languages: candidate.languages,
+          city: candidate.city,
+          state: candidate.state,
+          jobPreferences: candidate.jobPreferences,
+        } : {
+          id: normalized.candidateId,
+          name: candidateName,
+          email: snapshot.email || null,
+          phone: snapshot.phone || null,
+          publishedResumeSnapshot: snapshot,
+          bio: snapshot.bio || null,
+          experiences: snapshot.experiences || [],
+          skills: snapshot.skills || [],
+          courses: snapshot.courses || [],
+          education: snapshot.education || [],
+        };
+        return {
+          ...normalized,
+          candidateName,
+          candidateProfile,
+          appliedAt: normalized.createdAt,
+          resumeURL: normalized.resumeUrl,
+          boosted: boostedIds.has(normalized.candidateId),
+        };
+      })
       .sort((a, b) => {
         if (a.boosted !== b.boosted) return Number(b.boosted) - Number(a.boosted);
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
@@ -193,7 +245,11 @@ export class ApplicationsService {
     return saved;
   }
 
-  async updateByCompany(id: string, data: Partial<Application>): Promise<Application> {
+  async updateByCompany(
+    id: string,
+    data: Partial<Application>,
+    actor?: { id: string; name: string },
+  ): Promise<Application> {
     const app = await this.appRepo.findOne({ where: { id } });
     if (!app) throw new NotFoundException('Candidatura não encontrada');
 
@@ -206,7 +262,24 @@ export class ApplicationsService {
     const sanitized: Partial<Application> = {};
     for (const field of COMPANY_MANAGED_FIELDS) {
       if (data[field] === undefined) continue;
-      if (field === 'observations' || field === 'customDocs') {
+      if (field === 'observations') {
+        const incoming = this.asArray(data.observations);
+        const existing = this.asArray(app.observations);
+        const additions = incoming.slice(existing.length).flatMap((item) => {
+          const text = typeof item === 'string'
+            ? item.trim()
+            : item && typeof item === 'object'
+              ? String((item as Record<string, unknown>).text || '').trim()
+              : '';
+          return text ? [{
+            text: text.slice(0, 3000),
+            authorId: actor?.id || null,
+            author: actor?.name || 'Empresa',
+            date: new Date().toISOString(),
+          }] : [];
+        });
+        (sanitized as Record<string, unknown>)[field] = [...existing, ...additions];
+      } else if (field === 'customDocs') {
         (sanitized as Record<string, unknown>)[field] = this.asArray(data[field]);
       } else if (field === 'onboardingDocs') {
         (sanitized as Record<string, unknown>)[field] = this.asRecord(data[field]);

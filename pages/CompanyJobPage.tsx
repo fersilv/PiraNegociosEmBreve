@@ -24,12 +24,30 @@ import {
   AlertTriangle,
   Zap,
   LockKeyhole,
+  Target,
 } from "lucide-react";
 import { sendNotificationToUser } from "../lib/notifications";
 import { openBase64InNewTab } from "../lib/fileViewer";
 import { CandidateProfileModal } from "../components/CandidateProfileModal";
 import { ApplicationManagerModal } from "../components/ApplicationManagerModal";
 import { CityStateSelector } from "../components/CityStateSelector";
+
+const applicationStatusLabel: Record<string, string> = {
+  PENDING: "Candidatura enviada",
+  REVIEWING: "Em análise",
+  DOCUMENTS_REQUESTED: "Documentos solicitados",
+  DOCUMENTS_SUBMITTED: "Documentos em análise",
+  HIRED: "Contratado",
+  REJECTED: "Processo encerrado",
+  WITHDRAWN: "Candidatura retirada",
+};
+
+function applicationDate(value: unknown) {
+  const date = value ? new Date(String(value)) : null;
+  return date && !Number.isNaN(date.getTime())
+    ? date.toLocaleDateString("pt-BR")
+    : "Data não informada";
+}
 
 export function CompanyJobPage() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -131,11 +149,24 @@ export function CompanyJobPage() {
     try {
       const response = await api.get(`/applications/job/${jobId}`);
       const apps = asArray<any>(response.data);
-      setApplications(apps);
+      const candidateIds = apps.map((app) => app.candidateId).filter(Boolean);
+      const compatibilityResponse = candidateIds.length
+        ? await api.post(`/job-match/jobs/${jobId}/candidates/details`, { candidateIds }).catch(() => null)
+        : null;
+      const compatibilityMap = new Map(
+        asArray<any>(compatibilityResponse?.data?.candidates).map((item) => [item.candidateId, item]),
+      );
+      const enrichedApps = apps.map((app) => ({
+        ...app,
+        appliedAt: app.appliedAt || app.createdAt,
+        resumeURL: app.resumeURL || app.resumeUrl,
+        compatibility: compatibilityMap.get(app.candidateId) || null,
+      }));
+      setApplications(enrichedApps);
 
       // If managing app modal is currently open, keep its state synced
       if (managingApp) {
-        const updatedCurrent = apps.find((a: any) => a.id === managingApp.id);
+        const updatedCurrent = enrichedApps.find((a: any) => a.id === managingApp.id);
         if (updatedCurrent) {
           setManagingApp(updatedCurrent);
         }
@@ -301,10 +332,10 @@ export function CompanyJobPage() {
   if (!job) return null;
 
   const activeApps = applications.filter(
-    (app) => app.status !== "Não Classificado" && app.status !== "Recusado",
+    (app) => !["Não Classificado", "Recusado", "REJECTED", "WITHDRAWN"].includes(app.status),
   );
   const rejectedApps = applications.filter(
-    (app) => app.status === "Não Classificado" || app.status === "Recusado",
+    (app) => ["Não Classificado", "Recusado", "REJECTED", "WITHDRAWN"].includes(app.status),
   );
 
   const isJobActive = job.active !== false;
@@ -708,6 +739,9 @@ export function CompanyJobPage() {
                       <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider">
                         Status da Triagem
                       </th>
+                      <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider">
+                        Compatibilidade
+                      </th>
                       <th className="px-4 py-3 text-xs font-bold text-stone-500 uppercase tracking-wider text-right">
                         Ações
                       </th>
@@ -746,24 +780,24 @@ export function CompanyJobPage() {
                           )}
                         </td>
                         <td className="px-4 py-4 text-sm text-stone-600">
-                          {new Date(app.appliedAt).toLocaleDateString()}
+                          {applicationDate(app.appliedAt)}
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex flex-col gap-1 items-start">
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
-                                app.status === "Aprovado"
+                                app.status === "Aprovado" || app.status === "HIRED"
                                   ? "bg-green-50 text-green-700 border-green-200"
-                                  : app.status === "Recusado"
+                                  : app.status === "Recusado" || app.status === "REJECTED"
                                     ? "bg-red-50 text-red-700 border-red-200"
-                                    : app.status === "Em Contratação"
+                                    : app.status === "Em Contratação" || app.status === "DOCUMENTS_REQUESTED"
                                       ? "bg-blue-50 text-blue-700 border-blue-200"
-                                      : app.status === "Aguardando Exame Médico"
+                                      : app.status === "Aguardando Exame Médico" || app.status === "DOCUMENTS_SUBMITTED"
                                         ? "bg-purple-50 text-purple-700 border-purple-200"
                                         : "bg-stone-100 text-stone-700 border-stone-200"
                               }`}
                             >
-                              {app.status || "Enviado"}
+                              {applicationStatusLabel[app.status] || app.status || "Candidatura enviada"}
                             </span>
 
                             {app.priority && app.priority !== "Normal" && (
@@ -795,6 +829,8 @@ export function CompanyJobPage() {
                               const isDocStage =
                                 app.documentsRequested ||
                                 app.status === "Em Contratação" ||
+                                app.status === "DOCUMENTS_REQUESTED" ||
+                                app.status === "DOCUMENTS_SUBMITTED" ||
                                 app.status === "Aguardando Exame Médico" ||
                                 (app.status &&
                                   (app.status
@@ -859,11 +895,14 @@ export function CompanyJobPage() {
                             })()}
                           </div>
                         </td>
+                        <td className="px-4 py-4">
+                          {app.compatibility ? <button type="button" onClick={() => { setSelectedCandidate({ ...app.candidateProfile, _compatibility: app.compatibility }); setIsCandidateModalOpen(true); }} className="min-w-36 rounded-2xl border border-violet-100 bg-violet-50 p-3 text-left transition hover:border-violet-300"><span className="flex items-center justify-between gap-2"><span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wide text-violet-600"><Target className="h-3 w-3" /> Aderência</span><strong className="text-sm text-violet-800">{Math.round(Number(app.compatibility.score || 0))}%</strong></span><span className="mt-1 block line-clamp-2 text-[9px] leading-4 text-violet-700/70">{app.compatibility.reason}</span></button> : <span className="text-[10px] text-stone-400">Análise em preparação</span>}
+                        </td>
                         <td className="px-4 py-4 flex justify-end gap-2">
                           {app.candidateProfile && (
                             <button
                               onClick={() => {
-                                setSelectedCandidate(app.candidateProfile);
+                                setSelectedCandidate({ ...app.candidateProfile, _compatibility: app.compatibility });
                                 setIsCandidateModalOpen(true);
                               }}
                               className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center transition-colors"
@@ -951,7 +990,7 @@ export function CompanyJobPage() {
                           )}
                         </td>
                         <td className="px-4 py-4 text-sm text-stone-500">
-                          {new Date(app.appliedAt).toLocaleDateString()}
+                          {applicationDate(app.appliedAt)}
                         </td>
                         <td className="px-4 py-4 flex justify-end gap-2">
                           <button
@@ -979,6 +1018,8 @@ export function CompanyJobPage() {
 
       <CandidateProfileModal
         candidate={selectedCandidate}
+        compatibility={selectedCandidate?._compatibility || null}
+        compatibilityJobTitle={job?.title || ""}
         isOpen={isCandidateModalOpen}
         onClose={() => {
           setSelectedCandidate(null);

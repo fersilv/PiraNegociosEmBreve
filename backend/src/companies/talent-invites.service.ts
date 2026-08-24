@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -198,6 +199,12 @@ export class TalentInvitesService {
       data.candidateId,
       data.candidateEmail,
     );
+    if (existing?.status === 'ACCEPTED') {
+      throw new ConflictException('Esta pessoa já aceitou o convite para esta vaga.');
+    }
+    if (existing?.status === 'PENDING') {
+      throw new ConflictException('Esta pessoa já possui um convite pendente para esta vaga.');
+    }
     const invite =
       existing ||
       this.invites.create({
@@ -336,6 +343,18 @@ export class TalentInvitesService {
     return {
       inviteUrl: `${this.publicOrigin()}/convites/vaga/${this.publicToken(invite)}`,
     };
+  }
+
+  async cancelPending(companyId: string, inviteId: string) {
+    const invite = await this.invites.findOne({
+      where: { id: inviteId, companyId },
+    });
+    if (!invite) throw new BadRequestException('Convite não encontrado.');
+    if (invite.status !== 'PENDING') {
+      throw new ConflictException('Somente convites ainda não aceitos podem ser removidos.');
+    }
+    await this.invites.remove(invite);
+    return { removed: true, inviteId };
   }
 
   async listForCompany(companyId: string) {

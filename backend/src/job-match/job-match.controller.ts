@@ -23,6 +23,19 @@ export class JobMatchController {
   companyCandidates(@Req() req: any, @Param('jobId') jobId: string) {
     return this.jobMatch.getCompanyCandidatesForJob(req.user.uid, jobId);
   }
+
+  @Post('jobs/:jobId/candidates/details')
+  companyCandidateDetails(
+    @Req() req: any,
+    @Param('jobId') jobId: string,
+    @Body('candidateIds') candidateIds: unknown,
+  ) {
+    return this.jobMatch.getCompanyCandidatesForJob(
+      req.user.uid,
+      jobId,
+      Array.isArray(candidateIds) ? candidateIds.map(String) : [],
+    );
+  }
 }
 
 @Controller('admin/job-match')

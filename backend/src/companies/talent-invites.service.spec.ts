@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { TalentInvitesService } from './talent-invites.service';
 
 describe('TalentInvitesService', () => {
@@ -33,6 +33,7 @@ describe('TalentInvitesService', () => {
       findOne: jest.fn().mockResolvedValue(invite()),
       find: jest.fn(),
       save: jest.fn(async (value) => value),
+      remove: jest.fn(async (value) => value),
       create: jest.fn((value) => value),
       createQueryBuilder: jest.fn(),
     };
@@ -114,5 +115,24 @@ describe('TalentInvitesService', () => {
     );
     expect(preview.job.title).toBe(job.title);
     expect(invites.save).not.toHaveBeenCalled();
+  });
+
+  it('remove somente convite que ainda está pendente', async () => {
+    const { service, invites } = setup();
+
+    await expect(service.cancelPending('company-1', 'invite-1')).resolves.toEqual({
+      removed: true,
+      inviteId: 'invite-1',
+    });
+    expect(invites.remove).toHaveBeenCalledWith(expect.objectContaining({ status: 'PENDING' }));
+  });
+
+  it('não remove convite que já foi aceito', async () => {
+    const { service, invites } = setup();
+    invites.findOne.mockResolvedValue({ ...invite(), status: 'ACCEPTED' });
+
+    await expect(service.cancelPending('company-1', 'invite-1'))
+      .rejects.toBeInstanceOf(ConflictException);
+    expect(invites.remove).not.toHaveBeenCalled();
   });
 });

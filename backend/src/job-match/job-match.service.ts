@@ -387,7 +387,11 @@ export class JobMatchService {
     return recipients;
   }
 
-  async getCompanyCandidatesForJob(requestingUserId: string, jobId: string) {
+  async getCompanyCandidatesForJob(
+    requestingUserId: string,
+    jobId: string,
+    requestedCandidateIds: string[] = [],
+  ) {
     const [requester, job] = await Promise.all([
       this.users.findOne({ where: { id: requestingUserId } }),
       this.jobs.findOne({ where: { id: jobId } }),
@@ -406,13 +410,16 @@ export class JobMatchService {
       return { jobId, preparing: true, candidates: [] };
     }
 
-    const candidates = await this.users.createQueryBuilder('candidate')
-      .where('candidate."resumeStatus" = :status', { status: 'PUBLISHED' })
-      .andWhere('candidate."isOpenToWork" = true')
-      .andWhere('(candidate."type" IS NULL OR candidate."type" = :candidateType)', { candidateType: UserType.CANDIDATE })
-      .orderBy('candidate."updatedAt"', 'DESC')
-      .take(500)
-      .getMany();
+    const uniqueRequestedIds = [...new Set(requestedCandidateIds.filter(Boolean))].slice(0, 200);
+    const candidates = uniqueRequestedIds.length
+      ? await this.users.find({ where: { id: In(uniqueRequestedIds) } })
+      : await this.users.createQueryBuilder('candidate')
+          .where('candidate."resumeStatus" = :status', { status: 'PUBLISHED' })
+          .andWhere('candidate."isOpenToWork" = true')
+          .andWhere('(candidate."type" IS NULL OR candidate."type" = :candidateType)', { candidateType: UserType.CANDIDATE })
+          .orderBy('candidate."updatedAt"', 'DESC')
+          .take(500)
+          .getMany();
     if (!candidates.length) return { jobId, preparing: false, candidates: [] };
 
     const candidateIds = candidates.map((candidate) => candidate.id);
@@ -446,7 +453,7 @@ export class JobMatchService {
 
     for (const candidate of candidates) {
       const result = await this.cachedScoreForUserJob(candidate, job, jobProfile, cacheMap.get(candidate.id));
-      if (Number(result.score || 0) < 55) continue;
+      if (!uniqueRequestedIds.length && Number(result.score || 0) < 55) continue;
       eligible.push({
         candidateId: candidate.id,
         score: Number(result.score || 0),
@@ -463,7 +470,9 @@ export class JobMatchService {
       });
     }
 
-    const ranked = this.rankCompanyExposure(eligible);
+    const ranked = uniqueRequestedIds.length
+      ? eligible.sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+      : this.rankCompanyExposure(eligible);
 
     return {
       jobId,

@@ -1,13 +1,18 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Car,
+  ChevronDown,
   FileText,
+  FolderMinus,
   FolderPlus,
   Loader2,
   MapPin,
   RefreshCw,
   Search,
   Send,
+  SlidersHorizontal,
+  Trash2,
+  UserCheck,
   UserRoundSearch,
   Zap,
 } from "lucide-react";
@@ -23,6 +28,8 @@ export function TalentSearchPage() {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [folders, setFolders] = useState<any[]>([]);
   const [companyJobs, setCompanyJobs] = useState<any[]>([]);
+  const [talentRecords, setTalentRecords] = useState<any[]>([]);
+  const [talentInvites, setTalentInvites] = useState<any[]>([]);
   const [jobRanking, setJobRanking] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [companyVerified, setCompanyVerified] = useState<boolean | null>(null);
@@ -37,6 +44,8 @@ export function TalentSearchPage() {
   const [licenseCategory, setLicenseCategory] = useState("TODAS");
   const [vehicle, setVehicle] = useState("TODOS");
   const [vehicleType, setVehicleType] = useState("TODOS");
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
+  const [busyCandidateId, setBusyCandidateId] = useState<string | null>(null);
 
   const load = async () => {
     if (!profile?.companyId) {
@@ -50,14 +59,18 @@ export function TalentSearchPage() {
       const verified = Boolean(companyResponse.data?.isVerified || companyResponse.data?.verificationStatus === "VERIFIED");
       setCompanyVerified(verified);
       if (!verified) return;
-      const [candidateResponse, folderResponse, jobsResponse] = await Promise.all([
+      const [candidateResponse, folderResponse, jobsResponse, recordsResponse, invitesResponse] = await Promise.all([
         api.get("/candidates"),
         api.get(`/companies/${profile.companyId}/talent-folders`),
         api.get(`/companies/${profile.companyId}/talent-jobs`),
+        api.get(`/companies/${profile.companyId}/talent-records`),
+        api.get(`/companies/${profile.companyId}/talent-invites`),
       ]);
       setCandidates(asArray(candidateResponse.data));
       setFolders(asArray(folderResponse.data));
       setCompanyJobs(asArray(jobsResponse.data));
+      setTalentRecords(asArray(recordsResponse.data));
+      setTalentInvites(asArray(invitesResponse.data));
     } catch (error) {
       console.error("Erro ao carregar banco de talentos:", error);
       setCandidates([]);
@@ -87,6 +100,8 @@ export function TalentSearchPage() {
   }, [inviteJobId]);
 
   const rankingMap = useMemo(() => new Map(jobRanking.map((item, index) => [item.candidateId, { ...item, rank: index + 1 }])), [jobRanking]);
+  const recordMap = useMemo(() => new Map(talentRecords.map((record) => [record.candidateId, record])), [talentRecords]);
+  const inviteMap = useMemo(() => new Map(talentInvites.filter((invite) => inviteJobId && invite.jobId === inviteJobId && invite.candidateId).map((invite) => [invite.candidateId, invite])), [talentInvites, inviteJobId]);
   const selectedJobTitle = useMemo(() => companyJobs.find((job) => job.id === inviteJobId)?.title || "", [companyJobs, inviteJobId]);
 
   const availableHomeCities = useMemo(
@@ -143,14 +158,44 @@ export function TalentSearchPage() {
 
   const saveCandidate = async (candidateId: string) => {
     if (!profile?.companyId) return;
-    await api.post(`/companies/${profile.companyId}/talent-records`, { candidateId, folderIds: selectedFolderId ? [selectedFolderId] : [] });
-    alert("Candidato salvo no banco de talentos.");
+    const existing = recordMap.get(candidateId);
+    setBusyCandidateId(candidateId);
+    try {
+      if (selectedFolderId && existing?.folderIds?.includes(selectedFolderId)) {
+        await api.delete(`/companies/${profile.companyId}/talent-records/${candidateId}`, { params: { folderId: selectedFolderId } });
+      } else if (!selectedFolderId && existing) {
+        await api.delete(`/companies/${profile.companyId}/talent-records/${candidateId}`);
+      } else {
+        const folderIds = selectedFolderId
+          ? [...new Set([...(existing?.folderIds || []), selectedFolderId])]
+          : existing?.folderIds || [];
+        await api.post(`/companies/${profile.companyId}/talent-records`, { candidateId, folderIds });
+      }
+      await load();
+    } catch (error: any) {
+      alert(error?.response?.data?.message || "Não foi possível atualizar o Banco de Talentos.");
+    } finally {
+      setBusyCandidateId(null);
+    }
   };
 
   const inviteCandidate = async (candidateId: string) => {
     if (!profile?.companyId || !inviteJobId) return alert("Selecione uma vaga para o convite.");
-    await api.post(`/companies/${profile.companyId}/talent-invites`, { candidateId, jobId: inviteJobId });
-    alert("Convite enviado ao candidato.");
+    const existing = inviteMap.get(candidateId);
+    if (existing?.status === "ACCEPTED") return;
+    setBusyCandidateId(candidateId);
+    try {
+      if (existing?.status === "PENDING") {
+        await api.delete(`/companies/${profile.companyId}/talent-invites/${existing.id}`);
+      } else {
+        await api.post(`/companies/${profile.companyId}/talent-invites`, { candidateId, jobId: inviteJobId });
+      }
+      await load();
+    } catch (error: any) {
+      alert(error?.response?.data?.message || "Não foi possível atualizar o convite.");
+    } finally {
+      setBusyCandidateId(null);
+    }
   };
 
   if (loading || companyVerified === null) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-terracotta-600" /></div>;
@@ -164,30 +209,14 @@ export function TalentSearchPage() {
         <button onClick={() => void load()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-xs font-bold text-stone-700"><RefreshCw className="h-4 w-4" /> Atualizar</button>
       </header>
 
-      <section className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm">
-        <div className="grid gap-3 xl:grid-cols-[1.4fr_repeat(3,1fr)]">
-          <div className="relative"><Search className="absolute left-3.5 top-3.5 h-4 w-4 text-stone-400" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cargo, habilidade, nome ou palavra-chave" className="w-full rounded-xl border border-stone-200 py-3 pl-10 pr-4 text-sm outline-none focus:border-terracotta-400" /></div>
-          <select value={homeCity} onChange={(e) => setHomeCity(e.target.value)} className="filter-field"><option value="">Cidade onde mora</option>{availableHomeCities.map((city) => <option key={city}>{city}</option>)}</select>
-          <select value={acceptedCity} onChange={(e) => setAcceptedCity(e.target.value)} className="filter-field"><option value="">Cidade onde aceita trabalhar</option>{availableAcceptedCities.map((city) => <option key={city}>{city}</option>)}</select>
-          <select value={license} onChange={(e) => setLicense(e.target.value)} className="filter-field"><option value="TODOS">CNH: todos</option><option value="SIM">Possui CNH</option><option value="NAO">Não possui CNH</option></select>
-        </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          <select value={licenseCategory} onChange={(e) => setLicenseCategory(e.target.value)} className="filter-field"><option value="TODAS">Qualquer categoria CNH</option>{["ACC","A","B","C","D","E"].map((item) => <option key={item}>{item}</option>)}</select>
-          <select value={vehicle} onChange={(e) => setVehicle(e.target.value)} className="filter-field"><option value="TODOS">Veículo: todos</option><option value="SIM">Possui veículo</option><option value="NAO">Não possui veículo</option></select>
-          <select value={vehicleType} onChange={(e) => setVehicleType(e.target.value)} className="filter-field"><option value="TODOS">Qualquer veículo</option>{["Carro","Moto","Caminhão","Utilitário","Outro"].map((item) => <option key={item}>{item}</option>)}</select>
-        </div>
-      </section>
+      <section className="overflow-hidden rounded-[28px] border border-stone-200 bg-white shadow-sm"><div className="border-b border-stone-100 p-5"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-terracotta-50 text-sm font-black text-terracotta-700">1</span><div><h2 className="font-bold text-stone-900">Encontre os profissionais</h2><p className="text-xs text-stone-500">Comece pela busca e localização. Abra os filtros avançados somente quando precisar.</p></div></div><div className="mt-4 grid gap-3 lg:grid-cols-[1.5fr_1fr_1fr_auto]"><div className="relative"><Search className="absolute left-3.5 top-3.5 h-4 w-4 text-stone-400" /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Cargo, habilidade, nome ou palavra-chave" className="w-full rounded-xl border border-stone-200 py-3 pl-10 pr-4 text-sm outline-none focus:border-terracotta-400" /></div><select value={homeCity} onChange={(e) => setHomeCity(e.target.value)} className="filter-field"><option value="">Cidade onde mora</option>{availableHomeCities.map((city) => <option key={city}>{city}</option>)}</select><select value={acceptedCity} onChange={(e) => setAcceptedCity(e.target.value)} className="filter-field"><option value="">Cidade onde aceita trabalhar</option>{availableAcceptedCities.map((city) => <option key={city}>{city}</option>)}</select><button type="button" onClick={() => setAdvancedFiltersOpen((value) => !value)} className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 px-4 text-xs font-bold text-stone-600"><SlidersHorizontal className="h-4 w-4" /> Mais filtros <ChevronDown className={`h-3.5 w-3.5 transition ${advancedFiltersOpen ? "rotate-180" : ""}`} /></button></div></div>{advancedFiltersOpen && <div className="grid gap-3 bg-stone-50/70 p-5 sm:grid-cols-2 lg:grid-cols-4"><select value={license} onChange={(e) => setLicense(e.target.value)} className="filter-field"><option value="TODOS">CNH: todos</option><option value="SIM">Possui CNH</option><option value="NAO">Não possui CNH</option></select><select value={licenseCategory} onChange={(e) => setLicenseCategory(e.target.value)} className="filter-field"><option value="TODAS">Qualquer categoria CNH</option>{["ACC","A","B","C","D","E"].map((item) => <option key={item}>{item}</option>)}</select><select value={vehicle} onChange={(e) => setVehicle(e.target.value)} className="filter-field"><option value="TODOS">Veículo: todos</option><option value="SIM">Possui veículo</option><option value="NAO">Não possui veículo</option></select><select value={vehicleType} onChange={(e) => setVehicleType(e.target.value)} className="filter-field"><option value="TODOS">Qualquer veículo</option>{["Carro","Moto","Caminhão","Utilitário","Outro"].map((item) => <option key={item}>{item}</option>)}</select></div>}</section>
 
-      <section className="grid gap-3 rounded-[24px] border border-stone-200 bg-white p-4 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
-        <label><span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-stone-400">Salvar em pasta</span><select value={selectedFolderId} onChange={(e) => setSelectedFolderId(e.target.value)} className="filter-field"><option value="">Banco geral</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></label>
-        <label><span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-stone-400">Ordenar e convidar para vaga</span><select value={inviteJobId} onChange={(e) => setInviteJobId(e.target.value)} className="filter-field"><option value="">Selecione uma vaga...</option>{companyJobs.map((job) => <option key={job.id} value={job.id}>{job.isInternal ? "[Interna] " : ""}{job.title}</option>)}</select></label>
-        <div className="flex gap-2"><input value={newFolder} onChange={(e) => setNewFolder(e.target.value)} placeholder="Nova pasta" className="filter-field max-w-40" /><button onClick={() => void createFolder()} title="Criar pasta" className="rounded-xl bg-stone-900 px-3 text-white"><FolderPlus className="h-4 w-4" /></button></div>
-      </section>
+      <section className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-violet-50 text-sm font-black text-violet-700">2</span><div><h2 className="font-bold text-stone-900">Defina o que você quer fazer</h2><p className="text-xs text-stone-500">A seleção abaixo muda os botões de cada candidato e mostra o estado atual.</p></div></div><div className="mt-4 grid gap-4 lg:grid-cols-2"><div className="rounded-2xl border border-stone-200 bg-stone-50/60 p-4"><label><span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-stone-400">Organizar no Banco de Talentos</span><select value={selectedFolderId} onChange={(e) => setSelectedFolderId(e.target.value)} className="filter-field"><option value="">Banco geral</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select></label><p className="mt-2 text-[10px] leading-4 text-stone-500">Quem já estiver salvo mostrará “Remover do banco” ou “Remover da pasta”.</p><div className="mt-3 flex gap-2"><input value={newFolder} onChange={(e) => setNewFolder(e.target.value)} placeholder="Criar nova pasta" className="filter-field" /><button onClick={() => void createFolder()} title="Criar pasta" className="rounded-xl bg-stone-900 px-4 text-white"><FolderPlus className="h-4 w-4" /></button></div></div><div className="rounded-2xl border border-violet-100 bg-violet-50/50 p-4"><label><span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-violet-500">Comparar e convidar para uma vaga</span><select value={inviteJobId} onChange={(e) => setInviteJobId(e.target.value)} className="filter-field"><option value="">Selecione uma vaga...</option>{companyJobs.map((job) => <option key={job.id} value={job.id}>{job.isInternal ? "[Interna] " : ""}{job.title}</option>)}</select></label><p className="mt-2 text-[10px] leading-4 text-stone-500">Ao selecionar, os perfis são ordenados por compatibilidade. Convites pendentes podem ser removidos; convites aceitos ficam bloqueados.</p></div></div></section>
 
       <div className="flex items-center justify-between"><p className="text-sm text-stone-500"><strong className="text-stone-900">{filtered.length}</strong> candidatos encontrados</p></div>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {filtered.map((candidate) => <CandidateCard key={candidate.id} candidate={candidate} match={rankingMap.get(candidate.id)} onOpen={() => setSelectedCandidate(candidate)} onSave={() => void saveCandidate(candidate.id)} onInvite={() => void inviteCandidate(candidate.id)} />)}
+        {filtered.map((candidate) => <CandidateCard key={candidate.id} candidate={candidate} match={rankingMap.get(candidate.id)} record={recordMap.get(candidate.id)} selectedFolderId={selectedFolderId} invite={inviteMap.get(candidate.id)} inviteJobSelected={Boolean(inviteJobId)} busy={busyCandidateId === candidate.id} onOpen={() => setSelectedCandidate(candidate)} onSave={() => void saveCandidate(candidate.id)} onInvite={() => void inviteCandidate(candidate.id)} />)}
       </section>
       {filtered.length === 0 && <div className="rounded-3xl border border-dashed border-stone-300 bg-white/60 p-12 text-center text-sm text-stone-500">Nenhum candidato corresponde aos filtros atuais.</div>}
 
@@ -203,9 +232,13 @@ export function TalentSearchPage() {
   );
 }
 
-function CandidateCard({ candidate, match, onOpen, onSave, onInvite }: { candidate: any; match?: any; onOpen: () => void; onSave: () => void; onInvite: () => void; key?: React.Key }) {
+function CandidateCard({ candidate, match, record, selectedFolderId, invite, inviteJobSelected, busy, onOpen, onSave, onInvite }: { candidate: any; match?: any; record?: any; selectedFolderId: string; invite?: any; inviteJobSelected: boolean; busy: boolean; onOpen: () => void; onSave: () => void; onInvite: () => void; key?: React.Key }) {
   const prefs = candidate.jobPreferences || {};
   const home = candidate.city && candidate.state ? `${candidate.city}, ${candidate.state}` : candidate.address || "Cidade não informada";
   const preferred = prefs.preferredLocations || [];
-  return <article className={`flex flex-col rounded-[26px] border bg-white p-5 shadow-sm transition hover:shadow-md ${match?.boosted ? "border-violet-300 ring-1 ring-violet-100" : "border-stone-200"}`}><div className="flex items-start gap-3"><div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-stone-100">{candidate.photoURL ? <img src={candidate.photoURL} className="h-full w-full object-cover" alt="" /> : <UserRoundSearch className="h-5 w-5 text-stone-400" />}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate font-bold text-stone-950">{candidate.name || candidate.socialName || candidate.fullName}</h2>{match?.boosted && <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-violet-700"><Zap className="h-3 w-3" /> Em destaque</span>}</div><p className="mt-1 inline-flex items-center gap-1 text-xs text-stone-500"><MapPin className="h-3.5 w-3.5" /> {home}</p></div></div><p className="mt-4 line-clamp-3 text-xs leading-5 text-stone-600">{candidate.bio || "Sem resumo profissional cadastrado."}</p>{candidate.skills?.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{candidate.skills.slice(0, 5).map((skill: string) => <span key={skill} className="rounded-full bg-terracotta-50 px-2 py-1 text-[10px] font-bold text-terracotta-700">{skill}</span>)}</div>}<div className="mt-4 space-y-2 rounded-2xl bg-stone-50 p-3 text-[11px] text-stone-600"><div><strong>Aceita:</strong> {preferred.length ? preferred.slice(0, 3).map(locationLabel).join(" · ") : "somente localização principal / não informado"}</div><div className="flex flex-wrap gap-x-4 gap-y-1"><span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" /> CNH: {prefs.hasDriverLicense === true ? (prefs.driverLicenseCategories || []).join(", ") || "Sim" : prefs.hasDriverLicense === false ? "Não" : "Não informado"}</span><span className="inline-flex items-center gap-1"><Car className="h-3 w-3" /> Veículo: {prefs.hasOwnVehicle === true ? (prefs.ownVehicles || []).join(", ") || "Sim" : prefs.hasOwnVehicle === false ? "Não" : "Não informado"}</span></div></div><div className="mt-auto grid grid-cols-3 gap-2 pt-4"><button onClick={onOpen} className="rounded-xl border border-stone-200 px-2 py-2 text-[11px] font-bold text-stone-700">Perfil</button><button onClick={onSave} className="rounded-xl border border-stone-200 px-2 py-2 text-[11px] font-bold text-stone-700">Salvar</button><button onClick={onInvite} className="inline-flex items-center justify-center gap-1 rounded-xl bg-stone-900 px-2 py-2 text-[11px] font-bold text-white"><Send className="h-3 w-3" /> Convidar</button></div></article>;
+  const savedInTarget = selectedFolderId ? record?.folderIds?.includes(selectedFolderId) : Boolean(record);
+  const saveLabel = savedInTarget ? selectedFolderId ? "Remover da pasta" : "Remover do banco" : selectedFolderId ? "Salvar na pasta" : "Salvar no banco";
+  const inviteAccepted = invite?.status === "ACCEPTED";
+  const invitePending = invite?.status === "PENDING";
+  return <article className={`flex flex-col rounded-[26px] border bg-white p-5 shadow-sm transition hover:shadow-md ${match?.boosted ? "border-violet-300 ring-1 ring-violet-100" : "border-stone-200"}`}><div className="flex items-start gap-3"><div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-stone-100">{candidate.photoURL ? <img src={candidate.photoURL} className="h-full w-full object-cover" alt="" /> : <UserRoundSearch className="h-5 w-5 text-stone-400" />}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate font-bold text-stone-950">{candidate.name || candidate.socialName || candidate.fullName}</h2>{match?.boosted && <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-violet-700"><Zap className="h-3 w-3" /> Em destaque</span>}</div><p className="mt-1 inline-flex items-center gap-1 text-xs text-stone-500"><MapPin className="h-3.5 w-3.5" /> {home}</p></div></div>{match && <div className="mt-4 rounded-2xl border border-violet-100 bg-violet-50 p-3"><div className="flex items-center justify-between"><span className="text-[10px] font-black uppercase tracking-wide text-violet-600">Compatibilidade com a vaga</span><strong className="text-lg text-violet-800">{Math.round(Number(match.score || 0))}%</strong></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-violet-100"><div className="h-full rounded-full bg-violet-600" style={{ width: `${Math.max(0, Math.min(100, Number(match.score || 0)))}%` }} /></div><p className="mt-2 line-clamp-2 text-[10px] leading-4 text-violet-800/70">{match.reason}</p></div>}<p className="mt-4 line-clamp-3 text-xs leading-5 text-stone-600">{candidate.bio || "Sem resumo profissional cadastrado."}</p>{candidate.skills?.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{candidate.skills.slice(0, 5).map((skill: string) => <span key={skill} className="rounded-full bg-terracotta-50 px-2 py-1 text-[10px] font-bold text-terracotta-700">{skill}</span>)}</div>}<div className="mt-4 space-y-2 rounded-2xl bg-stone-50 p-3 text-[11px] text-stone-600"><div><strong>Aceita:</strong> {preferred.length ? preferred.slice(0, 3).map(locationLabel).join(" · ") : "somente localização principal / não informado"}</div><div className="flex flex-wrap gap-x-4 gap-y-1"><span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" /> CNH: {prefs.hasDriverLicense === true ? (prefs.driverLicenseCategories || []).join(", ") || "Sim" : prefs.hasDriverLicense === false ? "Não" : "Não informado"}</span><span className="inline-flex items-center gap-1"><Car className="h-3 w-3" /> Veículo: {prefs.hasOwnVehicle === true ? (prefs.ownVehicles || []).join(", ") || "Sim" : prefs.hasOwnVehicle === false ? "Não" : "Não informado"}</span></div></div><div className="mt-auto space-y-2 pt-4"><button onClick={onOpen} className="w-full rounded-xl border border-stone-200 px-2 py-2.5 text-[11px] font-bold text-stone-700">Ver perfil completo</button><div className="grid grid-cols-2 gap-2"><button disabled={busy} onClick={onSave} className={`inline-flex items-center justify-center gap-1 rounded-xl border px-2 py-2.5 text-[10px] font-bold disabled:opacity-50 ${savedInTarget ? "border-red-200 bg-red-50 text-red-700" : "border-stone-200 text-stone-700"}`}>{busy ? <Loader2 className="h-3 w-3 animate-spin" /> : savedInTarget ? selectedFolderId ? <FolderMinus className="h-3 w-3" /> : <Trash2 className="h-3 w-3" /> : <FolderPlus className="h-3 w-3" />} {saveLabel}</button><button disabled={busy || !inviteJobSelected || inviteAccepted} onClick={onInvite} className={`inline-flex items-center justify-center gap-1 rounded-xl px-2 py-2.5 text-[10px] font-bold disabled:opacity-50 ${invitePending ? "border border-red-200 bg-red-50 text-red-700" : inviteAccepted ? "border border-emerald-200 bg-emerald-50 text-emerald-700" : "bg-stone-900 text-white"}`}>{busy ? <Loader2 className="h-3 w-3 animate-spin" /> : invitePending ? <Trash2 className="h-3 w-3" /> : inviteAccepted ? <UserCheck className="h-3 w-3" /> : <Send className="h-3 w-3" />} {invitePending ? "Remover convite" : inviteAccepted ? "Convite aceito" : "Convidar"}</button></div>{!inviteJobSelected && <p className="text-center text-[9px] text-stone-400">Selecione uma vaga acima para habilitar o convite.</p>}</div></article>;
 }

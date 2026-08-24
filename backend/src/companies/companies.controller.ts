@@ -197,6 +197,26 @@ export class CompaniesController {
     return this.talentRecords.save(record);
   }
 
+  @Delete(':id/talent-records/:candidateId')
+  async removeTalentRecord(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('candidateId') candidateId: string,
+    @Query('folderId') folderId?: string,
+  ) {
+    await this.assertManager(req.user.uid, id);
+    const record = await this.talentRecords.findOne({
+      where: { companyId: id, candidateId },
+    });
+    if (!record) return { removed: false };
+    if (folderId) {
+      record.folderIds = (record.folderIds || []).filter((value) => value !== folderId);
+      return this.talentRecords.save(record);
+    }
+    await this.talentRecords.remove(record);
+    return { removed: true };
+  }
+
   @Post(':id/talent-records/:candidateId/notes')
   async addTalentNote(
     @Req() req: any,
@@ -297,6 +317,16 @@ export class CompaniesController {
   ) {
     await this.assertManager(req.user.uid, id);
     return this.talentInvites.linkForCompany(id, inviteId);
+  }
+
+  @Delete(':id/talent-invites/:inviteId')
+  async removeTalentInvite(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('inviteId') inviteId: string,
+  ) {
+    await this.assertManager(req.user.uid, id);
+    return this.talentInvites.cancelPending(id, inviteId);
   }
 
   @Get(':id')

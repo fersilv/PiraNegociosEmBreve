@@ -8,9 +8,20 @@ import { ApplicationChat } from './ApplicationChat';
 
 import { SYSTEM_DEFAULT_STATUSES, DEFAULT_HIRING_DOCUMENTS } from '../pages/CompanyHiringConfig';
 
+const managerStatusLabel: Record<string, string> = {
+  PENDING: 'Enviado', REVIEWING: 'Em Análise', DOCUMENTS_REQUESTED: 'Em Contratação',
+  DOCUMENTS_SUBMITTED: 'Documentos em Análise', HIRED: 'Contratado',
+  REJECTED: 'Não Classificado', WITHDRAWN: 'Desistiu',
+};
+
+const safeDateTime = (value: unknown) => {
+  const date = value ? new Date(String(value)) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleString('pt-BR') : 'Data não informada';
+};
+
 export function ApplicationManagerModal({ application, onClose, onUpdated }: any) {
   const { user, profile } = useAuth();
-  const initialStatus = application.status === 'Recusado' ? 'Não Classificado' : (application.status || 'Enviado');
+  const initialStatus = managerStatusLabel[application.status] || (application.status === 'Recusado' ? 'Não Classificado' : (application.status || 'Enviado'));
   const [status, setStatus] = useState(initialStatus);
   const [isCustomInput, setIsCustomInput] = useState(false);
   const [priority, setPriority] = useState(application.priority || 'Normal');
@@ -24,7 +35,7 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
   useEffect(() => {
     setLocalDocs(application.onboardingDocs || {});
     if (application?.status) {
-      const current = application.status === 'Recusado' ? 'Não Classificado' : application.status;
+      const current = managerStatusLabel[application.status] || (application.status === 'Recusado' ? 'Não Classificado' : application.status);
       setStatus(current);
     }
   }, [application?.id, application?.status, application?.onboardingDocs]);
@@ -78,18 +89,14 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
       }
       
       if (newObs.trim()) {
-        const newObservation = {
-          text: newObs.trim(),
-          author: profile?.name || 'Empresa',
-          date: new Date().toISOString()
-        };
+        const newObservation = { text: newObs.trim() };
         updates.observations = [...(application.observations || []), newObservation];
       }
       
-      await api.put(`/applications/${application.id}`, updates);
+      const response = await api.put(`/applications/${application.id}`, updates);
       application.status = status;
       if (updates.observations) {
-        application.observations = updates.observations;
+        application.observations = response.data?.observations || updates.observations;
       }
 
       // Notify candidate if status changed
@@ -177,21 +184,17 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
       };
 
       if (newObs.trim()) {
-        const newObservation = {
-          text: newObs.trim(),
-          author: profile?.name || 'Empresa',
-          date: new Date().toISOString()
-        };
+        const newObservation = { text: newObs.trim() };
         updates.observations = [...(application.observations || []), newObservation];
         setNewObs('');
       }
 
-      await api.put(`/applications/${application.id}`, updates);
+      const response = await api.put(`/applications/${application.id}`, updates);
       setStatus('Em Contratação');
       application.status = 'Em Contratação';
       application.documentsRequested = true;
       if (updates.observations) {
-        application.observations = updates.observations;
+        application.observations = response.data?.observations || updates.observations;
       }
 
       // Notify candidate
@@ -396,6 +399,8 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
           </button>
         </div>
 
+        {application.compatibility && <div className="mb-8 rounded-3xl border border-violet-100 bg-violet-50/70 p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="flex items-center gap-1 text-[10px] font-black uppercase tracking-[.16em] text-violet-600"><CheckCircle2 className="h-4 w-4" /> Compatibilidade com esta vaga</p><p className="mt-2 max-w-xl text-sm leading-6 text-violet-950/70">{application.compatibility.reason}</p></div><strong className="font-serif text-3xl text-violet-900">{Math.round(Number(application.compatibility.score || 0))}%</strong></div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{[['Ocupação', application.compatibility.occupationalScore], ['Técnica', application.compatibility.technicalScore], ['Experiência', application.compatibility.experienceScore], ['Formação', application.compatibility.educationScore], ['Preferências', application.compatibility.preferenceScore]].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-white/80 p-3"><p className="text-[9px] font-bold uppercase text-violet-500">{label}</p><strong className="mt-1 block text-sm text-violet-900">{Math.round(Number(value || 0))}%</strong></div>)}</div><div className="mt-4 grid gap-3 md:grid-cols-2">{application.compatibility.evidence?.length > 0 && <div><p className="text-[10px] font-black uppercase text-emerald-700">Evidências encontradas</p><ul className="mt-2 space-y-1 text-[11px] leading-5 text-stone-600">{application.compatibility.evidence.slice(0, 6).map((item: string, index: number) => <li key={index}>• {item}</li>)}</ul></div>}{application.compatibility.missingRequirements?.length > 0 && <div><p className="text-[10px] font-black uppercase text-amber-700">Pontos não comprovados</p><ul className="mt-2 space-y-1 text-[11px] leading-5 text-stone-600">{application.compatibility.missingRequirements.slice(0, 6).map((item: string, index: number) => <li key={index}>• {item}</li>)}</ul></div>}</div></div>}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <div>
             <label className="block text-xs font-bold text-stone-500 uppercase tracking-widest mb-1.5">Status do Candidato</label>
@@ -468,7 +473,7 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
                   <p className="text-stone-700 text-sm whitespace-pre-wrap">{obs.text}</p>
                   <div className="flex justify-between items-center mt-2 text-xs text-stone-400 font-medium">
                     <span className="flex items-center gap-1"><User className="w-3 h-3" /> {obs.author}</span>
-                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {new Date(obs.date).toLocaleString()}</span>
+                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {safeDateTime(obs.date)}</span>
                   </div>
                 </div>
               ))
