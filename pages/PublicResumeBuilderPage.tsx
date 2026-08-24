@@ -1,21 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  Accessibility,
   ArrowRight,
   BadgeCheck,
   BriefcaseBusiness,
+  Car,
   Check,
   CheckCircle2,
   Copy,
   Download,
   FileText,
   GraduationCap,
+  GripVertical,
   Loader2,
   LockKeyhole,
   Mail,
   Palette,
   Plus,
-  Printer,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -26,7 +28,16 @@ import {
 } from 'lucide-react';
 import { SeoHead } from '../components/SeoHead';
 import { api } from '../lib/api';
-import type { AcademicEducation, ProfessionalExperience, UserProfile } from '../contexts/AuthContext';
+import type {
+  AcademicEducation,
+  ExtraCourse,
+  JobPreferences,
+  Language,
+  PcdDeclaration,
+  PcdDocumentationStatus,
+  ProfessionalExperience,
+  UserProfile,
+} from '../contexts/AuthContext';
 import { ModernTemplate } from '../components/resume-templates/ModernTemplate';
 import { ClassicTemplate } from '../components/resume-templates/ClassicTemplate';
 import { CreativeTemplate } from '../components/resume-templates/CreativeTemplate';
@@ -35,6 +46,9 @@ import { MinimalistTemplate } from '../components/resume-templates/MinimalistTem
 const SESSION_KEY = 'pira-public-resume-session-v1';
 const DRAFT_KEY = 'pira-public-resume-draft-v1';
 const SESSION_CREATED_KEY = 'pira-public-resume-created-v1';
+const LICENSE_CATEGORIES = ['ACC', 'A', 'B', 'C', 'D', 'E'];
+const VEHICLE_TYPES = ['Carro', 'Moto', 'Caminhão', 'Utilitário', 'Outro'];
+const LANGUAGE_LEVELS = ['Básico', 'Intermediário', 'Avançado', 'Fluente', 'Nativo'];
 
 type TemplateName = 'modern' | 'classic' | 'creative' | 'minimalist';
 type PublicProductCode =
@@ -116,6 +130,16 @@ const EMPTY_PROFILE: UserProfile = {
   skills: [],
   courses: [],
   languages: [],
+  salaryExpectation: '',
+  jobPreferences: {
+    hasDriverLicense: null,
+    driverLicenseCategories: [],
+    hasOwnVehicle: null,
+    ownVehicles: [],
+    pcdDeclaration: 'NOT_INFORMED',
+    pcdDocumentationStatus: 'NOT_INFORMED',
+    pcdDataConsent: false,
+  },
   resumePhotoURL: '',
   resumePreferences: {
     template: 'modern',
@@ -159,6 +183,7 @@ function loadDraft(): UserProfile {
       skills: Array.isArray(profile?.skills) ? profile.skills : [],
       courses: Array.isArray(profile?.courses) ? profile.courses : [],
       languages: Array.isArray(profile?.languages) ? profile.languages : [],
+      jobPreferences: { ...(EMPTY_PROFILE.jobPreferences || {}), ...(profile?.jobPreferences || {}) },
       resumePreferences: { ...EMPTY_PROFILE.resumePreferences, ...(profile?.resumePreferences || {}) },
     } as UserProfile;
   } catch {
@@ -182,6 +207,7 @@ export default function PublicResumeBuilderPage() {
   const [proposal, setProposal] = useState<ImprovementProposal | null>(null);
   const [selectedChanges, setSelectedChanges] = useState<Set<string>>(new Set());
   const [aiBusy, setAiBusy] = useState(false);
+  const [draggedExperienceIndex, setDraggedExperienceIndex] = useState<number | null>(null);
   const editorTracked = useRef(false);
   const createdTracked = useRef(false);
 
@@ -210,7 +236,6 @@ export default function PublicResumeBuilderPage() {
   );
 
   const product = useCallback((code: PublicProductCode) => catalog.find((item) => item.code === code), [catalog]);
-
   const authHeaders = useCallback(() => session ? { 'X-Public-Resume-Token': session.token } : {}, [session]);
 
   const track = useCallback(async (type: string, metadata: Record<string, unknown> = {}) => {
@@ -365,6 +390,14 @@ export default function PublicResumeBuilderPage() {
     }));
   };
 
+  const updateJobPreferences = (next: Partial<JobPreferences>) => {
+    setProfile((current) => ({
+      ...current,
+      jobPreferences: { ...(current.jobPreferences || {}), ...next },
+    }));
+    setError('');
+  };
+
   const start = () => {
     setStarted(true);
     window.setTimeout(() => document.getElementById('editor-publico')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
@@ -385,6 +418,15 @@ export default function PublicResumeBuilderPage() {
 
   const removeExperience = (index: number) => updateProfile('experiences', (profile.experiences || []).filter((_, itemIndex) => itemIndex !== index));
 
+  const moveExperience = (fromIndex: number, toIndex: number) => {
+    const current = [...(profile.experiences || [])];
+    if (fromIndex < 0 || toIndex < 0 || fromIndex >= current.length || toIndex >= current.length || fromIndex === toIndex) return;
+    const [moved] = current.splice(fromIndex, 1);
+    current.splice(toIndex, 0, moved);
+    updateProfile('experiences', current);
+    setDraggedExperienceIndex(null);
+  };
+
   const addEducation = () => {
     const next: AcademicEducation = {
       id: randomId('edu'), institution: '', degree: '', fieldOfStudy: '', startYear: '', endYear: '', current: false, status: 'CONCLUIDO', description: '', skills: [],
@@ -399,6 +441,51 @@ export default function PublicResumeBuilderPage() {
   };
 
   const removeEducation = (index: number) => updateProfile('education', (profile.education || []).filter((_, itemIndex) => itemIndex !== index));
+
+  const addCourse = () => {
+    const next: ExtraCourse = { id: randomId('course'), name: '', institution: '', year: '', type: 'COURSE', description: '', skills: [] };
+    updateProfile('courses', [...(profile.courses || []), next]);
+  };
+
+  const updateCourse = (index: number, patch: Partial<ExtraCourse>) => {
+    const next = [...(profile.courses || [])];
+    next[index] = { ...next[index], ...patch };
+    updateProfile('courses', next);
+  };
+
+  const removeCourse = (index: number) => updateProfile('courses', (profile.courses || []).filter((_, itemIndex) => itemIndex !== index));
+
+  const addLanguage = () => updateProfile('languages', [...(profile.languages || []), { name: '', level: 'Básico' }]);
+
+  const updateLanguage = (index: number, patch: Partial<Language>) => {
+    const next = [...(profile.languages || [])];
+    next[index] = { ...next[index], ...patch };
+    updateProfile('languages', next);
+  };
+
+  const removeLanguage = (index: number) => updateProfile('languages', (profile.languages || []).filter((_, itemIndex) => itemIndex !== index));
+
+  const toggleLicenseCategory = (value: string) => {
+    const current = profile.jobPreferences?.driverLicenseCategories || [];
+    updateJobPreferences({
+      driverLicenseCategories: current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
+    });
+  };
+
+  const toggleVehicleType = (value: string) => {
+    const current = profile.jobPreferences?.ownVehicles || [];
+    updateJobPreferences({ ownVehicles: current.includes(value) ? current.filter((item) => item !== value) : [...current, value] });
+  };
+
+  const changePcdDeclaration = (value: PcdDeclaration) => {
+    updateJobPreferences({
+      pcdDeclaration: value,
+      pcdDocumentationStatus: value === 'YES'
+        ? (profile.jobPreferences?.pcdDocumentationStatus || 'NOT_INFORMED')
+        : 'NOT_INFORMED',
+      pcdDataConsent: value === 'YES' ? Boolean(profile.jobPreferences?.pcdDataConsent) : false,
+    });
+  };
 
   const choosePhoto = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -423,12 +510,17 @@ export default function PublicResumeBuilderPage() {
 
   const exportPdf = () => {
     setMessage('');
-    if (!readyAsResume) {
-      setError('Preencha pelo menos nome, contato, trajetória e habilidades antes de gerar o currículo.');
-      return;
+    setError('');
+    try {
+      window.focus();
+      window.print();
+      window.setTimeout(() => {
+        void track(watermarkUnlocked ? 'EXPORT_CLEAN' : 'EXPORT_WATERMARKED', { template, completion });
+      }, 0);
+    } catch (printError) {
+      console.error(printError);
+      setError('Não foi possível abrir a janela de impressão. Tente novamente ou use Ctrl+P.');
     }
-    void track(watermarkUnlocked ? 'EXPORT_CLEAN' : 'EXPORT_WATERMARKED', { template, completion });
-    window.print();
   };
 
   const openCheckout = (code: PublicProductCode) => {
@@ -552,6 +644,8 @@ export default function PublicResumeBuilderPage() {
     ],
   }), []);
 
+  const pcdDeclaration = profile.jobPreferences?.pcdDeclaration || 'NOT_INFORMED';
+
   return (
     <div className="public-resume-page min-h-screen bg-[#f7f2ec] text-stone-900">
       <SeoHead
@@ -655,9 +749,50 @@ export default function PublicResumeBuilderPage() {
               <textarea value={profile.bio || ''} onChange={(event) => updateProfile('bio', event.target.value)} rows={6} maxLength={4000} placeholder="Ex.: Profissional com experiência em atendimento ao cliente, rotinas administrativas e organização de documentos..." className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm leading-6 outline-none transition focus:border-[#c5684d] focus:ring-2 focus:ring-[#c5684d]/10" />
             </EditorSection>
 
-            <EditorSection icon={<BriefcaseBusiness className="h-4 w-4" />} title="Experiência profissional" subtitle="Adicione seus trabalhos mais relevantes." action={<button type="button" onClick={addExperience} className="inline-flex items-center gap-1 rounded-xl bg-stone-900 px-3 py-2 text-[11px] font-black text-white"><Plus className="h-3.5 w-3.5" /> Experiência</button>}>
+            <EditorSection icon={<BriefcaseBusiness className="h-4 w-4" />} title="Experiência profissional" subtitle="Adicione e arraste para definir a ordem em que as experiências aparecem." action={<button type="button" onClick={addExperience} className="inline-flex items-center gap-1 rounded-xl bg-stone-900 px-3 py-2 text-[11px] font-black text-white"><Plus className="h-3.5 w-3.5" /> Experiência</button>}>
               {(profile.experiences || []).length === 0 && <EmptyLine text="Nenhuma experiência adicionada. Se este é seu primeiro emprego, você pode deixar esta seção vazia e reforçar formação e habilidades." />}
-              <div className="space-y-3">{(profile.experiences || []).map((experience, index) => <div key={experience.id || index} className="rounded-2xl border border-stone-200 bg-stone-50/60 p-4"><div className="mb-3 flex items-center justify-between"><strong className="text-xs text-stone-700">Experiência {index + 1}</strong><button type="button" onClick={() => removeExperience(index)} className="rounded-lg p-1.5 text-stone-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button></div><div className="grid gap-3 sm:grid-cols-2"><Field label="Empresa" value={experience.company || ''} onChange={(value) => updateExperience(index, { company: value })} /><Field label="Cargo" value={experience.role || ''} onChange={(value) => updateExperience(index, { role: value })} /><Field label="Início" value={experience.startDate || ''} onChange={(value) => updateExperience(index, { startDate: value })} placeholder="MM/AAAA" /><Field label="Fim" value={experience.current ? 'Atual' : experience.endDate || ''} disabled={experience.current} onChange={(value) => updateExperience(index, { endDate: value })} placeholder="MM/AAAA" /></div><label className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-stone-600"><input type="checkbox" checked={Boolean(experience.current)} onChange={(event) => updateExperience(index, { current: event.target.checked, endDate: event.target.checked ? 'Atual' : '' })} /> Trabalho aqui atualmente</label><textarea value={experience.description || ''} onChange={(event) => updateExperience(index, { description: event.target.value })} rows={4} placeholder="Principais atividades, responsabilidades e resultados..." className="mt-3 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#c5684d]" /></div>)}</div>
+              <div className="space-y-3">
+                {(profile.experiences || []).map((experience, index) => (
+                  <div
+                    key={experience.id || index}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const fromIndex = Number(event.dataTransfer.getData('text/plain'));
+                      if (Number.isInteger(fromIndex)) moveExperience(fromIndex, index);
+                    }}
+                    className={`rounded-2xl border bg-stone-50/60 p-4 transition ${draggedExperienceIndex === index ? 'border-[#c5684d] opacity-55' : 'border-stone-200'}`}
+                  >
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div
+                          draggable
+                          onDragStart={(event) => {
+                            setDraggedExperienceIndex(index);
+                            event.dataTransfer.effectAllowed = 'move';
+                            event.dataTransfer.setData('text/plain', String(index));
+                          }}
+                          onDragEnd={() => setDraggedExperienceIndex(null)}
+                          className="inline-flex cursor-grab items-center gap-1 rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-[10px] font-bold text-stone-400 active:cursor-grabbing"
+                          title="Segure e arraste para reposicionar"
+                        >
+                          <GripVertical className="h-3.5 w-3.5" /> Arrastar
+                        </div>
+                        <strong className="truncate text-xs text-stone-700">Experiência {index + 1}</strong>
+                      </div>
+                      <button type="button" onClick={() => removeExperience(index)} className="rounded-lg p-1.5 text-stone-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Empresa" value={experience.company || ''} onChange={(value) => updateExperience(index, { company: value })} />
+                      <Field label="Cargo" value={experience.role || ''} onChange={(value) => updateExperience(index, { role: value })} />
+                      <Field label="Início" value={experience.startDate || ''} onChange={(value) => updateExperience(index, { startDate: value })} placeholder="MM/AAAA" />
+                      <Field label="Fim" value={experience.current ? 'Atual' : experience.endDate || ''} disabled={experience.current} onChange={(value) => updateExperience(index, { endDate: value })} placeholder="MM/AAAA" />
+                    </div>
+                    <label className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-stone-600"><input type="checkbox" checked={Boolean(experience.current)} onChange={(event) => updateExperience(index, { current: event.target.checked, endDate: event.target.checked ? 'Atual' : '' })} /> Trabalho aqui atualmente</label>
+                    <textarea value={experience.description || ''} onChange={(event) => updateExperience(index, { description: event.target.value })} rows={4} placeholder="Principais atividades, responsabilidades e resultados..." className="mt-3 w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#c5684d]" />
+                  </div>
+                ))}
+              </div>
             </EditorSection>
 
             <EditorSection icon={<GraduationCap className="h-4 w-4" />} title="Formação" subtitle="Ensino técnico, superior, médio ou outras formações relevantes." action={<button type="button" onClick={addEducation} className="inline-flex items-center gap-1 rounded-xl bg-stone-900 px-3 py-2 text-[11px] font-black text-white"><Plus className="h-3.5 w-3.5" /> Formação</button>}>
@@ -665,8 +800,77 @@ export default function PublicResumeBuilderPage() {
               <div className="space-y-3">{(profile.education || []).map((education, index) => <div key={education.id || index} className="rounded-2xl border border-stone-200 bg-stone-50/60 p-4"><div className="mb-3 flex items-center justify-between"><strong className="text-xs text-stone-700">Formação {index + 1}</strong><button type="button" onClick={() => removeEducation(index)} className="rounded-lg p-1.5 text-stone-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button></div><div className="grid gap-3 sm:grid-cols-2"><Field label="Instituição" value={education.institution || ''} onChange={(value) => updateEducation(index, { institution: value })} /><Field label="Curso / grau" value={education.degree || ''} onChange={(value) => updateEducation(index, { degree: value })} /><Field label="Área" value={education.fieldOfStudy || ''} onChange={(value) => updateEducation(index, { fieldOfStudy: value })} /><Field label="Conclusão" value={education.current ? 'Em andamento' : education.endYear || ''} disabled={education.current} onChange={(value) => updateEducation(index, { endYear: value })} placeholder="2026" /></div><label className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-stone-600"><input type="checkbox" checked={Boolean(education.current)} onChange={(event) => updateEducation(index, { current: event.target.checked })} /> Cursando atualmente</label></div>)}</div>
             </EditorSection>
 
+            <EditorSection icon={<BadgeCheck className="h-4 w-4" />} title="Cursos e certificações" subtitle="Cursos livres, capacitações e certificações que fortalecem o currículo." action={<button type="button" onClick={addCourse} className="inline-flex items-center gap-1 rounded-xl bg-stone-900 px-3 py-2 text-[11px] font-black text-white"><Plus className="h-3.5 w-3.5" /> Curso</button>}>
+              {(profile.courses || []).length === 0 && <EmptyLine text="Nenhum curso ou certificação adicionado ainda." />}
+              <div className="space-y-3">
+                {(profile.courses || []).map((course, index) => (
+                  <div key={course.id || index} className="rounded-2xl border border-stone-200 bg-stone-50/60 p-4">
+                    <div className="mb-3 flex items-center justify-between"><strong className="text-xs text-stone-700">Curso {index + 1}</strong><button type="button" onClick={() => removeCourse(index)} className="rounded-lg p-1.5 text-stone-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button></div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Nome" value={course.name || ''} onChange={(value) => updateCourse(index, { name: value })} placeholder="Ex.: Excel Intermediário" />
+                      <Field label="Instituição" value={course.institution || ''} onChange={(value) => updateCourse(index, { institution: value })} />
+                      <Field label="Ano" value={course.year || ''} onChange={(value) => updateCourse(index, { year: value })} placeholder="2025" />
+                      <label className="block"><span className="mb-1 block text-[10px] font-black uppercase tracking-[.11em] text-stone-400">Tipo</span><select value={course.type || 'COURSE'} onChange={(event) => updateCourse(index, { type: event.target.value as ExtraCourse['type'] })} className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#c5684d]"><option value="COURSE">Curso</option><option value="CERTIFICATION">Certificação</option></select></label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </EditorSection>
+
+            <EditorSection icon={<BadgeCheck className="h-4 w-4" />} title="Idiomas" subtitle="Informe apenas idiomas e níveis que você consegue sustentar em uma entrevista." action={<button type="button" onClick={addLanguage} className="inline-flex items-center gap-1 rounded-xl bg-stone-900 px-3 py-2 text-[11px] font-black text-white"><Plus className="h-3.5 w-3.5" /> Idioma</button>}>
+              {(profile.languages || []).length === 0 && <EmptyLine text="Nenhum idioma adicionado." />}
+              <div className="space-y-3">
+                {(profile.languages || []).map((language, index) => (
+                  <div key={`${language.name}-${index}`} className="grid gap-3 rounded-2xl border border-stone-200 bg-stone-50/60 p-4 sm:grid-cols-[1fr_180px_auto] sm:items-end">
+                    <Field label="Idioma" value={language.name || ''} onChange={(value) => updateLanguage(index, { name: value })} placeholder="Ex.: Inglês" />
+                    <label className="block"><span className="mb-1 block text-[10px] font-black uppercase tracking-[.11em] text-stone-400">Nível</span><select value={language.level || 'Básico'} onChange={(event) => updateLanguage(index, { level: event.target.value })} className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#c5684d]">{LANGUAGE_LEVELS.map((level) => <option key={level} value={level}>{level}</option>)}</select></label>
+                    <button type="button" onClick={() => removeLanguage(index)} className="mb-0.5 rounded-xl border border-stone-200 bg-white p-2.5 text-stone-400 hover:border-red-200 hover:text-red-600" aria-label="Remover idioma"><Trash2 className="h-4 w-4" /></button>
+                  </div>
+                ))}
+              </div>
+            </EditorSection>
+
             <EditorSection icon={<BadgeCheck className="h-4 w-4" />} title="Habilidades" subtitle="Separe por vírgulas. Use competências que você realmente possui.">
               <textarea value={(profile.skills || []).join(', ')} onChange={(event) => updateProfile('skills', event.target.value.split(',').map((item) => item.trim()).filter(Boolean).slice(0, 60))} rows={4} placeholder="Atendimento ao cliente, Excel, organização, vendas, comunicação..." className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm leading-6 outline-none focus:border-[#c5684d]" />
+            </EditorSection>
+
+            <EditorSection icon={<Car className="h-4 w-4" />} title="Informações complementares" subtitle="CNH, veículo, PcD e outros dados que podem ser relevantes para a vaga.">
+              <div className="space-y-5">
+                <Field label="Pretensão salarial (opcional)" value={profile.salaryExpectation || ''} onChange={(value) => updateProfile('salaryExpectation', value)} placeholder="Ex.: R$ 2.500,00 ou a combinar" />
+
+                <ComplementQuestion title="Possui CNH?" icon={<Car className="h-4 w-4" />}>
+                  <ChoiceRow>
+                    <ChoiceButton active={profile.jobPreferences?.hasDriverLicense === true} onClick={() => updateJobPreferences({ hasDriverLicense: true })}>Sim</ChoiceButton>
+                    <ChoiceButton active={profile.jobPreferences?.hasDriverLicense === false} onClick={() => updateJobPreferences({ hasDriverLicense: false, driverLicenseCategories: [] })}>Não</ChoiceButton>
+                    <ChoiceButton active={profile.jobPreferences?.hasDriverLicense == null} onClick={() => updateJobPreferences({ hasDriverLicense: null, driverLicenseCategories: [] })}>Não informar</ChoiceButton>
+                  </ChoiceRow>
+                  {profile.jobPreferences?.hasDriverLicense === true && <div className="mt-3"><p className="mb-2 text-[10px] font-black uppercase tracking-[.11em] text-stone-400">Categoria(s)</p><ChipSelector values={LICENSE_CATEGORIES} selected={profile.jobPreferences?.driverLicenseCategories || []} onToggle={toggleLicenseCategory} /></div>}
+                </ComplementQuestion>
+
+                <ComplementQuestion title="Possui veículo próprio?" icon={<Car className="h-4 w-4" />}>
+                  <ChoiceRow>
+                    <ChoiceButton active={profile.jobPreferences?.hasOwnVehicle === true} onClick={() => updateJobPreferences({ hasOwnVehicle: true })}>Sim</ChoiceButton>
+                    <ChoiceButton active={profile.jobPreferences?.hasOwnVehicle === false} onClick={() => updateJobPreferences({ hasOwnVehicle: false, ownVehicles: [] })}>Não</ChoiceButton>
+                    <ChoiceButton active={profile.jobPreferences?.hasOwnVehicle == null} onClick={() => updateJobPreferences({ hasOwnVehicle: null, ownVehicles: [] })}>Não informar</ChoiceButton>
+                  </ChoiceRow>
+                  {profile.jobPreferences?.hasOwnVehicle === true && <div className="mt-3"><p className="mb-2 text-[10px] font-black uppercase tracking-[.11em] text-stone-400">Tipo de veículo</p><ChipSelector values={VEHICLE_TYPES} selected={profile.jobPreferences?.ownVehicles || []} onToggle={toggleVehicleType} /></div>}
+                </ComplementQuestion>
+
+                <ComplementQuestion title="Pessoa com deficiência (PcD)" icon={<Accessibility className="h-4 w-4" />} tone="violet">
+                  <p className="mb-3 text-[11px] leading-5 text-stone-500">Informação opcional e sensível. Você decide se deseja informar e se ela deve aparecer no currículo.</p>
+                  <ChoiceRow>
+                    <ChoiceButton active={pcdDeclaration === 'YES'} onClick={() => changePcdDeclaration('YES')}>Sim</ChoiceButton>
+                    <ChoiceButton active={pcdDeclaration === 'NO'} onClick={() => changePcdDeclaration('NO')}>Não</ChoiceButton>
+                    <ChoiceButton active={pcdDeclaration === 'NOT_INFORMED'} onClick={() => changePcdDeclaration('NOT_INFORMED')}>Prefiro não informar</ChoiceButton>
+                  </ChoiceRow>
+                  {pcdDeclaration === 'YES' && (
+                    <div className="mt-4 space-y-3">
+                      <label className="block"><span className="mb-1 block text-[10px] font-black uppercase tracking-[.11em] text-stone-400">Laudo / documentação</span><select value={profile.jobPreferences?.pcdDocumentationStatus || 'NOT_INFORMED'} onChange={(event) => updateJobPreferences({ pcdDocumentationStatus: event.target.value as PcdDocumentationStatus })} className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-400"><option value="NOT_INFORMED">Prefiro não informar</option><option value="HAS_REPORT">Possuo laudo/documentação</option><option value="NO_REPORT">Não possuo laudo/documentação</option><option value="IN_PROGRESS">Documentação em andamento</option></select></label>
+                      <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-violet-100 bg-violet-50/60 p-3 text-xs leading-5 text-violet-950"><input type="checkbox" checked={Boolean(profile.jobPreferences?.pcdDataConsent)} onChange={(event) => updateJobPreferences({ pcdDataConsent: event.target.checked })} className="mt-0.5" /><span><strong>Exibir PcD neste currículo.</strong> Ao marcar, essa informação passa a aparecer nos modelos e continuará editável no seu rascunho.</span></label>
+                    </div>
+                  )}
+                </ComplementQuestion>
+              </div>
             </EditorSection>
 
             <EditorSection icon={<Palette className="h-4 w-4" />} title="Visual" subtitle="Mude o estilo sem alterar o conteúdo.">
@@ -685,7 +889,7 @@ export default function PublicResumeBuilderPage() {
           </div>
 
           <div className="xl:sticky xl:top-20">
-            <div className="public-resume-no-print mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm"><button type="button" onClick={() => { void track('PREVIEW_VIEWED', { template, completion }); document.getElementById('public-resume-print-root')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} className="rounded-xl border border-stone-200 px-3 py-2 text-xs font-bold text-stone-600">Ver prévia</button><button type="button" onClick={exportPdf} className="inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-2.5 text-xs font-black text-white"><Printer className="h-4 w-4" /> Salvar em PDF</button>{!watermarkUnlocked ? <button type="button" onClick={() => openCheckout('PUBLIC_RESUME_REMOVE_WATERMARK')} className="ml-auto inline-flex items-center gap-2 rounded-xl bg-[#b6533d] px-4 py-2.5 text-xs font-black text-white"><ShieldCheck className="h-4 w-4" /> Remover marca · {money(product('PUBLIC_RESUME_REMOVE_WATERMARK')?.effectivePriceCents ?? 199)}</button> : <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-[10px] font-black text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> Sem marca</span>}</div>
+            <div className="public-resume-no-print mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm"><button type="button" onClick={() => { void track('PREVIEW_VIEWED', { template, completion }); document.getElementById('public-resume-print-root')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} className="rounded-xl border border-stone-200 px-3 py-2 text-xs font-bold text-stone-600">Ver prévia</button><button type="button" onClick={exportPdf} className="inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-2.5 text-xs font-black text-white"><Download className="h-4 w-4" /> Salvar em PDF</button>{!watermarkUnlocked ? <button type="button" onClick={() => openCheckout('PUBLIC_RESUME_REMOVE_WATERMARK')} className="ml-auto inline-flex items-center gap-2 rounded-xl bg-[#b6533d] px-4 py-2.5 text-xs font-black text-white"><ShieldCheck className="h-4 w-4" /> Remover marca · {money(product('PUBLIC_RESUME_REMOVE_WATERMARK')?.effectivePriceCents ?? 199)}</button> : <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-[10px] font-black text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> Sem marca</span>}</div>
             <div className="overflow-auto rounded-[28px] border border-stone-200 bg-[#dfd8d1] p-3 shadow-inner sm:p-5"><div id="public-resume-print-root" className={watermarkUnlocked ? 'public-resume-unbranded' : ''}><Template profile={profile} color={color} showPhoto={Boolean(profile.resumePreferences?.showPhoto)} address={[profile.city, profile.state].filter(Boolean).join(' - ')} isFirstJob={!profile.experiences?.length} /></div></div>
             <div className="public-resume-no-print mt-4 rounded-3xl border border-[#dfc7b8] bg-[#fffaf5] p-5"><div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#f7dfd4] text-[#a84631]"><BriefcaseBusiness className="h-5 w-5" /></span><div className="min-w-0"><h3 className="font-serif text-lg font-black">Quer que empresas encontrem você?</h3><p className="mt-1 text-xs leading-5 text-stone-500">Criar uma conta é opcional. Ao entrar no PiraNegócios, você pode levar este currículo para seu perfil e decidir quando publicá-lo no Banco de Talentos.</p><button type="button" onClick={accountCta} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-[#2b211c] px-4 py-2.5 text-xs font-black text-white">Criar conta grátis <ArrowRight className="h-3.5 w-3.5" /></button></div></div></div>
           </div>
@@ -707,6 +911,23 @@ export default function PublicResumeBuilderPage() {
 
 function EditorSection({ icon, title, subtitle, action, children }: { icon: React.ReactNode; title: string; subtitle: string; action?: React.ReactNode; children: React.ReactNode }) {
   return <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm"><div className="mb-4 flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-stone-600">{icon}</span><div className="min-w-0 flex-1"><h3 className="font-serif text-lg font-black">{title}</h3><p className="mt-0.5 text-[11px] leading-4 text-stone-400">{subtitle}</p></div>{action}</div>{children}</section>;
+}
+
+function ComplementQuestion({ title, icon, tone = 'stone', children }: { title: string; icon: React.ReactNode; tone?: 'stone' | 'violet'; children: React.ReactNode }) {
+  const toneClass = tone === 'violet' ? 'border-violet-200 bg-violet-50/35' : 'border-stone-200 bg-stone-50/60';
+  return <div className={`rounded-2xl border p-4 ${toneClass}`}><div className="mb-3 flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-stone-600 shadow-sm">{icon}</span><strong className="text-sm text-stone-850">{title}</strong></div>{children}</div>;
+}
+
+function ChoiceRow({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-wrap gap-2">{children}</div>;
+}
+
+function ChoiceButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return <button type="button" onClick={onClick} className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${active ? 'border-[#b6533d] bg-[#fff4ee] text-[#9d402d]' : 'border-stone-200 bg-white text-stone-500 hover:border-stone-300'}`}>{children}</button>;
+}
+
+function ChipSelector({ values, selected, onToggle }: { values: string[]; selected: string[]; onToggle: (value: string) => void }) {
+  return <div className="flex flex-wrap gap-2">{values.map((value) => <button type="button" key={value} onClick={() => onToggle(value)} className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition ${selected.includes(value) ? 'border-[#b6533d] bg-[#b6533d] text-white' : 'border-stone-200 bg-white text-stone-500'}`}>{value}</button>)}</div>;
 }
 
 function Field({ label, value, onChange, placeholder = '', type = 'text', disabled = false }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string; disabled?: boolean }) {
