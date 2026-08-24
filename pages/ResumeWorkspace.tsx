@@ -4,12 +4,11 @@ import {
   ArrowLeft,
   Check,
   CheckCircle2,
-  ChevronRight,
-  Eye,
   FileText,
   Globe2,
   Loader2,
   Save,
+  ShieldAlert,
   Sparkles,
   Trash2,
   Upload,
@@ -18,6 +17,7 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../lib/api";
 import { openBase64InNewTab } from "../lib/fileViewer";
+import { MobileUploadBridge, type MobileReceivedFile } from "../components/MobileUploadBridge";
 import { ResumeBuilderStudio } from "./ResumeBuilderStudio";
 
 const ACCEPTED_RESUME_FILES = [
@@ -29,6 +29,7 @@ const ACCEPTED_RESUME_FILES = [
 const MAX_FILES = 8;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 36 * 1024 * 1024;
+const RESUME_DELETE_CONFIRMATION = "EXCLUIR MEU CURRICULO";
 
 type Stage = "resume" | "publish";
 
@@ -38,6 +39,14 @@ function readAsDataUrl(file: File): Promise<string> {
     reader.onload = () => resolve(String(reader.result || ""));
     reader.onerror = () => reject(reader.error || new Error("Não foi possível ler o arquivo."));
     reader.readAsDataURL(file);
+  });
+}
+
+async function mobileReceivedToFile(received: MobileReceivedFile) {
+  const response = await fetch(received.dataUrl);
+  const blob = await response.blob();
+  return new File([blob], received.fileName, {
+    type: received.mimeType || blob.type || "application/octet-stream",
   });
 }
 
@@ -80,6 +89,9 @@ export function ResumeWorkspace() {
   const [publishing, setPublishing] = useState(false);
   const [openingStoredFile, setOpeningStoredFile] = useState(false);
   const [publishConfirmOpen, setPublishConfirmOpen] = useState(false);
+  const [deleteResumeOpen, setDeleteResumeOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deletingResume, setDeletingResume] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const setStage = (next: Stage) => {
@@ -113,6 +125,16 @@ export function ResumeWorkspace() {
   const online = profile?.resumeStatus === "PUBLISHED" && hasPublishedVersion;
   const publishedScore = typeof publishedSnapshot?.score === "number" ? publishedSnapshot.score : null;
   const publishedAt = publishedSnapshot?.publishedAt || profile?.resumePublishedAt;
+  const hasResumeData = Boolean(
+    profile?.bio ||
+    profile?.experiences?.length ||
+    profile?.education?.length ||
+    profile?.skills?.length ||
+    profile?.courses?.length ||
+    profile?.uploadedResumeFile ||
+    hasPublishedVersion ||
+    profile?.hasAiAnalyzed,
+  );
 
   const draftDiffersFromPublished = useMemo(() => {
     if (!publishedSnapshot) return true;
@@ -166,6 +188,23 @@ export function ResumeWorkspace() {
     setFiles(selected);
     setOpen(true);
   };
+
+  const receiveResumeFromMobile = React.useCallback(async (received: MobileReceivedFile) => {
+    setError("");
+    setSuccess("");
+    try {
+      const file = await mobileReceivedToFile(received);
+      if (file.size > MAX_FILE_BYTES) {
+        setError(`${file.name} excede o limite de 20 MB.`);
+        return;
+      }
+      setFiles([file]);
+      setOpen(true);
+    } catch (mobileError) {
+      console.error(mobileError);
+      setError("O arquivo chegou do celular, mas não pôde ser preparado para a importação.");
+    }
+  }, []);
 
   const importDocuments = async () => {
     if (!files.length || processing) return;
@@ -279,6 +318,26 @@ export function ResumeWorkspace() {
     }
   };
 
+  const deleteResumePermanently = async () => {
+    if (deleteConfirmation.trim().toUpperCase() !== RESUME_DELETE_CONFIRMATION || deletingResume) return;
+    setDeletingResume(true);
+    setError("");
+    try {
+      await api.delete("/users/me/resume", { data: { confirmation: RESUME_DELETE_CONFIRMATION } });
+      await refreshProfile();
+      setFiles([]);
+      setOpen(false);
+      setDeleteConfirmation("");
+      setDeleteResumeOpen(false);
+      setStage("resume");
+      setSuccess("Seu currículo foi excluído definitivamente. A conta continua ativa e os limites gratuitos já utilizados não foram restaurados.");
+    } catch (deleteError: any) {
+      setError(deleteError?.response?.data?.message || "Não foi possível excluir o currículo agora.");
+    } finally {
+      setDeletingResume(false);
+    }
+  };
+
   const scoreMessage = score === null
     ? "Seu rascunho ainda não tem uma pontuação disponível. Você pode publicar mesmo assim e revisar depois."
     : score >= 75
@@ -297,7 +356,7 @@ export function ResumeWorkspace() {
   return (
     <div className="resume-workflow min-h-screen bg-[#f5efe8] text-[#241914]">
       <style>{`
-        @media print { .resume-workflow-nav,.resume-source-bar,.resume-stage-actions,.resume-import-modal,.resume-publish-modal { display:none!important; } }
+        @media print { .resume-workflow-nav,.resume-source-bar,.resume-stage-actions,.resume-import-modal,.resume-publish-modal,.resume-delete-modal { display:none!important; } }
         .resume-workflow .resume-studio-body .bg-gradient-to-br.from-violet-50.to-blue-50 { display:none!important; }
       `}</style>
 
@@ -412,6 +471,22 @@ export function ResumeWorkspace() {
             </div>
           </section>
 
+          {hasResumeData && (
+            <section className="mt-4 rounded-[26px] border border-red-200 bg-red-50/70 p-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-red-100 text-red-700"><ShieldAlert className="h-5 w-5" /></span>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[.15em] text-red-600">Zona de exclusão</p>
+                    <h2 className="mt-1 font-bold text-stone-950">Excluir completamente meu currículo</h2>
+                    <p className="mt-1 max-w-2xl text-xs leading-5 text-stone-600">Apaga rascunho, versões publicadas, arquivo importado, análises de IA, históricos de currículo e cópias do currículo guardadas nas candidaturas. A conta e as candidaturas continuam existindo.</p>
+                  </div>
+                </div>
+                <button type="button" onClick={() => { setDeleteConfirmation(""); setDeleteResumeOpen(true); }} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-red-300 bg-white px-4 py-3 text-xs font-black text-red-700 hover:bg-red-100"><Trash2 className="h-4 w-4" /> Excluir currículo</button>
+              </div>
+            </section>
+          )}
+
           {error && <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">{error}</div>}
           {success && <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-700">{success}</div>}
 
@@ -425,7 +500,18 @@ export function ResumeWorkspace() {
         <div className="resume-import-modal fixed inset-0 z-[90] flex items-end justify-center bg-black/45 p-0 backdrop-blur-sm sm:items-center sm:p-5" onClick={() => !processing && setOpen(false)}>
           <section className="w-full max-w-xl rounded-t-[30px] border border-white/10 bg-[#fffdfa] p-5 shadow-2xl sm:rounded-[30px] sm:p-6" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-start gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><Sparkles className="h-5 w-5" /></span><div className="min-w-0 flex-1"><p className="text-[10px] font-black uppercase tracking-[.16em] text-violet-600">Importação inteligente</p><h2 className="mt-1 font-serif text-2xl font-bold text-stone-950">Use o currículo que você já tem</h2><p className="mt-2 text-xs leading-5 text-stone-500">Word, PDF, TXT, RTF e imagens. A importação altera o rascunho, nunca a versão publicada.</p></div><button type="button" disabled={processing} onClick={() => setOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-xl text-stone-400 hover:bg-stone-100"><X className="h-4 w-4" /></button></div>
-            {files.length === 0 ? <button type="button" onClick={() => fileInputRef.current?.click()} className="mt-5 flex w-full flex-col items-center justify-center rounded-[22px] border-2 border-dashed border-violet-200 bg-violet-50/45 px-4 py-7 text-center"><Upload className="h-7 w-7 text-violet-600" /><strong className="mt-3 text-sm text-stone-900">Selecionar documentos</strong><span className="mt-1 text-[11px] text-stone-500">PDF, DOC, DOCX, TXT, RTF, PNG e JPG · 20 MB por arquivo</span></button> : <div className="mt-5 space-y-2 rounded-2xl border border-stone-200 bg-stone-50/70 p-3">{files.map((file) => <div key={`${file.name}-${file.size}`} className="flex items-center justify-between gap-3 text-xs"><span className="min-w-0 truncate font-bold text-stone-700">{file.name}</span><span className="shrink-0 text-stone-400">{(file.size / 1024 / 1024).toFixed(1)} MB</span></div>)}<div className="border-t border-stone-200 pt-2 text-right text-[10px] font-bold text-stone-400">Total: {(totalSize / 1024 / 1024).toFixed(1)} MB</div></div>}
+            {files.length === 0 ? (
+              <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="flex min-h-32 w-full flex-col items-center justify-center rounded-[22px] border-2 border-dashed border-violet-200 bg-violet-50/45 px-4 py-5 text-center"><Upload className="h-7 w-7 text-violet-600" /><strong className="mt-3 text-sm text-stone-900">Selecionar neste dispositivo</strong><span className="mt-1 text-[11px] text-stone-500">PDF, DOC, DOCX, TXT, RTF, PNG e JPG</span></button>
+                <MobileUploadBridge
+                  purpose="resume"
+                  maxSizeKB={20 * 1024}
+                  buttonLabel="Enviar pelo celular"
+                  onReceived={receiveResumeFromMobile}
+                  className="flex min-h-32 w-full flex-col items-center justify-center gap-2 rounded-[22px] border-2 border-dashed border-emerald-200 bg-emerald-50/45 px-4 py-5 text-center text-sm font-black text-emerald-800"
+                />
+              </div>
+            ) : <div className="mt-5 space-y-2 rounded-2xl border border-stone-200 bg-stone-50/70 p-3">{files.map((file) => <div key={`${file.name}-${file.size}`} className="flex items-center justify-between gap-3 text-xs"><span className="min-w-0 truncate font-bold text-stone-700">{file.name}</span><span className="shrink-0 text-stone-400">{(file.size / 1024 / 1024).toFixed(1)} MB</span></div>)}<div className="border-t border-stone-200 pt-2 text-right text-[10px] font-bold text-stone-400">Total: {(totalSize / 1024 / 1024).toFixed(1)} MB</div></div>}
             {error && <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">{error}</div>}
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button disabled={processing} onClick={() => setOpen(false)} className="rounded-xl border border-stone-200 px-4 py-3 text-xs font-bold text-stone-600">Fechar</button>{files.length > 0 && <button disabled={processing} onClick={() => void importDocuments()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-xs font-black text-white disabled:opacity-40">{processing ? <><Loader2 className="h-4 w-4 animate-spin" /> Organizando...</> : <><Sparkles className="h-4 w-4" /> Importar e aplicar</>}</button>}</div>
           </section>
@@ -443,12 +529,46 @@ export function ResumeWorkspace() {
           </section>
         </div>
       )}
+
+      {deleteResumeOpen && (
+        <div className="resume-delete-modal fixed inset-0 z-[180] flex items-center justify-center bg-stone-950/65 p-4 backdrop-blur-sm" onClick={() => !deletingResume && setDeleteResumeOpen(false)}>
+          <section className="w-full max-w-lg overflow-hidden rounded-[28px] border border-red-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="border-b border-red-100 bg-red-50 p-5 sm:p-6">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-100 text-red-700"><Trash2 className="h-5 w-5" /></span>
+              <h2 className="mt-4 font-serif text-2xl font-bold text-stone-950">Excluir definitivamente o currículo?</h2>
+              <p className="mt-2 text-sm leading-6 text-stone-600">Esta ação não pode ser desfeita nem recuperada.</p>
+            </div>
+            <div className="space-y-4 p-5 sm:p-6">
+              <div className="rounded-2xl border border-red-100 bg-red-50/60 p-4 text-xs leading-5 text-stone-700">
+                <strong className="block text-red-800">Será apagado:</strong>
+                rascunho, versões publicadas, arquivo-base, foto do currículo, análises e históricos de IA, propostas de melhoria e cópias do currículo armazenadas nas candidaturas.
+              </div>
+              <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 text-xs leading-5 text-stone-600">
+                <strong className="block text-stone-900">Será preservado:</strong>
+                sua conta, suas candidaturas, pagamentos, créditos e os contadores de usos gratuitos já consumidos. Excluir o currículo <strong>não libera novamente</strong> a primeira análise ou importação gratuita.
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-[.14em] text-stone-500">Para confirmar, digite</label>
+                <p className="mt-1 font-mono text-xs font-black text-red-700">{RESUME_DELETE_CONFIRMATION}</p>
+                <input
+                  value={deleteConfirmation}
+                  onChange={(event) => setDeleteConfirmation(event.target.value)}
+                  disabled={deletingResume}
+                  autoComplete="off"
+                  className="mt-2 w-full rounded-xl border border-stone-200 px-3 py-3 text-sm font-bold outline-none focus:border-red-400"
+                  placeholder={RESUME_DELETE_CONFIRMATION}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2 border-t border-stone-100 bg-stone-50 p-4 sm:grid-cols-2">
+              <button disabled={deletingResume} onClick={() => setDeleteResumeOpen(false)} className="rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-bold text-stone-600">Cancelar</button>
+              <button disabled={deletingResume || deleteConfirmation.trim().toUpperCase() !== RESUME_DELETE_CONFIRMATION} onClick={() => void deleteResumePermanently()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-700 px-4 py-3 text-sm font-black text-white disabled:opacity-35">{deletingResume ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Excluir sem possibilidade de recuperação</button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
-}
-
-function StageButton({ number, label, active, done, onClick }: { number: string; label: string; active: boolean; done: boolean; onClick: () => void }) {
-  return <button onClick={onClick} className={`flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${active ? "bg-[#2b211c] text-white" : "text-stone-500 hover:bg-stone-100"}`}><span className={`flex h-6 w-6 items-center justify-center rounded-lg text-[10px] ${active ? "bg-white/10" : done ? "bg-emerald-100 text-emerald-700" : "bg-stone-100"}`}>{done && !active ? <Check className="h-3 w-3" /> : number}</span>{label}</button>;
 }
 
 function VersionCard({ title, subtitle, icon, tone, active, statusLabel, children }: { title: string; subtitle: string; icon: React.ReactNode; tone: "published" | "draft"; active: boolean; statusLabel: string; children: React.ReactNode }) {
