@@ -28,6 +28,9 @@ export class MobileUploadSession {
   pairingAttempts: number;
 
   @Column({ type: 'varchar', length: 64, nullable: true })
+  qrTokenHash: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
   uploadTokenHash: string | null;
 
   @Column({ type: 'int' })
