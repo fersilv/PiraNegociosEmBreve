@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  ArrowUpRight,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -114,10 +113,10 @@ function currentResumeSignature(profile: any) {
 function hasResumeContent(profile: any) {
   return Boolean(
     String(profile?.bio || '').trim()
-    || (Array.isArray(profile?.experiences) && profile.experiences.length > 0)
-    || (Array.isArray(profile?.education) && profile.education.length > 0)
-    || (Array.isArray(profile?.skills) && profile.skills.length > 0)
-    || (Array.isArray(profile?.courses) && profile.courses.length > 0),
+      || (Array.isArray(profile?.experiences) && profile.experiences.length > 0)
+      || (Array.isArray(profile?.education) && profile.education.length > 0)
+      || (Array.isArray(profile?.skills) && profile.skills.length > 0)
+      || (Array.isArray(profile?.courses) && profile.courses.length > 0),
   );
 }
 
@@ -144,7 +143,7 @@ function scoreHeadline(score: number | null) {
 function scoreCopy(score: number | null, stale: boolean) {
   if (stale) return 'Você alterou o conteúdo depois da última análise. A nota mostrada ainda representa a versão anterior.';
   if (score === null) return 'A primeira qualificação identifica pontos fortes e mostra onde vale melhorar.';
-  if (score >= 90) return 'As próximas melhorias tendem a ser refinamentos. Elas podem deixar o currículo melhor sem necessariamente aumentar a nota.';
+  if (score >= 90) return 'As próximas melhorias tendem a ser refinamentos e podem não aumentar a nota.';
   if (score >= 75) return 'A IA encontrou oportunidades práticas para deixar o documento mais claro, direto e convincente.';
   return 'A qualificação encontrou pontos concretos que podem fortalecer conteúdo, apresentação e leitura ATS.';
 }
@@ -170,19 +169,8 @@ export function ResumeQualificationWidget() {
   const hasAnalysis = Boolean(profile?.hasAiAnalyzed && analysis);
   const storedSignature = String(analysis?.resumeSignature || '');
   const liveSignature = useMemo(() => profile ? currentResumeSignature(profile) : '', [profile]);
-
-  // Análises antigas não tinham assinatura. Elas não devem ser marcadas como
-  // desatualizadas só por isso. A partir das novas análises, a comparação passa
-  // a ser exata e considera apenas conteúdo curricular avaliado pela rubrica.
-  const analysisStale = Boolean(
-    hasAnalysis
-    && storedSignature
-    && liveSignature
-    && storedSignature !== liveSignature,
-  );
-
+  const analysisStale = Boolean(hasAnalysis && storedSignature && liveSignature && storedSignature !== liveSignature);
   const suggestions = Array.isArray(analysis?.suggestions) ? analysis.suggestions : [];
-  const nearCeiling = score !== null && score >= 90;
 
   const loadStatus = useCallback(async () => {
     if (!onResumePage) return;
@@ -206,14 +194,19 @@ export function ResumeQualificationWidget() {
       return;
     }
 
-    const syncMount = () => {
+    let cancelled = false;
+    let retryTimer: number | null = null;
+    let attempts = 0;
+
+    const mountOnce = () => {
+      if (cancelled) return;
+
       const sidebar = document.getElementById('resume-builder-sidebar');
       const body = sidebar?.querySelector<HTMLElement>(':scope > .p-5');
+
       if (!body) {
-        if (mountRootRef.current && !mountRootRef.current.isConnected) {
-          mountRootRef.current = null;
-          setTarget(null);
-        }
+        attempts += 1;
+        if (attempts < 24) retryTimer = window.setTimeout(mountOnce, 150);
         return;
       }
 
@@ -223,11 +216,8 @@ export function ResumeQualificationWidget() {
         return text.includes('Qualidade do currículo') || text.includes('Análise profissional');
       }) || null;
 
-      if (legacy && legacy !== hiddenLegacyRef.current) {
-        if (hiddenLegacyRef.current) hiddenLegacyRef.current.style.removeProperty('display');
+      if (legacy) {
         hiddenLegacyRef.current = legacy;
-        legacy.style.display = 'none';
-      } else if (legacy && legacy.style.display !== 'none') {
         legacy.style.display = 'none';
       }
 
@@ -241,14 +231,14 @@ export function ResumeQualificationWidget() {
       }
 
       mountRootRef.current = root;
-      setTarget((current) => current === root ? current : root);
+      setTarget(root);
     };
 
-    syncMount();
-    const timer = window.setInterval(syncMount, 1400);
+    mountOnce();
 
     return () => {
-      window.clearInterval(timer);
+      cancelled = true;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
       if (hiddenLegacyRef.current) {
         hiddenLegacyRef.current.style.removeProperty('display');
         hiddenLegacyRef.current = null;
@@ -294,11 +284,11 @@ export function ResumeQualificationWidget() {
   useEffect(() => {
     const eligible = Boolean(
       target
-      && profile
-      && hasResumeContent(profile)
-      && !hasAnalysis
-      && status?.enabled
-      && status?.freeResumeAnalysisAvailable !== false,
+        && profile
+        && hasResumeContent(profile)
+        && !hasAnalysis
+        && status?.enabled
+        && status?.freeResumeAnalysisAvailable !== false,
     );
     if (!eligible || reviewing || autoAttemptedRef.current) return;
     autoAttemptedRef.current = true;
@@ -311,7 +301,7 @@ export function ResumeQualificationWidget() {
     return () => window.clearTimeout(timer);
   }, [toastScore]);
 
-  if (!onResumePage) return null;
+  if (!onResumePage || !target) return null;
 
   const reanalysisPrice = money(status?.products?.reanalysis?.effectivePriceCents);
   const improvementPrice = money(status?.products?.improvement?.effectivePriceCents);
@@ -360,7 +350,7 @@ export function ResumeQualificationWidget() {
     }
   };
 
-  const widget = (
+  const card = (
     <section className="overflow-hidden rounded-[18px] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,.115),rgba(255,255,255,.055))] text-white shadow-[0_12px_30px_rgba(0,0,0,.12)]">
       <div className="p-3.5">
         <div className="flex items-center gap-2.5">
@@ -369,22 +359,19 @@ export function ResumeQualificationWidget() {
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[9px] font-black uppercase tracking-[.16em] text-violet-200/75">Qualidade do currículo</p>
-            <p className="mt-0.5 truncate text-[11px] font-semibold text-white/58">{scoreHeadline(score)}</p>
+            <p className="mt-0.5 truncate text-[11px] font-semibold text-white/60">{scoreHeadline(score)}</p>
           </div>
-          {score !== null ? (
+          {score !== null && (
             <div className="shrink-0 text-right">
               <span className="text-[22px] font-black leading-none tracking-tight text-white">{score}</span>
-              <span className="text-[9px] font-bold text-white/38">/100</span>
+              <span className="text-[9px] font-bold text-white/45">/100</span>
             </div>
-          ) : (
-            <span className="rounded-full bg-white/8 px-2 py-1 text-[9px] font-bold text-white/50">sem nota</span>
           )}
           <button
             type="button"
             onClick={() => setExpanded((value) => !value)}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/55 transition hover:bg-white/10 hover:text-white"
-            aria-label={expanded ? 'Minimizar qualificação' : 'Ver detalhes da qualificação'}
-            title={expanded ? 'Minimizar' : 'Ver detalhes'}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/55 hover:bg-white/10"
+            aria-label={expanded ? 'Recolher detalhes' : 'Ver detalhes'}
           >
             {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           </button>
@@ -397,7 +384,7 @@ export function ResumeQualificationWidget() {
             type="button"
             onClick={handlePrimary}
             disabled={reviewing || !status?.enabled}
-            className={`inline-flex min-w-0 w-full items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[11px] font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${analysisStale ? 'bg-amber-500 text-stone-950 hover:bg-amber-400' : 'bg-white text-stone-950 hover:bg-stone-100'}`}
+            className={`inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[11px] font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${analysisStale ? 'bg-amber-500 text-stone-950 hover:bg-amber-400' : 'bg-white text-stone-950 hover:bg-stone-100'}`}
           >
             {reviewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : primaryAction === 'improve' ? <WandSparkles className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
             <span className="truncate">{primaryLabel}</span>
@@ -417,17 +404,14 @@ export function ResumeQualificationWidget() {
         </div>
 
         {expanded && (
-          <div className="mt-3 max-h-[280px] overflow-y-auto border-t border-white/8 pt-3 pr-1">
+          <div className="mt-3 max-h-[250px] overflow-y-auto border-t border-white/8 pt-3 pr-1">
             {analysisStale && (
               <div className="mb-3 rounded-xl border border-amber-300/15 bg-amber-300/10 px-3 py-2 text-[10px] leading-4 text-amber-100">
-                A nota atual avalia a versão anterior. Você pode apenas atualizar a nota ou seguir direto para uma nova melhoria, que fará sua própria avaliação interna.
+                Sua nota pertence à versão anterior. Você pode atualizar a nota ou seguir direto para outra melhoria.
               </div>
             )}
             {analysis?.feedbackText ? (
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-[.14em] text-white/35">Diagnóstico</p>
-                <p className="mt-1.5 text-[11px] leading-[1.5] text-white/65">{analysis.feedbackText}</p>
-              </div>
+              <p className="text-[11px] leading-4 text-white/58">{analysis.feedbackText}</p>
             ) : (
               <p className="text-[11px] text-white/45">A análise detalhada aparecerá aqui quando a qualificação terminar.</p>
             )}
@@ -442,152 +426,97 @@ export function ResumeQualificationWidget() {
                 ))}
               </div>
             )}
-            {hasAnalysis && (
-              <button
-                type="button"
-                onClick={() => navigate('/user/curriculo/evolucao')}
-                className="mt-3 inline-flex items-center gap-1 text-[10px] font-bold text-violet-200 hover:text-white"
-              >
-                Ver evolução completa <ArrowUpRight className="h-3 w-3" />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => navigate('/user/curriculo/evolucao')}
+              className="mt-3 text-[10px] font-black text-violet-200 hover:text-white"
+            >
+              Ver evolução completa →
+            </button>
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-[10px] leading-4 text-rose-100">
+            <Info className="mt-0.5 h-3 w-3 shrink-0" />
+            <span className="flex-1">{error}</span>
+            <button type="button" onClick={() => setError('')} aria-label="Fechar erro"><X className="h-3 w-3" /></button>
           </div>
         )}
       </div>
     </section>
   );
 
-  const offerIsImprovement = offerAction === 'improve';
-  const offerPrice = offerIsImprovement ? improvementPrice : reanalysisPrice;
-  const offerCredits = offerIsImprovement ? improvementCredits : reanalysisCredits;
-
-  return (
-    <>
-      <style>{`
-        .resume-studio-header .resume-studio-ai-button { display: none !important; }
-        .resume-qualification-widget-root { margin: 0 0 1rem 0; }
-      `}</style>
-
-      {target && createPortal(widget, target)}
-
-      {reviewing && (
-        <div className="fixed inset-0 z-[190] cursor-progress bg-transparent" role="status" aria-live="polite">
-          <div className="fixed bottom-5 right-5 flex max-w-[300px] items-center gap-3 rounded-2xl border border-violet-200 bg-white/95 px-4 py-3 text-stone-900 shadow-2xl backdrop-blur">
-            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-violet-700" />
-            <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-[.14em] text-violet-600">Qualificando currículo</p>
-              <p className="truncate text-xs font-bold">Atualizando nota e recomendações…</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {toastScore !== null && !reviewing && (
-        <div className="fixed bottom-5 right-5 z-[185] flex items-center gap-3 rounded-2xl border border-violet-200 bg-white/95 px-3.5 py-3 text-stone-900 shadow-xl backdrop-blur">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-100 text-violet-700"><Sparkles className="h-4 w-4" /></span>
-          <div>
-            <p className="text-[9px] font-black uppercase tracking-[.12em] text-violet-600">Primeira qualificação concluída</p>
-            <p className="text-sm font-black">{toastScore}<span className="text-[10px] text-stone-400">/100</span></p>
-          </div>
-          <button type="button" onClick={() => setToastScore(null)} className="ml-1 text-stone-400 hover:text-stone-700" aria-label="Fechar"><X className="h-3.5 w-3.5" /></button>
-        </div>
-      )}
-
-      {offerAction && (
-        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-stone-950/35 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true">
-          <div className="w-full max-w-[410px] overflow-hidden rounded-3xl border border-stone-200 bg-white text-stone-900 shadow-2xl">
-            <div className="border-b border-stone-100 bg-[linear-gradient(145deg,#faf5ff,#fff)] p-5">
-              <div className="flex items-start gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
-                  {offerIsImprovement ? <WandSparkles className="h-4.5 w-4.5" /> : <RefreshCw className="h-4.5 w-4.5" />}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-[9px] font-black uppercase tracking-[.15em] text-violet-600">{offerIsImprovement ? 'Melhoria com IA' : 'Nova qualificação'}</p>
-                      <h2 className="mt-1 text-base font-black text-stone-950">{offerIsImprovement ? 'Uma nova rodada de melhorias' : 'Atualize a nota da versão atual'}</h2>
-                    </div>
-                    <button type="button" onClick={() => setOfferAction(null)} className="text-stone-400 hover:text-stone-700" aria-label="Fechar"><X className="h-4 w-4" /></button>
-                  </div>
-                  <p className="mt-2 text-xs leading-5 text-stone-500">
-                    {offerIsImprovement
-                      ? 'A IA analisa a versão atual, procura oportunidades que ainda façam sentido e mostra cada antes × depois para você decidir.'
-                      : 'A nova análise considera as alterações feitas no currículo e atualiza nota, diagnóstico e recomendações.'}
-                  </p>
+  const modal = offerAction ? (
+    <div className="fixed inset-0 z-[210] flex items-center justify-center bg-stone-950/35 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true">
+      <div className="w-full max-w-[410px] overflow-hidden rounded-3xl border border-stone-200 bg-white text-stone-900 shadow-2xl">
+        <div className="border-b border-stone-100 bg-[linear-gradient(145deg,#faf5ff,#fff)] p-5">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
+              {offerAction === 'improve' ? <WandSparkles className="h-5 w-5" /> : <RefreshCw className="h-5 w-5" />}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-[.15em] text-violet-600">{offerAction === 'improve' ? 'Melhoria com IA' : 'Nova qualificação'}</p>
+                  <h3 className="mt-1 text-lg font-black text-stone-950">{offerAction === 'improve' ? 'Aplicar novas melhorias' : 'Atualizar a nota'}</h3>
                 </div>
+                <button type="button" onClick={() => setOfferAction(null)} className="text-stone-400" aria-label="Fechar"><X className="h-4 w-4" /></button>
               </div>
-            </div>
-
-            <div className="space-y-3 p-5">
-              <div className="flex items-center justify-between rounded-2xl bg-stone-50 px-4 py-3">
-                <span className="text-xs font-bold text-stone-600">Valor</span>
-                <strong className="text-sm font-black text-stone-950">{accessOverride || offerCredits > 0 ? 'Incluído no seu acesso' : offerPrice || 'Sem cobrança'}</strong>
-              </div>
-
-              {offerCredits > 0 && !accessOverride && (
-                <p className="rounded-xl bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-700">Você já possui {offerCredits} crédito(s) para esta ação.</p>
-              )}
-
-              {offerIsImprovement && (
-                <>
-                  <div className={`rounded-2xl border px-3.5 py-3 ${nearCeiling ? 'border-amber-200 bg-amber-50' : 'border-violet-100 bg-violet-50/70'}`}>
-                    <div className="flex items-start gap-2.5">
-                      <Info className={`mt-0.5 h-4 w-4 shrink-0 ${nearCeiling ? 'text-amber-600' : 'text-violet-600'}`} />
-                      <div>
-                        <p className={`text-[11px] font-black ${nearCeiling ? 'text-amber-900' : 'text-violet-900'}`}>
-                          {nearCeiling ? 'Seu currículo já está em uma faixa forte' : 'Melhoria não é promessa de aumentar a nota'}
-                        </p>
-                        <p className={`mt-1 text-[10px] leading-4 ${nearCeiling ? 'text-amber-800' : 'text-violet-700'}`}>
-                          Se melhorias já foram aplicadas, uma nova rodada pode encontrar apenas refinamentos. O texto pode ficar melhor e a pontuação permanecer igual. Você decide se esse refinamento vale uma nova compra.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-1.5 text-[11px] leading-5 text-stone-600">
-                    <span>✓ Usa a qualificação atual como ponto de partida</span>
-                    <span>✓ Evita repetir problemas que já foram resolvidos</span>
-                    <span>✓ Mostra as alterações antes de aplicar</span>
-                    <span>✓ Não inventa experiências, resultados ou formação</span>
-                    <span>✓ Faz uma nova qualificação ao final da melhoria</span>
-                  </div>
-
-                  {analysisStale ? (
-                    <button
-                      type="button"
-                      onClick={() => setOfferAction('review')}
-                      className="flex w-full items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-left transition hover:bg-amber-100"
-                    >
-                      <span>
-                        <span className="block text-[11px] font-black text-amber-900">Quer medir suas alterações antes?</span>
-                        <span className="mt-0.5 block text-[10px] leading-4 text-amber-700">Você pode apenas atualizar a nota e decidir sobre a melhoria depois.</span>
-                      </span>
-                      <span className="ml-3 shrink-0 text-[10px] font-black text-amber-900">{reanalysisPrice || 'Reavaliar'}</span>
-                    </button>
-                  ) : (
-                    <div className="rounded-2xl bg-stone-50 px-3.5 py-3 text-[10px] leading-4 text-stone-500">
-                      Sua nota já corresponde à versão atual. A reavaliação avulsa volta a fazer sentido quando você editar o currículo por conta própria{reanalysisPrice ? ` e custa ${reanalysisPrice}` : ''}.
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            <div className="flex gap-2 border-t border-stone-100 bg-stone-50/70 p-4">
-              <button type="button" onClick={() => setOfferAction(null)} className="flex-1 rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs font-black text-stone-600 hover:bg-stone-100">Agora não</button>
-              <button type="button" onClick={continueOffer} className="flex-[1.35] rounded-xl bg-stone-950 px-3 py-2.5 text-xs font-black text-white hover:bg-stone-800">
-                {accessOverride || offerCredits > 0 ? 'Continuar' : `Continuar${offerPrice ? ` · ${offerPrice}` : ''}`}
-              </button>
+              <p className="mt-2 text-xs leading-5 text-stone-500">
+                {offerAction === 'improve'
+                  ? 'A IA usa sua qualificação como checklist. Se os principais pontos já foram resolvidos, a nova rodada pode apenas lapidar o texto e a nota pode continuar igual.'
+                  : 'Use quando você alterou manualmente o conteúdo e quer medir novamente a versão atual.'}
+              </p>
             </div>
           </div>
         </div>
-      )}
 
-      {error && !reviewing && (
-        <div className="fixed bottom-5 left-1/2 z-[220] w-[min(540px,calc(100vw-28px))] -translate-x-1/2 rounded-2xl border border-rose-200 bg-white px-4 py-3 text-xs text-rose-700 shadow-xl">
-          <div className="flex items-center justify-between gap-3"><span>{error}</span><button type="button" onClick={() => setError('')}><X className="h-4 w-4" /></button></div>
+        <div className="space-y-3 p-5">
+          {offerAction === 'improve' ? (
+            <>
+              <div className="rounded-2xl bg-stone-50 p-3 text-xs leading-5 text-stone-600">
+                <strong>O que está incluído:</strong> diagnóstico atual como plano, antes × depois para sua aprovação e nova qualificação depois das alterações escolhidas.
+              </div>
+              {analysisStale && (
+                <button
+                  type="button"
+                  onClick={() => setOfferAction('review')}
+                  className="w-full rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-black text-amber-800"
+                >
+                  Atualizar nota primeiro{reanalysisPrice ? ` · ${reanalysisPrice}` : ''}
+                </button>
+              )}
+              <p className="text-[11px] leading-4 text-stone-400">
+                Melhorias não garantem aumento de pontuação. Quanto mais forte estiver o currículo, maior a chance de a próxima rodada ser apenas refinamento.
+              </p>
+            </>
+          ) : (
+            <div className="rounded-2xl bg-stone-50 p-3 text-xs leading-5 text-stone-600">
+              {accessOverride || reanalysisCredits > 0
+                ? 'Você já tem acesso a esta qualificação.'
+                : `Valor da atualização: ${reanalysisPrice || 'conforme configuração atual'}.`}
+            </div>
+          )}
         </div>
-      )}
-    </>
-  );
+
+        <div className="flex items-center justify-between gap-3 border-t border-stone-100 bg-stone-50/70 px-5 py-4">
+          <button type="button" onClick={() => setOfferAction(null)} className="text-xs font-bold text-stone-500">Agora não</button>
+          <button type="button" onClick={continueOffer} className="rounded-xl bg-stone-950 px-4 py-2.5 text-xs font-black text-white">
+            {offerAction === 'improve'
+              ? `Continuar${!accessOverride && improvementCredits <= 0 && improvementPrice ? ` · ${improvementPrice}` : ''}`
+              : `Atualizar${!accessOverride && reanalysisCredits <= 0 && reanalysisPrice ? ` · ${reanalysisPrice}` : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  const toast = toastScore !== null ? (
+    <div className="fixed bottom-5 left-1/2 z-[220] -translate-x-1/2 rounded-full border border-violet-100 bg-white px-4 py-2.5 text-xs font-black text-stone-800 shadow-xl">
+      ✨ Currículo qualificado · {toastScore}/100
+    </div>
+  ) : null;
+
+  return createPortal(<>{card}{modal}{toast}</>, target);
 }
