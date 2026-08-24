@@ -77,7 +77,17 @@ export class CompanyPagesPublicController {
         isVerified: company.isVerified,
         verificationStatus: company.verificationStatus,
       },
-      jobs,
+      jobs: jobs.map((job) => ({
+        id: job.id,
+        slug: job.slug,
+        title: job.title,
+        location: job.location,
+        city: job.city,
+        state: job.state,
+        type: job.type,
+        workModel: job.workModel,
+        salary: job.salary,
+      })),
     };
   }
 }
