@@ -151,15 +151,38 @@ export function TemplateWrapper({
         @media print {
           @page {
             size: A4 portrait;
-            margin: 9mm 9mm 15mm !important;
+            margin: 8mm !important;
+          }
+
+          html,
+          body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          #resume-preview-area,
+          #resume-preview-area > div {
+            width: 194mm !important;
+            min-width: 194mm !important;
+            max-width: 194mm !important;
+            margin: 0 auto !important;
+            padding: 0 !important;
+            transform: none !important;
+            filter: none !important;
+            overflow: visible !important;
+            background: white !important;
           }
 
           #resume-preview-area > div > .resume-a4-document,
           .resume-a4-document {
-            width: 192mm !important;
-            min-width: 192mm !important;
-            max-width: 192mm !important;
-            min-height: 273mm !important;
+            width: 194mm !important;
+            min-width: 194mm !important;
+            max-width: 194mm !important;
+            min-height: 0 !important;
+            height: auto !important;
             margin: 0 !important;
             padding: 0 !important;
             border: 0 !important;
@@ -168,38 +191,65 @@ export function TemplateWrapper({
             box-sizing: border-box !important;
           }
 
-          #resume-preview-area > div {
-            width: 192mm !important;
-            min-width: 192mm !important;
-            max-width: 192mm !important;
-          }
-
           .resume-a4-document::after {
             display: none !important;
           }
 
+          /* Seções grandes precisam poder continuar na página seguinte. Bloquear
+             a seção inteira criava folhas quase vazias, especialmente em Experiência. */
           .resume-a4-document section,
+          .resume-a4-document .resume-experience-section {
+            break-inside: auto !important;
+            page-break-inside: auto !important;
+          }
+
+          /* Blocos pequenos continuam inteiros. */
           .resume-a4-document .break-inside-avoid,
           .resume-a4-document li,
-          .resume-a4-document article {
+          .resume-a4-document article,
+          .resume-a4-document .resume-experience-stage {
             break-inside: avoid-page !important;
             page-break-inside: avoid !important;
           }
 
           .resume-a4-document h1,
           .resume-a4-document h2,
-          .resume-a4-document h3 {
+          .resume-a4-document h3,
+          .resume-a4-document h4 {
             break-after: avoid-page !important;
             page-break-after: avoid !important;
           }
 
+          /* O cartão da empresa pode atravessar a folha, mas cada cargo/etapa
+             dentro dele permanece inteiro. Isso usa muito melhor a página. */
+          .resume-a4-document .resume-experience-card {
+            break-inside: auto !important;
+            page-break-inside: auto !important;
+          }
+
+          /* O modelo Criativo usa paddings grandes na tela. Na impressão reduzimos
+             somente o suficiente para aproveitar a A4 sem mudar o visual do preview. */
+          .resume-a4-document .resume-creative-hero {
+            padding: 8mm 8mm 6mm !important;
+          }
+
+          .resume-a4-document .resume-creative-layout {
+            gap: 6mm !important;
+            padding: 7mm 8mm 9mm !important;
+          }
+
+          .resume-a4-document .resume-creative-main,
+          .resume-a4-document .resume-creative-side {
+            row-gap: 5mm !important;
+          }
+
           .resume-brand-footer {
-            position: fixed;
-            left: 0;
-            right: 0;
-            bottom: -10mm;
-            border-top-color: rgba(87, 72, 64, .12);
-            background: white;
+            position: static !important;
+            margin: 7mm 8mm 0 !important;
+            min-height: 5mm;
+            padding-top: 2mm;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
         }
       `}</style>
