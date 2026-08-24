@@ -10,6 +10,12 @@ export interface AiStatus {
   paymentAccessOverride: boolean;
   resumeScorePaymentRequired: boolean;
   resumeReanalysisPaymentRequired: boolean;
+  resumeImportPaymentRequired: boolean;
+  freeResumeImportAvailable: boolean;
+  resumeImportCount: number;
+  resumeImportPriceCents: number | null;
+  resumeImportProductEnabled: boolean;
+  resumeImportCredits: number;
   freeResumeAnalysisAvailable: boolean;
   hasSavedResumeAnalysis: boolean;
   resumeAnalysisCount: number;
@@ -25,6 +31,12 @@ const EMPTY_STATUS: AiStatus = {
   paymentAccessOverride: false,
   resumeScorePaymentRequired: false,
   resumeReanalysisPaymentRequired: false,
+  resumeImportPaymentRequired: false,
+  freeResumeImportAvailable: true,
+  resumeImportCount: 0,
+  resumeImportPriceCents: null,
+  resumeImportProductEnabled: false,
+  resumeImportCredits: 0,
   freeResumeAnalysisAvailable: true,
   hasSavedResumeAnalysis: false,
   resumeAnalysisCount: 0,
@@ -51,6 +63,14 @@ export function useAiStatus(): AiStatus {
             paymentAccessOverride: Boolean(response.data?.paymentAccessOverride),
             resumeScorePaymentRequired: Boolean(response.data?.resumeScorePaymentRequired),
             resumeReanalysisPaymentRequired: Boolean(response.data?.resumeReanalysisPaymentRequired),
+            resumeImportPaymentRequired: Boolean(response.data?.resumeImportPaymentRequired),
+            freeResumeImportAvailable: response.data?.freeResumeImportAvailable !== false,
+            resumeImportCount: Number(response.data?.resumeImportCount || 0),
+            resumeImportPriceCents: Number.isFinite(Number(response.data?.products?.import?.effectivePriceCents))
+              ? Number(response.data.products.import.effectivePriceCents)
+              : null,
+            resumeImportProductEnabled: Boolean(response.data?.products?.import?.enabled),
+            resumeImportCredits: Number(response.data?.credits?.RESUME_AI_IMPORT || 0),
             freeResumeAnalysisAvailable: response.data?.freeResumeAnalysisAvailable !== false,
             hasSavedResumeAnalysis: Boolean(response.data?.hasSavedResumeAnalysis),
             resumeAnalysisCount: Number(response.data?.resumeAnalysisCount || 0),
