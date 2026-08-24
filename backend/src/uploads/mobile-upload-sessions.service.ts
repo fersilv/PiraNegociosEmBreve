@@ -165,7 +165,9 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
     if (!session) throw new NotFoundException('Sessão de transferência não encontrada.');
     await this.expireIfNeeded(session);
     if (session.status === 'EXPIRED') throw new BadRequestException('Esta sessão expirou. Gere um novo QR Code no computador.');
+    if (session.status === 'PAIRED') throw new BadRequestException('Este telefone já foi pareado. Gere uma nova sessão para trocar de dispositivo.');
     if (session.status === 'UPLOADED' || session.status === 'CONSUMED') throw new BadRequestException('Esta sessão já foi utilizada.');
+    if (session.status === 'CANCELED') throw new BadRequestException('Esta sessão foi cancelada. Gere um novo QR Code no computador.');
     if (session.pairingAttempts >= PAIRING_ATTEMPT_LIMIT) throw new ForbiddenException('Muitas tentativas incorretas. Gere uma nova sessão.');
 
     const normalizedCode = String(code || '').replace(/\D/g, '').slice(0, 6);
