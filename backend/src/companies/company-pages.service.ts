@@ -7,13 +7,20 @@ import { CompanyPage } from './entities/company-page.entity';
 import { CompanyPagePreview } from './entities/company-page-preview.entity';
 
 export const BUILT_IN_COMPANY_TEMPLATES = [
-  'essencial',
-  'institucional',
-  'vitrine',
-  'editorial',
+  'aurora',
+  'atlas',
+  'pulse',
+  'canvas',
+  'noir',
 ] as const;
 
 const REQUIRED_SECTION_TYPES = ['identity', 'jobs'] as const;
+const REQUIRED_CODE_COMPONENTS = [
+  { tag: 'pn-company-name', label: 'nome da empresa' },
+  { tag: 'pn-company-address', label: 'endereço' },
+  { tag: 'pn-verification-badge', label: 'selo de verificação' },
+  { tag: 'pn-jobs', label: 'vagas abertas' },
+] as const;
 const MAX_CONFIG_BYTES = 4_500_000;
 const PREVIEW_MINUTES = 60;
 
@@ -30,15 +37,16 @@ export class CompanyPagesService {
 
   defaultConfig(company: Company): AnyConfig {
     return {
-      version: 1,
-      templateKey: 'essencial',
-      templateVersion: 1,
+      version: 2,
+      editorMode: 'visual',
+      templateKey: 'aurora',
+      templateVersion: 2,
       width: 'standard',
       theme: {
-        primary: '#b64b36',
-        background: '#fffdf9',
-        text: '#292524',
-        accent: '#7c2d12',
+        primary: '#b84f38',
+        background: '#f8f5f0',
+        text: '#201d1b',
+        accent: '#2f4f46',
       },
       cover: {
         enabled: false,
@@ -78,12 +86,10 @@ export class CompanyPagesService {
         { id: 'about', type: 'about', enabled: true },
         { id: 'contact', type: 'contact', enabled: true },
         { id: 'socials', type: 'socials', enabled: true },
-        { id: 'advanced', type: 'advanced', enabled: false },
         { id: 'jobs', type: 'jobs', enabled: true, locked: true },
         { id: 'legal', type: 'legal', enabled: true },
       ],
-      advanced: {
-        enabled: false,
+      codePage: {
         html: '',
         css: '',
         js: '',
@@ -94,15 +100,17 @@ export class CompanyPagesService {
   async getForCompany(company: Company) {
     const existing = await this.pages.findOne({ where: { companyId: company.id } });
     if (existing) {
+      const draft = this.normalizeConfig(existing.draft, company);
       return {
         ...existing,
-        validation: this.validate(existing.draft, company),
+        draft,
+        validation: this.validate(draft, company),
       };
     }
     const draft = this.defaultConfig(company);
     return {
       companyId: company.id,
-      templateKey: 'essencial',
+      templateKey: 'aurora',
       draft,
       published: null,
       status: 'DRAFT' as const,
@@ -119,7 +127,7 @@ export class CompanyPagesService {
     if (!page) {
       page = this.pages.create({
         companyId: company.id,
-        templateKey: String(config.templateKey || 'essencial'),
+        templateKey: String(config.templateKey || 'aurora'),
         draft: config,
         published: null,
         status: 'DRAFT',
@@ -127,7 +135,7 @@ export class CompanyPagesService {
         publishedAt: null,
       });
     } else {
-      page.templateKey = String(config.templateKey || page.templateKey || 'essencial');
+      page.templateKey = String(config.templateKey || page.templateKey || 'aurora');
       page.draft = config;
     }
     const saved = await this.pages.save(page);
@@ -175,7 +183,7 @@ export class CompanyPagesService {
     }
 
     const page = existing || this.pages.create({ companyId: company.id, revision: 1 });
-    page.templateKey = String(config.templateKey || 'essencial');
+    page.templateKey = String(config.templateKey || 'aurora');
     page.draft = config;
     page.published = config;
     page.status = 'PUBLISHED';
@@ -198,34 +206,57 @@ export class CompanyPagesService {
 
   validate(rawConfig: unknown, company: Company) {
     const config = rawConfig && typeof rawConfig === 'object' ? (rawConfig as AnyConfig) : {};
-    const sections = Array.isArray(config.sections) ? config.sections : [];
-    const activeTypes = new Set(
-      sections
-        .filter((section: any) => section && section.enabled !== false)
-        .map((section: any) => String(section.type || section.id || '').trim()),
-    );
-    const missingSections = REQUIRED_SECTION_TYPES.filter((type) => !activeTypes.has(type));
+    const editorMode = config.editorMode === 'code' ? 'code' : 'visual';
     const missingCompanyData: string[] = [];
     if (!company.name?.trim()) missingCompanyData.push('name');
     if (!company.address?.trim()) missingCompanyData.push('address');
 
     const warnings: string[] = [];
-    if (missingSections.includes('jobs')) {
-      warnings.push('O componente de vagas é obrigatório e precisa estar ativo antes da publicação.');
+    let missingSections: string[] = [];
+    let missingCodeComponents: string[] = [];
+
+    if (editorMode === 'code') {
+      const html = String(config.codePage?.html || '');
+      missingCodeComponents = REQUIRED_CODE_COMPONENTS
+        .filter(({ tag }) => !new RegExp(`<${tag}(?:\\s|>)`, 'i').test(html))
+        .map(({ tag }) => tag);
+      for (const missing of missingCodeComponents) {
+        const component = REQUIRED_CODE_COMPONENTS.find((entry) => entry.tag === missing);
+        warnings.push(`O componente obrigatório de ${component?.label || missing} precisa estar no HTML antes da publicação.`);
+      }
+    } else {
+      const sections = Array.isArray(config.sections) ? config.sections : [];
+      const activeTypes = new Set(
+        sections
+          .filter((section: any) => section && section.enabled !== false)
+          .map((section: any) => String(section.type || section.id || '').trim()),
+      );
+      missingSections = REQUIRED_SECTION_TYPES.filter((type) => !activeTypes.has(type));
+      if (missingSections.includes('jobs')) {
+        warnings.push('O componente de vagas é obrigatório e precisa estar ativo antes da publicação.');
+      }
+      if (missingSections.includes('identity')) {
+        warnings.push('A identidade obrigatória da empresa precisa estar ativa antes da publicação.');
+      }
     }
-    if (missingSections.includes('identity')) {
-      warnings.push('O cabeçalho obrigatório com nome, endereço e selo da empresa precisa estar presente.');
-    }
+
     if (missingCompanyData.includes('address')) {
       warnings.push('Cadastre o endereço da empresa no Perfil da empresa antes de publicar.');
     }
 
+    const structurallyValid = editorMode === 'code'
+      ? missingCodeComponents.length === 0
+      : missingSections.length === 0;
+
     return {
-      validForPublish: missingSections.length === 0 && missingCompanyData.length === 0,
+      editorMode,
+      validForPublish: structurallyValid && missingCompanyData.length === 0,
       missingSections,
+      missingCodeComponents,
       missingCompanyData,
       warnings,
       lockedComponents: ['companyName', 'address', 'verificationBadge', 'jobs'],
+      requiredCodeTags: REQUIRED_CODE_COMPONENTS.map(({ tag }) => tag),
     };
   }
 
@@ -240,19 +271,21 @@ export class CompanyPagesService {
       throw new BadRequestException('A configuração da página ficou grande demais. Reduza imagens ou código personalizado.');
     }
 
-    const templateKey = String(input.templateKey || fallback.templateKey).slice(0, 80);
+    const safeText = (value: unknown, max: number) => String(value || '').slice(0, max);
+    const templateKey = safeText(input.templateKey || fallback.templateKey, 80);
     const width = ['compact', 'standard', 'wide', 'full'].includes(input.width)
       ? input.width
       : fallback.width;
-    const advanced = input.advanced && typeof input.advanced === 'object' ? input.advanced : {};
-    const safeText = (value: unknown, max: number) => String(value || '').slice(0, max);
+    const editorMode = input.editorMode === 'code' ? 'code' : 'visual';
+    const codePage = input.codePage && typeof input.codePage === 'object' ? input.codePage : {};
 
     return {
       ...fallback,
       ...input,
-      version: 1,
+      version: 2,
+      editorMode,
       templateKey,
-      templateVersion: Math.max(1, Number(input.templateVersion || 1)),
+      templateVersion: Math.max(1, Number(input.templateVersion || 2)),
       width,
       theme: { ...fallback.theme, ...(input.theme || {}) },
       cover: { ...fallback.cover, ...(input.cover || {}), url: safeText(input.cover?.url, 3_500_000) },
@@ -266,11 +299,10 @@ export class CompanyPagesService {
         privacyBody: safeText(input.legal?.privacyBody, 80_000),
       },
       sections: Array.isArray(input.sections) ? input.sections.slice(0, 30) : fallback.sections,
-      advanced: {
-        enabled: Boolean(advanced.enabled),
-        html: safeText(advanced.html, 120_000),
-        css: safeText(advanced.css, 120_000),
-        js: safeText(advanced.js, 120_000),
+      codePage: {
+        html: safeText(codePage.html, 180_000),
+        css: safeText(codePage.css, 180_000),
+        js: safeText(codePage.js, 180_000),
       },
     };
   }
