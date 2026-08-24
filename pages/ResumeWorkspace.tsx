@@ -255,7 +255,7 @@ export function ResumeWorkspace() {
       await api.patch("/users/me", { resumeStatus: "PUBLISHED" });
       await refreshProfile();
       setPublishConfirmOpen(false);
-      setSuccess("Nova versão publicada. O rascunho e a versão online agora estão sincronizados.");
+      setSuccess("Currículo publicado. Sua versão profissional agora está disponível para empresas enquanto você estiver aberto a oportunidades.");
     } catch (publishError: any) {
       setError(publishError?.response?.data?.message || "Não foi possível publicar o currículo.");
     } finally {
@@ -287,7 +287,7 @@ export function ResumeWorkspace() {
         ? `O rascunho atual está com ${score}/100. Está utilizável, mas ainda há melhorias recomendadas.`
         : `O rascunho atual está com ${score}/100. Há pontos importantes para melhorar antes de substituir a versão publicada.`;
 
-  const topStatus = online ? "Online" : hasPublishedVersion ? "Fora do ar" : "Somente rascunho";
+  const topStatus = online ? "Online" : hasPublishedVersion ? "Fora do ar" : "Não publicado";
   const topStatusClass = online
     ? "bg-emerald-100 text-emerald-700"
     : hasPublishedVersion
@@ -314,8 +314,26 @@ export function ResumeWorkspace() {
           </div>
           <div className="ml-auto flex items-center gap-2">
             <span className={`hidden shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-[.12em] sm:inline-flex ${topStatusClass}`}>{topStatus}</span>
-            <button type="button" onClick={() => setStage(stage === "publish" ? "resume" : "publish")} className="inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-xs font-bold text-stone-700 shadow-sm hover:bg-stone-50">
-              {stage === "publish" ? <><ArrowLeft className="h-4 w-4" /> Voltar ao currículo</> : <><Globe2 className="h-4 w-4 text-terracotta-600" /> Versões e publicação</>}
+            <button
+              type="button"
+              onClick={() => {
+                if (stage === "publish") setStage("resume");
+                else if (!hasPublishedVersion) setPublishConfirmOpen(true);
+                else setStage("publish");
+              }}
+              className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2.5 text-xs font-bold shadow-sm transition-colors ${
+                stage !== "publish" && !hasPublishedVersion
+                  ? "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700"
+                  : "border-stone-200 bg-white text-stone-700 hover:bg-stone-50"
+              }`}
+            >
+              {stage === "publish" ? (
+                <><ArrowLeft className="h-4 w-4" /> Voltar ao currículo</>
+              ) : !hasPublishedVersion ? (
+                <><CheckCircle2 className="h-4 w-4" /> Publicar currículo</>
+              ) : (
+                <><Globe2 className="h-4 w-4 text-terracotta-600" /> Versões e publicação</>
+              )}
             </button>
           </div>
         </div>
@@ -324,6 +342,17 @@ export function ResumeWorkspace() {
       {stage === "resume" && (
         <>
           <div className="mx-auto max-w-7xl px-3 pt-3 sm:px-5">
+            {!hasPublishedVersion && (
+              <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-950 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <strong className="block font-black">Seu currículo ainda não está publicado.</strong>
+                  <span className="mt-1 block text-xs leading-5 text-emerald-800">Ele está salvo como rascunho. Publique para que empresas possam visualizar sua versão profissional no Banco de Talentos.</span>
+                </div>
+                <button type="button" onClick={() => setPublishConfirmOpen(true)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white hover:bg-emerald-700">
+                  <CheckCircle2 className="h-4 w-4" /> Publicar currículo
+                </button>
+              </div>
+            )}
             {hasPublishedVersion && draftDiffersFromPublished && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">Você está editando o <strong>rascunho</strong>. A última versão publicada continua congelada e {online ? "permanece online" : "está fora do ar"} até você publicar o rascunho.</div>}
             {hasPublishedVersion && !online && !draftDiffersFromPublished && <div className="rounded-2xl border border-stone-200 bg-stone-100 px-4 py-3 text-xs font-semibold text-stone-600">Existe uma versão publicada preservada, mas ela está <strong>fora do ar</strong>.</div>}
             {error && <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">{error}</div>}
@@ -332,7 +361,6 @@ export function ResumeWorkspace() {
           <ResumeBuilderStudio />
         </>
       )}
-
 
       {stage === "publish" && (
         <main className="mx-auto max-w-6xl px-3 py-6 sm:px-5 sm:py-9">
@@ -388,7 +416,6 @@ export function ResumeWorkspace() {
           {success && <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-700">{success}</div>}
 
           <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
-            
             <button type="button" onClick={leaveWithDraft} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#2b211c] px-5 py-3 text-sm font-bold text-white"><Save className="h-4 w-4" /> Salvar rascunho e sair</button>
           </div>
         </main>
@@ -411,7 +438,7 @@ export function ResumeWorkspace() {
             <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700"><CheckCircle2 className="h-6 w-6" /></span>
             <h2 className="mt-5 font-serif text-2xl font-bold text-stone-950">{hasPublishedVersion ? "Publicar o rascunho como nova versão?" : "Publicar este currículo?"}</h2>
             <p className="mt-2 text-sm leading-6 text-stone-600">{scoreMessage}</p>
-            <p className="mt-3 text-xs leading-5 text-stone-400">{hasPublishedVersion ? `${online ? "A versão online atual continuará intacta até você confirmar." : "A última versão publicada está fora do ar e continuará preservada até você confirmar."} Ao publicar, o rascunho será congelado como a nova versão e ficará online.` : "Seu rascunho será congelado como a primeira versão publicada. Depois você poderá continuar editando um novo rascunho sem alterar esta versão."}</p>
+            <p className="mt-3 text-xs leading-5 text-stone-400">{hasPublishedVersion ? `${online ? "A versão online atual continuará intacta até você confirmar." : "A última versão publicada está fora do ar e continuará preservada até você confirmar."} Ao publicar, o rascunho será congelado como a nova versão e ficará online.` : "Ao publicar, sua versão profissional ficará disponível para empresas no Banco de Talentos enquanto você estiver aberto a oportunidades. Você poderá continuar editando o rascunho depois sem alterar esta versão até publicar novamente."}</p>
             <div className="mt-6 grid gap-2 sm:grid-cols-2"><button disabled={publishing} onClick={() => setPublishConfirmOpen(false)} className="rounded-xl border border-stone-200 px-4 py-3 text-sm font-bold text-stone-600">Agora não</button><button disabled={publishing} onClick={() => void publishResume()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white">{publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Confirmar publicação</button></div>
           </section>
         </div>
