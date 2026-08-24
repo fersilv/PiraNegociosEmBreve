@@ -13,7 +13,6 @@ import { api } from '../lib/api';
 
 const EXIT_INTENT_KEY = 'pira-public-resume-exit-intent-v1';
 const DRAFT_KEY = 'pira-public-resume-draft-v1';
-const SESSION_KEY = 'pira-public-resume-session-v1';
 const PUBLIC_RESUME_PATHS = new Set([
   '/criador-de-curriculo',
   '/criar-curriculo',
@@ -33,8 +32,12 @@ function readDraftEnvelope(): { profile?: any; [key: string]: any } | null {
   }
 }
 
+function draftProfile() {
+  return readDraftEnvelope()?.profile || null;
+}
+
 function hasMeaningfulDraft() {
-  const profile = readDraftEnvelope()?.profile;
+  const profile = draftProfile();
   if (!profile || typeof profile !== 'object') return false;
   return Boolean(
     String(profile.fullName || '').trim()
@@ -44,6 +47,17 @@ function hasMeaningfulDraft() {
     || profile.education?.length
     || profile.skills?.length
     || profile.courses?.length
+  );
+}
+
+function isReadyForCurrentAiCheckout() {
+  const profile = draftProfile();
+  if (!profile || typeof profile !== 'object') return false;
+  return Boolean(
+    String(profile.fullName || '').trim()
+    && (String(profile.email || '').trim() || String(profile.phone || '').trim())
+    && (profile.experiences?.length || profile.education?.length)
+    && profile.skills?.length
   );
 }
 
@@ -57,20 +71,6 @@ function checkoutOrAiIsOpen() {
   return String(document.body?.textContent || '').includes('IA trabalhando no seu currículo');
 }
 
-async function trackExitIntent(type: string, metadata: Record<string, unknown> = {}) {
-  try {
-    const stored = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null') as { id?: string; token?: string } | null;
-    if (!stored?.id || !stored?.token) return;
-    await api.post(
-      `/public-resume/${stored.id}/events`,
-      { type, metadata },
-      { headers: { 'X-Public-Resume-Token': stored.token } },
-    );
-  } catch {
-    // Conversão e analytics nunca devem atrapalhar o editor.
-  }
-}
-
 function clickAiReviewAction() {
   const button = Array.from(document.querySelectorAll('button')).find((item) =>
     String(item.textContent || '').includes('Analisar currículo'),
@@ -79,7 +79,6 @@ function clickAiReviewAction() {
     button.click();
     return true;
   }
-  document.getElementById('editor-publico')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   return false;
 }
 
@@ -90,6 +89,7 @@ export function PublicResumeExitIntent() {
   const mountedAt = useRef(Date.now());
   const path = window.location.pathname.replace(/\/$/, '') || '/';
   const isPublicResume = PUBLIC_RESUME_PATHS.has(path);
+  const aiReady = isReadyForCurrentAiCheckout();
 
   useEffect(() => {
     if (!isPublicResume) return;
@@ -120,15 +120,11 @@ export function PublicResumeExitIntent() {
 
       sessionStorage.setItem(EXIT_INTENT_KEY, '1');
       setVisible(true);
-      void trackExitIntent('EXIT_INTENT_SHOWN', {
-        loggedIn: Boolean(user),
-        source: 'public_resume_builder',
-      });
     };
 
     document.addEventListener('mouseout', onMouseOut);
     return () => document.removeEventListener('mouseout', onMouseOut);
-  }, [isPublicResume, user, visible]);
+  }, [isPublicResume, visible]);
 
   if (!isPublicResume || !visible) return null;
 
@@ -137,15 +133,14 @@ export function PublicResumeExitIntent() {
     currency: 'BRL',
   }).format(reviewPriceCents / 100);
 
-  const close = () => {
-    setVisible(false);
-    void trackExitIntent('EXIT_INTENT_DISMISSED', { loggedIn: Boolean(user) });
-  };
+  const close = () => setVisible(false);
 
   const analyze = () => {
     setVisible(false);
-    void trackExitIntent('EXIT_INTENT_AI_CTA', { priceCents: reviewPriceCents, loggedIn: Boolean(user) });
-    window.setTimeout(() => clickAiReviewAction(), 30);
+    if (aiReady && clickAiReviewAction()) return;
+    window.setTimeout(() => {
+      document.getElementById('editor-publico')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 30);
   };
 
   const saveToAccount = () => {
@@ -157,7 +152,6 @@ export function PublicResumeExitIntent() {
         updatedAt: new Date().toISOString(),
       }));
     }
-    void trackExitIntent('EXIT_INTENT_ACCOUNT_CTA', { source: 'public_resume_builder' });
     window.location.href = `/login?mode=register&returnTo=${encodeURIComponent('/user/curriculo')}`;
   };
 
@@ -201,8 +195,9 @@ export function PublicResumeExitIntent() {
                   <span className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> Lacunas e seções fracas</span>
                   <span className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> Recomendações práticas</span>
                 </div>
+                {!aiReady && <p className="mt-3 rounded-xl bg-white/75 px-3 py-2 text-[11px] leading-5 text-violet-900">Seu currículo ainda precisa de alguns campos essenciais antes da análise. Você pode continuar preenchendo e voltar quando quiser.</p>}
                 <button type="button" onClick={analyze} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-700 px-4 py-3 text-sm font-black text-white transition hover:bg-violet-800">
-                  Quero analisar meu currículo <ArrowRight className="h-4 w-4" />
+                  {aiReady ? 'Quero analisar meu currículo' : 'Continuar preenchendo para analisar'} <ArrowRight className="h-4 w-4" />
                 </button>
                 <p className="mt-2 text-center text-[10px] text-stone-400">Pagamento único. Sem assinatura.</p>
               </div>
