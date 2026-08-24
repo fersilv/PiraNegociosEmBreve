@@ -1,19 +1,16 @@
 import React from 'react';
-import {
-  CompanySiteRenderer as InstitutionalCompanySiteRenderer,
-  COMPANY_PAGE_TEMPLATES as INSTITUTIONAL_TEMPLATES,
-  COMPANY_PAGE_THEME_PRESETS as INSTITUTIONAL_PRESETS,
-  applyCompanyThemePreset as applyInstitutionalThemePreset,
-} from './PremiumCompanySiteRenderer';
+import { CompanySiteRenderer as LegacyCompanySiteRenderer } from './PremiumCompanySiteRenderer';
 import type {
   CompanyEditorMode,
-  CompanyPageConfig,
-  CompanyPageSection,
   CompanyPageWidth,
   CompanyTypography,
   PublicCompanyLike,
   PublicJobLike,
 } from './PremiumCompanySiteRenderer';
+import type {
+  CompanyPageConfig,
+  CompanyPageSection,
+} from './CompanyPageExtensions';
 import {
   COMPANY_THEME_CATEGORIES,
   EXTRA_COMPANY_PAGE_TEMPLATES,
@@ -27,6 +24,13 @@ import type {
   ExtraCompanyThemeKey,
 } from './ReferenceCompanyThemes';
 import { ConfigurableExtraCompanyThemeRenderer } from './ConfigurableReferenceThemes';
+import {
+  INSTITUTIONAL_V2_PRESETS,
+  INSTITUTIONAL_V2_TEMPLATES,
+  InstitutionalCompanyThemes,
+  applyInstitutionalV2Preset,
+  type InstitutionalThemeKey,
+} from './InstitutionalCompanyThemes';
 
 export type {
   CompanyEditorMode,
@@ -39,17 +43,18 @@ export type {
   CompanyThemeCatalogItem,
   CompanyThemeCategory,
   ExtraCompanyThemeKey,
+  InstitutionalThemeKey,
 };
 
 export type CompanyTemplateKey =
-  | 'aurora' | 'atlas' | 'pulse' | 'canvas' | 'noir'
+  | InstitutionalThemeKey
   | ExtraCompanyThemeKey
   | 'essencial' | 'institucional' | 'vitrine' | 'editorial';
 
 export const COMPANY_PAGE_THEME_CATEGORIES = COMPANY_THEME_CATEGORIES;
 
 const ALL_TEMPLATES: CompanyThemeCatalogItem[] = [
-  ...INSTITUTIONAL_TEMPLATES.map((template) => ({ ...template, category: 'institutional' as const })),
+  ...INSTITUTIONAL_V2_TEMPLATES.map((template) => ({ ...template, category: 'institutional' as const })),
   ...EXTRA_COMPANY_PAGE_TEMPLATES,
 ];
 
@@ -76,7 +81,7 @@ export const COMPANY_PAGE_TEMPLATES = {
 };
 
 export const COMPANY_PAGE_THEME_PRESETS = {
-  ...INSTITUTIONAL_PRESETS,
+  ...INSTITUTIONAL_V2_PRESETS,
   ...EXTRA_THEME_PRESETS,
 };
 
@@ -94,11 +99,6 @@ function paletteMatches(theme: CompanyPageConfig['theme'], palette: { primary?: 
     && normalizeHex(theme.text) === normalizeHex(palette.text);
 }
 
-/*
- * Compatibilidade apenas para o estado inicial do construtor antigo.
- * Assim que a pessoa altera uma decisão estrutural, o preset deixa de
- * interferir e o estúdio passa a ser a fonte de verdade.
- */
 function isUntouchedLegacyConfig(page?: CompanyPageConfig | null) {
   if (!page) return true;
   const neutralPalette = !page.theme || paletteMatches(page.theme, {
@@ -121,8 +121,12 @@ function isUntouchedLegacyConfig(page?: CompanyPageConfig | null) {
     && (page.jobs?.layout || 'grid') === 'grid';
 }
 
-function institutionalKey(value?: string) {
-  if (value === 'atlas' || value === 'pulse' || value === 'canvas' || value === 'noir' || value === 'aurora') return value;
+function isInstitutionalTheme(value?: string): value is InstitutionalThemeKey {
+  return value === 'aurora' || value === 'atlas' || value === 'pulse' || value === 'canvas' || value === 'noir';
+}
+
+function institutionalKey(value?: string): InstitutionalThemeKey {
+  if (isInstitutionalTheme(value)) return value;
   if (value === 'institucional') return 'atlas';
   if (value === 'vitrine') return 'pulse';
   if (value === 'editorial') return 'canvas';
@@ -130,10 +134,8 @@ function institutionalKey(value?: string) {
 }
 
 export function applyCompanyThemePreset(config: CompanyPageConfig, key: string): CompanyPageConfig {
-  if (isExtraCompanyTheme(key)) return applyExtraCompanyThemePreset(config, key);
-  if (key === 'aurora' || key === 'atlas' || key === 'pulse' || key === 'canvas' || key === 'noir') {
-    return applyInstitutionalThemePreset(config, key);
-  }
+  if (isExtraCompanyTheme(key)) return applyExtraCompanyThemePreset(config, key) as CompanyPageConfig;
+  if (isInstitutionalTheme(key)) return applyInstitutionalV2Preset(config, key);
   return config;
 }
 
@@ -151,9 +153,13 @@ export function CompanySiteRenderer({
   const config = page || {};
   const key = String(config.templateKey || 'aurora');
 
-  if (isExtraCompanyTheme(key) && config.editorMode !== 'code') {
+  if (config.editorMode === 'code') {
+    return <LegacyCompanySiteRenderer company={company} jobs={jobs} page={config} preview={preview} />;
+  }
+
+  if (isExtraCompanyTheme(key)) {
     const visualPage = isUntouchedLegacyConfig(config)
-      ? applyExtraCompanyThemePreset(config, key)
+      ? applyExtraCompanyThemePreset(config, key) as CompanyPageConfig
       : config;
     return (
       <ConfigurableExtraCompanyThemeRenderer
@@ -166,11 +172,18 @@ export function CompanySiteRenderer({
     );
   }
 
-  const visualPage = config.editorMode === 'code'
-    ? config
-    : isUntouchedLegacyConfig(config)
-      ? applyInstitutionalThemePreset(config, institutionalKey(key))
-      : config;
+  const resolvedKey = institutionalKey(key);
+  const visualPage = isUntouchedLegacyConfig(config)
+    ? applyInstitutionalV2Preset(config, resolvedKey)
+    : config;
 
-  return <InstitutionalCompanySiteRenderer company={company} jobs={jobs} page={visualPage} preview={preview} />;
+  return (
+    <InstitutionalCompanyThemes
+      themeKey={resolvedKey}
+      company={company}
+      jobs={jobs}
+      config={visualPage}
+      preview={preview}
+    />
+  );
 }
