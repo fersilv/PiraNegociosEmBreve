@@ -23,6 +23,9 @@ const RESERVED_COMPANY_SLUGS = new Set([
   "termos",
   "vagas",
   "vagas-em",
+  "criador-de-curriculo",
+  "criar-curriculo",
+  "curriculo-online",
   "uploads",
   "assets",
   "robots.txt",
@@ -248,7 +251,7 @@ export function registerSeoRoutes({ app, publicSiteUrl, getPublicData, sendSpa }
     const cities = data?.cities || [];
     const jobs = data?.jobs || [];
     const canonical = `${publicSiteUrl}/`;
-    const body = `<section class="hero"><p class="eyebrow">Empregos, talentos e negócios da região</p><h1>Vagas de emprego em Pirassununga e região</h1><p class="muted">PiraNegócios, também encontrado como Pira Negócios ou Pira Negócio, reúne oportunidades de emprego, empresas e talentos de Pirassununga e cidades da região em um único lugar.</p><p><a class="button" href="/vagas">Ver vagas abertas</a></p></section><section><h2>Vagas por cidade</h2><p class="muted">Acesse diretamente as cidades com oportunidades ativas.</p><div class="cities grid2">${renderCityLinks(cities, 30)}</div></section><section><h2>Oportunidades recentes</h2><div class="jobs">${renderJobLinks(jobs, 24)}</div></section>`;
+    const body = `<section class="hero"><p class="eyebrow">Empregos, talentos e negócios da região</p><h1>Vagas de emprego em Pirassununga e região</h1><p class="muted">PiraNegócios, também encontrado como Pira Negócios ou Pira Negócio, reúne oportunidades de emprego, empresas e talentos de Pirassununga e cidades da região em um único lugar.</p><p><a class="button" href="/vagas">Ver vagas abertas</a> <a href="/criador-de-curriculo" style="margin-left:14px">Criar currículo grátis</a></p></section><section><h2>Vagas por cidade</h2><p class="muted">Acesse diretamente as cidades com oportunidades ativas.</p><div class="cities grid2">${renderCityLinks(cities, 30)}</div></section><section><h2>Oportunidades recentes</h2><div class="jobs">${renderJobLinks(jobs, 24)}</div></section>`;
     return res.type("html").send(pageHtml({
       title: "PiraNegócios | Vagas e empregos em Pirassununga e região",
       description: "PiraNegócios, Pira Negócios ou Pira Negócio: encontre vagas de emprego em Pirassununga, Leme, Araras e cidades da região, além de empresas e currículos.",
@@ -274,6 +277,76 @@ export function registerSeoRoutes({ app, publicSiteUrl, getPublicData, sendSpa }
                 url: `${publicSiteUrl}/vagas/${job.slug}`,
               })),
             },
+          },
+        ],
+      },
+    }));
+  });
+
+  app.get(["/criar-curriculo", "/curriculo-online"], (_req, res) => {
+    return res.redirect(301, "/criador-de-curriculo");
+  });
+
+  app.get(["/criador-de-curriculo", "/criador-de-curriculo/"], (req, res) => {
+    if (!isCrawler(req)) return sendSpa(req, res);
+    const canonical = `${publicSiteUrl}/criador-de-curriculo`;
+    const description = "Crie um currículo profissional grátis e online. Escolha modelos, edite em tempo real e salve em PDF sem cadastro obrigatório. Recursos de IA são opcionais.";
+    const faq = [
+      {
+        question: "Preciso criar conta para fazer meu currículo?",
+        answer: "Não. O criador de currículo público do PiraNegócios funciona sem login. Criar uma conta é opcional e permite levar o currículo ao seu perfil e ao Banco de Talentos.",
+      },
+      {
+        question: "O criador de currículo é grátis?",
+        answer: "Sim. Criar, editar e salvar o currículo com a identificação do PiraNegócios no rodapé é gratuito. Recursos de inteligência artificial e remoção da marca são opcionais e pagos.",
+      },
+      {
+        question: "Posso salvar meu currículo em PDF?",
+        answer: "Sim. Os modelos são preparados para formato A4 e podem ser salvos em PDF diretamente pelo navegador.",
+      },
+      {
+        question: "Onde o meu currículo fica salvo?",
+        answer: "No modo público, o conteúdo do rascunho fica salvo no navegador do visitante. O PiraNegócios registra apenas métricas de uso do produto, sem armazenar o texto do currículo no analytics.",
+      },
+    ];
+    const body = `<div class="breadcrumbs"><a href="/">Início</a> › Criador de currículo</div><section class="hero"><p class="eyebrow">Currículo profissional online</p><h1>Criador de currículo grátis: faça seu currículo online e salve em PDF</h1><p class="muted">Monte um currículo profissional em poucos minutos, escolha entre modelos prontos, veja a prévia enquanto edita e gere seu documento sem cadastro obrigatório.</p><p><a class="button" href="/criador-de-curriculo">Criar meu currículo grátis</a></p></section><section class="card"><h2>Como criar um currículo profissional online</h2><p>Preencha seus dados profissionais, organize experiências, formação e habilidades e escolha o visual que combina com sua área. O editor mostra o resultado em tempo real e mantém o rascunho no seu navegador.</p><div class="grid2"><div><h2>1. Preencha seus dados</h2><p class="muted">Adicione contato, resumo profissional, experiências, formação e competências.</p></div><div><h2>2. Escolha um modelo</h2><p class="muted">Alterne entre layouts moderno, clássico, criativo e minimalista sem perder conteúdo.</p></div><div><h2>3. Revise o currículo</h2><p class="muted">A prévia A4 ajuda a enxergar o documento antes de salvar.</p></div><div><h2>4. Salve em PDF</h2><p class="muted">A versão com identificação do PiraNegócios é gratuita. A remoção da marca é opcional.</p></div></div></section><section><h2>Recursos opcionais de inteligência artificial</h2><p>Quem quiser pode contratar uma análise profissional do currículo por R$ 1,99 ou receber propostas de melhoria de texto por R$ 4,99. A criação manual do currículo continua gratuita e não exige assinatura.</p></section><section class="card"><h2>Quer ser encontrado por empresas?</h2><p>Depois de criar o currículo, você pode abrir uma conta gratuita no PiraNegócios e levar seu rascunho para o perfil. A publicação no Banco de Talentos continua sob sua escolha.</p><p><a class="button" href="/login?mode=register">Criar conta grátis</a></p></section><section><h2>Perguntas frequentes sobre o criador de currículo</h2>${faq.map((item) => `<article><h2>${escapeHtml(item.question)}</h2><p>${escapeHtml(item.answer)}</p></article>`).join("")}</section>`;
+    return res.type("html").send(pageHtml({
+      title: "Criador de Currículo Grátis | Faça seu Currículo Online | PiraNegócios",
+      description,
+      canonical,
+      body,
+      structuredData: {
+        "@context": "https://schema.org",
+        "@graph": [
+          ...websiteGraph(publicSiteUrl),
+          {
+            "@type": "BreadcrumbList",
+            itemListElement: [
+              { "@type": "ListItem", position: 1, name: "Início", item: `${publicSiteUrl}/` },
+              { "@type": "ListItem", position: 2, name: "Criador de currículo", item: canonical },
+            ],
+          },
+          {
+            "@type": "WebApplication",
+            "@id": `${canonical}#app`,
+            name: "Criador de Currículo Grátis PiraNegócios",
+            url: canonical,
+            applicationCategory: "BusinessApplication",
+            operatingSystem: "Web",
+            browserRequirements: "Requires JavaScript",
+            inLanguage: "pt-BR",
+            isAccessibleForFree: true,
+            description,
+            offers: { "@type": "Offer", price: "0", priceCurrency: "BRL" },
+            provider: { "@id": `${publicSiteUrl}/#organization` },
+          },
+          {
+            "@type": "FAQPage",
+            mainEntity: faq.map((item) => ({
+              "@type": "Question",
+              name: item.question,
+              acceptedAnswer: { "@type": "Answer", text: item.answer },
+            })),
           },
         ],
       },
@@ -340,7 +413,7 @@ export function registerSeoRoutes({ app, publicSiteUrl, getPublicData, sendSpa }
     }
     const place = `${data.city}${data.state ? `, ${data.state}` : ""}`;
     const jobs = data.jobs || [];
-    const body = `<div class="breadcrumbs"><a href="/">Início</a> › <a href="/vagas">Vagas</a> › ${escapeHtml(place)}</div><section class="hero"><p class="eyebrow">Empregos e oportunidades locais</p><h1>Vagas em ${escapeHtml(place)}</h1><p class="muted">Encontre vagas de emprego em ${escapeHtml(data.city)} publicadas por empresas, PATs, agências e fontes regionais. Esta página acompanha as oportunidades ativas no PiraNegócios.</p><p><strong>${Number(data.count || jobs.length)}</strong> ${Number(data.count || jobs.length) === 1 ? "oportunidade ativa" : "oportunidades ativas"}</p></section><section><h2>Empregos abertos em ${escapeHtml(data.city)}</h2><div class="jobs">${renderJobLinks(jobs, 100)}</div></section><section class="card"><h2>Procurando emprego em ${escapeHtml(data.city)}?</h2><p>Crie seu currículo no PiraNegócios e informe as cidades onde aceita trabalhar para receber recomendações mais realistas.</p><a class="button" href="/login?mode=register">Criar meu perfil</a></section>`;
+    const body = `<div class="breadcrumbs"><a href="/">Início</a> › <a href="/vagas">Vagas</a> › ${escapeHtml(place)}</div><section class="hero"><p class="eyebrow">Empregos e oportunidades locais</p><h1>Vagas em ${escapeHtml(place)}</h1><p class="muted">Encontre vagas de emprego em ${escapeHtml(data.city)} publicadas por empresas, PATs, agências e fontes regionais. Esta página acompanha as oportunidades ativas no PiraNegócios.</p><p><strong>${Number(data.count || jobs.length)}</strong> ${Number(data.count || jobs.length) === 1 ? "oportunidade ativa" : "oportunidades ativas"}</p></section><section><h2>Empregos abertos em ${escapeHtml(data.city)}</h2><div class="jobs">${renderJobLinks(jobs, 100)}</div></section><section class="card"><h2>Procurando emprego em ${escapeHtml(data.city)}?</h2><p>Crie seu currículo no PiraNegócios e informe as cidades onde aceita trabalhar para receber recomendações mais realistas.</p><a class="button" href="/criador-de-curriculo">Criar currículo grátis</a></section>`;
     return res.type("html").send(pageHtml({
       title: `Vagas em ${place} hoje | Empregos em ${data.city} | PiraNegócios`,
       description: `Encontre vagas de emprego em ${place} no PiraNegócios. Veja ${Number(data.count || jobs.length)} oportunidades ativas, empresas contratando e vagas da região.`,
