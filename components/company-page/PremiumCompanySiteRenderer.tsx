@@ -324,7 +324,7 @@ function Hero({ company, config, template, aboutText, location, shell, dark }: {
   );
 }
 
-function AboutSection({ title, text, template }: { title: string; text: string; template: ReturnType<typeof templateKey> }) {
+function AboutSection({ title, text, template }: { title: string; text: string; template: ReturnType<typeof templateKey>; key?: React.Key }) {
   return (
     <section id="sobre" className={`py-16 sm:py-24 ${template === 'canvas' ? 'grid gap-10 lg:grid-cols-[.45fr_1fr]' : ''}`}>
       <SectionLabel>{title}</SectionLabel>
@@ -333,7 +333,7 @@ function AboutSection({ title, text, template }: { title: string; text: string; 
   );
 }
 
-function JobsSection({ jobs, config, template }: { jobs: PublicJobLike[]; config: CompanyPageConfig; template: ReturnType<typeof templateKey> }) {
+function JobsSection({ jobs, config, template }: { jobs: PublicJobLike[]; config: CompanyPageConfig; template: ReturnType<typeof templateKey>; key?: React.Key }) {
   const layout = config.jobs?.layout || (template === 'pulse' ? 'grid' : template === 'canvas' ? 'list' : 'grid');
   const title = config.jobs?.title || 'Oportunidades';
   const intro = config.jobs?.intro || 'Conheça as vagas abertas e encontre a próxima oportunidade para fazer parte do nosso time.';
@@ -354,7 +354,7 @@ function JobsSection({ jobs, config, template }: { jobs: PublicJobLike[]; config
   );
 }
 
-function JobItem({ job, layout }: { job: PublicJobLike; layout: CompanyJobsLayout }) {
+function JobItem({ job, layout }: { job: PublicJobLike; layout: CompanyJobsLayout; key?: React.Key }) {
   const href = job.slug ? `/vagas/${encodeURIComponent(job.slug)}` : '/vagas';
   const location = job.location || [job.city, job.state].filter(Boolean).join(', ') || 'Local a combinar';
   if (layout === 'list' || layout === 'compact') {
@@ -375,7 +375,7 @@ function JobItem({ job, layout }: { job: PublicJobLike; layout: CompanyJobsLayou
   );
 }
 
-function ContactSection({ company, config, template }: { company: PublicCompanyLike; config: CompanyPageConfig; template: ReturnType<typeof templateKey> }) {
+function ContactSection({ company, config, template }: { company: PublicCompanyLike; config: CompanyPageConfig; template: ReturnType<typeof templateKey>; key?: React.Key }) {
   const phone = config.contacts?.phone || company.phone;
   const email = config.contacts?.email;
   const website = config.contacts?.website || company.website;
@@ -401,7 +401,7 @@ function ContactSection({ company, config, template }: { company: PublicCompanyL
   );
 }
 
-function SocialSection({ company, config }: { company: PublicCompanyLike; config: CompanyPageConfig }) {
+function SocialSection({ company, config }: { company: PublicCompanyLike; config: CompanyPageConfig; key?: React.Key }) {
   const socials = [
     ['Instagram', config.socials?.instagram || company.socialInstagram, <Instagram className="h-4 w-4" />],
     ['LinkedIn', config.socials?.linkedin || company.socialLinkedin, <Linkedin className="h-4 w-4" />],
@@ -415,7 +415,7 @@ function SocialSection({ company, config }: { company: PublicCompanyLike; config
   );
 }
 
-function LegalSection({ config }: { config: CompanyPageConfig }) {
+function LegalSection({ config }: { config: CompanyPageConfig; key?: React.Key }) {
   const items = [
     config.legal?.termsEnabled && config.legal.termsBody ? { title: config.legal.termsTitle || 'Termos de uso', body: config.legal.termsBody } : null,
     config.legal?.privacyEnabled && config.legal.privacyBody ? { title: config.legal.privacyTitle || 'Política de privacidade', body: config.legal.privacyBody } : null,
