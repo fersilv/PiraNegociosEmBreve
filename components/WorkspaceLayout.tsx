@@ -5,6 +5,7 @@ import {
   Building2,
   ChevronDown,
   FileText,
+  Globe2,
   Home,
   LogOut,
   Menu,
@@ -38,6 +39,7 @@ const companyNavigation: NavItem[] = [
   { to: "/company", label: "Visão geral", icon: <Home className="h-5 w-5" />, end: true },
   { to: "/company/vagas", label: "Vagas", icon: <Briefcase className="h-5 w-5" /> },
   { to: "/company/talentos", label: "Banco de talentos", icon: <UserRoundSearch className="h-5 w-5" /> },
+  { to: "/company/pagina", label: "Minha Página", icon: <Globe2 className="h-5 w-5" /> },
   { to: "/company/contratacao", label: "Contratação", icon: <Settings2 className="h-5 w-5" /> },
   { to: "/company/perfil", label: "Perfil da empresa", icon: <Building2 className="h-5 w-5" /> },
 ];
