@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from "react";
-import { BrowserRouter, Routes, Route, Navigate, Link, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { FeedbackProvider } from "./contexts/FeedbackContext";
 import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
@@ -30,21 +30,6 @@ function RouteLoader() {
   );
 }
 
-function ContextualUtilityLink() {
-  const location = useLocation();
-  if (location.pathname === "/user/curriculo") {
-    return (
-      <Link
-        to="/user/curriculo/evolucao"
-        className="fixed bottom-20 right-4 z-[75] rounded-full border border-violet-200 bg-white/95 px-4 py-2.5 text-xs font-black text-violet-700 shadow-xl backdrop-blur md:bottom-5 md:right-5"
-      >
-        ✨ Evolução do currículo
-      </Link>
-    );
-  }
-  return null;
-}
-
 export default function App() {
   const isEmbed = window.location.pathname.startsWith("/embed");
 
@@ -55,7 +40,6 @@ export default function App() {
         {!isEmbed && <CookieConsent />}
         <BrowserRouter>
           <AnalyticsTracker />
-          {!isEmbed && <ContextualUtilityLink />}
           {!isEmbed && <ResumeQualificationWidget />}
           {!isEmbed && <PublishedResumeCompanyBridge />}
           <Suspense fallback={<RouteLoader />}>
