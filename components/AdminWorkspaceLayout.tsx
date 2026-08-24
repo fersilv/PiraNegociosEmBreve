@@ -7,6 +7,7 @@ import {
   Building2,
   Cpu,
   CreditCard,
+  FileText,
   KeyRound,
   LayoutDashboard,
   LifeBuoy,
@@ -66,6 +67,7 @@ const groups: AdminNavGroup[] = [
     label: "Plataforma",
     items: [
       { to: "/admin/cadastros", label: "Novos cadastros", icon: <UserPlus className="h-4 w-4" /> },
+      { to: "/admin/criador-publico", label: "Criador público", icon: <FileText className="h-4 w-4" /> },
       { to: "/admin/notificacoes", label: "Notificações", icon: <BellRing className="h-4 w-4" /> },
       { to: "/admin/publicidade", label: "Publicidade", icon: <Megaphone className="h-4 w-4" /> },
       { to: "/admin/api", label: "API v1", icon: <KeyRound className="h-4 w-4" /> },
@@ -202,6 +204,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
               <MoreLink to="/admin/pagamentos" icon={<CreditCard className="h-4 w-4" />} label="Pagamentos" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/pagamentos/formas" icon={<WalletCards className="h-4 w-4" />} label="Formas de pagamento" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/pagamentos/suporte" icon={<LifeBuoy className="h-4 w-4" />} label="Suporte financeiro" close={() => setMoreOpen(false)} />
+              <MoreLink to="/admin/criador-publico" icon={<FileText className="h-4 w-4" />} label="Criador público" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/cadastros" icon={<UserPlus className="h-4 w-4" />} label="Novos cadastros" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/notificacoes" icon={<BellRing className="h-4 w-4" />} label="Notificações" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/vagas/sinalizadas" icon={<AlertTriangle className="h-4 w-4" />} label="Vagas sinalizadas" close={() => setMoreOpen(false)} />
