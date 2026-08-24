@@ -195,36 +195,33 @@ export function TemplateWrapper({
             display: none !important;
           }
 
-          /* Seções grandes precisam poder continuar na página seguinte. Bloquear
-             a seção inteira criava folhas quase vazias, especialmente em Experiência. */
+          /* Na impressão o conteúdo deve fluir continuamente. A caixa pode ser
+             fragmentada entre folhas; o navegador mantém cada linha de texto inteira. */
           .resume-a4-document section,
-          .resume-a4-document .resume-experience-section {
+          .resume-a4-document .break-inside-avoid,
+          .resume-a4-document li,
+          .resume-a4-document article,
+          .resume-a4-document .resume-experience-section,
+          .resume-a4-document .resume-experience-card,
+          .resume-a4-document .resume-experience-stage {
             break-inside: auto !important;
             page-break-inside: auto !important;
           }
 
-          /* Blocos pequenos continuam inteiros. */
-          .resume-a4-document .break-inside-avoid,
-          .resume-a4-document li,
-          .resume-a4-document article,
-          .resume-a4-document .resume-experience-stage {
-            break-inside: avoid-page !important;
-            page-break-inside: avoid !important;
-          }
-
+          /* Evita título solitário no fim da folha, mas não segura o card inteiro. */
           .resume-a4-document h1,
           .resume-a4-document h2,
           .resume-a4-document h3,
-          .resume-a4-document h4 {
+          .resume-a4-document h4,
+          .resume-a4-document .resume-experience-stage > div:first-child {
             break-after: avoid-page !important;
             page-break-after: avoid !important;
           }
 
-          /* O cartão da empresa pode atravessar a folha, mas cada cargo/etapa
-             dentro dele permanece inteiro. Isso usa muito melhor a página. */
-          .resume-a4-document .resume-experience-card {
-            break-inside: auto !important;
-            page-break-inside: auto !important;
+          .resume-a4-document p,
+          .resume-a4-document li {
+            orphans: 2 !important;
+            widows: 2 !important;
           }
 
           /* O modelo Criativo usa paddings grandes na tela. Na impressão reduzimos
