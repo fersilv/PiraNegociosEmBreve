@@ -21,6 +21,7 @@ const PublicJobPage = lazy(() => import("./pages/PublicJobPage"));
 const PublicCompanyPage = lazy(() => import("./pages/PublicCompanyPage"));
 const CityJobsPage = lazy(() => import("./pages/CityJobsPage"));
 const EmbedJobsWidget = lazy(() => import("./pages/EmbedJobsWidget"));
+const MobileUploadPage = lazy(() => import("./pages/MobileUploadPage"));
 
 function RouteLoader() {
   return (
@@ -32,16 +33,18 @@ function RouteLoader() {
 
 export default function App() {
   const isEmbed = window.location.pathname.startsWith("/embed");
+  const isMobileTransfer = window.location.pathname.startsWith("/transferir/");
+  const isMinimalShell = isEmbed || isMobileTransfer;
 
   return (
     <FeedbackProvider>
       <AuthProvider>
-        {!isEmbed && <PwaInstallPrompt />}
-        {!isEmbed && <CookieConsent />}
+        {!isMinimalShell && <PwaInstallPrompt />}
+        {!isMinimalShell && <CookieConsent />}
         <BrowserRouter>
-          <AnalyticsTracker />
-          {!isEmbed && <ResumeQualificationWidget />}
-          {!isEmbed && <PublishedResumeCompanyBridge />}
+          {!isMobileTransfer && <AnalyticsTracker />}
+          {!isMinimalShell && <ResumeQualificationWidget />}
+          {!isMinimalShell && <PublishedResumeCompanyBridge />}
           <Suspense fallback={<RouteLoader />}>
             <Routes>
               <Route path="/" element={<Home />} />
@@ -50,6 +53,7 @@ export default function App() {
               <Route path="/vagas-em/:citySlug" element={<CityJobsPage />} />
               <Route path="/vagas/:slug" element={<PublicJobPage />} />
               <Route path="/embed/vagas" element={<EmbedJobsWidget />} />
+              <Route path="/transferir/:sessionId" element={<MobileUploadPage />} />
               <Route path="/login" element={<Login />} />
 
               <Route path="/user/*" element={<Dashboard />} />
