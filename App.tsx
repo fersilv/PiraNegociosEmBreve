@@ -8,6 +8,7 @@ import { AnalyticsTracker } from "./components/AnalyticsTracker";
 import { ResumeQualificationWidget } from "./components/ResumeQualificationWidget";
 import { PublishedResumeCompanyBridge } from "./components/PublishedResumeCompanyBridge";
 import { PublicResumeAccountBridge } from "./components/PublicResumeAccountBridge";
+import { PublicResumeExitIntent } from "./components/PublicResumeExitIntent";
 import { CompanyLegalPage } from "./pages/CompanyLegalPage";
 
 const Home = lazy(() => import("./pages/Home"));
@@ -49,6 +50,7 @@ export default function App() {
         <PublicResumeAccountBridge />
         <BrowserRouter>
           {!isMobileTransfer && !isCompanyPreview && <AnalyticsTracker />}
+          <PublicResumeExitIntent />
           {!isMinimalShell && <ResumeQualificationWidget />}
           {!isMinimalShell && <PublishedResumeCompanyBridge />}
           <Suspense fallback={<RouteLoader />}>
