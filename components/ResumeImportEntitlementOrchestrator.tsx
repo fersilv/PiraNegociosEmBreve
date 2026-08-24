@@ -14,6 +14,10 @@ function setText(element: Element | null, value: string) {
   if (element && element.textContent !== value) element.textContent = value;
 }
 
+function dataAttribute(key: string) {
+  return `data-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+}
+
 function setManagedInlineText(element: HTMLElement, value: string, key: string) {
   Array.from(element.childNodes).forEach((node) => {
     if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
@@ -21,10 +25,11 @@ function setManagedInlineText(element: HTMLElement, value: string, key: string) 
     }
   });
 
-  let managed = element.querySelector<HTMLElement>(`[data-${key}="true"]`);
+  const attribute = dataAttribute(key);
+  let managed = element.querySelector<HTMLElement>(`[${attribute}="true"]`);
   if (!managed) {
     managed = document.createElement("span");
-    managed.dataset[key] = "true";
+    managed.setAttribute(attribute, "true");
     const input = element.querySelector("input");
     if (input) element.insertBefore(managed, input);
     else element.appendChild(managed);
