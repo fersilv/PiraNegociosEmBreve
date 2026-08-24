@@ -21,12 +21,12 @@ import {
   ExtraCompanyThemeRenderer,
   applyExtraCompanyThemePreset,
   isExtraCompanyTheme,
-} from './ExpandedCompanyThemes';
+} from './ReferenceCompanyThemes';
 import type {
   CompanyThemeCatalogItem,
   CompanyThemeCategory,
   ExtraCompanyThemeKey,
-} from './ExpandedCompanyThemes';
+} from './ReferenceCompanyThemes';
 
 export type {
   CompanyEditorMode,
@@ -53,11 +53,6 @@ const ALL_TEMPLATES: CompanyThemeCatalogItem[] = [
   ...EXTRA_COMPANY_PAGE_TEMPLATES,
 ];
 
-/*
- * O builder histórico chama apenas COMPANY_PAGE_TEMPLATES.map(...).
- * Mantemos essa API, mas a coleção injeta cabeçalhos reais entre as famílias
- * para que 30 opções não virem uma lista única impossível de navegar.
- */
 export const COMPANY_PAGE_TEMPLATES = {
   map(callback: (template: CompanyThemeCatalogItem, index: number, array: CompanyThemeCatalogItem[]) => React.ReactNode): React.ReactNode[] {
     const output: React.ReactNode[] = [];
