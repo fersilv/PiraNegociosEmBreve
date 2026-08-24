@@ -242,7 +242,7 @@ function VisualCompanyMicrosite({ company, jobs, config, preview }: { company: P
       <footer className={`mx-auto mt-16 w-full ${shell} ${config.width === 'full' ? 'px-5 sm:px-8' : 'px-5 sm:px-8'} pb-8`}>
         <div className="flex flex-col gap-3 border-t pt-5 text-xs opacity-50 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: dark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.12)' }}>
           <span>{config.footer?.text || `© ${new Date().getFullYear()} ${company.name || 'Empresa'}`}</span>
-          <span className="inline-flex items-center gap-1.5">{preview ? 'Prévia privada · ' : ''}<Link to="/" className="underline decoration-current/30 underline-offset-4 hover:opacity-80">Carreiras por PiraNegócios</Link></span>
+          <span className="inline-flex items-center gap-1.5">{preview ? 'Prévia privada · ' : ''}<Link to="/" className="underline decoration-current/30 underline-offset-4 hover:opacity-80">PiraNegócios Business</Link></span>
         </div>
       </footer>
     </div>
