@@ -1,14 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Loader2, QrCode, ShieldCheck, Smartphone, X } from 'lucide-react';
+import { CheckCircle2, KeyRound, Loader2, QrCode, ShieldCheck, Smartphone, X } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from '../contexts/AuthContext';
 import { API_URL, SOCKET_PATH, api } from '../lib/api';
+import { LocalQrCode } from './LocalQrCode';
 
 type MobileUploadPurpose = 'avatar' | 'resume' | 'document';
 
 type SessionInfo = {
   id: string;
   pairingCode: string;
+  qrToken: string;
   purpose: MobileUploadPurpose;
   accept: string;
   maxSizeBytes: number;
@@ -45,23 +47,17 @@ export function MobileUploadBridge({
   const [opening, setOpening] = useState(false);
   const [receiving, setReceiving] = useState(false);
   const [received, setReceived] = useState(false);
+  const [showFallbackCode, setShowFallbackCode] = useState(false);
   const [error, setError] = useState('');
   const consumingRef = useRef(false);
   const socketRef = useRef<Socket | null>(null);
 
-  const publicTransferUrl = useMemo(
-    () => session ? `${window.location.origin}/transferir/${session.id}` : '',
-    [session],
-  );
-
-  // O serviço externo recebe apenas a URL pública com o UUID da sessão. O código
-  // de pareamento e o token de upload nunca entram no QR Code.
-  const qrImageUrl = useMemo(
-    () => publicTransferUrl
-      ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(publicTransferUrl)}`
-      : '',
-    [publicTransferUrl],
-  );
+  const publicTransferUrl = useMemo(() => {
+    if (!session) return '';
+    // O segredo fica no fragmento (#). Fragmentos não são enviados ao servidor HTTP,
+    // a proxies ou em Referer. Somente o JavaScript da página aberta no telefone o lê.
+    return `${window.location.origin}/transferir/${session.id}#${session.qrToken}`;
+  }, [session]);
 
   const consume = useCallback(async (sessionId: string) => {
     if (consumingRef.current) return;
@@ -89,6 +85,7 @@ export function MobileUploadBridge({
     if (opening) return;
     setOpening(true);
     setReceived(false);
+    setShowFallbackCode(false);
     setError('');
     try {
       const response = await api.post('/uploads/mobile-sessions', { purpose, maxSizeKB });
@@ -104,6 +101,7 @@ export function MobileUploadBridge({
     const id = session?.id;
     setSession(null);
     setReceived(false);
+    setShowFallbackCode(false);
     setError('');
     if (id && !received) await api.delete(`/uploads/mobile-sessions/${id}`).catch(() => undefined);
   }, [received, session?.id]);
@@ -174,7 +172,7 @@ export function MobileUploadBridge({
                 <div>
                   <p className="text-[9px] font-black uppercase tracking-[.15em] text-violet-600">Transferência segura</p>
                   <h3 className="mt-1 font-serif text-xl font-bold text-stone-950">Enviar pelo celular</h3>
-                  <p className="mt-1 text-xs leading-5 text-stone-500">Escaneie o QR Code e confirme no telefone com o código de pareamento abaixo.</p>
+                  <p className="mt-1 text-xs leading-5 text-stone-500">Aponte a câmera para o QR Code. O telefone conecta automaticamente, sem precisar digitar código.</p>
                 </div>
               </div>
               <button type="button" onClick={() => void close()} className="rounded-full bg-white p-2 text-stone-400 shadow-sm" aria-label="Fechar"><X className="h-4 w-4" /></button>
@@ -188,15 +186,29 @@ export function MobileUploadBridge({
                 </div>
               ) : (
                 <>
-                  <img src={qrImageUrl} alt="QR Code da sessão temporária" className="mx-auto h-[220px] w-[220px] rounded-2xl border border-stone-200 bg-white p-2" />
-                  <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 p-4">
-                    <p className="text-[9px] font-black uppercase tracking-[.16em] text-violet-500">Código de pareamento</p>
-                    <p className="mt-1 font-mono text-3xl font-black tracking-[.24em] text-violet-950">{session.pairingCode}</p>
-                  </div>
+                  <LocalQrCode value={publicTransferUrl} className="mx-auto h-[220px] w-[220px] rounded-2xl border border-stone-200 bg-white p-2" />
+
                   <div className="mt-4 flex items-start gap-2 rounded-xl bg-stone-50 p-3 text-left text-[10px] leading-4 text-stone-500">
                     <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                    <span>O QR contém apenas o identificador público da sessão. O código não aparece nele. A autorização é de uso único e expira em poucos minutos.</span>
+                    <span>O QR é gerado neste navegador e contém uma autorização aleatória de uso único. Ela expira em poucos minutos e deixa de valer assim que o telefone conecta.</span>
                   </div>
+
+                  {!showFallbackCode ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowFallbackCode(true)}
+                      className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-[11px] font-bold text-stone-500 transition hover:bg-stone-100 hover:text-stone-800"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" /> Não consigo escanear o QR Code
+                    </button>
+                  ) : (
+                    <div className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                      <p className="text-[9px] font-black uppercase tracking-[.16em] text-violet-500">Código manual de fallback</p>
+                      <p className="mt-1 font-mono text-3xl font-black tracking-[.24em] text-violet-950">{session.pairingCode}</p>
+                      <p className="mt-2 text-[10px] leading-4 text-violet-700">Use este código somente se você abriu a página de transferência manualmente no celular.</p>
+                    </div>
+                  )}
+
                   {receiving && <div className="mt-3 flex items-center justify-center gap-2 text-xs font-bold text-violet-700"><Loader2 className="h-4 w-4 animate-spin" /> Recebendo arquivo...</div>}
                 </>
               )}
