@@ -30,6 +30,7 @@ const EmbedJobsWidget = lazy(() => import("./pages/EmbedJobsWidget"));
 const MobileUploadPage = lazy(() => import("./pages/MobileUploadPage"));
 const PublicResumeBuilderPage = lazy(() => import("./pages/PublicResumeBuilderPage"));
 const TalentInvitePage = lazy(() => import("./pages/TalentInvitePage"));
+const HelpCenterPage = lazy(() => import("./pages/HelpCenterPage"));
 
 function RouteLoader() {
   return (
@@ -62,6 +63,8 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/termos" element={<Terms />} />
+              <Route path="/ajuda" element={<HelpCenterPage />} />
+              <Route path="/ajuda/:slug" element={<HelpCenterPage />} />
               <Route path="/vagas" element={<JobsEntryPage />} />
               <Route path="/vagas-em/:citySlug" element={<CityJobsPage />} />
               <Route path="/vagas/:slug" element={<PublicJobPage />} />

@@ -6,12 +6,13 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import {
   AdminProductFeedbackController,
   ProductFeedbackController,
+  PublicFaqController,
 } from './product-feedback.controller';
 import { ProductFeedbackService } from './product-feedback.service';
 
 @Module({
   imports: [AiModule, NotificationsModule, TypeOrmModule.forFeature([User])],
-  controllers: [ProductFeedbackController, AdminProductFeedbackController],
+  controllers: [ProductFeedbackController, AdminProductFeedbackController, PublicFaqController],
   providers: [ProductFeedbackService],
 })
 export class ProductFeedbackModule {}

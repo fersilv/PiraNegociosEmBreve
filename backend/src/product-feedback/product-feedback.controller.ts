@@ -22,8 +22,8 @@ export class ProductFeedbackController {
 
   @Get('status')
   async status() {
-    const ai = await this.ai.getStatus();
-    return { aiEnabled: ai.enabled };
+    const ai = await this.ai.getSupportStatus();
+    return { aiEnabled: ai.enabled, assistantName: ai.assistantName };
   }
 
   @Post()
@@ -78,6 +78,18 @@ export class AdminProductFeedbackController {
     return this.feedback.analyze(body?.force === true);
   }
 
+  @Post('faqs/generate')
+  async generateFaqs(@Req() req: any) {
+    await this.admin(req);
+    return this.feedback.generateFaqs(true);
+  }
+
+  @Patch('faqs/:id')
+  async updateFaq(@Req() req: any, @Param('id') id: string, @Body() body: any) {
+    await this.admin(req);
+    return this.feedback.updateFaq(id, body);
+  }
+
   @Patch(':id')
   async update(@Req() req: any, @Param('id') id: string, @Body() body: any) {
     await this.admin(req);
@@ -98,5 +110,20 @@ export class AdminProductFeedbackController {
   async reply(@Req() req: any, @Param('id') id: string, @Body() body: any) {
     await this.admin(req);
     return this.feedback.adminReply(id, body);
+  }
+}
+
+@Controller('help/faqs')
+export class PublicFaqController {
+  constructor(private readonly feedback: ProductFeedbackService) {}
+
+  @Get()
+  list() {
+    return this.feedback.publicFaqs();
+  }
+
+  @Get(':slug')
+  article(@Param('slug') slug: string) {
+    return this.feedback.publicFaqs(slug);
   }
 }

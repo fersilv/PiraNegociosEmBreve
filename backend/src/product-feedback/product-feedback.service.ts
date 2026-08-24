@@ -40,17 +40,22 @@ export class ProductFeedbackService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     const firstRun = setTimeout(() => {
-      void this.analyze(false).catch((error) =>
-        console.warn('Análise diária de sugestões não executada:', error),
-      );
+      void this.runDailyAutomation();
     }, 60_000);
     firstRun.unref?.();
     this.analysisTimer = setInterval(() => {
-      void this.analyze(false).catch((error) =>
-        console.warn('Análise diária de sugestões não executada:', error),
-      );
+      void this.runDailyAutomation();
     }, 60 * 60 * 1000);
     this.analysisTimer.unref?.();
+  }
+
+  private async runDailyAutomation() {
+    await this.analyze(false).catch((error) =>
+      console.warn('Análise diária de sugestões não executada:', error),
+    );
+    await this.generateFaqs(false).catch((error) =>
+      console.warn('Geração diária de FAQs não executada:', error),
+    );
   }
 
   onModuleDestroy() {
@@ -128,6 +133,57 @@ export class ProductFeedbackService implements OnModuleInit, OnModuleDestroy {
           CREATE INDEX IF NOT EXISTS product_support_status_updated_idx
           ON product_support_conversations (status, "updatedAt" DESC)
         `);
+        await this.dataSource.query(`
+          CREATE TABLE IF NOT EXISTS ai_usage_logs (
+            id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+            "userId" varchar NULL,
+            "userEmail" varchar NULL,
+            "userName" varchar NULL,
+            "profileType" varchar(30) NULL,
+            "companyId" varchar NULL,
+            feature varchar(80) NOT NULL,
+            operation varchar(120) NOT NULL,
+            "conversationId" uuid NULL,
+            provider varchar(30) NULL,
+            model varchar(160) NULL,
+            "inputTokens" integer NOT NULL DEFAULT 0,
+            "outputTokens" integer NOT NULL DEFAULT 0,
+            "totalTokens" integer NOT NULL DEFAULT 0,
+            estimated boolean NOT NULL DEFAULT false,
+            success boolean NOT NULL DEFAULT true,
+            error text NULL,
+            metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+            "createdAt" timestamptz NOT NULL DEFAULT now()
+          )
+        `);
+        await this.dataSource.query(`
+          CREATE INDEX IF NOT EXISTS ai_usage_user_created_idx
+          ON ai_usage_logs ("userId", "createdAt" DESC)
+        `);
+        await this.dataSource.query(`
+          CREATE INDEX IF NOT EXISTS ai_usage_feature_created_idx
+          ON ai_usage_logs (feature, "createdAt" DESC)
+        `);
+        await this.dataSource.query(`
+          CREATE TABLE IF NOT EXISTS support_faq_articles (
+            id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+            slug varchar(220) UNIQUE NOT NULL,
+            title varchar(180) NOT NULL,
+            summary text NOT NULL,
+            body text NOT NULL,
+            "sourceConversationIds" jsonb NOT NULL DEFAULT '[]'::jsonb,
+            "requestCount" integer NOT NULL DEFAULT 0,
+            status varchar(20) NOT NULL DEFAULT 'DRAFT',
+            "aiGenerated" boolean NOT NULL DEFAULT true,
+            "publishedAt" timestamptz NULL,
+            "createdAt" timestamptz NOT NULL DEFAULT now(),
+            "updatedAt" timestamptz NOT NULL DEFAULT now()
+          )
+        `);
+        await this.dataSource.query(`
+          CREATE INDEX IF NOT EXISTS support_faq_status_updated_idx
+          ON support_faq_articles (status, "updatedAt" DESC)
+        `);
       })().catch((error) => {
         this.tablesReady = null;
         throw error;
@@ -185,6 +241,57 @@ export class ProductFeedbackService implements OnModuleInit, OnModuleDestroy {
       city: user.city || null,
       state: user.state || null,
     };
+  }
+
+  private async recordAiUsage(input: {
+    user?: User | null;
+    feature: string;
+    operation: string;
+    conversationId?: string | null;
+    provider?: string | null;
+    model?: string | null;
+    inputTokens?: number;
+    outputTokens?: number;
+    estimated?: boolean;
+    success: boolean;
+    error?: string | null;
+    metadata?: Record<string, unknown>;
+  }) {
+    const inputTokens = Math.max(0, Math.round(Number(input.inputTokens) || 0));
+    const outputTokens = Math.max(0, Math.round(Number(input.outputTokens) || 0));
+    await this.dataSource.query(
+      `
+        INSERT INTO ai_usage_logs
+          ("userId", "userEmail", "userName", "profileType", "companyId", feature,
+           operation, "conversationId", provider, model, "inputTokens", "outputTokens",
+           "totalTokens", estimated, success, error, metadata)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb)
+      `,
+      [
+        input.user?.id || null,
+        input.user?.email || null,
+        input.user?.socialName || input.user?.displayName || input.user?.fullName || null,
+        input.user?.type || null,
+        input.user?.companyId || null,
+        input.feature,
+        input.operation,
+        input.conversationId || null,
+        input.provider || null,
+        input.model || null,
+        inputTokens,
+        outputTokens,
+        inputTokens + outputTokens,
+        Boolean(input.estimated),
+        input.success,
+        this.text(input.error, 4000) || null,
+        JSON.stringify(input.metadata || {}),
+      ],
+    );
+  }
+
+  private slug(value: string) {
+    return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 190) || `ajuda-${Date.now()}`;
   }
 
   async submit(userId: string, input: any) {
@@ -264,7 +371,7 @@ export class ProductFeedbackService implements OnModuleInit, OnModuleDestroy {
 
   async overview() {
     await this.ensureTables();
-    const [feedback, insights, conversations] = await Promise.all([
+    const [feedback, insights, conversations, usageSummary, usageByFeature, usageDaily, topUsers, usageLogs, faqs] = await Promise.all([
       this.dataSource.query(`
         SELECT id, "userId", "userEmail", "userName", "profileType", "companyId", kind,
           "pagePath", process, message, screenshot, status, "adminNote", expectation,
@@ -285,6 +392,40 @@ export class ProductFeedbackService implements OnModuleInit, OnModuleDestroy {
         ORDER BY CASE WHEN status = 'ESCALATED' THEN 0 ELSE 1 END, "updatedAt" DESC
         LIMIT 200
       `),
+      this.dataSource.query(`
+        SELECT COUNT(*)::int AS requests,
+          COALESCE(SUM("inputTokens"), 0)::int AS "inputTokens",
+          COALESCE(SUM("outputTokens"), 0)::int AS "outputTokens",
+          COALESCE(SUM("totalTokens"), 0)::int AS "totalTokens",
+          COUNT(*) FILTER (WHERE success = false)::int AS failures
+        FROM ai_usage_logs WHERE "createdAt" >= now() - interval '30 days'
+      `),
+      this.dataSource.query(`
+        SELECT feature, COUNT(*)::int AS requests, COALESCE(SUM("totalTokens"), 0)::int AS tokens,
+          COUNT(*) FILTER (WHERE success = false)::int AS failures
+        FROM ai_usage_logs WHERE "createdAt" >= now() - interval '30 days'
+        GROUP BY feature ORDER BY tokens DESC
+      `),
+      this.dataSource.query(`
+        SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
+          COUNT(*)::int AS requests, COALESCE(SUM("totalTokens"), 0)::int AS tokens
+        FROM ai_usage_logs WHERE "createdAt" >= now() - interval '30 days'
+        GROUP BY date_trunc('day', "createdAt") ORDER BY date_trunc('day', "createdAt")
+      `),
+      this.dataSource.query(`
+        SELECT "userId", MAX("userName") AS "userName", MAX("userEmail") AS "userEmail",
+          MAX("profileType") AS "profileType", COUNT(*)::int AS requests,
+          COALESCE(SUM("totalTokens"), 0)::int AS tokens
+        FROM ai_usage_logs WHERE "createdAt" >= now() - interval '30 days' AND "userId" IS NOT NULL
+        GROUP BY "userId" ORDER BY tokens DESC LIMIT 25
+      `),
+      this.dataSource.query(`
+        SELECT id, "userId", "userName", "userEmail", "profileType", "companyId", feature,
+          operation, "conversationId", provider, model, "inputTokens", "outputTokens",
+          "totalTokens", estimated, success, error, metadata, "createdAt"
+        FROM ai_usage_logs ORDER BY "createdAt" DESC LIMIT 200
+      `),
+      this.dataSource.query(`SELECT * FROM support_faq_articles ORDER BY "updatedAt" DESC LIMIT 200`),
     ]);
     return {
       feedback: feedback.map((item: any) => this.withoutScreenshotData(item)),
@@ -292,6 +433,14 @@ export class ProductFeedbackService implements OnModuleInit, OnModuleDestroy {
       conversations: conversations.map((item: any) =>
         this.withoutScreenshotData(item),
       ),
+      aiUsage: {
+        summary: usageSummary[0] || { requests: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, failures: 0 },
+        byFeature: usageByFeature,
+        daily: usageDaily,
+        topUsers,
+        logs: usageLogs,
+      },
+      faqs,
       lastAnalyzedAt: insights[0]?.generatedAt || null,
     };
   }
@@ -505,10 +654,19 @@ export class ProductFeedbackService implements OnModuleInit, OnModuleDestroy {
       ? (conversation.messages as SupportMessage[])
       : [];
     const userMessage = this.message('USER', text);
+    const messagesWithUser = [...history, userMessage].slice(-39);
+    await this.dataSource.query(
+      `
+        UPDATE product_support_conversations
+        SET messages = $3::jsonb, screenshot = COALESCE($4::jsonb, screenshot), "updatedAt" = now()
+        WHERE id = $1 AND "userId" = $2
+      `,
+      [conversation.id, userId, JSON.stringify(messagesWithUser), screenshot ? JSON.stringify(screenshot) : null],
+    );
     let reply: string;
-    let status = conversation.status === 'ESCALATED' ? 'ESCALATED' : 'AI_ACTIVE';
+    let status = 'AI_ACTIVE';
     try {
-      reply = await this.ai.supportChatReply({
+      const aiResult = await this.ai.supportChatReply({
         message: text,
         pagePath: conversation.pagePath,
         process: conversation.process,
@@ -518,13 +676,36 @@ export class ProductFeedbackService implements OnModuleInit, OnModuleDestroy {
           ? { data: screenshot.data, mimeType: screenshot.mimeType }
           : null,
       });
+      reply = aiResult.text;
       if (!reply) throw new Error('Resposta vazia');
+      await this.recordAiUsage({
+        user,
+        feature: 'SUPPORT_CHAT',
+        operation: 'support.reply',
+        conversationId: conversation.id,
+        provider: aiResult.provider,
+        model: aiResult.model,
+        inputTokens: aiResult.inputTokens,
+        outputTokens: aiResult.outputTokens,
+        estimated: aiResult.estimated,
+        success: true,
+        metadata: { pagePath: conversation.pagePath, process: conversation.process, hasScreenshot: Boolean(screenshot) },
+      }).catch((usageError) => console.warn('Falha ao registrar consumo da IA:', usageError));
     } catch (error) {
       console.warn('Atendimento inteligente indisponível:', error);
-      reply = 'Recebi sua mensagem, mas o atendimento inteligente não conseguiu responder agora. A conversa foi encaminhada para o suporte humano.';
-      status = 'ESCALATED';
+      reply = 'Recebi sua mensagem, mas não consegui responder agora. Tente novamente em instantes.';
+      status = 'AI_ERROR';
+      await this.recordAiUsage({
+        user,
+        feature: 'SUPPORT_CHAT',
+        operation: 'support.reply',
+        conversationId: conversation.id,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        metadata: { pagePath: conversation.pagePath, process: conversation.process, hasScreenshot: Boolean(screenshot) },
+      }).catch((usageError) => console.warn('Falha ao registrar consumo da IA:', usageError));
     }
-    const messages = [...history, userMessage, this.message('ASSISTANT', reply)].slice(-40);
+    const messages = [...messagesWithUser, this.message('ASSISTANT', reply)].slice(-40);
     const rows = await this.dataSource.query(
       `
         UPDATE product_support_conversations
@@ -557,6 +738,118 @@ export class ProductFeedbackService implements OnModuleInit, OnModuleDestroy {
     );
     if (!rows[0]) throw new NotFoundException('Conversa não encontrada.');
     return rows[0];
+  }
+
+  async generateFaqs(force = false) {
+    await this.ensureTables();
+    if (!force) {
+      const recent = await this.dataSource.query(`
+        SELECT "updatedAt" FROM support_faq_articles WHERE "aiGenerated" = true
+        ORDER BY "updatedAt" DESC LIMIT 1
+      `);
+      if (recent[0]?.updatedAt && Date.now() - new Date(recent[0].updatedAt).getTime() < 24 * 60 * 60 * 1000)
+        return { generated: false, reason: 'RECENT_GENERATION' };
+    }
+    const conversations = await this.dataSource.query(`
+      SELECT id, process, "pagePath", messages
+      FROM product_support_conversations
+      WHERE "createdAt" >= now() - interval '90 days'
+      ORDER BY "updatedAt" DESC LIMIT 500
+    `);
+    const questions = conversations.flatMap((conversation: any) =>
+      (Array.isArray(conversation.messages) ? conversation.messages : [])
+        .filter((message: SupportMessage) => message.role === 'USER')
+        .map((message: SupportMessage) => ({
+          conversationId: String(conversation.id),
+          process: conversation.process,
+          pagePath: conversation.pagePath,
+          question: this.text(message.text, 2000),
+        })),
+    ).filter((item: any) => item.question);
+    if (questions.length < 2) return { generated: false, reason: 'NOT_ENOUGH_QUESTIONS' };
+
+    try {
+      const result = await this.ai.generateSupportFaqs(questions);
+      const validIds = new Set(conversations.map((item: any) => String(item.id)));
+      let saved = 0;
+      for (const article of result.articles) {
+        const ids = [...new Set((Array.isArray(article?.conversationIds) ? article.conversationIds : [])
+          .map(String).filter((id: string) => validIds.has(id)))];
+        if (ids.length < 2) continue;
+        const title = this.text(article?.title, 180);
+        const summary = this.text(article?.summary, 5000);
+        const body = this.text(article?.body, 20000);
+        if (!title || !summary || !body) continue;
+        await this.dataSource.query(
+          `
+            INSERT INTO support_faq_articles
+              (slug, title, summary, body, "sourceConversationIds", "requestCount")
+            VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+            ON CONFLICT (slug) DO UPDATE SET
+              title = CASE WHEN support_faq_articles.status = 'DRAFT' THEN EXCLUDED.title ELSE support_faq_articles.title END,
+              summary = CASE WHEN support_faq_articles.status = 'DRAFT' THEN EXCLUDED.summary ELSE support_faq_articles.summary END,
+              body = CASE WHEN support_faq_articles.status = 'DRAFT' THEN EXCLUDED.body ELSE support_faq_articles.body END,
+              "sourceConversationIds" = EXCLUDED."sourceConversationIds",
+              "requestCount" = EXCLUDED."requestCount",
+              "updatedAt" = now()
+          `,
+          [this.slug(title), title, summary, body, JSON.stringify(ids), ids.length],
+        );
+        saved += 1;
+      }
+      await this.recordAiUsage({
+        feature: 'FAQ_GENERATION',
+        operation: 'faq.generate',
+        provider: result.usage.provider,
+        model: result.usage.model,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        estimated: result.usage.estimated,
+        success: true,
+        metadata: { questionCount: questions.length, articleCount: saved },
+      });
+      return { generated: true, articles: saved };
+    } catch (error) {
+      await this.recordAiUsage({
+        feature: 'FAQ_GENERATION', operation: 'faq.generate', success: false,
+        error: error instanceof Error ? error.message : String(error),
+        metadata: { questionCount: questions.length },
+      }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async updateFaq(id: string, input: any) {
+    await this.ensureTables();
+    const status = this.text(input?.status, 20).toUpperCase();
+    if (!['DRAFT', 'PUBLISHED', 'ARCHIVED'].includes(status))
+      throw new BadRequestException('Status de FAQ inválido.');
+    const title = this.text(input?.title, 180);
+    const summary = this.text(input?.summary, 5000);
+    const body = this.text(input?.body, 20000);
+    if (!title || !summary || !body) throw new BadRequestException('Preencha título, resumo e conteúdo.');
+    const rows = await this.dataSource.query(
+      `
+        UPDATE support_faq_articles SET title = $2, slug = $3, summary = $4, body = $5,
+          status = $6, "publishedAt" = CASE WHEN $6 = 'PUBLISHED' THEN COALESCE("publishedAt", now()) ELSE NULL END,
+          "updatedAt" = now() WHERE id = $1 RETURNING *
+      `,
+      [id, title, this.slug(title), summary, body, status],
+    );
+    if (!rows[0]) throw new NotFoundException('FAQ não encontrada.');
+    return rows[0];
+  }
+
+  async publicFaqs(slug?: string) {
+    await this.ensureTables();
+    const rows = await this.dataSource.query(
+      `SELECT id, slug, title, summary, body, "publishedAt", "updatedAt"
+       FROM support_faq_articles WHERE status = 'PUBLISHED' ${slug ? 'AND slug = $1' : ''}
+       ORDER BY "publishedAt" DESC`,
+      slug ? [slug] : [],
+    );
+    if (slug && !rows[0]) throw new NotFoundException('Conteúdo de ajuda não encontrado.');
+    return slug ? rows[0] : rows;
   }
 
   async adminReply(id: string, input: any) {

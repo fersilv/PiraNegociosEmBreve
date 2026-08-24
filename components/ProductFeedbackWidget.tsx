@@ -5,7 +5,6 @@ import {
   Check,
   ChevronRight,
   ImagePlus,
-  LifeBuoy,
   Loader2,
   MessageCircleMore,
   Send,
@@ -61,11 +60,13 @@ export function ProductFeedbackWidget() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"feedback" | "support">("feedback");
   const [aiEnabled, setAiEnabled] = useState(false);
+  const [assistantName, setAssistantName] = useState("Assistente PiraNegócios");
   const [feedbackText, setFeedbackText] = useState("");
   const [chatText, setChatText] = useState("");
   const [screenshot, setScreenshot] = useState<Screenshot | null>(null);
   const [sending, setSending] = useState(false);
   const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [pendingMessage, setPendingMessage] = useState<SupportMessage | null>(null);
   const [expectations, setExpectations] = useState<Expectation[]>([]);
   const [expectationComment, setExpectationComment] = useState("");
   const [notice, setNotice] = useState("");
@@ -79,6 +80,7 @@ export function ProductFeedbackWidget() {
       api.get("/product-feedback/support/mine").catch(() => null),
     ]);
     setAiEnabled(Boolean(status?.data?.aiEnabled));
+    setAssistantName(status?.data?.assistantName || "Assistente PiraNegócios");
     setExpectations(asArray<Expectation>(pending?.data));
     setConversation(support?.data || null);
   };
@@ -122,7 +124,14 @@ export function ProductFeedbackWidget() {
   const sendChat = async () => {
     if (!chatText.trim()) return;
     const message = chatText;
+    const optimisticMessage: SupportMessage = {
+      id: `pending-${Date.now()}`,
+      role: "USER",
+      text: message,
+      createdAt: new Date().toISOString(),
+    };
     setChatText("");
+    setPendingMessage(optimisticMessage);
     setSending(true);
     setNotice("");
     try {
@@ -134,24 +143,12 @@ export function ProductFeedbackWidget() {
         screenshot,
       });
       setConversation(response.data);
+      setPendingMessage(null);
       setScreenshot(null);
     } catch (error: any) {
       setChatText(message);
+      setPendingMessage(null);
       setNotice(error?.response?.data?.message || "Não foi possível enviar sua mensagem.");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const escalate = async () => {
-    if (!conversation?.id) return;
-    setSending(true);
-    try {
-      await api.post(`/product-feedback/support/${conversation.id}/escalate`);
-      setConversation((current) => current ? { ...current, status: "ESCALATED" } : current);
-      setNotice("Conversa encaminhada para o suporte humano.");
-    } catch (error: any) {
-      setNotice(error?.response?.data?.message || "Não foi possível encaminhar.");
     } finally {
       setSending(false);
     }
@@ -194,7 +191,7 @@ export function ProductFeedbackWidget() {
             {tab === "feedback" ? (
               <div><p className="text-sm font-bold text-stone-900">O que você sentiu falta nesta página?</p><p className="mt-1 text-[11px] leading-5 text-stone-500">A página e o processo já serão identificados automaticamente.</p><textarea value={feedbackText} onChange={(event) => setFeedbackText(event.target.value)} rows={5} placeholder="Ex.: eu queria conseguir filtrar por..., não encontrei onde..., seria melhor se..." className="mt-3 w-full resize-none rounded-2xl border border-stone-200 bg-white p-3.5 text-sm leading-6 outline-none focus:border-terracotta-400" /><Attachment screenshot={screenshot} onChoose={() => fileRef.current?.click()} onClear={() => setScreenshot(null)} /><button type="button" disabled={sending} onClick={() => void submitFeedback()} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-terracotta-600 px-4 py-3 text-xs font-black text-white disabled:opacity-50">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Enviar sugestão</button></div>
             ) : (
-              <div><div className={`rounded-2xl border p-3 ${aiEnabled ? "border-violet-200 bg-violet-50" : "border-stone-200 bg-stone-50"}`}><div className="flex items-center gap-2"><Bot className={`h-4 w-4 ${aiEnabled ? "text-violet-700" : "text-stone-500"}`} /><p className="text-xs font-black text-stone-900">{aiEnabled ? "Suporte inteligente ativo" : "Atendimento humano"}</p></div><p className="mt-1 text-[10px] leading-4 text-stone-500">{aiEnabled ? "A IA conhece esta página e recebe o contexto do seu tipo de perfil. Se necessário, encaminhe a conversa ao suporte humano." : "A IA está desligada. Sua mensagem será registrada para o suporte humano."}</p></div><div className="mt-3 max-h-64 space-y-2 overflow-y-auto">{(conversation?.messages || []).map((message) => <div key={message.id} className={`max-w-[88%] rounded-2xl px-3 py-2.5 text-xs leading-5 ${message.role === "USER" ? "ml-auto bg-[#2b211c] text-white" : message.role === "ADMIN" ? "bg-emerald-100 text-emerald-950" : "bg-stone-100 text-stone-700"}`}>{message.text}</div>)}{!conversation?.messages?.length && <p className="py-5 text-center text-xs text-stone-400">Pode me contar o que aconteceu nesta tela.</p>}</div><textarea value={chatText} onChange={(event) => setChatText(event.target.value)} rows={3} placeholder="Escreva sua dúvida..." className="mt-3 w-full resize-none rounded-2xl border border-stone-200 bg-white p-3 text-sm outline-none focus:border-violet-400" /><Attachment screenshot={screenshot} onChoose={() => fileRef.current?.click()} onClear={() => setScreenshot(null)} /><button type="button" disabled={sending || !chatText.trim()} onClick={() => void sendChat()} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-3 text-xs font-black text-white disabled:opacity-50">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Enviar mensagem</button>{conversation && conversation.status !== "ESCALATED" && <button type="button" disabled={sending} onClick={() => void escalate()} className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-stone-200 px-4 py-2.5 text-[10px] font-bold text-stone-600"><LifeBuoy className="h-3.5 w-3.5" /> Pedir ajuda humana</button>}{conversation?.status === "ESCALATED" && <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-center text-[10px] font-bold text-amber-800">Conversa aguardando o suporte humano.</p>}</div>
+              <div><div className={`rounded-2xl border p-3 ${aiEnabled ? "border-violet-200 bg-violet-50" : "border-stone-200 bg-stone-50"}`}><div className="flex items-center gap-2"><Bot className={`h-4 w-4 ${aiEnabled ? "text-violet-700" : "text-stone-500"}`} /><div><p className="text-xs font-black text-stone-900">{assistantName}</p><p className="mt-0.5 text-[10px] leading-4 text-stone-500">Atendimento e suporte inteligente.</p></div></div>{!aiEnabled && <p className="mt-2 text-[10px] text-amber-700">O atendimento inteligente está temporariamente indisponível.</p>}</div><div className="mt-3 max-h-64 space-y-2 overflow-y-auto">{(conversation?.messages || []).map((message) => <div key={message.id} className={`max-w-[88%] whitespace-pre-wrap rounded-2xl px-3 py-2.5 text-xs leading-5 ${message.role === "USER" ? "ml-auto bg-[#2b211c] text-white" : message.role === "ADMIN" ? "bg-emerald-100 text-emerald-950" : "bg-stone-100 text-stone-700"}`}>{message.text}</div>)}{pendingMessage && <div className="ml-auto max-w-[88%] whitespace-pre-wrap rounded-2xl bg-[#2b211c] px-3 py-2.5 text-xs leading-5 text-white">{pendingMessage.text}</div>}{sending && pendingMessage && <div className="inline-flex max-w-[88%] items-center gap-2 rounded-2xl bg-stone-100 px-3 py-2.5 text-xs text-stone-500"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {assistantName} está respondendo...</div>}{!conversation?.messages?.length && !pendingMessage && <p className="py-5 text-center text-xs text-stone-400">Pode me contar o que aconteceu nesta tela.</p>}</div><textarea value={chatText} onChange={(event) => setChatText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (!sending && chatText.trim()) void sendChat(); } }} rows={3} placeholder="Escreva sua dúvida..." className="mt-3 w-full resize-none rounded-2xl border border-stone-200 bg-white p-3 text-sm outline-none focus:border-violet-400" /><p className="mt-1 text-right text-[9px] text-stone-400">Enter envia · Shift + Enter quebra a linha</p><Attachment screenshot={screenshot} onChoose={() => fileRef.current?.click()} onClear={() => setScreenshot(null)} /><button type="button" disabled={sending || !chatText.trim()} onClick={() => void sendChat()} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 py-3 text-xs font-black text-white disabled:opacity-50">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Enviar mensagem</button></div>
             )}
             {notice && <p className="mt-3 rounded-xl bg-stone-100 px-3 py-2 text-[11px] leading-5 text-stone-600">{notice}</p>}
           </div>

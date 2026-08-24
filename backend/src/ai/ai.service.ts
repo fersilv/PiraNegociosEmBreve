@@ -16,6 +16,15 @@ interface AiRuntimeConfig {
   apiKey: string;
 }
 
+export type AiTextResult = {
+  text: string;
+  provider: AiProvider;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  estimated: boolean;
+};
+
 const RESUME_SYSTEM_INSTRUCTION = `Você é um especialista brasileiro em currículos e recrutamento. Leia somente os dados presentes no currículo, não invente competências e devolva exclusivamente JSON válido, sem markdown.`;
 
 const RESUME_PROMPT = `Extraia o currículo enviado e devolva EXCLUSIVAMENTE um JSON válido neste formato:
@@ -113,6 +122,34 @@ export class AiService {
       enabled: enabled && Boolean(provider && model && apiKey),
       provider: enabled && provider ? provider : null,
       model: enabled && model ? model : null,
+    };
+  }
+
+  async getSupportStatus() {
+    const [status, behavior] = await Promise.all([
+      this.getStatus(),
+      this.settingsService.getAiBehavior(),
+    ]);
+    return {
+      ...status,
+      assistantName: behavior.name || 'Assistente PiraNegócios',
+    };
+  }
+
+  private usageResult(
+    text: string,
+    config: AiRuntimeConfig,
+    prompt: string,
+    usage?: { input?: number; output?: number },
+  ): AiTextResult {
+    const hasUsage = Number.isFinite(usage?.input) && Number.isFinite(usage?.output);
+    return {
+      text: text.trim(),
+      provider: config.provider,
+      model: config.model,
+      inputTokens: hasUsage ? Number(usage!.input) : Math.ceil(prompt.length / 4),
+      outputTokens: hasUsage ? Number(usage!.output) : Math.ceil(text.length / 4),
+      estimated: !hasUsage,
     };
   }
 
@@ -440,7 +477,7 @@ export class AiService {
     );
     const systemInstruction = await this.buildSystemInstruction(
       `suporte ajuda navegação página ${input.pagePath} processo ${input.process} perfil ${String(input.profile.type || '')}`,
-      `Você atende usuários do PiraNegócios dentro da própria plataforma. Explique caminhos reais e ações seguras com linguagem curta e acolhedora. Use somente o contexto fornecido e a memória aprovada. Se não tiver certeza, admita e oriente o usuário a encaminhar a conversa ao suporte humano. Nunca afirme que executou ações, alterou cadastros ou consultou dados que não estejam no contexto.${customInstruction ? `\n\nINSTRUÇÕES ESPECÍFICAS DE CHAT E SUPORTE:\n${customInstruction}` : ''}`,
+      `Você atende usuários do PiraNegócios dentro da própria plataforma. Explique caminhos reais e ações seguras com linguagem curta e acolhedora. Use somente o contexto fornecido e a memória aprovada. Se não tiver certeza, admita claramente a limitação e peça os dados mínimos necessários para orientar melhor. Nunca afirme que executou ações, alterou cadastros ou consultou dados que não estejam no contexto.${customInstruction ? `\n\nINSTRUÇÕES ESPECÍFICAS DE CHAT E SUPORTE:\n${customInstruction}` : ''}`,
     );
     const history = (input.history || [])
       .slice(-10)
@@ -452,7 +489,7 @@ export class AiService {
     );
 
     try {
-      if (config.provider === 'OPENAI' && screenshotMatch) {
+      if (config.provider === 'OPENAI') {
         const openai = new OpenAI({ apiKey: config.apiKey });
         const response = await openai.responses.create({
           model: config.model,
@@ -461,14 +498,18 @@ export class AiService {
             role: 'user',
             content: [
               { type: 'input_text', text: prompt },
-              { type: 'input_image', image_url: input.screenshot!.data, detail: 'auto' },
+              ...(screenshotMatch ? [{ type: 'input_image', image_url: input.screenshot!.data, detail: 'auto' }] : []),
             ],
           }],
           max_output_tokens: 900,
         } as any);
-        return String(response.output_text || '').trim();
+        const usage = (response as any).usage;
+        return this.usageResult(String(response.output_text || ''), config, prompt, {
+          input: usage?.input_tokens,
+          output: usage?.output_tokens,
+        });
       }
-      if (config.provider === 'ANTHROPIC' && screenshotMatch) {
+      if (config.provider === 'ANTHROPIC') {
         const anthropic = new Anthropic({ apiKey: config.apiKey });
         const response = await anthropic.messages.create({
           model: config.model,
@@ -477,38 +518,44 @@ export class AiService {
           messages: [{
             role: 'user',
             content: [
-              {
+              ...(screenshotMatch ? [{
                 type: 'image',
                 source: {
                   type: 'base64',
                   media_type: screenshotMatch[1],
                   data: screenshotMatch[2],
                 },
-              },
+              }] : []),
               { type: 'text', text: prompt },
             ],
           }],
         } as any);
-        return response.content
+        const text = response.content
           .filter((block: any) => block.type === 'text')
           .map((block: any) => block.text)
           .join('\n')
           .trim();
+        return this.usageResult(text, config, prompt, {
+          input: (response as any).usage?.input_tokens,
+          output: (response as any).usage?.output_tokens,
+        });
       }
       if (config.provider === 'GEMINI' && screenshotMatch) {
-        return (await this.geminiGenerate(
+        const text = await this.geminiGenerate(
           config,
           [{ role: 'user', parts: [
             { text: prompt },
             { inlineData: { mimeType: screenshotMatch[1], data: screenshotMatch[2] } },
           ] }],
           { systemInstruction, json: false, maxOutputTokens: 900 },
-        )).trim();
+        );
+        return this.usageResult(text, config, prompt);
       }
-      return (await this.generateText(config, prompt, systemInstruction, {
+      const text = await this.generateText(config, prompt, systemInstruction, {
         json: false,
         maxOutputTokens: 900,
-      })).trim();
+      });
+      return this.usageResult(text, config, prompt);
     } catch (error: any) {
       if (error instanceof ServiceUnavailableException) throw error;
       console.error('AI support chat error:', error);
@@ -516,6 +563,26 @@ export class AiService {
         error?.message || 'Não foi possível responder pelo suporte inteligente.',
       );
     }
+  }
+
+  async generateSupportFaqs(
+    questions: Array<{ conversationId: string; process: string; pagePath: string; question: string }>,
+  ) {
+    const config = await this.getRuntimeConfig();
+    const systemInstruction = await this.buildSystemInstruction(
+      'central de ajuda perguntas frequentes suporte usuários',
+      'Você edita a central de ajuda do PiraNegócios. Agrupe somente dúvidas realmente recorrentes. Não exponha nomes, e-mails ou dados pessoais. Não invente recursos da plataforma. Produza rascunhos objetivos em português brasileiro para revisão administrativa.',
+    );
+    const prompt = `Com base nas perguntas abaixo, devolva EXCLUSIVAMENTE JSON válido no formato {"articles":[{"title":"pergunta","summary":"resposta curta","body":"resposta completa em texto simples","conversationIds":["uuid"]}]}. Só crie um artigo quando a mesma dúvida aparecer em pelo menos 2 conversas. Use apenas IDs recebidos.\n\nPERGUNTAS:\n${JSON.stringify(questions.slice(0, 500))}`;
+    const text = await this.generateText(config, prompt, systemInstruction, {
+      json: true,
+      maxOutputTokens: 6000,
+    });
+    const parsed = this.parseJson(text);
+    return {
+      articles: Array.isArray(parsed.articles) ? parsed.articles : [],
+      usage: this.usageResult(text, config, prompt),
+    };
   }
 
   async analyzeProductFeedback(
