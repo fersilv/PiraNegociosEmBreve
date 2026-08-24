@@ -14,6 +14,11 @@ export class MobileTransferController {
     return this.sessions.pair(id, code);
   }
 
+  @Post(':id/pair-qr')
+  pairQr(@Param('id') id: string, @Body('token') token: unknown) {
+    return this.sessions.pairWithQrToken(id, token);
+  }
+
   @Post(':id/file')
   @UseGuards(MobileUploadTokenGuard)
   @UseInterceptors(FileInterceptor('file', {
