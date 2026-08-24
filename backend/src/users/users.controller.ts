@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Post, Patch, Put, Body, UseGuards, Req, Param, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, Controller, Delete, Get, Post, Patch, Put, Body, UseGuards, Req, Param, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from './users.service';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
@@ -8,6 +8,7 @@ import { AnalyticsService } from '../analytics/analytics.service';
 
 const STRUCTURED_RESUME_MARKER = 'structured://published';
 const STORED_RESUME_MARKER = 'stored://uploaded';
+const RESUME_DELETE_CONFIRMATION = 'EXCLUIR MEU CURRICULO';
 
 @Controller('users')
 @UseGuards(FirebaseAuthGuard)
@@ -224,6 +225,23 @@ export class UsersController {
     else if (!existing) throw new BadRequestException('Sua conta de autenticação precisa possuir um e-mail válido.');
     if (this.isBootstrapAdmin(user.email)) sanitized.type = UserType.ADMIN;
     return this.usersService.createOrUpdate(user.uid, sanitized);
+  }
+
+  @Delete('me/resume')
+  async deleteResume(@Req() req: any, @Body('confirmation') confirmation: unknown) {
+    const normalized = String(confirmation || '').trim().toUpperCase();
+    if (normalized !== RESUME_DELETE_CONFIRMATION) {
+      throw new BadRequestException({
+        code: 'RESUME_DELETE_CONFIRMATION_REQUIRED',
+        message: `Para excluir definitivamente, digite exatamente: ${RESUME_DELETE_CONFIRMATION}`,
+      });
+    }
+    const result = await this.usersService.deleteResumePermanently(req.user.uid);
+    return {
+      ...result,
+      freeUsageReset: false,
+      message: 'Currículo e cópias de currículo excluídos definitivamente. Seus limites gratuitos já utilizados foram preservados.',
+    };
   }
 
   @Put(':id/fcm-token')
