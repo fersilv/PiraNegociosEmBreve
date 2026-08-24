@@ -12,6 +12,10 @@ const SESSION_METADATA_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const PAIRING_ATTEMPT_LIMIT = 5;
 
+type PairOutcome =
+  | { ok: true; uploadToken: string; purpose: MobileUploadPurpose; accept: string; maxSizeBytes: number; expiresAt: Date }
+  | { ok: false; reason: 'EXPIRED' | 'PAIRED' | 'USED' | 'CANCELED' | 'TOO_MANY' | 'INVALID' };
+
 const PURPOSE_RULES: Record<MobileUploadPurpose, { accept: string; extensions: Set<string>; mimePrefixes: string[]; mimeTypes: Set<string> }> = {
   avatar: {
     accept: 'image/jpeg,image/png,image/webp',
@@ -161,7 +165,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
   }
 
   async pair(id: string, code: unknown) {
-    return this.sessions.manager.transaction(async (manager) => {
+    const outcome: PairOutcome = await this.sessions.manager.transaction(async (manager): Promise<PairOutcome> => {
       const session = await manager.findOne(MobileUploadSession, {
         where: { id },
         lock: { mode: 'pessimistic_write' },
@@ -174,19 +178,22 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
         session.uploadTokenHash = null;
         session.status = 'EXPIRED';
         await manager.save(session);
-        throw new BadRequestException('Esta sessão expirou. Gere um novo QR Code no computador.');
+        return { ok: false, reason: 'EXPIRED' };
       }
-      if (session.status === 'PAIRED') throw new BadRequestException('Este telefone já foi pareado. Gere uma nova sessão para trocar de dispositivo.');
-      if (session.status === 'UPLOADED' || session.status === 'CONSUMED') throw new BadRequestException('Esta sessão já foi utilizada.');
-      if (session.status === 'CANCELED') throw new BadRequestException('Esta sessão foi cancelada. Gere um novo QR Code no computador.');
-      if (session.pairingAttempts >= PAIRING_ATTEMPT_LIMIT) throw new ForbiddenException('Muitas tentativas incorretas. Gere uma nova sessão.');
+      if (session.status === 'PAIRED') return { ok: false, reason: 'PAIRED' };
+      if (session.status === 'UPLOADED' || session.status === 'CONSUMED') return { ok: false, reason: 'USED' };
+      if (session.status === 'CANCELED') return { ok: false, reason: 'CANCELED' };
+      if (session.pairingAttempts >= PAIRING_ATTEMPT_LIMIT) return { ok: false, reason: 'TOO_MANY' };
 
       const normalizedCode = String(code || '').replace(/\D/g, '').slice(0, 6);
       const candidateHash = this.hash(`${session.pairingSalt}:${normalizedCode}`);
       if (!this.safeEqual(candidateHash, session.pairingHash)) {
         session.pairingAttempts += 1;
         await manager.save(session);
-        throw new ForbiddenException('Código de pareamento inválido.');
+        return {
+          ok: false,
+          reason: session.pairingAttempts >= PAIRING_ATTEMPT_LIMIT ? 'TOO_MANY' : 'INVALID',
+        };
       }
 
       const uploadToken = randomBytes(32).toString('base64url');
@@ -196,6 +203,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
       session.pairingAttempts = 0;
       await manager.save(session);
       return {
+        ok: true,
         uploadToken,
         purpose: session.purpose,
         accept: session.accept,
@@ -203,6 +211,23 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
         expiresAt: session.expiresAt,
       };
     });
+
+    if (outcome.ok) return outcome;
+    switch (outcome.reason) {
+      case 'EXPIRED':
+        throw new BadRequestException('Esta sessão expirou. Gere um novo QR Code no computador.');
+      case 'PAIRED':
+        throw new BadRequestException('Este telefone já foi pareado. Gere uma nova sessão para trocar de dispositivo.');
+      case 'USED':
+        throw new BadRequestException('Esta sessão já foi utilizada.');
+      case 'CANCELED':
+        throw new BadRequestException('Esta sessão foi cancelada. Gere um novo QR Code no computador.');
+      case 'TOO_MANY':
+        throw new ForbiddenException('Muitas tentativas incorretas. Gere uma nova sessão.');
+      case 'INVALID':
+      default:
+        throw new ForbiddenException('Código de pareamento inválido.');
+    }
   }
 
   async authorizeUpload(id: string, token: string) {
