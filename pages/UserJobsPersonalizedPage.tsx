@@ -232,28 +232,14 @@ export function UserJobsPersonalizedPage() {
 
   const handleApply = async (job: Job) => {
     if (!user || appliedIds.has(job.id)) return;
-    if (!profile?.resumeURL?.trim()) {
-      alert("Para se candidatar, deixe seu currículo pronto primeiro.");
-      window.location.assign("/user/curriculo");
-      return;
-    }
     try {
-      await api.post("/applications", {
-        jobId: job.id,
-        jobTitle: job.title,
-        companyName: job.isConfidential ? "Empresa Confidencial" : job.companyName,
-        candidateId: user.uid,
-        companyId: job.ownerId,
-        status: "Enviado",
-        appliedAt: new Date().toISOString(),
-        resumeURL: profile.resumeURL,
-      });
+      await api.post("/applications", { jobId: job.id });
       setApplications((current) => [...current, { jobId: job.id, id: `local-${job.id}` }]);
       setSelectedJob(null);
       alert("Candidatura enviada com sucesso!");
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert("Não foi possível enviar a candidatura agora.");
+      alert(error?.response?.data?.message || "Não foi possível enviar a candidatura agora.");
     }
   };
 

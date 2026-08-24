@@ -111,6 +111,9 @@ export class Job {
   isConfidential: boolean;
 
   @Column({ default: false })
+  isInternal: boolean;
+
+  @Column({ default: false })
   isTalentPool: boolean;
 
   @Column({ default: false })

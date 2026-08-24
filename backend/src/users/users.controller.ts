@@ -1,10 +1,15 @@
-import { BadRequestException, Controller, Delete, Get, Post, Patch, Put, Body, UseGuards, Req, Param, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, Controller, Delete, Get, Post, Patch, Put, Body, UseGuards, Req, Param, Headers, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { UsersService } from './users.service';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { SettingsService } from '../admin/settings.service';
 import { User, UserType } from './entities/user.entity';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { CompanyTalentInvite } from '../companies/entities/company-talent-invite.entity';
+import { Job } from '../jobs/entities/job.entity';
+import { hashInviteToken, maskInviteEmail, normalizeInviteEmail } from '../companies/talent-invite.utils';
 
 const STRUCTURED_RESUME_MARKER = 'structured://published';
 const STORED_RESUME_MARKER = 'stored://uploaded';
@@ -18,6 +23,9 @@ export class UsersController {
     private readonly configService: ConfigService,
     private readonly analytics: AnalyticsService,
     private readonly settingsService: SettingsService,
+    @InjectRepository(CompanyTalentInvite)
+    private readonly talentInvites: Repository<CompanyTalentInvite>,
+    @InjectRepository(Job) private readonly jobs: Repository<Job>,
   ) {}
 
   private isBootstrapAdmin(email?: string): boolean {
@@ -27,8 +35,51 @@ export class UsersController {
     return admins.includes(email.toLowerCase());
   }
 
-  private async ensureRegistrationAllowed(existing: User | null, email?: string) {
-    if (existing || this.isBootstrapAdmin(email)) return;
+  private async resolveRegistrationInvite(
+    token: string | undefined,
+    email: string | undefined,
+    uid: string,
+  ) {
+    if (!token) return null;
+    if (!/^[A-Za-z0-9_-]{40,100}$/.test(token))
+      throw new ForbiddenException('Convite inválido ou expirado.');
+    const invite = await this.talentInvites.findOne({
+      where: { tokenHash: hashInviteToken(token) },
+    });
+    const job = invite
+      ? await this.jobs.findOne({ where: { id: invite.jobId, active: true } })
+      : null;
+    const today = new Date().toISOString().slice(0, 10);
+    if (
+      !invite ||
+      !['PENDING', 'ACCEPTED'].includes(invite.status) ||
+      !job ||
+      !invite.expiresAt ||
+      invite.expiresAt.getTime() < Date.now() ||
+      (job.deadlineDate && job.deadlineDate < today)
+    ) {
+      throw new ForbiddenException('Convite inválido ou expirado.');
+    }
+    const normalizedEmail = normalizeInviteEmail(email);
+    if (!normalizedEmail || normalizedEmail !== invite.candidateEmail) {
+      throw new ForbiddenException({
+        code: 'INVITE_EMAIL_MISMATCH',
+        message: `Este convite foi enviado para ${invite.candidateEmail ? maskInviteEmail(invite.candidateEmail) : 'outro e-mail'}. Entre com a conta correta.`,
+      });
+    }
+    if (invite.candidateId && invite.candidateId !== uid)
+      throw new ForbiddenException('Este convite já está vinculado a outra conta.');
+    return invite;
+  }
+
+  private async ensureRegistrationAllowed(
+    existing: User | null,
+    email: string | undefined,
+    inviteToken: string | undefined,
+    uid: string,
+  ) {
+    const invite = await this.resolveRegistrationInvite(inviteToken, email, uid);
+    if (invite || existing || this.isBootstrapAdmin(email)) return invite;
     const registrationsOpen = (await this.settingsService.getValue('ALLOW_NEW_REGISTRATIONS', 'true')) === 'true';
     if (!registrationsOpen) {
       throw new ForbiddenException({
@@ -36,6 +87,17 @@ export class UsersController {
         message: 'Novos cadastros estão temporariamente pausados. Entre na lista de espera para ser avisado quando reabrirmos.',
       });
     }
+    return null;
+  }
+
+  private async linkRegistrationInvite(
+    invite: CompanyTalentInvite | null,
+    profile: User,
+  ) {
+    if (!invite) return;
+    invite.candidateId = profile.id;
+    invite.registeredAt = invite.registeredAt || profile.createdAt || new Date();
+    await this.talentInvites.save(invite);
   }
 
   private validateSensitiveJobPreferences(updateData: Partial<User>) {
@@ -135,10 +197,19 @@ export class UsersController {
   }
 
   @Get('me')
-  async getProfile(@Req() req: any) {
+  async getProfile(
+    @Req() req: any,
+    @Headers('x-talent-invite-token') inviteToken?: string,
+  ) {
     const user = req.user;
     void this.analytics.recordAccountAccess(user.uid, req.headers).catch(() => undefined);
     const existing = await this.usersService.findOneOrNull(user.uid);
+    const registrationInvite = await this.ensureRegistrationAllowed(
+      existing,
+      user.email,
+      inviteToken,
+      user.uid,
+    );
     if (this.isBootstrapAdmin(user.email)) {
       if (!existing || existing.type !== UserType.ADMIN) {
         const profile = await this.usersService.createOrUpdate(user.uid, {
@@ -147,25 +218,39 @@ export class UsersController {
           fullName: existing?.fullName || user.name || user.email,
           email: user.email,
         });
+        await this.linkRegistrationInvite(registrationInvite, profile);
         return this.exposeProfileForRuntime(profile);
       }
+      await this.linkRegistrationInvite(registrationInvite, existing);
       return this.exposeProfileForRuntime(existing);
     }
-    if (existing) return this.exposeProfileForRuntime(existing);
-    await this.ensureRegistrationAllowed(existing, user.email);
+    if (existing) {
+      await this.linkRegistrationInvite(registrationInvite, existing);
+      return this.exposeProfileForRuntime(existing);
+    }
     const email = typeof user.email === 'string' ? user.email.trim().toLowerCase() : '';
     if (!email) throw new BadRequestException('Sua conta de autenticação precisa possuir um e-mail válido.');
     const displayName = (typeof user.name === 'string' && user.name.trim()) || email.split('@')[0];
     const profile = await this.usersService.createOrUpdate(user.uid, { email, displayName, fullName: displayName });
+    await this.linkRegistrationInvite(registrationInvite, profile);
     return this.exposeProfileForRuntime(profile);
   }
 
   @Post('me')
   @Patch('me')
-  async updateProfile(@Req() req: any, @Body() updateData: Partial<User>) {
+  async updateProfile(
+    @Req() req: any,
+    @Body() updateData: Partial<User>,
+    @Headers('x-talent-invite-token') inviteToken?: string,
+  ) {
     const user = req.user;
     const existing = await this.usersService.findOneOrNull(user.uid);
-    await this.ensureRegistrationAllowed(existing, user.email);
+    const registrationInvite = await this.ensureRegistrationAllowed(
+      existing,
+      user.email,
+      inviteToken,
+      user.uid,
+    );
     this.validateSensitiveJobPreferences(updateData);
     this.validateResumePublication(updateData);
     const sanitized = this.usersService.sanitizeSelfUpdate(updateData, existing);
@@ -224,7 +309,9 @@ export class UsersController {
     if (typeof user.email === 'string' && user.email.trim()) sanitized.email = user.email.trim().toLowerCase();
     else if (!existing) throw new BadRequestException('Sua conta de autenticação precisa possuir um e-mail válido.');
     if (this.isBootstrapAdmin(user.email)) sanitized.type = UserType.ADMIN;
-    return this.usersService.createOrUpdate(user.uid, sanitized);
+    const profile = await this.usersService.createOrUpdate(user.uid, sanitized);
+    await this.linkRegistrationInvite(registrationInvite, profile);
+    return profile;
   }
 
   @Delete('me/resume')

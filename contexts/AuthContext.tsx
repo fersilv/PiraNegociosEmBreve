@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "../lib/firebase";
 import { api } from "../lib/api";
+import { getInviteTokenFromLocation } from "../lib/inviteToken";
 
 export interface ExperienceTimelineEntry {
   id?: string;
@@ -213,7 +214,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchProfile = async (currentUser: User) => {
     try {
-      const response = await api.get("/users/me");
+      const inviteToken = getInviteTokenFromLocation();
+      const response = await api.get("/users/me", {
+        headers: inviteToken ? { "X-Talent-Invite-Token": inviteToken } : undefined,
+      });
       const data = response.data as UserProfile;
       setProfile(data);
     } catch (error) {

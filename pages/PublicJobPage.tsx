@@ -196,8 +196,6 @@ export default function PublicJobPage() {
       return navigate(
         `/login?returnTo=${encodeURIComponent(`/vagas/${job.slug}`)}`,
       );
-    if (profile?.type !== "CANDIDATE")
-      return alert("Apenas candidatos podem se candidatar às vagas.");
     navigate(`/vagas?applyTo=${encodeURIComponent(job.id)}`);
   };
 

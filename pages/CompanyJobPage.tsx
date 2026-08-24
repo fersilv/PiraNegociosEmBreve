@@ -23,6 +23,7 @@ import {
   Laptop,
   AlertTriangle,
   Zap,
+  LockKeyhole,
 } from "lucide-react";
 import { sendNotificationToUser } from "../lib/notifications";
 import { openBase64InNewTab } from "../lib/fileViewer";
@@ -56,6 +57,7 @@ export function CompanyJobPage() {
   const [editDescription, setEditDescription] = useState("");
   const [editRequirements, setEditRequirements] = useState("");
   const [editIsConfidential, setEditIsConfidential] = useState(false);
+  const [editIsInternal, setEditIsInternal] = useState(false);
   const [editIsTalentPool, setEditIsTalentPool] = useState(false);
   const [editAcceptsPlatformApplications, setEditAcceptsPlatformApplications] =
     useState(true);
@@ -80,7 +82,14 @@ export function CompanyJobPage() {
       const response = await api.get(`/jobs/${jobId}`);
       if (response.data) {
         const data = response.data;
-        if (profile?.type !== "ADMIN" && data.ownerId !== user?.uid) {
+        if (
+          profile?.type !== "ADMIN" &&
+          data.ownerId !== user?.uid &&
+          !(
+            profile?.companyId === data.companyId &&
+            profile?.isCompanyAdmin
+          )
+        ) {
           navigate("/dashboard"); // Not the owner
           return;
         }
@@ -95,6 +104,7 @@ export function CompanyJobPage() {
         setEditDescription(data.description || "");
         setEditRequirements(data.requirements || "");
         setEditIsConfidential(data.isConfidential || false);
+        setEditIsInternal(data.isInternal || false);
         setEditIsTalentPool(data.isTalentPool || false);
         setEditAcceptsPlatformApplications(
           data.acceptsPlatformApplications !== false,
@@ -198,6 +208,7 @@ export function CompanyJobPage() {
         description: editDescription,
         requirements: editRequirements,
         isConfidential: editIsConfidential,
+        isInternal: editIsInternal,
         isTalentPool: editIsTalentPool,
         acceptsPlatformApplications: editAcceptsPlatformApplications,
         externalApplicationInstructions: editAcceptsPlatformApplications
@@ -312,6 +323,11 @@ export function CompanyJobPage() {
               {job.isTalentPool && (
                 <span className="bg-purple-100 text-purple-700 text-[10px] uppercase font-bold px-2 py-0.5 rounded">
                   Banco de Talentos
+                </span>
+              )}
+              {job.isInternal && (
+                <span className="inline-flex items-center gap-1 rounded bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase text-violet-700">
+                  <LockKeyhole className="h-3 w-3" /> Interna
                 </span>
               )}
             </h1>
@@ -537,6 +553,27 @@ export function CompanyJobPage() {
                 />
               </div>
               <div className="md:col-span-2 flex flex-col gap-3">
+                <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${editIsInternal ? "border-violet-300 bg-violet-50" : "border-stone-200 bg-stone-50"}`}>
+                  <input
+                    type="checkbox"
+                    checked={editIsInternal}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setEditIsInternal(checked);
+                      if (checked) {
+                        setEditAcceptsPlatformApplications(true);
+                        setEditExternalApplicationInstructions("");
+                        setEditApplicationEmail("");
+                        setEditApplicationWhatsApp("");
+                      }
+                    }}
+                    className="mt-0.5 h-5 w-5 rounded border-stone-300 text-violet-600 focus:ring-violet-500"
+                  />
+                  <span>
+                    <span className="flex items-center gap-2 text-sm font-bold text-stone-800"><LockKeyhole className="h-4 w-4 text-violet-600" /> Vaga interna</span>
+                    <span className="mt-1 block text-xs leading-5 text-stone-500">Fica invisível no portal e só abre para pessoas convidadas no Banco de Talentos.</span>
+                  </span>
+                </label>
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
@@ -563,9 +600,10 @@ export function CompanyJobPage() {
                   <input
                     type="checkbox"
                     checked={editAcceptsPlatformApplications}
-                    onChange={(e) =>
-                      setEditAcceptsPlatformApplications(e.target.checked)
-                    }
+                    onChange={(e) => {
+                      setEditAcceptsPlatformApplications(e.target.checked);
+                      if (!e.target.checked) setEditIsInternal(false);
+                    }}
                     className="w-5 h-5 mt-0.5 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500"
                   />
                   <span className="text-sm font-medium text-stone-700">

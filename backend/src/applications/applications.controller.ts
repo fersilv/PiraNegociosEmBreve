@@ -1,11 +1,12 @@
-import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, NotFoundException, Param, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ApplicationsService } from './applications.service';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { Application, ApplicationStatus } from './entities/application.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { User, UserType } from '../users/entities/user.entity';
+import { CompanyTalentInvite } from '../companies/entities/company-talent-invite.entity';
 
 const STRUCTURED_RESUME_MARKER = 'structured://published';
 
@@ -16,6 +17,8 @@ export class ApplicationsController {
     private readonly appsService: ApplicationsService,
     @InjectRepository(Job) private readonly jobsRepository: Repository<Job>,
     @InjectRepository(User) private readonly usersRepository: Repository<User>,
+    @InjectRepository(CompanyTalentInvite)
+    private readonly talentInvitesRepository: Repository<CompanyTalentInvite>,
   ) {}
 
   private async assertCanManageApplication(uid: string, application: Application) {
@@ -121,6 +124,23 @@ export class ApplicationsController {
     ]);
     if (!candidate) throw new ForbiddenException('Usuário não encontrado.');
     if (!job || !job.active) throw new BadRequestException('Esta vaga não está disponível para candidaturas.');
+    const today = new Date().toISOString().slice(0, 10);
+    if (job.deadlineDate && job.deadlineDate < today) {
+      if (job.isInternal) throw new NotFoundException('Vaga não encontrada.');
+      throw new BadRequestException('O prazo para esta vaga foi encerrado.');
+    }
+    const internalInvite = job.isInternal
+      ? await this.talentInvitesRepository.findOne({
+          where: {
+            candidateId: req.user.uid,
+            jobId: job.id,
+            status: In(['PENDING', 'ACCEPTED']),
+          },
+        })
+      : null;
+    if (job.isInternal && !internalInvite) {
+      throw new NotFoundException('Vaga não encontrada.');
+    }
     if (!job.acceptsPlatformApplications) {
       throw new BadRequestException('Esta empresa recebe currículos por um canal externo indicado na vaga.');
     }
@@ -153,12 +173,18 @@ export class ApplicationsController {
         }
       : publishedSnapshot!;
 
-    return this.appsService.create(
+    const application = await this.appsService.create(
       req.user.uid,
       job,
       legacyResumeUrl && /^https?:\/\//i.test(legacyResumeUrl) ? legacyResumeUrl : undefined,
       snapshot,
     );
+    if (internalInvite?.status === 'PENDING') {
+      internalInvite.status = 'ACCEPTED';
+      internalInvite.acceptedAt = new Date();
+      await this.talentInvitesRepository.save(internalInvite);
+    }
+    return application;
   }
 
   @Put(':id/status')

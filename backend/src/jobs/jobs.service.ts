@@ -22,6 +22,7 @@ const JOB_MUTABLE_FIELDS = [
   'salary',
   'pcdMode',
   'isConfidential',
+  'isInternal',
   'isTalentPool',
   'active',
   'deadlineDate',
@@ -43,7 +44,7 @@ export class JobsService {
 
   async findAll(): Promise<Array<Job & { postedAt: string }>> {
     const jobs = await this.jobsRepository.find({
-      where: { active: true },
+      where: { active: true, isInternal: false },
       order: { createdAt: 'DESC' },
     });
     return jobs.map((job) => ({

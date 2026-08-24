@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
-import { Briefcase, MapPin, DollarSign, Calendar, Building2, ArrowLeft, CheckCircle2, Loader2, AlertCircle, Clock, Laptop } from 'lucide-react';
+import { Briefcase, MapPin, DollarSign, Calendar, Building2, ArrowLeft, CheckCircle2, Loader2, AlertCircle, Clock, Laptop, LockKeyhole } from 'lucide-react';
 import { ApplicationChat } from '../components/ApplicationChat';
 
 export function CandidateJobViewPage() {
   const { jobId } = useParams<{ jobId: string }>();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const [job, setJob] = useState<any | null>(null);
@@ -63,29 +63,15 @@ export function CandidateJobViewPage() {
       return;
     }
 
-    if (profile?.type !== 'CANDIDATE') {
-      alert('Apenas candidatos podem se candidatar a vagas.');
-      return;
-    }
-
-    if (!profile.resumeURL?.trim()) {
-      alert('Para se candidatar, envie seu currículo no perfil. Você será direcionado agora.');
-      navigate('/dashboard/perfil');
-      return;
-    }
-
     setApplying(true);
     try {
-      const response = await api.post('/applications', {
-        jobId: job.id,
-        resumeURL: profile.resumeURL || ''
-      });
+      const response = await api.post('/applications', { jobId: job.id });
 
       setApplication(response.data);
       alert('Candidatura realizada com sucesso!');
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert('Erro ao realizar candidatura. Tente novamente.');
+      alert(e?.response?.data?.message || 'Erro ao realizar candidatura. Tente novamente.');
     } finally {
       setApplying(false);
     }
@@ -204,6 +190,11 @@ export function CandidateJobViewPage() {
               {!isJobActive && (
                 <span className="bg-amber-100 text-amber-800 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
                   Seleção Encerrada
+                </span>
+              )}
+              {job.isInternal && (
+                <span className="flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-bold uppercase tracking-wider text-violet-700">
+                  <LockKeyhole className="h-3.5 w-3.5" /> Vaga interna · acesso por convite
                 </span>
               )}
             </div>

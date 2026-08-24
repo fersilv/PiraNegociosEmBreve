@@ -15,7 +15,7 @@ export function JobsSection({ region }: { region: 'PIRASSUNUNGA' }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [myApplications, setMyApplications] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -24,36 +24,20 @@ export function JobsSection({ region }: { region: 'PIRASSUNUNGA' }) {
       navigate(`/login?returnTo=${encodeURIComponent('/?applyTo=' + job.id)}`);
       return;
     }
-    if (profile?.type !== 'CANDIDATE') {
-      alert('Apenas candidatos podem se candidatar às vagas. Mude seu perfil ou crie uma conta de candidato.');
-      return;
-    }
     if (myApplications.includes(job.id)) {
       alert('Você já se candidatou a esta vaga.');
-      return;
-    }
-    if (!profile.resumeURL?.trim()) {
-      alert('Para se candidatar, envie seu currículo no perfil. Você será direcionado agora.');
-      navigate('/dashboard/perfil');
       return;
     }
     try {
       await api.post('/applications', {
         jobId: job.id,
-        jobTitle: job.title,
-        companyName: job.isConfidential ? 'Empresa Confidencial' : job.companyName,
-        candidateId: user.uid,
-        companyId: job.ownerId,
-        status: 'Enviado',
-        appliedAt: new Date().toISOString(),
-        resumeURL: profile.resumeURL
       });
       alert('Candidatura enviada com sucesso!');
       setMyApplications(prev => [...prev, job.id]);
       setSelectedJob(null);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert('Erro ao enviar candidatura');
+      alert(e?.response?.data?.message || 'Erro ao enviar candidatura');
     }
   };
 
@@ -75,7 +59,7 @@ export function JobsSection({ region }: { region: 'PIRASSUNUNGA' }) {
   }, []);
 
   useEffect(() => {
-    if (user && profile?.type === 'CANDIDATE') {
+    if (user) {
       const fetchMyApps = async () => {
         try {
           const res = await api.get('/applications/me');
@@ -86,10 +70,10 @@ export function JobsSection({ region }: { region: 'PIRASSUNUNGA' }) {
       };
       fetchMyApps();
     }
-  }, [user, profile]);
+  }, [user]);
 
   useEffect(() => {
-    if (!loading && user && profile?.type === 'CANDIDATE') {
+    if (!loading && user) {
       const applyTo = new URLSearchParams(location.search).get('applyTo');
       if (applyTo) {
         const job = jobs.find(j => j.id === applyTo);
@@ -100,7 +84,7 @@ export function JobsSection({ region }: { region: 'PIRASSUNUNGA' }) {
         }
       }
     }
-  }, [loading, user, profile, jobs, location.search, location.pathname]);
+  }, [loading, user, jobs, location.search, location.pathname]);
 
   const regionJobs = jobs.filter(job => job.location.toUpperCase().includes(region) || true); // fallback for now
   const sponsoredJobs = regionJobs.filter(job => job.isSponsored);

@@ -29,7 +29,7 @@ export class JobMatchSubscriber implements EntitySubscriberInterface<Job> {
       console.error(`Não foi possível preparar a vaga ${job.id} para o Match Inteligente:`, error);
     }
 
-    if (!notifyAsNew) return;
+    if (!notifyAsNew || job.isInternal) return;
 
     try {
       const earlyRecipients = profile

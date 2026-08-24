@@ -8,6 +8,7 @@ import {
   Clock3,
   Eye,
   Loader2,
+  LockKeyhole,
   MapPin,
   MoreHorizontal,
   PauseCircle,
@@ -152,6 +153,7 @@ export function CompanyJobsManagementPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge job={job} />
+                    {job.isInternal && <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-700"><LockKeyhole className="h-3 w-3" /> Interna</span>}
                     {job.pcdMode === "EXCLUSIVE" && <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-700"><Accessibility className="h-3 w-3" /> Exclusiva PCD</span>}
                     {job.pcdMode === "INCLUSIVE" && <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700"><Accessibility className="h-3 w-3" /> Também PCD</span>}
                   </div>

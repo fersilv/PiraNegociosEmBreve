@@ -332,7 +332,10 @@ export class JobMatchService {
     const user = await this.users.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('Perfil do usuário não encontrado.');
 
-    const jobs = await this.jobs.find({ where: { active: true }, order: { createdAt: 'DESC' } });
+    const jobs = await this.jobs.find({
+      where: { active: true, isInternal: false },
+      order: { createdAt: 'DESC' },
+    });
     if (!jobs.length) return { ...status, matches: [] };
     const jobIds = jobs.map((job) => job.id);
     const profiles = await this.dataSource.query(`SELECT * FROM job_match_profiles WHERE status = 'READY' AND "jobId" = ANY($1::uuid[])`, [jobIds]);
@@ -366,7 +369,8 @@ export class JobMatchService {
     ]);
     const jobProfile = profileRows[0];
     const userIds = entitlementRows.map((row: any) => String(row.userId)).filter(Boolean);
-    if (!job || !jobProfile?.profile || !userIds.length) return [];
+    if (!job || job.isInternal || !jobProfile?.profile || !userIds.length)
+      return [];
 
     const candidates = await this.users.find({ where: { id: In(userIds) } });
     const cachedRows = await this.dataSource.query(

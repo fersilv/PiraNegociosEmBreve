@@ -12,9 +12,10 @@ import {
   UseGuards,
   Req,
   ConflictException,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { JobsService } from './jobs.service';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 
@@ -22,6 +23,8 @@ import { Job } from './entities/job.entity';
 import { User, UserType } from '../users/entities/user.entity';
 import { Company } from '../companies/entities/company.entity';
 import { JobReport } from './entities/job-report.entity';
+import { CompanyTalentInvite } from '../companies/entities/company-talent-invite.entity';
+import { Application } from '../applications/entities/application.entity';
 import { createHash } from 'crypto';
 
 @Controller('jobs')
@@ -33,6 +36,10 @@ export class JobsController {
     private readonly companiesRepository: Repository<Company>,
     @InjectRepository(JobReport)
     private readonly reportsRepository: Repository<JobReport>,
+    @InjectRepository(CompanyTalentInvite)
+    private readonly talentInvitesRepository: Repository<CompanyTalentInvite>,
+    @InjectRepository(Application)
+    private readonly applicationsRepository: Repository<Application>,
   ) {}
 
   private async assertCanManageCompany(
@@ -69,8 +76,48 @@ export class JobsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.jobsService.findOne(id);
+  @UseGuards(FirebaseAuthGuard)
+  async findOne(@Req() req: any, @Param('id') id: string) {
+    const job = await this.jobsService.findOne(id);
+    if (!job) throw new NotFoundException('Vaga não encontrada.');
+    if (!job.isInternal) return job;
+
+    const user = await this.usersRepository.findOne({
+      where: { id: req.user.uid },
+    });
+    const canManage =
+      user?.type === UserType.ADMIN ||
+      job.ownerId === req.user.uid ||
+      Boolean(
+        job.companyId &&
+          user?.companyId === job.companyId &&
+          user.isCompanyAdmin,
+      );
+    if (canManage) return job;
+
+    const [invite, application] = await Promise.all([
+      this.talentInvitesRepository.findOne({
+        where: {
+          candidateId: req.user.uid,
+          jobId: job.id,
+          status: In(['PENDING', 'ACCEPTED']),
+        },
+      }),
+      this.applicationsRepository.findOne({
+        where: { candidateId: req.user.uid, jobId: job.id },
+      }),
+    ]);
+    if (application) return job;
+
+    const today = new Date().toISOString().slice(0, 10);
+    if (
+      invite &&
+      job.active &&
+      (!job.deadlineDate || job.deadlineDate >= today)
+    ) {
+      return job;
+    }
+    throw new NotFoundException('Vaga não encontrada.');
   }
 
   @Post(':id/reports')
@@ -80,10 +127,8 @@ export class JobsController {
     @Body() data: { reason?: string; details?: string },
   ) {
     const job = await this.jobsService.findOne(id);
-    if (!job || !job.active)
-      throw new BadRequestException(
-        'Esta vaga não está disponível para denúncia.',
-      );
+    if (!job || !job.active || job.isInternal)
+      throw new NotFoundException('Vaga não encontrada.');
     const reason = typeof data.reason === 'string' ? data.reason.trim() : '';
     const allowedReasons = [
       'VAGA_INEXISTENTE',
@@ -143,6 +188,7 @@ export class JobsController {
         'Empresa, título e descrição são obrigatórios.',
       );
     }
+    this.normalizeInternalVisibility(createJobDto);
     if (
       createJobDto.acceptsPlatformApplications === false &&
       !this.hasExternalApplicationChannel(createJobDto)
@@ -180,6 +226,7 @@ export class JobsController {
       throw new ForbiddenException(
         'Somente a administração pode gerenciar vagas externas.',
       );
+    this.normalizeInternalVisibility(updateJobDto, job);
     if (
       updateJobDto.acceptsPlatformApplications === false &&
       !this.hasExternalApplicationChannel(updateJobDto, job)
@@ -221,6 +268,26 @@ export class JobsController {
           : ''
         : current?.applicationUrl?.trim();
     return Boolean(instructions || email || whatsapp || applicationUrl);
+  }
+
+  private normalizeInternalVisibility(data: Partial<Job>, current?: Job) {
+    if (
+      data.isInternal !== undefined &&
+      typeof data.isInternal !== 'boolean'
+    ) {
+      throw new BadRequestException(
+        'A classificação de vaga interna deve ser verdadeira ou falsa.',
+      );
+    }
+    const isInternal = data.isInternal ?? current?.isInternal ?? false;
+    if (!isInternal) return;
+
+    data.acceptsPlatformApplications = true;
+    data.externalApplicationInstructions = null;
+    data.applicationEmail = null;
+    data.applicationWhatsApp = null;
+    data.applicationUrl = null;
+    data.applicationUrlTitle = null;
   }
 
   private validateApplicationFields(data: Partial<Job>) {

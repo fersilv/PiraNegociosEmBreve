@@ -378,6 +378,21 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     let processed = 0;
     for (const row of rows) {
       try {
+        const jobRows = await this.userRepo.manager.query(
+          `SELECT active, "isInternal"
+           FROM jobs
+           WHERE id = $1
+           LIMIT 1`,
+          [row.jobId],
+        );
+        if (!jobRows[0]?.active || jobRows[0]?.isInternal) {
+          await this.userRepo.manager.query(
+            `UPDATE scheduled_job_alerts SET "generalDispatchedAt" = now(), "processingAt" = NULL, "updatedAt" = now() WHERE id = $1`,
+            [row.id],
+          );
+          processed += 1;
+          continue;
+        }
         const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) : (row.payload || {});
         const earlyIds = new Set(this.jsonArray(row.earlyRecipientIds));
         const users = await this.userRepo.find({ where: { isOpenToWork: true } });

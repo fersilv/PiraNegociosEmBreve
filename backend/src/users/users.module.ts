@@ -9,13 +9,22 @@ import { Company } from '../companies/entities/company.entity';
 import { CandidatesController } from './candidates.controller';
 import { Institution } from './entities/institution.entity';
 import { AdminModule } from '../admin/admin.module';
+import { CompanyTalentInvite } from '../companies/entities/company-talent-invite.entity';
+import { Job } from '../jobs/entities/job.entity';
 
 import { InstitutionsController } from './institutions.controller';
 import { InstitutionsService } from './institutions.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, CompanyInvitation, Company, Institution]),
+    TypeOrmModule.forFeature([
+      User,
+      CompanyInvitation,
+      Company,
+      Institution,
+      CompanyTalentInvite,
+      Job,
+    ]),
     AnalyticsModule,
     AdminModule,
   ],

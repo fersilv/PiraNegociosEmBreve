@@ -136,8 +136,13 @@ export class ExternalJobsService {
       .digest('hex');
 
     const exactWhere: FindOptionsWhere<Job>[] = [];
-    if (data.sourceExternalId) exactWhere.push({ sourceExternalId: data.sourceExternalId, ingestionSourceId: client.id });
-    if (data.sourceUrl) exactWhere.push({ sourceUrl: data.sourceUrl });
+    if (data.sourceExternalId)
+      exactWhere.push({
+        sourceExternalId: data.sourceExternalId,
+        ingestionSourceId: client.id,
+        isInternal: false,
+      });
+    if (data.sourceUrl) exactWhere.push({ sourceUrl: data.sourceUrl, isInternal: false });
 
     if (exactWhere.length > 0) {
       const exact = await this.jobs.findOne({ where: exactWhere });
@@ -157,7 +162,11 @@ export class ExternalJobsService {
       }
     }
 
-    const recent = await this.jobs.find({ order: { createdAt: 'DESC' }, take: 500 });
+    const recent = await this.jobs.find({
+      where: { isInternal: false },
+      order: { createdAt: 'DESC' },
+      take: 500,
+    });
     let best: { job: Job; score: number; signals: any } | null = null;
     for (const job of recent) {
       const titleScore = this.similarity(data.title, job.title);
@@ -319,7 +328,12 @@ export class ExternalJobsService {
     const filters = this.catalogFilters(query);
     const filterHash = createHash('sha256').update(JSON.stringify(filters)).digest('hex');
     const cursor = query.cursor ? this.decodeCursor(query.cursor, filterHash, client) : null;
-    const builder = this.jobs.createQueryBuilder('job').orderBy('job.createdAt', 'DESC').addOrderBy('job.id', 'DESC').take(limit + 1);
+    const builder = this.jobs
+      .createQueryBuilder('job')
+      .andWhere('job."isInternal" = false')
+      .orderBy('job.createdAt', 'DESC')
+      .addOrderBy('job.id', 'DESC')
+      .take(limit + 1);
     if (cursor) builder.andWhere('(job."createdAt" < :cursorCreatedAt OR (job."createdAt" = :cursorCreatedAt AND job.id < :cursorId))', { cursorCreatedAt: cursor.createdAt, cursorId: cursor.id });
     if (filters.active !== null) builder.andWhere('job.active = :active', { active: filters.active });
     if (filters.external !== null) builder.andWhere('job."isExternalListing" = :external', { external: filters.external });

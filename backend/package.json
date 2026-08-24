@@ -20,6 +20,7 @@
     "migrate:mobile-upload": "node scripts/run-sql-migration.cjs migrations/20260824_mobile_upload_sessions.sql && node scripts/run-sql-migration.cjs migrations/20260824_mobile_upload_qr_pairing.sql",
     "migrate:company-pages": "node scripts/run-sql-migration.cjs migrations/20260824_company_page_builder.sql",
     "migrate:public-resume": "node scripts/run-sql-migration.cjs migrations/20260824_public_resume_builder.sql",
+    "migrate:internal-jobs": "node scripts/run-sql-migration.cjs migrations/20260824_internal_jobs.sql",
     "migrate:payments": "node scripts/run-sql-migration.cjs migrations/20260822_payments_resume_history.sql && node scripts/run-sql-migration.cjs migrations/20260822_payment_dev_simulation.sql && node scripts/run-sql-migration.cjs migrations/20260822_job_match_premium.sql && node scripts/run-sql-migration.cjs migrations/20260822_billing_support_boost.sql && node scripts/run-sql-migration.cjs migrations/20260823_payment_providers_vault.sql && node scripts/run-sql-migration.cjs migrations/20260823_payment_provider_routes.sql && node scripts/run-sql-migration.cjs migrations/20260824_mobile_upload_sessions.sql && node scripts/run-sql-migration.cjs migrations/20260824_mobile_upload_qr_pairing.sql && node scripts/run-sql-migration.cjs migrations/20260824_public_resume_builder.sql",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",

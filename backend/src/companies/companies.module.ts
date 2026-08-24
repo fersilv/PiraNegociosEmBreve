@@ -21,6 +21,10 @@ import { CompanyPagePreview } from './entities/company-page-preview.entity';
 import { CompanyPagesService } from './company-pages.service';
 import { CompanyPagesController } from './company-pages.controller';
 import { CompanyPagesPublicController } from './company-pages-public.controller';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { TalentInvitesService } from './talent-invites.service';
+import { TalentInviteEmailService } from './talent-invite-email.service';
+import { TalentInvitePreviewController } from './talent-invite-preview.controller';
 
 @Module({
   imports: [
@@ -39,13 +43,20 @@ import { CompanyPagesPublicController } from './company-pages-public.controller'
       CompanyPage,
       CompanyPagePreview,
     ]),
+    NotificationsModule,
   ],
-  providers: [CompaniesService, CompanyPagesService],
+  providers: [
+    CompaniesService,
+    CompanyPagesService,
+    TalentInvitesService,
+    TalentInviteEmailService,
+  ],
   controllers: [
     CompaniesController,
     CompanyPagesController,
     CompanyPagesPublicController,
     TalentInvitesController,
+    TalentInvitePreviewController,
     CompanyHiringConfigController,
     HiringConfigCompatController,
   ],

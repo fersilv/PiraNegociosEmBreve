@@ -28,6 +28,7 @@ const CityJobsPage = lazy(() => import("./pages/CityJobsPage"));
 const EmbedJobsWidget = lazy(() => import("./pages/EmbedJobsWidget"));
 const MobileUploadPage = lazy(() => import("./pages/MobileUploadPage"));
 const PublicResumeBuilderPage = lazy(() => import("./pages/PublicResumeBuilderPage"));
+const TalentInvitePage = lazy(() => import("./pages/TalentInvitePage"));
 
 function RouteLoader() {
   return (
@@ -41,7 +42,8 @@ export default function App() {
   const isEmbed = window.location.pathname.startsWith("/embed");
   const isMobileTransfer = window.location.pathname.startsWith("/transferir/");
   const isCompanyPreview = window.location.pathname.startsWith("/preview/empresa/");
-  const isMinimalShell = isEmbed || isMobileTransfer || isCompanyPreview;
+  const isTalentInvite = window.location.pathname.startsWith("/convites/vaga/");
+  const isMinimalShell = isEmbed || isMobileTransfer || isCompanyPreview || isTalentInvite;
 
   return (
     <FeedbackProvider>
@@ -50,7 +52,7 @@ export default function App() {
         {!isMinimalShell && <CookieConsent />}
         <PublicResumeAccountBridge />
         <BrowserRouter>
-          {!isMobileTransfer && !isCompanyPreview && <AnalyticsTracker />}
+          {!isMobileTransfer && !isCompanyPreview && !isTalentInvite && <AnalyticsTracker />}
           <PublicResumeResponsiveStyles />
           <PublicResumeExitIntent />
           {!isMinimalShell && <ResumeQualificationWidget />}
@@ -68,6 +70,7 @@ export default function App() {
               <Route path="/embed/vagas" element={<EmbedJobsWidget />} />
               <Route path="/transferir/:sessionId" element={<MobileUploadPage />} />
               <Route path="/preview/empresa/:token" element={<CompanyPagePreviewPage />} />
+              <Route path="/convites/vaga/:token" element={<TalentInvitePage />} />
               <Route path="/login" element={<Login />} />
 
               <Route path="/user/*" element={<Dashboard />} />

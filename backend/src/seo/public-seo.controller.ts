@@ -141,6 +141,7 @@ export class PublicSeoController {
       .where('job.companyId = :companyId', { companyId: company.id })
       .andWhere('job.active = true')
       .andWhere('job.isConfidential = false')
+      .andWhere('job."isInternal" = false')
       .andWhere('(job.deadlineDate IS NULL OR job.deadlineDate >= CURRENT_DATE)')
       .orderBy('job.createdAt', 'DESC')
       .getMany();
@@ -286,6 +287,7 @@ export class PublicSeoController {
       .leftJoin(Company, 'company', 'company.id::varchar = job.companyId')
       .where('job.active = true')
       .andWhere('job.isConfidential = false')
+      .andWhere('job."isInternal" = false')
       .andWhere('job.slug IS NOT NULL')
       .andWhere(
         '(job.companyId IS NULL OR company.verificationStatus = :status)',
@@ -318,6 +320,7 @@ export class PublicSeoController {
       .where(`job.${field} = :value`, { value })
       .andWhere('job.active = true')
       .andWhere('job.isConfidential = false')
+      .andWhere('job."isInternal" = false')
       .andWhere('(job.deadlineDate IS NULL OR job.deadlineDate >= CURRENT_DATE)')
       .getOne();
     if (!job) throw new NotFoundException('Vaga pública não encontrada.');

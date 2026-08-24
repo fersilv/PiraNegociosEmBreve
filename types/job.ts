@@ -30,6 +30,7 @@ export interface Job {
   sourceUrl?: string | null;
   reportCount?: number;
   isConfidential?: boolean;
+  isInternal?: boolean;
   isCompanyVerified?: boolean;
   isTalentPool?: boolean;
   active?: boolean;

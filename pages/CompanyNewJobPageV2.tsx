@@ -6,6 +6,7 @@ import {
   Briefcase,
   Check,
   FileCheck2,
+  LockKeyhole,
   Loader2,
   Plus,
   Sparkles,
@@ -41,6 +42,7 @@ export function CompanyNewJobPage() {
   const [newSkill, setNewSkill] = useState("");
   const [pcdMode, setPcdMode] = useState<JobPcdMode>("GENERAL");
   const [isConfidential, setIsConfidential] = useState(false);
+  const [isInternal, setIsInternal] = useState(false);
   const [isTalentPool, setIsTalentPool] = useState(false);
   const [acceptsPlatformApplications, setAcceptsPlatformApplications] = useState(true);
   const [requiresResumeFile, setRequiresResumeFile] = useState(false);
@@ -152,20 +154,23 @@ export function CompanyNewJobPage() {
         skills,
         pcdMode,
         isConfidential,
+        isInternal,
         isTalentPool,
         acceptsPlatformApplications,
         requiresResumeFile: acceptsPlatformApplications ? requiresResumeFile : false,
         externalApplicationInstructions: acceptsPlatformApplications ? "" : externalApplicationInstructions.trim(),
       });
-      try {
-        await notifyCandidatesOfNewJob(
-          response.data.id,
-          title.trim(),
-          isConfidential ? "Empresa Confidencial" : company.name,
-          location || "Remoto",
-        );
-      } catch (error) {
-        console.error("Não foi possível disparar notificações da vaga:", error);
+      if (!isInternal) {
+        try {
+          await notifyCandidatesOfNewJob(
+            response.data.id,
+            title.trim(),
+            isConfidential ? "Empresa Confidencial" : company.name,
+            location || "Remoto",
+          );
+        } catch (error) {
+          console.error("Não foi possível disparar notificações da vaga:", error);
+        }
       }
       navigate(`/company/vagas/${response.data.id}`);
     } catch (error: any) {
@@ -228,7 +233,7 @@ export function CompanyNewJobPage() {
         <Section number="04" title="Candidatura" description="Defina por onde o candidato entra e se um arquivo de currículo é realmente necessário.">
           <div className="grid gap-3 sm:grid-cols-2">
             <ToggleCard active={acceptsPlatformApplications} onClick={() => setAcceptsPlatformApplications(true)} title="Pela plataforma" description="Receba candidaturas e acompanhe o processo no PiraNegócios." />
-            <ToggleCard active={!acceptsPlatformApplications} onClick={() => { setAcceptsPlatformApplications(false); setRequiresResumeFile(false); }} title="Candidatura externa" description="Direcione para outro canal ou processo." />
+            <ToggleCard active={!acceptsPlatformApplications} onClick={() => { setAcceptsPlatformApplications(false); setRequiresResumeFile(false); setIsInternal(false); }} title="Candidatura externa" description="Direcione para outro canal ou processo." />
           </div>
 
           {acceptsPlatformApplications ? (
@@ -246,6 +251,7 @@ export function CompanyNewJobPage() {
           )}
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${isInternal ? "border-violet-300 bg-violet-50 ring-2 ring-violet-100" : "border-stone-200"}`}><input type="checkbox" checked={isInternal} onChange={(e) => { const checked = e.target.checked; setIsInternal(checked); if (checked) { setAcceptsPlatformApplications(true); setExternalApplicationInstructions(""); } }} className="mt-0.5" /><span><strong className="flex items-center gap-2 text-sm text-stone-900"><LockKeyhole className="h-4 w-4 text-violet-600" /> Vaga interna</strong><span className="mt-1 block text-xs leading-5 text-stone-500">Não aparece no portal nem nas buscas. Somente pessoas convidadas no Banco de Talentos conseguem visualizar e se candidatar.</span></span></label>
             <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-stone-200 p-4"><input type="checkbox" checked={isConfidential} onChange={(e) => setIsConfidential(e.target.checked)} /><span><strong className="block text-sm text-stone-900">Empresa confidencial</strong><span className="text-xs text-stone-500">Oculta o nome da empresa para candidatos.</span></span></label>
             <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-stone-200 p-4"><input type="checkbox" checked={isTalentPool} onChange={(e) => { const checked = e.target.checked; setIsTalentPool(checked); if (checked) setDeadlineDate(""); }} /><span><strong className="block text-sm text-stone-900">Banco de talentos</strong><span className="text-xs text-stone-500">Processo contínuo, sem uma única contratação imediata.</span></span></label>
           </div>

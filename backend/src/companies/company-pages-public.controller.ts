@@ -51,6 +51,7 @@ export class CompanyPagesPublicController {
       .where('job.companyId = :companyId', { companyId: company.id })
       .andWhere('job.active = true')
       .andWhere('job.isConfidential = false')
+      .andWhere('job."isInternal" = false')
       .andWhere('(job.deadlineDate IS NULL OR job.deadlineDate >= CURRENT_DATE)')
       .orderBy('job.createdAt', 'DESC')
       .getMany();

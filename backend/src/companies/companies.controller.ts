@@ -27,8 +27,8 @@ import {
 import { CompanyTalentFolder } from './entities/company-talent-folder.entity';
 import { CompanyTalentRecord } from './entities/company-talent-record.entity';
 import { CompanyCandidateNote } from './entities/company-candidate-note.entity';
-import { CompanyTalentInvite } from './entities/company-talent-invite.entity';
 import { Job } from '../jobs/entities/job.entity';
+import { TalentInvitesService } from './talent-invites.service';
 
 @Controller('companies')
 @UseGuards(FirebaseAuthGuard)
@@ -47,9 +47,8 @@ export class CompaniesController {
     private talentRecords: Repository<CompanyTalentRecord>,
     @InjectRepository(CompanyCandidateNote)
     private talentNotes: Repository<CompanyCandidateNote>,
-    @InjectRepository(CompanyTalentInvite)
-    private talentInvites: Repository<CompanyTalentInvite>,
     @InjectRepository(Job) private jobs: Repository<Job>,
+    private readonly talentInvites: TalentInvitesService,
   ) {}
   private async assertManager(uid: string, companyId: string) {
     const [company, user] = await Promise.all([
@@ -231,7 +230,7 @@ export class CompaniesController {
     @Param('id') id: string,
     @Body() data: { candidateId?: string; jobId?: string },
   ) {
-    await this.assertManager(req.user.uid, id);
+    const company = await this.assertManager(req.user.uid, id);
     const [candidate, job] = await Promise.all([
       data.candidateId
         ? this.usersRepository.findOne({ where: { id: data.candidateId } })
@@ -244,19 +243,50 @@ export class CompaniesController {
     ]);
     if (!candidate?.isOpenToWork || !job)
       throw new BadRequestException('Candidato ou vaga inválidos.');
-    const existing = await this.talentInvites.findOne({
-      where: { candidateId: candidate.id, jobId: job.id },
+    return this.talentInvites.inviteRegisteredCandidate({
+      company,
+      candidate,
+      job,
+      invitedById: req.user.uid,
     });
-    if (existing?.status === 'PENDING') return existing;
-    const invite =
-      existing ||
-      this.talentInvites.create({
-        companyId: id,
-        candidateId: candidate.id,
-        jobId: job.id,
-      });
-    invite.status = 'PENDING';
-    return this.talentInvites.save(invite);
+  }
+
+  @Get(':id/talent-invites')
+  async listTalentInvites(@Req() req: any, @Param('id') id: string) {
+    await this.assertManager(req.user.uid, id);
+    return this.talentInvites.listForCompany(id);
+  }
+
+  @Post(':id/talent-invites/email')
+  async inviteTalentByEmail(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() data: { email?: string; candidateName?: string; jobId?: string },
+  ) {
+    const company = await this.assertManager(req.user.uid, id);
+    const job = data.jobId
+      ? await this.jobs.findOne({
+          where: { id: data.jobId, companyId: id, active: true },
+        })
+      : null;
+    if (!job) throw new BadRequestException('Selecione uma vaga ativa.');
+    return this.talentInvites.inviteByEmail({
+      company,
+      job,
+      email: data.email,
+      candidateName: data.candidateName,
+      invitedById: req.user.uid,
+    });
+  }
+
+  @Post(':id/talent-invites/:inviteId/resend')
+  async resendTalentInvite(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('inviteId') inviteId: string,
+  ) {
+    const company = await this.assertManager(req.user.uid, id);
+    return this.talentInvites.resend(company, inviteId, req.user.uid);
   }
 
   @Get(':id')

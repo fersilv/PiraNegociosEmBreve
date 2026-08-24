@@ -389,7 +389,15 @@ export function CandidateDashboard() {
                     <h3 className="mt-3 truncate text-lg font-bold text-[#201813]">{invite.job?.title || "Vaga"}</h3>
                     <p className="mt-1 text-sm text-stone-500">{invite.job?.companyName || "Empresa"} convidou você para participar do processo.</p>
                   </div>
-                  <div className="flex shrink-0 gap-2">
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    {invite.job?.id && (
+                      <Link
+                        to={`/user/vaga/${invite.job.id}`}
+                        className="rounded-2xl border border-[#5b4030]/10 bg-white/70 px-4 py-3 text-xs font-bold text-stone-700 transition hover:bg-white"
+                      >
+                        Ver vaga
+                      </Link>
+                    )}
                     <button
                       type="button"
                       onClick={() => respondToInvite(invite.id, "decline")}

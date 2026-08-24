@@ -7,6 +7,7 @@ import {
   deleteUser,
   getAdditionalUserInfo,
   sendEmailVerification,
+  signOut,
   signInWithEmailAndPassword,
   signInWithPopup,
 } from "firebase/auth";
@@ -15,6 +16,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { CityStateSelector } from "../components/CityStateSelector";
 import type { VisitorLocationHint } from "../lib/locationPersonalization";
+import { getInviteTokenFromLocation } from "../lib/inviteToken";
 
 type Mode = "login" | "register";
 
@@ -57,7 +59,9 @@ export function Login() {
   const navigate = useNavigate();
   const { refreshProfile } = useAuth();
   const isRegister = mode === "register";
-  const waitlistMode = isRegister && registrationStatusLoaded && !registrationOpen;
+  const inviteToken = getInviteTokenFromLocation();
+  const isInviteFlow = Boolean(inviteToken);
+  const waitlistMode = isRegister && registrationStatusLoaded && !registrationOpen && !isInviteFlow;
 
   useEffect(() => {
     let active = true;
@@ -87,7 +91,9 @@ export function Login() {
   };
 
   const loadRuntimeProfile = async () => {
-    const response = await api.get("/users/me");
+    const response = await api.get("/users/me", {
+      headers: inviteToken ? { "X-Talent-Invite-Token": inviteToken } : undefined,
+    });
     await refreshProfile();
     return response.data;
   };
@@ -117,17 +123,18 @@ export function Login() {
   };
 
   const handleGoogle = async () => {
-    if (isRegister && registrationOpen && !acceptedTerms) {
+    if (isRegister && !waitlistMode && !acceptedTerms) {
       setError("Para criar sua conta, confirme que leu os Termos de Uso e a Política de Privacidade.");
       return;
     }
     setLoading(true);
     setError("");
+    let result: Awaited<ReturnType<typeof signInWithPopup>> | null = null;
     try {
-      const result = await signInWithPopup(auth, new GoogleAuthProvider());
+      result = await signInWithPopup(auth, new GoogleAuthProvider());
       const isNewGoogleAccount = Boolean(getAdditionalUserInfo(result)?.isNewUser);
 
-      if (!registrationOpen && isNewGoogleAccount) {
+      if (!registrationOpen && isNewGoogleAccount && !isInviteFlow) {
         const googleName = result.user.displayName?.trim() || result.user.email?.split("@")[0] || "Novo interessado";
         const googleEmail = result.user.email || "";
         await joinWaitlist(googleName, googleEmail, "GOOGLE");
@@ -136,18 +143,23 @@ export function Login() {
       }
 
       let runtime = await loadRuntimeProfile();
-      if (isRegister && registrationOpen && !runtime?.acceptedTerms) {
+      if (isRegister && !runtime?.acceptedTerms) {
         await api.patch("/users/me", {
           acceptedTerms: true,
           displayName: runtime?.displayName || result.user.displayName || undefined,
           fullName: runtime?.fullName || result.user.displayName || undefined,
           ...locationPayload(),
-        });
+        }, { headers: inviteToken ? { "X-Talent-Invite-Token": inviteToken } : undefined });
         runtime = await loadRuntimeProfile();
       }
       navigate(destinationFor(runtime));
     } catch (loginError: any) {
       console.error(loginError);
+      if (isInviteFlow && auth.currentUser) {
+        const isNewGoogleAccount = Boolean(result && getAdditionalUserInfo(result)?.isNewUser);
+        if (isNewGoogleAccount) await deleteUser(auth.currentUser).catch(() => undefined);
+        else await signOut(auth).catch(() => undefined);
+      }
       setError(firebaseMessage(loginError));
     } finally {
       setLoading(false);
@@ -179,6 +191,7 @@ export function Login() {
       return;
     }
     setLoading(true);
+    let createdAccount = false;
     try {
       if (!isRegister) {
         await signInWithEmailAndPassword(auth, email.trim(), password);
@@ -188,6 +201,7 @@ export function Login() {
       }
 
       const credential = await createUserWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+      createdAccount = true;
       void sendEmailVerification(credential.user).catch((verifyError) => console.warn("Não foi possível enviar a verificação de e-mail:", verifyError));
       await api.post("/users/me", {
         displayName: socialName.trim() || name.trim(),
@@ -197,11 +211,15 @@ export function Login() {
         phone: phone.trim(),
         acceptedTerms: true,
         ...locationPayload(),
-      });
+      }, { headers: inviteToken ? { "X-Talent-Invite-Token": inviteToken } : undefined });
       const runtime = await loadRuntimeProfile();
       navigate(destinationFor(runtime));
     } catch (submitError: any) {
       console.error(submitError);
+      if (isInviteFlow && auth.currentUser) {
+        if (createdAccount) await deleteUser(auth.currentUser).catch(() => undefined);
+        else await signOut(auth).catch(() => undefined);
+      }
       setError(firebaseMessage(submitError));
     } finally {
       setLoading(false);
@@ -231,7 +249,7 @@ export function Login() {
         <div className="w-full max-w-[540px]">
           <div className="mb-7 flex items-center justify-between"><Link to="/" className="inline-flex items-center gap-2 text-xs font-bold text-stone-500 hover:text-stone-900"><ArrowLeft className="h-4 w-4" /> Voltar</Link><img src="/brand/logo-horizontal-burgundy.png" alt="PiraNegócios" className="h-7 w-auto max-w-[180px] object-contain lg:hidden" /></div>
           <div className="rounded-[32px] border border-[#ddcfc3] bg-[#fffdfa] p-5 shadow-[0_30px_90px_rgba(73,45,28,.10)] sm:p-8">
-            <div className="grid grid-cols-2 rounded-2xl bg-[#f2ebe4] p-1"><button type="button" onClick={() => changeMode("login")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${!isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>Entrar</button><button type="button" onClick={() => changeMode("register")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>{registrationStatusLoaded && !registrationOpen ? "Lista de espera" : "Criar conta"}</button></div>
+            <div className="grid grid-cols-2 rounded-2xl bg-[#f2ebe4] p-1"><button type="button" onClick={() => changeMode("login")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${!isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>Entrar</button><button type="button" onClick={() => changeMode("register")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>{registrationStatusLoaded && !registrationOpen && !isInviteFlow ? "Lista de espera" : "Criar conta"}</button></div>
 
             {waitlisted ? (
               <div className="py-10 text-center">
@@ -244,15 +262,15 @@ export function Login() {
             ) : (
               <>
                 <div className="mt-7">
-                  <p className="text-[10px] font-black uppercase tracking-[.16em] text-terracotta-600">{waitlistMode ? "Acesso em preparação" : isRegister ? "Comece seu perfil" : "Bem-vindo de volta"}</p>
-                  <h2 className="mt-1 font-serif text-3xl font-bold text-stone-950">{waitlistMode ? "Novos cadastros estão temporariamente pausados." : isRegister ? "Crie sua conta profissional." : "Entre no seu espaço."}</h2>
-                  <p className="mt-2 text-sm leading-6 text-stone-500">{waitlistMode ? "Estamos preparando a próxima etapa da plataforma. Deixe apenas seu nome e e-mail e avisaremos assim que a entrada for reaberta." : isRegister ? "Leva poucos minutos. Seu currículo pode continuar depois como rascunho." : "Suas vagas, currículo, processos e empresa continuam exatamente de onde você parou."}</p>
+                  <p className="text-[10px] font-black uppercase tracking-[.16em] text-terracotta-600">{waitlistMode ? "Acesso em preparação" : isInviteFlow ? "Convite para processo seletivo" : isRegister ? "Comece seu perfil" : "Bem-vindo de volta"}</p>
+                  <h2 className="mt-1 font-serif text-3xl font-bold text-stone-950">{waitlistMode ? "Novos cadastros estão temporariamente pausados." : isInviteFlow ? (isRegister ? "Crie sua conta para conhecer a vaga." : "Entre para conhecer a vaga.") : isRegister ? "Crie sua conta profissional." : "Entre no seu espaço."}</h2>
+                  <p className="mt-2 text-sm leading-6 text-stone-500">{waitlistMode ? "Estamos preparando a próxima etapa da plataforma. Deixe apenas seu nome e e-mail e avisaremos assim que a entrada for reaberta." : isInviteFlow ? "Use exatamente o mesmo e-mail que recebeu o convite. Depois do cadastro você poderá ler a vaga completa antes de aceitar." : isRegister ? "Leva poucos minutos. Seu currículo pode continuar depois como rascunho." : "Suas vagas, currículo, processos e empresa continuam exatamente de onde você parou."}</p>
                 </div>
 
                 {waitlistMode && <div className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4"><BellRing className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><p className="text-xs leading-5 text-amber-900">O pré-cadastro <strong>não cria uma conta</strong> e não pede senha, telefone ou outros dados. Ele serve somente para avisar quando novos membros forem aceitos.</p></div>}
                 {error && <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm font-semibold text-red-700">{error}</div>}
 
-                <button type="button" onClick={() => void handleGoogle()} disabled={loading || (isRegister && registrationOpen && !acceptedTerms)} className="mt-6 flex h-12 w-full items-center justify-center gap-3 rounded-2xl border border-stone-200 bg-white text-sm font-bold text-stone-800 transition hover:bg-stone-50 disabled:opacity-45"><GoogleIcon /> {waitlistMode ? "Entrar na lista com Google" : "Continuar com Google"}</button>
+                <button type="button" onClick={() => void handleGoogle()} disabled={loading || (isRegister && !waitlistMode && !acceptedTerms)} className="mt-6 flex h-12 w-full items-center justify-center gap-3 rounded-2xl border border-stone-200 bg-white text-sm font-bold text-stone-800 transition hover:bg-stone-50 disabled:opacity-45"><GoogleIcon /> {waitlistMode ? "Entrar na lista com Google" : "Continuar com Google"}</button>
                 <div className="my-5 flex items-center gap-3"><span className="h-px flex-1 bg-stone-200" /><span className="text-[9px] font-black uppercase tracking-[.16em] text-stone-400">ou use seu e-mail</span><span className="h-px flex-1 bg-stone-200" /></div>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
@@ -271,7 +289,7 @@ export function Login() {
                   )}
                   <button type="submit" disabled={loading || (!waitlistMode && isRegister && !acceptedTerms)} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-terracotta-600 px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-terracotta-600/15 transition hover:bg-terracotta-700 disabled:opacity-45">{loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <>{waitlistMode ? "Quero ser avisado" : isRegister ? "Criar minha conta" : "Entrar"}<ArrowRight className="h-4 w-4" /></>}</button>
                 </form>
-                <p className="mt-6 text-center text-xs text-stone-400">{isRegister ? "Já tem conta?" : "Ainda não tem conta?"} <button type="button" onClick={() => changeMode(isRegister ? "login" : "register")} className="font-black text-terracotta-700">{isRegister ? "Entrar" : registrationStatusLoaded && !registrationOpen ? "Entrar na lista" : "Criar agora"}</button></p>
+                <p className="mt-6 text-center text-xs text-stone-400">{isRegister ? "Já tem conta?" : "Ainda não tem conta?"} <button type="button" onClick={() => changeMode(isRegister ? "login" : "register")} className="font-black text-terracotta-700">{isRegister ? "Entrar" : registrationStatusLoaded && !registrationOpen && !isInviteFlow ? "Entrar na lista" : "Criar agora"}</button></p>
               </>
             )}
           </div>
