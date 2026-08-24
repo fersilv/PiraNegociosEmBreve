@@ -303,7 +303,7 @@ export function CompanySiteRenderer({
   );
 }
 
-function CompanySection({ template, title, icon, children }: { template: CompanyTemplateKey; title: string; icon?: React.ReactNode; children: React.ReactNode }) {
+function CompanySection({ template, title, icon, children }: { key?: React.Key; template: CompanyTemplateKey; title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   const editorial = template === 'editorial';
   return (
     <section className={editorial ? 'grid gap-5 border-t border-stone-200 pt-7 md:grid-cols-[220px_1fr]' : 'rounded-[28px] border border-stone-200 bg-white/75 p-6 shadow-sm sm:p-8'}>
