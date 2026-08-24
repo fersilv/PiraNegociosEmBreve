@@ -207,6 +207,7 @@ export default function PublicResumeBuilderPage() {
   const [proposal, setProposal] = useState<ImprovementProposal | null>(null);
   const [selectedChanges, setSelectedChanges] = useState<Set<string>>(new Set());
   const [aiBusy, setAiBusy] = useState(false);
+  const [aiReadinessProduct, setAiReadinessProduct] = useState<PublicProductCode | null>(null);
   const [draggedExperienceIndex, setDraggedExperienceIndex] = useState<number | null>(null);
   const editorTracked = useRef(false);
   const createdTracked = useRef(false);
@@ -228,12 +229,40 @@ export default function PublicResumeBuilderPage() {
     return Math.round((checks.filter(Boolean).length / checks.length) * 100);
   }, [profile]);
 
-  const readyAsResume = Boolean(
-    profile.fullName?.trim()
-    && (profile.email?.trim() || profile.phone?.trim())
-    && (profile.experiences?.length || profile.education?.length)
-    && profile.skills?.length,
-  );
+  const aiRequirements = useMemo(() => {
+    const hasProfessionalContent = Boolean(
+      profile.bio?.trim()
+      || profile.resumePreferences?.headline?.trim()
+      || profile.experiences?.length
+      || profile.education?.length
+      || profile.skills?.length
+      || profile.courses?.length
+      || profile.languages?.length,
+    );
+    return [
+      {
+        key: 'name',
+        label: 'Seu nome',
+        description: 'Para identificar de quem é o currículo.',
+        complete: Boolean(profile.fullName?.trim()),
+      },
+      {
+        key: 'contact',
+        label: 'Um contato',
+        description: 'Telefone ou e-mail. Basta um dos dois.',
+        complete: Boolean(profile.email?.trim() || profile.phone?.trim()),
+      },
+      {
+        key: 'content',
+        label: 'Algum conteúdo profissional',
+        description: 'Pode ser resumo, experiência, formação, curso, idioma ou habilidade.',
+        complete: hasProfessionalContent,
+      },
+    ];
+  }, [profile]);
+
+  const readyAsResume = aiRequirements.every((item) => item.complete);
+  const aiReadinessDone = aiRequirements.filter((item) => item.complete).length;
 
   const product = useCallback((code: PublicProductCode) => catalog.find((item) => item.code === code), [catalog]);
   const authHeaders = useCallback(() => session ? { 'X-Public-Resume-Token': session.token } : {}, [session]);
@@ -529,9 +558,11 @@ export default function PublicResumeBuilderPage() {
       return;
     }
     if ((code === 'PUBLIC_RESUME_AI_REVIEW' || code === 'PUBLIC_RESUME_AI_IMPROVEMENT') && !readyAsResume) {
-      setError('Complete nome, contato, trajetória e habilidades para a IA ter conteúdo suficiente para trabalhar.');
+      setError('');
+      setAiReadinessProduct(code);
       return;
     }
+    setAiReadinessProduct(null);
     setCheckoutProduct(code);
     setCheckoutEmail(profile.email || checkoutEmail);
     setOrder(null);
@@ -901,6 +932,8 @@ export default function PublicResumeBuilderPage() {
       </section>
 
       <footer className="public-resume-no-print bg-[#2b211c] text-white"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 text-xs text-white/45 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div><strong className="text-white/80">PiraNegócios</strong><p className="mt-1">Conexão que acontece.</p></div><div className="flex gap-4"><Link to="/vagas" className="hover:text-white">Vagas</Link><Link to="/termos" className="hover:text-white">Termos</Link><Link to="/login" className="hover:text-white">Entrar</Link></div></div></footer>
+
+      {aiReadinessProduct && <div className="public-resume-no-print fixed inset-0 z-[130] flex items-center justify-center bg-stone-950/65 p-4 backdrop-blur-sm" onClick={() => setAiReadinessProduct(null)}><section role="dialog" aria-modal="true" aria-labelledby="ai-readiness-title" className="w-full max-w-lg overflow-hidden rounded-[30px] bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="relative overflow-hidden bg-gradient-to-br from-violet-900 via-violet-800 to-[#3a225d] px-6 pb-6 pt-7 text-white"><button type="button" onClick={() => setAiReadinessProduct(null)} className="absolute right-4 top-4 rounded-xl p-2 text-white/55 hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button><span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[.14em] text-violet-100"><Sparkles className="h-3.5 w-3.5" /> Falta pouquinho</span><h2 id="ai-readiness-title" className="mt-4 font-serif text-3xl font-black leading-tight">Deixe a IA receber um currículo que ela consiga avaliar de verdade.</h2><p className="mt-2 text-sm leading-6 text-white/70">Você não precisa preencher tudo. Só precisamos de três coisas básicas antes de liberar {aiReadinessProduct === 'PUBLIC_RESUME_AI_IMPROVEMENT' ? 'as melhorias' : 'a análise'}.</p></div><div className="p-5 sm:p-6"><div className="mb-4 flex items-center justify-between"><div><p className="text-[10px] font-black uppercase tracking-[.12em] text-stone-400">Prontidão para IA</p><strong className="text-sm text-stone-900">{aiReadinessDone} de 3 itens essenciais</strong></div><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-50 text-sm font-black text-violet-700">{Math.round((aiReadinessDone / 3) * 100)}%</div></div><div className="space-y-2">{aiRequirements.map((item) => <div key={item.key} className={`flex items-start gap-3 rounded-2xl border p-3.5 ${item.complete ? 'border-emerald-200 bg-emerald-50/70' : 'border-amber-200 bg-amber-50/80'}`}><span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${item.complete ? 'bg-emerald-600 text-white' : 'bg-amber-100 text-amber-700'}`}>{item.complete ? <Check className="h-4 w-4" /> : <span className="text-xs font-black">!</span>}</span><div><strong className={`text-sm ${item.complete ? 'text-emerald-950' : 'text-amber-950'}`}>{item.label}</strong><p className={`mt-0.5 text-xs leading-5 ${item.complete ? 'text-emerald-700/75' : 'text-amber-800/75'}`}>{item.complete ? 'Pronto.' : item.description}</p></div></div>)}</div><div className="mt-4 rounded-2xl border border-violet-100 bg-violet-50/60 p-3.5 text-xs leading-5 text-violet-900"><strong>Habilidades não são obrigatórias.</strong> Se estiverem faltando, isso pode ser justamente uma das coisas que a análise vai identificar e recomendar.</div><button type="button" onClick={() => { setAiReadinessProduct(null); window.setTimeout(() => document.getElementById('editor-publico')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30); }} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-stone-900 px-4 py-3.5 text-sm font-black text-white">Completar o que falta <ArrowRight className="h-4 w-4" /></button><p className="mt-3 text-center text-[10px] leading-4 text-stone-400">Você pode deixar foto, LinkedIn, cursos, idiomas, CNH, veículo e outros campos para depois. Eles não bloqueiam a IA.</p></div></section></div>}
 
       {checkoutProduct && <div className="public-resume-no-print fixed inset-0 z-[120] flex items-center justify-center bg-stone-950/60 p-4 backdrop-blur-sm" onClick={() => !checkoutBusy && !aiBusy && setCheckoutProduct(null)}><section className="max-h-[94vh] w-full max-w-md overflow-y-auto rounded-[28px] bg-white p-5 shadow-2xl sm:p-6" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f7dfd4] text-[#a84631]">{checkoutProduct === 'PUBLIC_RESUME_REMOVE_WATERMARK' ? <ShieldCheck className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}</span><button type="button" disabled={checkoutBusy || aiBusy} onClick={() => setCheckoutProduct(null)} className="rounded-xl p-2 text-stone-400 hover:bg-stone-100"><X className="h-4 w-4" /></button></div><h2 className="mt-4 font-serif text-2xl font-black">{product(checkoutProduct)?.name || (checkoutProduct === 'PUBLIC_RESUME_REMOVE_WATERMARK' ? 'Remover marca do currículo' : 'Recurso profissional')}</h2><p className="mt-2 text-sm leading-6 text-stone-500">{product(checkoutProduct)?.description}</p>{!order ? <><div className="mt-5"><label className="text-[10px] font-black uppercase tracking-[.12em] text-stone-400">E-mail para o pagamento</label><div className="mt-1 flex items-center gap-2 rounded-2xl border border-stone-200 bg-white px-3"><Mail className="h-4 w-4 text-stone-400" /><input type="email" value={checkoutEmail} onChange={(event) => setCheckoutEmail(event.target.value)} placeholder="voce@email.com" className="w-full bg-transparent py-3 text-sm outline-none" /></div><p className="mt-2 text-[10px] leading-4 text-stone-400">Não cria conta. O e-mail é usado somente para identificar o checkout no provedor de pagamento.</p></div><div className="mt-5 flex items-end justify-between rounded-2xl bg-stone-50 p-4"><div><p className="text-[10px] font-bold uppercase text-stone-400">Pagamento único</p><strong className="mt-1 block text-2xl">{money(product(checkoutProduct)?.effectivePriceCents ?? (checkoutProduct === 'PUBLIC_RESUME_AI_IMPROVEMENT' ? 499 : 199))}</strong></div><span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[9px] font-black uppercase text-emerald-700">Pix</span></div><button type="button" disabled={checkoutBusy || sessionLoading} onClick={() => void createCheckout()} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#2b211c] px-4 py-3.5 text-sm font-black text-white disabled:opacity-50">{checkoutBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LockKeyhole className="h-4 w-4" />} Gerar Pix</button></> : <div className="mt-5">{order.status === 'PENDING' ? <><div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 text-center">{order.qrCodeBase64 && <img src={order.qrCodeBase64.startsWith('data:') ? order.qrCodeBase64 : `data:image/png;base64,${order.qrCodeBase64}`} alt="QR Code Pix" className="mx-auto h-48 w-48 rounded-xl bg-white p-2" />}<p className="mt-3 text-xs font-bold text-stone-600">Escaneie o QR Code ou use o Pix copia e cola.</p>{order.pixCopyPaste && <button type="button" onClick={() => void copyPix()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-black text-stone-700 shadow-sm"><Copy className="h-3.5 w-3.5" /> Copiar Pix</button>}</div><div className="mt-4 flex items-center justify-center gap-2 text-xs font-bold text-amber-700"><Loader2 className="h-4 w-4 animate-spin" /> Aguardando confirmação do pagamento</div></> : order.status === 'PAID' ? <div className="rounded-2xl bg-emerald-50 p-5 text-center text-emerald-800"><CheckCircle2 className="mx-auto h-8 w-8" /><strong className="mt-2 block">Pagamento confirmado</strong><span className="text-xs">Liberando seu recurso...</span></div> : <div className="rounded-2xl bg-red-50 p-4 text-sm font-semibold text-red-700">Este pagamento foi {order.status === 'EXPIRED' ? 'expirado' : 'cancelado'}. Feche e gere um novo Pix.</div>}</div>}</section></div>}
 
