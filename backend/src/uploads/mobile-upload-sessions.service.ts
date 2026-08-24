@@ -161,45 +161,73 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
   }
 
   async pair(id: string, code: unknown) {
-    const session = await this.sessions.findOne({ where: { id } });
-    if (!session) throw new NotFoundException('Sessão de transferência não encontrada.');
-    await this.expireIfNeeded(session);
-    if (session.status === 'EXPIRED') throw new BadRequestException('Esta sessão expirou. Gere um novo QR Code no computador.');
-    if (session.status === 'PAIRED') throw new BadRequestException('Este telefone já foi pareado. Gere uma nova sessão para trocar de dispositivo.');
-    if (session.status === 'UPLOADED' || session.status === 'CONSUMED') throw new BadRequestException('Esta sessão já foi utilizada.');
-    if (session.status === 'CANCELED') throw new BadRequestException('Esta sessão foi cancelada. Gere um novo QR Code no computador.');
-    if (session.pairingAttempts >= PAIRING_ATTEMPT_LIMIT) throw new ForbiddenException('Muitas tentativas incorretas. Gere uma nova sessão.');
+    return this.sessions.manager.transaction(async (manager) => {
+      const session = await manager.findOne(MobileUploadSession, {
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!session) throw new NotFoundException('Sessão de transferência não encontrada.');
 
-    const normalizedCode = String(code || '').replace(/\D/g, '').slice(0, 6);
-    const candidateHash = this.hash(`${session.pairingSalt}:${normalizedCode}`);
-    if (!this.safeEqual(candidateHash, session.pairingHash)) {
-      session.pairingAttempts += 1;
-      await this.sessions.save(session);
-      throw new ForbiddenException('Código de pareamento inválido.');
-    }
+      if (session.expiresAt.getTime() <= Date.now()) {
+        await this.deleteFile(session.filePath);
+        session.filePath = null;
+        session.uploadTokenHash = null;
+        session.status = 'EXPIRED';
+        await manager.save(session);
+        throw new BadRequestException('Esta sessão expirou. Gere um novo QR Code no computador.');
+      }
+      if (session.status === 'PAIRED') throw new BadRequestException('Este telefone já foi pareado. Gere uma nova sessão para trocar de dispositivo.');
+      if (session.status === 'UPLOADED' || session.status === 'CONSUMED') throw new BadRequestException('Esta sessão já foi utilizada.');
+      if (session.status === 'CANCELED') throw new BadRequestException('Esta sessão foi cancelada. Gere um novo QR Code no computador.');
+      if (session.pairingAttempts >= PAIRING_ATTEMPT_LIMIT) throw new ForbiddenException('Muitas tentativas incorretas. Gere uma nova sessão.');
 
-    const uploadToken = randomBytes(32).toString('base64url');
-    session.uploadTokenHash = this.hash(uploadToken);
-    session.status = 'PAIRED';
-    session.pairedAt = new Date();
-    session.pairingAttempts = 0;
-    await this.sessions.save(session);
-    return {
-      uploadToken,
-      purpose: session.purpose,
-      accept: session.accept,
-      maxSizeBytes: session.maxSizeBytes,
-      expiresAt: session.expiresAt,
-    };
+      const normalizedCode = String(code || '').replace(/\D/g, '').slice(0, 6);
+      const candidateHash = this.hash(`${session.pairingSalt}:${normalizedCode}`);
+      if (!this.safeEqual(candidateHash, session.pairingHash)) {
+        session.pairingAttempts += 1;
+        await manager.save(session);
+        throw new ForbiddenException('Código de pareamento inválido.');
+      }
+
+      const uploadToken = randomBytes(32).toString('base64url');
+      session.uploadTokenHash = this.hash(uploadToken);
+      session.status = 'PAIRED';
+      session.pairedAt = new Date();
+      session.pairingAttempts = 0;
+      await manager.save(session);
+      return {
+        uploadToken,
+        purpose: session.purpose,
+        accept: session.accept,
+        maxSizeBytes: session.maxSizeBytes,
+        expiresAt: session.expiresAt,
+      };
+    });
   }
 
   async authorizeUpload(id: string, token: string) {
-    const session = await this.sessions.findOne({ where: { id } });
-    if (!session) throw new NotFoundException('Sessão de transferência não encontrada.');
-    await this.expireIfNeeded(session);
-    if (session.status !== 'PAIRED' || !session.uploadTokenHash) throw new ForbiddenException('Sessão não autorizada para upload.');
-    if (!token || !this.safeEqual(this.hash(token), session.uploadTokenHash)) throw new ForbiddenException('Token de upload inválido.');
-    return session;
+    if (!token) throw new ForbiddenException('Token de upload inválido.');
+    const tokenHash = this.hash(token);
+    const rows = await this.sessions.manager.query(
+      `UPDATE mobile_upload_sessions
+       SET "uploadTokenHash" = NULL
+       WHERE id = $1
+         AND status = 'PAIRED'
+         AND "uploadTokenHash" = $2
+         AND "expiresAt" > now()
+       RETURNING *`,
+      [id, tokenHash],
+    );
+    const row = rows?.[0];
+    if (!row) throw new ForbiddenException('Sessão não autorizada para upload ou token já utilizado.');
+    return this.sessions.create({
+      ...row,
+      expiresAt: new Date(row.expiresAt),
+      pairedAt: row.pairedAt ? new Date(row.pairedAt) : null,
+      uploadedAt: row.uploadedAt ? new Date(row.uploadedAt) : null,
+      consumedAt: row.consumedAt ? new Date(row.consumedAt) : null,
+      createdAt: row.createdAt ? new Date(row.createdAt) : new Date(),
+    });
   }
 
   private validateFile(session: MobileUploadSession, file: Express.Multer.File) {
