@@ -43,7 +43,6 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
         const idsToTry = Array.from(new Set([
           application?.companyId,
           profile?.companyId,
-          profile?.uid,
           user?.uid
         ].filter(Boolean)));
 
@@ -59,7 +58,7 @@ export function ApplicationManagerModal({ application, onClose, onUpdated }: any
       }
     };
     fetchConfig();
-  }, [application?.companyId, profile?.companyId, profile?.uid, user?.uid]);
+  }, [application?.companyId, profile?.companyId, user?.uid]);
 
   const handleSave = async () => {
     setSaving(true);
