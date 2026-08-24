@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { Camera, CheckCircle2, FileUp, Loader2, LockKeyhole, ShieldCheck, Smartphone, XCircle } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Camera, CheckCircle2, FileUp, KeyRound, Loader2, LockKeyhole, ShieldCheck, Smartphone, XCircle } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 
@@ -21,16 +21,45 @@ export default function MobileUploadPage() {
   const [code, setCode] = useState('');
   const [paired, setPaired] = useState<PairResult | null>(null);
   const [pairing, setPairing] = useState(false);
+  const [autoPairing, setAutoPairing] = useState(false);
+  const [manualFallback, setManualFallback] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
   const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
+  const qrAttemptedRef = useRef(false);
 
   const maxSizeLabel = useMemo(() => {
     if (!paired?.maxSizeBytes) return '';
     return `${Math.round(paired.maxSizeBytes / 1024 / 1024)} MB`;
   }, [paired?.maxSizeBytes]);
+
+  useEffect(() => {
+    if (!sessionId || qrAttemptedRef.current) return;
+    qrAttemptedRef.current = true;
+
+    const token = decodeURIComponent(window.location.hash.replace(/^#/, '').trim());
+    if (!token) {
+      setManualFallback(true);
+      return;
+    }
+
+    // Remove o segredo da barra de endereço e do histórico assim que ele é lido.
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+    setAutoPairing(true);
+    setError('');
+    api.post(`/uploads/mobile-transfer/${sessionId}/pair-qr`, { token })
+      .then((response) => {
+        setPaired(response.data as PairResult);
+        setManualFallback(false);
+      })
+      .catch((requestError: any) => {
+        setError(apiMessage(requestError, 'Este QR Code não pôde ser validado. Use o código manual exibido no computador.'));
+        setManualFallback(true);
+      })
+      .finally(() => setAutoPairing(false));
+  }, [sessionId]);
 
   const pair = async () => {
     const normalized = code.replace(/\D/g, '').slice(0, 6);
@@ -86,23 +115,35 @@ export default function MobileUploadPage() {
         <section className="overflow-hidden rounded-[30px] border border-stone-200 bg-[#fffdfa] shadow-xl">
           <div className="border-b border-stone-100 bg-gradient-to-br from-violet-50 to-white p-6 text-center">
             <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
-              {done ? <CheckCircle2 className="h-7 w-7" /> : <LockKeyhole className="h-7 w-7" />}
+              {done ? <CheckCircle2 className="h-7 w-7" /> : autoPairing ? <Loader2 className="h-7 w-7 animate-spin" /> : <LockKeyhole className="h-7 w-7" />}
             </span>
             <h1 className="mt-4 font-serif text-2xl font-bold text-stone-950">
-              {done ? 'Arquivo enviado' : paired ? 'Escolha como enviar' : 'Conecte com seu computador'}
+              {done ? 'Arquivo enviado' : autoPairing ? 'Conectando com seu computador' : paired ? 'Escolha como enviar' : 'Conecte com seu computador'}
             </h1>
             <p className="mx-auto mt-2 max-w-sm text-xs leading-5 text-stone-500">
               {done
                 ? 'A transferência foi concluída. O computador receberá o arquivo automaticamente.'
-                : paired
-                  ? 'Esta autorização vale somente para um envio e expira automaticamente.'
-                  : 'Digite o código de 6 dígitos que está aparecendo ao lado do QR Code no computador.'}
+                : autoPairing
+                  ? 'Validando a autorização segura que veio no QR Code.'
+                  : paired
+                    ? 'Esta autorização vale somente para um envio e expira automaticamente.'
+                    : 'Se você escaneou o QR Code, a conexão acontece automaticamente. O código abaixo é apenas uma alternativa manual.'}
             </p>
           </div>
 
           <div className="p-6">
-            {!paired && !done && (
+            {autoPairing && !paired && !done && (
+              <div className="flex items-center justify-center gap-2 rounded-2xl bg-violet-50 p-4 text-sm font-bold text-violet-700">
+                <Loader2 className="h-4 w-4 animate-spin" /> Autorizando este telefone...
+              </div>
+            )}
+
+            {!autoPairing && !paired && !done && manualFallback && (
               <>
+                <div className="mb-4 flex items-start gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-3 text-[11px] leading-5 text-stone-600">
+                  <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />
+                  <span>Alternativa manual: digite o código de 6 dígitos que aparece no computador.</span>
+                </div>
                 <label className="block text-[10px] font-black uppercase tracking-[.14em] text-stone-400">Código de pareamento</label>
                 <input
                   value={code}
@@ -179,7 +220,7 @@ export default function MobileUploadPage() {
         </section>
 
         <p className="mt-4 text-center text-[10px] leading-4 text-stone-400">
-          O QR Code não contém seus dados pessoais. A sessão é temporária, exige o código exibido no computador e aceita somente um envio.
+          A autorização do QR Code é aleatória, temporária e de uso único. Ela é removida da barra de endereço assim que o telefone a lê.
         </p>
       </div>
     </main>
