@@ -7,8 +7,6 @@ import { Repository } from 'typeorm';
 import { ChatGateway } from '../chat/chat.gateway';
 import { MobileUploadPurpose, MobileUploadSession } from './entities/mobile-upload-session.entity';
 
-const SESSION_TTL_MS = 5 * 60 * 1000;
-const SESSION_METADATA_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const PAIRING_ATTEMPT_LIMIT = 5;
 
@@ -96,9 +94,8 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
   }
 
   private async cleanupExpired() {
-    const now = new Date();
     const expired = await this.sessions.createQueryBuilder('session')
-      .where('session."expiresAt" <= :now', { now })
+      .where('session."expiresAt" <= now()')
       .andWhere('session.status NOT IN (:...finalStatuses)', { finalStatuses: ['CONSUMED', 'CANCELED', 'EXPIRED'] })
       .getMany()
       .catch(() => [] as MobileUploadSession[]);
@@ -112,18 +109,22 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
       await this.sessions.save(session).catch(() => undefined);
     }
 
-    const cutoff = new Date(Date.now() - SESSION_METADATA_RETENTION_MS);
     await this.sessions.createQueryBuilder()
       .delete()
       .from(MobileUploadSession)
-      .where('"expiresAt" < :cutoff', { cutoff })
+      .where('"expiresAt" < now() - interval \'24 hours\'')
       .andWhere('status IN (:...finalStatuses)', { finalStatuses: ['CONSUMED', 'CANCELED', 'EXPIRED'] })
       .execute()
       .catch(() => undefined);
   }
 
   private async expireIfNeeded(session: MobileUploadSession) {
-    if (session.expiresAt.getTime() > Date.now()) return session;
+    const rows = await this.sessions.manager.query(
+      'SELECT ("expiresAt" <= now()) AS expired FROM mobile_upload_sessions WHERE id = $1 LIMIT 1',
+      [session.id],
+    );
+    const expired = rows?.[0]?.expired === true || rows?.[0]?.expired === 'true';
+    if (!expired) return session;
     if (!['CONSUMED', 'CANCELED', 'EXPIRED'].includes(session.status)) {
       session.status = 'EXPIRED';
       session.uploadTokenHash = null;
@@ -175,6 +176,13 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
     const pairingSalt = randomBytes(24).toString('hex');
     const qrToken = randomBytes(32).toString('base64url');
     const id = randomUUID();
+    const clockRows = await this.sessions.manager.query(
+      'SELECT now() + interval \'5 minutes\' AS "expiresAt"',
+    );
+    const expiresAt = new Date(clockRows?.[0]?.expiresAt);
+    if (Number.isNaN(expiresAt.getTime())) {
+      throw new BadRequestException('Não foi possível iniciar a sessão de transferência. Tente novamente.');
+    }
     const session = this.sessions.create({
       id,
       userId,
@@ -191,7 +199,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
       fileName: null,
       mimeType: null,
       fileSize: null,
-      expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+      expiresAt,
       pairedAt: null,
       uploadedAt: null,
       consumedAt: null,
@@ -216,7 +224,12 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
       });
       if (!session) throw new NotFoundException('Sessão de transferência não encontrada.');
 
-      if (session.expiresAt.getTime() <= Date.now()) {
+      const expiryRows = await manager.query(
+        'SELECT ("expiresAt" <= now()) AS expired FROM mobile_upload_sessions WHERE id = $1 LIMIT 1',
+        [id],
+      );
+      const expired = expiryRows?.[0]?.expired === true || expiryRows?.[0]?.expired === 'true';
+      if (expired) {
         await this.deleteFile(session.filePath);
         session.filePath = null;
         session.uploadTokenHash = null;
@@ -269,7 +282,12 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
       });
       if (!session) throw new NotFoundException('Sessão de transferência não encontrada.');
 
-      if (session.expiresAt.getTime() <= Date.now()) {
+      const expiryRows = await manager.query(
+        'SELECT ("expiresAt" <= now()) AS expired FROM mobile_upload_sessions WHERE id = $1 LIMIT 1',
+        [id],
+      );
+      const expired = expiryRows?.[0]?.expired === true || expiryRows?.[0]?.expired === 'true';
+      if (expired) {
         await this.deleteFile(session.filePath);
         session.filePath = null;
         session.uploadTokenHash = null;
