@@ -14,7 +14,7 @@ export const BUILT_IN_COMPANY_TEMPLATES = [
 ] as const;
 
 const REQUIRED_SECTION_TYPES = ['identity', 'jobs'] as const;
-const MAX_CONFIG_BYTES = 450_000;
+const MAX_CONFIG_BYTES = 4_500_000;
 const PREVIEW_MINUTES = 60;
 
 type AnyConfig = Record<string, any>;
@@ -32,6 +32,7 @@ export class CompanyPagesService {
     return {
       version: 1,
       templateKey: 'essencial',
+      templateVersion: 1,
       width: 'standard',
       theme: {
         primary: '#b64b36',
@@ -179,7 +180,9 @@ export class CompanyPagesService {
     page.published = config;
     page.status = 'PUBLISHED';
     page.publishedAt = new Date();
-    page.revision = existing ? Math.max(1, Number(existing.revision || 1) + 1) : 1;
+    page.revision = existing?.published
+      ? Math.max(1, Number(existing.revision || 1) + 1)
+      : Math.max(1, Number(existing?.revision || 1));
     const saved = await this.pages.save(page);
     return { ...saved, validation };
   }
@@ -249,9 +252,10 @@ export class CompanyPagesService {
       ...input,
       version: 1,
       templateKey,
+      templateVersion: Math.max(1, Number(input.templateVersion || 1)),
       width,
       theme: { ...fallback.theme, ...(input.theme || {}) },
-      cover: { ...fallback.cover, ...(input.cover || {}), url: safeText(input.cover?.url, 2_500_000) },
+      cover: { ...fallback.cover, ...(input.cover || {}), url: safeText(input.cover?.url, 3_500_000) },
       about: { ...fallback.about, ...(input.about || {}), text: safeText(input.about?.text, 20_000) },
       contacts: { ...fallback.contacts, ...(input.contacts || {}) },
       socials: { ...fallback.socials, ...(input.socials || {}) },
