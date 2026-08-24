@@ -107,7 +107,7 @@ export function CompanyJobPage() {
         setEditIsInternal(data.isInternal || false);
         setEditIsTalentPool(data.isTalentPool || false);
         setEditAcceptsPlatformApplications(
-          data.acceptsPlatformApplications !== false,
+          Boolean(data.isInternal || data.acceptsPlatformApplications !== false),
         );
         setEditExternalApplicationInstructions(
           data.externalApplicationInstructions || "",
@@ -197,6 +197,8 @@ export function CompanyJobPage() {
   const handleSaveJob = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!jobId) return;
+    const acceptsPlatformApplications =
+      editIsInternal || editAcceptsPlatformApplications;
     setSavingJob(true);
     try {
       await api.put(`/jobs/${jobId}`, {
@@ -210,14 +212,14 @@ export function CompanyJobPage() {
         isConfidential: editIsConfidential,
         isInternal: editIsInternal,
         isTalentPool: editIsTalentPool,
-        acceptsPlatformApplications: editAcceptsPlatformApplications,
-        externalApplicationInstructions: editAcceptsPlatformApplications
+        acceptsPlatformApplications,
+        externalApplicationInstructions: acceptsPlatformApplications
           ? ""
           : editExternalApplicationInstructions,
-        applicationEmail: editAcceptsPlatformApplications
+        applicationEmail: acceptsPlatformApplications
           ? ""
           : editApplicationEmail,
-        applicationWhatsApp: editAcceptsPlatformApplications
+        applicationWhatsApp: acceptsPlatformApplications
           ? ""
           : editApplicationWhatsApp,
       });
@@ -596,21 +598,22 @@ export function CompanyJobPage() {
                     Banco de Talentos (Sem vaga específica no momento)
                   </span>
                 </label>
-                <label className="flex items-start gap-3 cursor-pointer rounded-xl border border-stone-200 p-3 bg-stone-50">
+                <label className={`flex items-start gap-3 rounded-xl border border-stone-200 p-3 bg-stone-50 ${editIsInternal ? "cursor-not-allowed" : "cursor-pointer"}`}>
                   <input
                     type="checkbox"
-                    checked={editAcceptsPlatformApplications}
+                    checked={editIsInternal || editAcceptsPlatformApplications}
+                    disabled={editIsInternal}
                     onChange={(e) => {
                       setEditAcceptsPlatformApplications(e.target.checked);
-                      if (!e.target.checked) setEditIsInternal(false);
                     }}
-                    className="w-5 h-5 mt-0.5 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500"
+                    className="w-5 h-5 mt-0.5 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500 disabled:cursor-not-allowed disabled:opacity-70"
                   />
                   <span className="text-sm font-medium text-stone-700">
-                    Receber candidaturas pela plataforma
+                    <span className="block">Receber candidaturas pela plataforma</span>
+                    {editIsInternal && <span className="mt-1 block text-xs font-normal leading-5 text-violet-700">Obrigatório enquanto a vaga estiver marcada como interna.</span>}
                   </span>
                 </label>
-                {!editAcceptsPlatformApplications && (
+                {!editIsInternal && !editAcceptsPlatformApplications && (
                   <div className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 md:grid-cols-2">
                     <div>
                       <label className="mb-1.5 block text-xs font-bold uppercase tracking-widest text-stone-500">
