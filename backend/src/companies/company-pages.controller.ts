@@ -15,7 +15,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { User, UserType } from '../users/entities/user.entity';
-import { Company } from './entities/company.entity';
+import { Company, CompanyStatus } from './entities/company.entity';
 import { CompanyPagesService } from './company-pages.service';
 
 @Controller('companies')
@@ -35,12 +35,18 @@ export class CompanyPagesController {
       this.users.findOne({ where: { id: uid } }),
     ]);
     if (!company) throw new BadRequestException('Empresa não encontrada.');
-    if (user?.type === UserType.ADMIN) return company;
-    if (
-      !user ||
-      (company.ownerId !== uid && !(user.companyId === companyId && user.isCompanyAdmin))
-    ) {
-      throw new ForbiddenException('Você não tem permissão para editar a página desta empresa.');
+    if (user?.type !== UserType.ADMIN) {
+      if (
+        !user ||
+        (company.ownerId !== uid && !(user.companyId === companyId && user.isCompanyAdmin))
+      ) {
+        throw new ForbiddenException('Você não tem permissão para editar a página desta empresa.');
+      }
+    }
+    if (company.verificationStatus !== CompanyStatus.VERIFIED) {
+      throw new ForbiddenException(
+        'Minha Página está disponível apenas para empresas verificadas.',
+      );
     }
     return company;
   }
@@ -48,7 +54,19 @@ export class CompanyPagesController {
   @Get(':id/page')
   async getPage(@Req() req: any, @Param('id') id: string) {
     const company = await this.assertManager(req.user.uid, id);
-    return this.companyPages.getForCompany(company);
+    const page = await this.companyPages.getForCompany(company);
+    return {
+      ...page,
+      access: {
+        requiresVerifiedCompany: true,
+        advancedEditor: {
+          product: 'COMPANY_PLUS',
+          requiresPlus: true,
+          testMode: true,
+          allowed: true,
+        },
+      },
+    };
   }
 
   @Put(':id/page/draft')
