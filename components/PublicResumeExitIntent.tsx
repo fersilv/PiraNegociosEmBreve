@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
 import {
   ArrowRight,
   CheckCircle2,
@@ -9,6 +8,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
 
@@ -33,12 +33,8 @@ function readDraftEnvelope(): { profile?: any; [key: string]: any } | null {
   }
 }
 
-function draftProfile() {
-  return readDraftEnvelope()?.profile || null;
-}
-
 function hasMeaningfulDraft() {
-  const profile = draftProfile();
+  const profile = readDraftEnvelope()?.profile;
   if (!profile || typeof profile !== 'object') return false;
   return Boolean(
     String(profile.fullName || '').trim()
@@ -48,17 +44,7 @@ function hasMeaningfulDraft() {
     || profile.education?.length
     || profile.skills?.length
     || profile.courses?.length
-  );
-}
-
-function isReadyForCurrentAiCheckout() {
-  const profile = draftProfile();
-  if (!profile || typeof profile !== 'object') return false;
-  return Boolean(
-    String(profile.fullName || '').trim()
-    && (String(profile.email || '').trim() || String(profile.phone || '').trim())
-    && (profile.experiences?.length || profile.education?.length)
-    && profile.skills?.length
+    || profile.languages?.length
   );
 }
 
@@ -91,7 +77,6 @@ export function PublicResumeExitIntent() {
   const mountedAt = useRef(Date.now());
   const path = location.pathname.replace(/\/$/, '') || '/';
   const isPublicResume = PUBLIC_RESUME_PATHS.has(path);
-  const aiReady = isReadyForCurrentAiCheckout();
 
   useEffect(() => {
     if (!isPublicResume) return;
@@ -112,7 +97,6 @@ export function PublicResumeExitIntent() {
     if (!window.matchMedia?.('(pointer: fine)').matches) return;
     if (sessionStorage.getItem(EXIT_INTENT_KEY) === '1') return;
 
-    mountedAt.current = Date.now();
     const onMouseOut = (event: MouseEvent) => {
       if (visible) return;
       if (event.relatedTarget) return;
@@ -140,9 +124,10 @@ export function PublicResumeExitIntent() {
 
   const analyze = () => {
     setVisible(false);
-    if (aiReady && clickAiReviewAction()) return;
     window.setTimeout(() => {
-      document.getElementById('editor-publico')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (!clickAiReviewAction()) {
+        document.getElementById('editor-publico')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     }, 30);
   };
 
@@ -198,9 +183,8 @@ export function PublicResumeExitIntent() {
                   <span className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> Lacunas e seções fracas</span>
                   <span className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> Recomendações práticas</span>
                 </div>
-                {!aiReady && <p className="mt-3 rounded-xl bg-white/75 px-3 py-2 text-[11px] leading-5 text-violet-900">Seu currículo ainda precisa de alguns campos essenciais antes da análise. Você pode continuar preenchendo e voltar quando quiser.</p>}
                 <button type="button" onClick={analyze} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-700 px-4 py-3 text-sm font-black text-white transition hover:bg-violet-800">
-                  {aiReady ? 'Quero analisar meu currículo' : 'Continuar preenchendo para analisar'} <ArrowRight className="h-4 w-4" />
+                  Quero analisar meu currículo <ArrowRight className="h-4 w-4" />
                 </button>
                 <p className="mt-2 text-center text-[10px] text-stone-400">Pagamento único. Sem assinatura.</p>
               </div>
