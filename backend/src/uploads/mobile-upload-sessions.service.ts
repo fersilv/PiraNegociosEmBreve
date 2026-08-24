@@ -268,7 +268,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
 
   async receiveAuthorized(session: MobileUploadSession, file: Express.Multer.File) {
     const extension = this.validateFile(session, file);
-    const directory = join(process.cwd(), 'uploads', 'mobile-transfer');
+    const directory = join(process.cwd(), '.private', 'mobile-transfer');
     await mkdir(directory, { recursive: true });
     const filePath = join(directory, `${session.id}-${randomBytes(8).toString('hex')}${extension}`);
     await writeFile(filePath, file.buffer);
