@@ -56,6 +56,10 @@ export function PublicResumeAccountBridge() {
           skills: Array.isArray(draft.skills) ? draft.skills : [],
           courses: Array.isArray(draft.courses) ? draft.courses : [],
           languages: Array.isArray(draft.languages) ? draft.languages : [],
+          salaryExpectation: draft.salaryExpectation || '',
+          jobPreferences: draft.jobPreferences && typeof draft.jobPreferences === 'object'
+            ? draft.jobPreferences
+            : {},
           linkedinURL: draft.linkedinURL || '',
           city: draft.city || '',
           state: draft.state || '',
