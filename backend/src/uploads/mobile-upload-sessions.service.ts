@@ -274,6 +274,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
   async pairWithQrToken(id: string, tokenInput: unknown) {
     const token = String(tokenInput || '').trim();
     if (token.length < 32) throw new ForbiddenException('QR Code inválido ou incompleto.');
+    const tokenHash = this.hash(token);
 
     const outcome: PairOutcome = await this.sessions.manager.transaction(async (manager): Promise<PairOutcome> => {
       const session = await manager.findOne(MobileUploadSession, {
@@ -296,19 +297,49 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
         await manager.save(session);
         return { ok: false, reason: 'EXPIRED' };
       }
-      if (session.status === 'PAIRED') return { ok: false, reason: 'PAIRED' };
+
       if (session.status === 'UPLOADED' || session.status === 'CONSUMED') return { ok: false, reason: 'USED' };
       if (session.status === 'CANCELED') return { ok: false, reason: 'CANCELED' };
-      if (!session.qrTokenHash || !this.safeEqual(this.hash(token), session.qrTokenHash)) {
+
+      // O mesmo segredo do QR pode reabrir a MESMA sessão enquanto ela estiver
+      // pareada. Isso torna o fluxo resistente a leitores de QR que abrem uma
+      // prévia da página antes de entregá-la ao navegador. Um segredo diferente
+      // continua sem acesso.
+      if (!session.qrTokenHash || !this.safeEqual(tokenHash, session.qrTokenHash)) {
         return { ok: false, reason: 'INVALID' };
       }
 
       this.purposeRules(session.purpose);
-      const uploadToken = this.completePairing(session);
+
+      if (session.status === 'PAIRED') {
+        // Depois que o upload começa, authorizeUpload consome os dois hashes.
+        // Portanto só reemitimos a autorização se ela ainda não foi consumida.
+        if (!session.uploadTokenHash || !this.safeEqual(tokenHash, session.uploadTokenHash)) {
+          return { ok: false, reason: 'USED' };
+        }
+        return {
+          ok: true,
+          uploadToken: token,
+          purpose: session.purpose,
+          accept: session.accept,
+          maxSizeBytes: session.maxSizeBytes,
+          expiresAt: session.expiresAt,
+        };
+      }
+
+      if (session.status !== 'WAITING') return { ok: false, reason: 'USED' };
+
+      // No fluxo por QR, o segredo aleatório de 256 bits é também a credencial
+      // temporária de upload. Guardamos somente o SHA-256 dele no banco.
+      session.uploadTokenHash = tokenHash;
+      session.status = 'PAIRED';
+      session.pairedAt = new Date();
+      session.pairingAttempts = 0;
       await manager.save(session);
+
       return {
         ok: true,
-        uploadToken,
+        uploadToken: token,
         purpose: session.purpose,
         accept: session.accept,
         maxSizeBytes: session.maxSizeBytes,
@@ -325,7 +356,8 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
     const tokenHash = this.hash(token);
     const rows = await this.sessions.manager.query(
       `UPDATE mobile_upload_sessions
-       SET "uploadTokenHash" = NULL
+       SET "uploadTokenHash" = NULL,
+           "qrTokenHash" = NULL
        WHERE id = $1
          AND status = 'PAIRED'
          AND "uploadTokenHash" = $2
