@@ -28,7 +28,7 @@ export default function PublicCompanyPage() {
       .get(`/public/companies/${encodeURIComponent(companySlug)}`)
       .then(async (response) => {
         if (!active) return;
-        const nextCompany = { ...response.data.company, isVerified: true };
+        const nextCompany = response.data.company as PublicCompanyLike;
         setCompany(nextCompany);
         setJobs(response.data.jobs || []);
         if (
@@ -74,7 +74,7 @@ export default function PublicCompanyPage() {
   if (notFound || !company) {
     return (
       <>
-        <SeoHead title="Empresa não encontrada | PiraNegócios" description="Este perfil não está disponível." canonical={canonical} noIndex />
+        <SeoHead title="Empresa não encontrada | PiraNegócios" description="Esta página não está disponível." canonical={canonical} noIndex />
         <Navbar />
         <main className="max-w-3xl mx-auto px-6 py-28 text-center">
           <h1 className="font-serif text-3xl font-bold">Empresa não encontrada</h1>
