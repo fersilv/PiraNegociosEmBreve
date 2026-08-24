@@ -7,6 +7,7 @@ import { CookieConsent } from "./components/CookieConsent";
 import { AnalyticsTracker } from "./components/AnalyticsTracker";
 import { ResumeQualificationWidget } from "./components/ResumeQualificationWidget";
 import { PublishedResumeCompanyBridge } from "./components/PublishedResumeCompanyBridge";
+import { PublicResumeAccountBridge } from "./components/PublicResumeAccountBridge";
 import { CompanyLegalPage } from "./pages/CompanyLegalPage";
 
 const Home = lazy(() => import("./pages/Home"));
@@ -24,6 +25,7 @@ const CompanyPagePreviewPage = lazy(() => import("./pages/CompanyPagePreviewPage
 const CityJobsPage = lazy(() => import("./pages/CityJobsPage"));
 const EmbedJobsWidget = lazy(() => import("./pages/EmbedJobsWidget"));
 const MobileUploadPage = lazy(() => import("./pages/MobileUploadPage"));
+const PublicResumeBuilderPage = lazy(() => import("./pages/PublicResumeBuilderPage"));
 
 function RouteLoader() {
   return (
@@ -44,6 +46,7 @@ export default function App() {
       <AuthProvider>
         {!isMinimalShell && <PwaInstallPrompt />}
         {!isMinimalShell && <CookieConsent />}
+        <PublicResumeAccountBridge />
         <BrowserRouter>
           {!isMobileTransfer && !isCompanyPreview && <AnalyticsTracker />}
           {!isMinimalShell && <ResumeQualificationWidget />}
@@ -55,6 +58,9 @@ export default function App() {
               <Route path="/vagas" element={<JobsEntryPage />} />
               <Route path="/vagas-em/:citySlug" element={<CityJobsPage />} />
               <Route path="/vagas/:slug" element={<PublicJobPage />} />
+              <Route path="/criador-de-curriculo" element={<PublicResumeBuilderPage />} />
+              <Route path="/criar-curriculo" element={<Navigate to="/criador-de-curriculo" replace />} />
+              <Route path="/curriculo-online" element={<Navigate to="/criador-de-curriculo" replace />} />
               <Route path="/embed/vagas" element={<EmbedJobsWidget />} />
               <Route path="/transferir/:sessionId" element={<MobileUploadPage />} />
               <Route path="/preview/empresa/:token" element={<CompanyPagePreviewPage />} />
