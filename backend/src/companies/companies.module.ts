@@ -20,6 +20,7 @@ import { CompanyPage } from './entities/company-page.entity';
 import { CompanyPagePreview } from './entities/company-page-preview.entity';
 import { CompanyPagesService } from './company-pages.service';
 import { CompanyPagesController } from './company-pages.controller';
+import { CompanyPagesPublicController } from './company-pages-public.controller';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { CompanyPagesController } from './company-pages.controller';
   controllers: [
     CompaniesController,
     CompanyPagesController,
+    CompanyPagesPublicController,
     TalentInvitesController,
     CompanyHiringConfigController,
     HiringConfigCompatController,
