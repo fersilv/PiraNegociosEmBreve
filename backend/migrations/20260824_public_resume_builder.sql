@@ -42,9 +42,25 @@ INSERT INTO payment_products (code, name, description, "priceCents", enabled, "f
   ('PUBLIC_RESUME_REMOVE_WATERMARK', 'Remover marca do currículo', 'Libera a exportação do currículo público sem o rodapé do PiraNegócios.', 199, true, 0, 130)
 ON CONFLICT (code) DO NOTHING;
 
+-- Os provedores e webhooks financeiros existentes trabalham com payments.userId obrigatório.
+-- Esta identidade técnica nunca autentica, não aparece no Banco de Talentos e serve somente
+-- para que pedidos anônimos usem a mesma trilha financeira já auditada do produto autenticado.
+INSERT INTO users (id, type, email, "displayName", "fullName", "isOpenToWork", status)
+VALUES (
+  'public-resume-system',
+  'CANDIDATE',
+  'public-resume-system@piranegocios.invalid',
+  'Criador Público de Currículos',
+  'Criador Público de Currículos',
+  false,
+  'SYSTEM'
+)
+ON CONFLICT (id) DO UPDATE SET "isOpenToWork" = false, status = 'SYSTEM';
+
 CREATE TABLE IF NOT EXISTS public_resume_orders (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "sessionId" uuid NOT NULL REFERENCES public_resume_sessions(id) ON DELETE CASCADE,
+  "paymentId" uuid NULL REFERENCES payments(id) ON DELETE SET NULL,
   "productCode" varchar(64) NOT NULL REFERENCES payment_products(code),
   status varchar(20) NOT NULL DEFAULT 'PENDING',
   method varchar(12) NOT NULL DEFAULT 'PIX',
@@ -68,6 +84,8 @@ CREATE TABLE IF NOT EXISTS public_resume_orders (
   CONSTRAINT public_resume_orders_status_check CHECK (status IN ('PENDING','PAID','EXPIRED','CANCELED','REFUNDED')),
   CONSTRAINT public_resume_orders_amount_check CHECK ("amountCents" >= 0 AND "originalAmountCents" >= 0 AND "discountCents" >= 0)
 );
+ALTER TABLE public_resume_orders ADD COLUMN IF NOT EXISTS "paymentId" uuid NULL REFERENCES payments(id) ON DELETE SET NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS public_resume_orders_payment_unique ON public_resume_orders ("paymentId") WHERE "paymentId" IS NOT NULL;
 CREATE INDEX IF NOT EXISTS public_resume_orders_session_idx ON public_resume_orders ("sessionId", "createdAt" DESC);
 CREATE INDEX IF NOT EXISTS public_resume_orders_status_idx ON public_resume_orders (status, "createdAt" DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS public_resume_orders_provider_id_unique
