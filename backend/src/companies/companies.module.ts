@@ -16,6 +16,10 @@ import { TalentInvitesController } from './talent-invites.controller';
 import { CompanySlugAlias } from './entities/company-slug-alias.entity';
 import { CompanyHiringConfigController } from './company-hiring-config.controller';
 import { HiringConfigCompatController } from './hiring-config-compat.controller';
+import { CompanyPage } from './entities/company-page.entity';
+import { CompanyPagePreview } from './entities/company-page-preview.entity';
+import { CompanyPagesService } from './company-pages.service';
+import { CompanyPagesController } from './company-pages.controller';
 
 @Module({
   imports: [
@@ -31,11 +35,14 @@ import { HiringConfigCompatController } from './hiring-config-compat.controller'
       Job,
       Application,
       CompanySlugAlias,
+      CompanyPage,
+      CompanyPagePreview,
     ]),
   ],
-  providers: [CompaniesService],
+  providers: [CompaniesService, CompanyPagesService],
   controllers: [
     CompaniesController,
+    CompanyPagesController,
     TalentInvitesController,
     CompanyHiringConfigController,
     HiringConfigCompatController,
