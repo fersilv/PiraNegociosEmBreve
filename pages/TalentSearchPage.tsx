@@ -1,19 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Car,
-  CheckCircle2,
-  Copy,
-  Eye,
   FileText,
   FolderPlus,
   Loader2,
-  Mail,
   MapPin,
   RefreshCw,
   Search,
   Send,
   UserRoundSearch,
-  UserPlus,
   Zap,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
@@ -28,17 +23,12 @@ export function TalentSearchPage() {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [folders, setFolders] = useState<any[]>([]);
   const [companyJobs, setCompanyJobs] = useState<any[]>([]);
-  const [companyInvites, setCompanyInvites] = useState<any[]>([]);
   const [jobRanking, setJobRanking] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [companyVerified, setCompanyVerified] = useState<boolean | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<any | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState("");
   const [inviteJobId, setInviteJobId] = useState("");
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteName, setInviteName] = useState("");
-  const [emailInviting, setEmailInviting] = useState(false);
-  const [lastInviteUrl, setLastInviteUrl] = useState("");
   const [newFolder, setNewFolder] = useState("");
   const [query, setQuery] = useState("");
   const [homeCity, setHomeCity] = useState("");
@@ -60,16 +50,14 @@ export function TalentSearchPage() {
       const verified = Boolean(companyResponse.data?.isVerified || companyResponse.data?.verificationStatus === "VERIFIED");
       setCompanyVerified(verified);
       if (!verified) return;
-      const [candidateResponse, folderResponse, jobsResponse, invitesResponse] = await Promise.all([
+      const [candidateResponse, folderResponse, jobsResponse] = await Promise.all([
         api.get("/candidates"),
         api.get(`/companies/${profile.companyId}/talent-folders`),
         api.get(`/companies/${profile.companyId}/talent-jobs`),
-        api.get(`/companies/${profile.companyId}/talent-invites`),
       ]);
       setCandidates(asArray(candidateResponse.data));
       setFolders(asArray(folderResponse.data));
       setCompanyJobs(asArray(jobsResponse.data));
-      setCompanyInvites(asArray(invitesResponse.data));
     } catch (error) {
       console.error("Erro ao carregar banco de talentos:", error);
       setCandidates([]);
@@ -162,42 +150,7 @@ export function TalentSearchPage() {
   const inviteCandidate = async (candidateId: string) => {
     if (!profile?.companyId || !inviteJobId) return alert("Selecione uma vaga para o convite.");
     await api.post(`/companies/${profile.companyId}/talent-invites`, { candidateId, jobId: inviteJobId });
-    const response = await api.get(`/companies/${profile.companyId}/talent-invites`);
-    setCompanyInvites(asArray(response.data));
     alert("Convite enviado ao candidato.");
-  };
-
-  const inviteByEmail = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!profile?.companyId || !inviteJobId) return alert("Selecione uma vaga para o convite.");
-    if (!inviteEmail.trim()) return alert("Informe o e-mail da pessoa convidada.");
-    setEmailInviting(true);
-    try {
-      const response = await api.post(`/companies/${profile.companyId}/talent-invites/email`, {
-        email: inviteEmail.trim(),
-        candidateName: inviteName.trim(),
-        jobId: inviteJobId,
-      });
-      setLastInviteUrl(response.data?.delivery?.inviteUrl || "");
-      setInviteEmail("");
-      setInviteName("");
-      const invitesResponse = await api.get(`/companies/${profile.companyId}/talent-invites`);
-      setCompanyInvites(asArray(invitesResponse.data));
-      if (response.data?.delivery?.status === "SENT") alert("Convite enviado por e-mail.");
-    } catch (error: any) {
-      alert(error?.response?.data?.message || "Não foi possível criar o convite.");
-    } finally {
-      setEmailInviting(false);
-    }
-  };
-
-  const resendInvite = async (inviteId: string) => {
-    if (!profile?.companyId) return;
-    const response = await api.post(`/companies/${profile.companyId}/talent-invites/${inviteId}/resend`);
-    setLastInviteUrl(response.data?.delivery?.inviteUrl || "");
-    const invitesResponse = await api.get(`/companies/${profile.companyId}/talent-invites`);
-    setCompanyInvites(asArray(invitesResponse.data));
-    if (response.data?.delivery?.status === "SENT") alert("Convite reenviado por e-mail.");
   };
 
   if (loading || companyVerified === null) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-terracotta-600" /></div>;
@@ -231,26 +184,6 @@ export function TalentSearchPage() {
         <div className="flex gap-2"><input value={newFolder} onChange={(e) => setNewFolder(e.target.value)} placeholder="Nova pasta" className="filter-field max-w-40" /><button onClick={() => void createFolder()} title="Criar pasta" className="rounded-xl bg-stone-900 px-3 text-white"><FolderPlus className="h-4 w-4" /></button></div>
       </section>
 
-      <section className="grid gap-5 rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm xl:grid-cols-[.9fr_1.1fr]">
-        <div>
-          <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-terracotta-100 text-terracotta-700"><Mail className="h-5 w-5" /></span><div><h2 className="font-serif text-xl font-bold text-stone-950">Convidar por e-mail</h2><p className="text-xs text-stone-500">A conta poderá ser criada depois, sempre com este mesmo e-mail.</p></div></div>
-          <form onSubmit={inviteByEmail} className="mt-5 space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2"><label><span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-stone-400">Nome (opcional)</span><input value={inviteName} onChange={(event) => setInviteName(event.target.value)} className="filter-field" placeholder="Como chamar no e-mail" /></label><label><span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-stone-400">E-mail</span><input required type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} className="filter-field" placeholder="pessoa@email.com" /></label></div>
-            <p className="text-[11px] leading-5 text-stone-500">Vaga selecionada: <strong className="text-stone-800">{selectedJobTitle || "selecione uma vaga acima"}</strong>. A pessoa fará o cadastro, lerá a vaga privada e só depois decidirá se aceita.</p>
-            <button type="submit" disabled={emailInviting || !inviteJobId} className="inline-flex items-center gap-2 rounded-xl bg-terracotta-600 px-4 py-3 text-xs font-black text-white disabled:opacity-45">{emailInviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Enviar convite</button>
-          </form>
-          {lastInviteUrl && <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3"><p className="text-[11px] leading-5 text-amber-900">Link seguro do último convite. Ele também serve como alternativa quando o envio de e-mail ainda não estiver configurado.</p><div className="mt-2 flex gap-2"><input readOnly value={lastInviteUrl} className="min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-[10px] text-stone-600" /><button type="button" onClick={() => void navigator.clipboard.writeText(lastInviteUrl)} className="inline-flex items-center gap-1 rounded-lg bg-stone-900 px-3 text-[10px] font-bold text-white"><Copy className="h-3.5 w-3.5" /> Copiar</button></div></div>}
-        </div>
-
-        <div className="min-w-0 xl:border-l xl:border-stone-200 xl:pl-5">
-          <div className="flex items-center justify-between"><div><h2 className="font-serif text-xl font-bold text-stone-950">Convites enviados</h2><p className="text-xs text-stone-500">Cadastro, leitura e resposta sem depender de rastreamento de abertura.</p></div><span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-600">{companyInvites.length}</span></div>
-          <div className="mt-4 max-h-[360px] space-y-2 overflow-y-auto pr-1">
-            {companyInvites.slice(0, 30).map((invite) => <div key={invite.id} className="rounded-2xl border border-stone-200 p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-xs font-bold text-stone-900">{invite.candidateName || invite.candidateEmail || "Candidato convidado"}</p><p className="mt-0.5 truncate text-[10px] text-stone-500">{invite.candidateEmail} · {invite.jobTitle}</p></div><InviteStatus status={invite.status} /></div><div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[9px] font-semibold uppercase tracking-wide text-stone-400"><span className="inline-flex items-center gap-1"><Mail className="h-3 w-3" /> {invite.emailStatus === "SENT" ? "E-mail enviado" : invite.emailStatus === "FAILED" ? "Falha no e-mail" : invite.emailStatus === "NOT_CONFIGURED" ? "Envio não configurado" : "Envio pendente"}</span>{invite.registeredAt && <span className="inline-flex items-center gap-1"><UserPlus className="h-3 w-3" /> Cadastrou {new Date(invite.registeredAt).toLocaleDateString("pt-BR")}</span>}{invite.viewedAt && <span className="inline-flex items-center gap-1"><Eye className="h-3 w-3" /> Viu a vaga {new Date(invite.viewedAt).toLocaleDateString("pt-BR")}</span>}</div>{invite.status === "PENDING" && <button type="button" onClick={() => void resendInvite(invite.id)} className="mt-3 text-[10px] font-black text-terracotta-700">Reenviar convite</button>}</div>)}
-            {companyInvites.length === 0 && <div className="rounded-2xl border border-dashed border-stone-300 p-8 text-center text-xs text-stone-500">Nenhum convite enviado ainda.</div>}
-          </div>
-        </div>
-      </section>
-
       <div className="flex items-center justify-between"><p className="text-sm text-stone-500"><strong className="text-stone-900">{filtered.length}</strong> candidatos encontrados</p></div>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -275,10 +208,4 @@ function CandidateCard({ candidate, match, onOpen, onSave, onInvite }: { candida
   const home = candidate.city && candidate.state ? `${candidate.city}, ${candidate.state}` : candidate.address || "Cidade não informada";
   const preferred = prefs.preferredLocations || [];
   return <article className={`flex flex-col rounded-[26px] border bg-white p-5 shadow-sm transition hover:shadow-md ${match?.boosted ? "border-violet-300 ring-1 ring-violet-100" : "border-stone-200"}`}><div className="flex items-start gap-3"><div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-stone-100">{candidate.photoURL ? <img src={candidate.photoURL} className="h-full w-full object-cover" alt="" /> : <UserRoundSearch className="h-5 w-5 text-stone-400" />}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate font-bold text-stone-950">{candidate.name || candidate.socialName || candidate.fullName}</h2>{match?.boosted && <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-violet-700"><Zap className="h-3 w-3" /> Em destaque</span>}</div><p className="mt-1 inline-flex items-center gap-1 text-xs text-stone-500"><MapPin className="h-3.5 w-3.5" /> {home}</p></div></div><p className="mt-4 line-clamp-3 text-xs leading-5 text-stone-600">{candidate.bio || "Sem resumo profissional cadastrado."}</p>{candidate.skills?.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{candidate.skills.slice(0, 5).map((skill: string) => <span key={skill} className="rounded-full bg-terracotta-50 px-2 py-1 text-[10px] font-bold text-terracotta-700">{skill}</span>)}</div>}<div className="mt-4 space-y-2 rounded-2xl bg-stone-50 p-3 text-[11px] text-stone-600"><div><strong>Aceita:</strong> {preferred.length ? preferred.slice(0, 3).map(locationLabel).join(" · ") : "somente localização principal / não informado"}</div><div className="flex flex-wrap gap-x-4 gap-y-1"><span className="inline-flex items-center gap-1"><FileText className="h-3 w-3" /> CNH: {prefs.hasDriverLicense === true ? (prefs.driverLicenseCategories || []).join(", ") || "Sim" : prefs.hasDriverLicense === false ? "Não" : "Não informado"}</span><span className="inline-flex items-center gap-1"><Car className="h-3 w-3" /> Veículo: {prefs.hasOwnVehicle === true ? (prefs.ownVehicles || []).join(", ") || "Sim" : prefs.hasOwnVehicle === false ? "Não" : "Não informado"}</span></div></div><div className="mt-auto grid grid-cols-3 gap-2 pt-4"><button onClick={onOpen} className="rounded-xl border border-stone-200 px-2 py-2 text-[11px] font-bold text-stone-700">Perfil</button><button onClick={onSave} className="rounded-xl border border-stone-200 px-2 py-2 text-[11px] font-bold text-stone-700">Salvar</button><button onClick={onInvite} className="inline-flex items-center justify-center gap-1 rounded-xl bg-stone-900 px-2 py-2 text-[11px] font-bold text-white"><Send className="h-3 w-3" /> Convidar</button></div></article>;
-}
-
-function InviteStatus({ status }: { status: string }) {
-  if (status === "ACCEPTED") return <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[9px] font-black uppercase text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Aceito</span>;
-  if (status === "DECLINED") return <span className="shrink-0 rounded-full bg-stone-100 px-2 py-1 text-[9px] font-black uppercase text-stone-500">Recusado</span>;
-  return <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-[9px] font-black uppercase text-amber-700">Pendente</span>;
 }

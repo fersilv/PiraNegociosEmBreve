@@ -33,6 +33,7 @@ import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
 import { CompanyProfilePage } from "./CompanyProfilePage";
 import { CompanyPageBuilder } from "./CompanyPageBuilder";
 import { CompanyJobPage } from "./CompanyJobPage";
+import { CompanyJobInvitesPage } from "./CompanyJobInvitesPage";
 import { CompanyHiringConfig } from "./CompanyHiringConfig";
 import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
 import { CandidateJobViewPage } from "./CandidateJobViewPage";
@@ -140,6 +141,7 @@ function CompanyRoutes({ companyId }: { companyId?: string }) {
       <Route index element={companyOnly(<CompanyHomePage />)} />
       <Route path="vagas" element={companyOnly(<CompanyJobsManagementPage />)} />
       <Route path="vagas/nova" element={companyOnly(<CompanyNewJobPage />)} />
+      <Route path="vagas/convites" element={companyOnly(<CompanyJobInvitesPage />)} />
       <Route path="vagas/:jobId" element={companyOnly(<CompanyJobPage />)} />
       <Route path="talentos" element={companyOnly(<TalentSearchPage />)} />
       <Route path="contratacao" element={companyOnly(<CompanyHiringConfig />)} />

@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Briefcase,
   Building2,
@@ -8,7 +8,9 @@ import {
   Globe2,
   Home,
   LogOut,
+  MailPlus,
   Menu,
+  Plus,
   Settings2,
   SlidersHorizontal,
   Sparkles,
@@ -47,6 +49,7 @@ const companyNavigation: NavItem[] = [
 export function WorkspaceLayout({ workspace, children }: { workspace: Workspace; children: React.ReactNode }) {
   const { profile } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const hasCompany = Boolean(profile?.companyId);
@@ -54,6 +57,12 @@ export function WorkspaceLayout({ workspace, children }: { workspace: Workspace;
   const isCompany = workspace === "company";
   const navigation = isCompany ? companyNavigation : userNavigation;
   const greetingName = getGreetingName(profile);
+  const jobsRouteActive = isCompany && location.pathname.startsWith("/company/vagas");
+  const [jobsMenuOpen, setJobsMenuOpen] = useState(jobsRouteActive);
+
+  useEffect(() => {
+    if (jobsRouteActive) setJobsMenuOpen(true);
+  }, [jobsRouteActive]);
 
   const logout = async () => {
     await auth.signOut();
@@ -88,7 +97,7 @@ export function WorkspaceLayout({ workspace, children }: { workspace: Workspace;
         </div>
 
         <div className="px-5 pb-2 pt-4"><p className="text-[9px] font-bold uppercase tracking-[0.22em] text-white/24">{isCompany ? "Gestão" : "Sua jornada"}</p></div>
-        <nav className="flex-1 space-y-1 overflow-y-auto px-4 pb-4">{navigation.map((item) => <WorkspaceNavLink key={item.to} {...item} company={isCompany} />)}</nav>
+        <nav className="flex-1 space-y-1 overflow-y-auto px-4 pb-4">{navigation.map((item) => isCompany && item.to === "/company/vagas" ? <CompanyJobsNav key={item.to} open={jobsMenuOpen} onToggle={() => setJobsMenuOpen((value) => !value)} /> : <WorkspaceNavLink key={item.to} {...item} company={isCompany} />)}</nav>
 
         {!isCompany && <div className="mx-4 mb-4 space-y-3"><Link to="/user/curriculo" className="group block rounded-[22px] border border-white/10 bg-gradient-to-br from-white/[0.09] to-white/[0.035] p-4 transition hover:border-[#e5a787]/30 hover:bg-white/[0.11]"><div className="flex items-center justify-between"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#e8aa89]/15 text-[#f0c2a9]"><Sparkles className="h-4 w-4" /></span><ArrowMark /></div><p className="mt-3 text-sm font-bold text-white">Fortaleça seu currículo</p><p className="mt-1 text-[11px] leading-5 text-white/38">Mantenha seu perfil pronto para as próximas oportunidades.</p></Link>{!hasCompany && <Link to="/company/perfil" className="flex items-center gap-3 rounded-2xl border border-white/[0.08] px-4 py-3 text-xs font-bold text-white/48 transition hover:bg-white/[0.05] hover:text-white"><Building2 className="h-4 w-4" />Também recruta? Criar empresa</Link>}</div>}
         <div className="border-t border-white/[0.06] p-4"><button type="button" onClick={() => void logout()} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-white/38 transition hover:bg-white/[0.06] hover:text-white"><LogOut className="h-5 w-5" /> Sair</button></div>
@@ -108,7 +117,7 @@ export function WorkspaceLayout({ workspace, children }: { workspace: Workspace;
 
       <nav className={`fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t px-2 py-2.5 shadow-[0_-12px_40px_rgba(0,0,0,.09)] backdrop-blur-xl md:hidden ${isCompany ? "border-stone-200 bg-white/96" : "border-white/[0.08] bg-[#2b211c]/96 text-white"}`}>{(isCompany ? companyNavigation.slice(0, 4) : userMobileNavigation).map((item) => <MobileNavLink key={item.to} {...item} company={isCompany} />)}</nav>
 
-      {mobileOpen && <div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-sm md:hidden" onClick={() => setMobileOpen(false)}><div className={`flex h-full w-[86%] max-w-[330px] flex-col overflow-y-auto p-4 shadow-2xl ${isCompany ? "bg-[#1b1b18] text-white" : "bg-[#2b211c] text-white"}`} onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-between px-1 py-2"><Link to="/" className="font-serif text-xl font-bold text-white">PiraNegócios</Link><button type="button" onClick={() => setMobileOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-white/60"><X className="h-4 w-4" /></button></div><div className="my-4 rounded-[20px] border border-white/10 bg-white/[0.055] p-3.5"><p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/35">Espaço atual</p><p className="mt-1 truncate text-sm font-bold">{isCompany ? companyLabel : greetingName}</p><p className="mt-1 text-[11px] text-white/38">{isCompany ? "Recrutamento e talentos" : "Carreira e oportunidades"}</p>{hasCompany && <button type="button" onClick={() => switchWorkspace(isCompany ? "user" : "company")} className="mt-3 text-xs font-bold text-[#efb89c]">Trocar para {isCompany ? "meu espaço" : companyLabel}</button>}</div><nav className="space-y-1">{navigation.map((item) => <WorkspaceNavLink key={item.to} {...item} company={isCompany} onClick={() => setMobileOpen(false)} />)}</nav><div className="mt-auto border-t border-white/[0.08] pt-4"><button type="button" onClick={() => void logout()} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-300/10 bg-red-400/[0.08] px-4 py-3.5 text-sm font-bold text-red-200"><LogOut className="h-4 w-4" /> Sair da conta</button></div></div></div>}
+      {mobileOpen && <div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-sm md:hidden" onClick={() => setMobileOpen(false)}><div className={`flex h-full w-[86%] max-w-[330px] flex-col overflow-y-auto p-4 shadow-2xl ${isCompany ? "bg-[#1b1b18] text-white" : "bg-[#2b211c] text-white"}`} onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-between px-1 py-2"><Link to="/" className="font-serif text-xl font-bold text-white">PiraNegócios</Link><button type="button" onClick={() => setMobileOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-white/60"><X className="h-4 w-4" /></button></div><div className="my-4 rounded-[20px] border border-white/10 bg-white/[0.055] p-3.5"><p className="text-[9px] font-bold uppercase tracking-[0.18em] text-white/35">Espaço atual</p><p className="mt-1 truncate text-sm font-bold">{isCompany ? companyLabel : greetingName}</p><p className="mt-1 text-[11px] text-white/38">{isCompany ? "Recrutamento e talentos" : "Carreira e oportunidades"}</p>{hasCompany && <button type="button" onClick={() => switchWorkspace(isCompany ? "user" : "company")} className="mt-3 text-xs font-bold text-[#efb89c]">Trocar para {isCompany ? "meu espaço" : companyLabel}</button>}</div><nav className="space-y-1">{navigation.map((item) => isCompany && item.to === "/company/vagas" ? <CompanyJobsNav key={item.to} open={jobsMenuOpen} onToggle={() => setJobsMenuOpen((value) => !value)} onNavigate={() => setMobileOpen(false)} /> : <WorkspaceNavLink key={item.to} {...item} company={isCompany} onClick={() => setMobileOpen(false)} />)}</nav><div className="mt-auto border-t border-white/[0.08] pt-4"><button type="button" onClick={() => void logout()} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-300/10 bg-red-400/[0.08] px-4 py-3.5 text-sm font-bold text-red-200"><LogOut className="h-4 w-4" /> Sair da conta</button></div></div></div>}
     </div>
   );
 }
@@ -116,4 +125,20 @@ export function WorkspaceLayout({ workspace, children }: { workspace: Workspace;
 function ArrowMark() { return <span className="text-sm text-white/28 transition group-hover:translate-x-1 group-hover:text-[#f0c2a9]">→</span>; }
 function WorkspaceChoice({ active, icon, title, subtitle, onClick }: { active: boolean; icon: React.ReactNode; title: string; subtitle: string; onClick: () => void }) { return <button type="button" onClick={onClick} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${active ? "bg-stone-950 text-white" : "hover:bg-stone-50"}`}><span className={`flex h-8 w-8 items-center justify-center rounded-lg ${active ? "bg-white/10" : "bg-stone-100 text-stone-500"}`}>{icon}</span><span className="min-w-0"><span className="block truncate text-sm font-bold">{title}</span><span className={`block text-[11px] ${active ? "text-white/45" : "text-stone-400"}`}>{subtitle}</span></span></button>; }
 function WorkspaceNavLink({ to, label, icon, end = false, company, onClick }: NavItem & { company: boolean; onClick?: () => void; key?: React.Key }) { return <NavLink to={to} end={end} onClick={onClick} className={({ isActive }) => `group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition duration-200 ${company ? isActive ? "bg-white text-stone-950 shadow-lg" : "text-white/50 hover:bg-white/[0.06] hover:text-white" : isActive ? "bg-[#f2d2c1] text-[#342119] shadow-[0_10px_30px_rgba(0,0,0,.12)]" : "text-white/48 hover:bg-white/[0.06] hover:text-white"}`}><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.055] transition group-hover:bg-white/[0.08]">{icon}</span><span className="truncate">{label}</span></NavLink>; }
+function CompanyJobsNav({ open, onToggle, onNavigate }: { open: boolean; onToggle: () => void; onNavigate?: () => void }) {
+  const location = useLocation();
+  const active = location.pathname.startsWith("/company/vagas");
+  const children = [
+    { to: "/company/vagas", label: "Minhas vagas", icon: <Briefcase className="h-3.5 w-3.5" />, end: true },
+    { to: "/company/vagas/nova", label: "Publicar vaga", icon: <Plus className="h-3.5 w-3.5" /> },
+    { to: "/company/vagas/convites", label: "Convites", icon: <MailPlus className="h-3.5 w-3.5" /> },
+  ];
+  return <div>
+    <div className={`flex items-center rounded-2xl transition ${active ? "bg-white text-stone-950 shadow-lg" : "text-white/50 hover:bg-white/[0.06] hover:text-white"}`}>
+      <NavLink to="/company/vagas" onClick={onNavigate} className="group flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-sm font-semibold"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/[0.055]"><Briefcase className="h-5 w-5" /></span><span className="truncate">Vagas</span></NavLink>
+      <button type="button" onClick={onToggle} className="mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl" aria-label={open ? "Fechar submenu de vagas" : "Abrir submenu de vagas"}><ChevronDown className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} /></button>
+    </div>
+    {open && <div className="ml-7 mt-1 space-y-1 border-l border-white/10 pl-3">{children.map((item) => <NavLink key={item.to} to={item.to} end={item.end} onClick={onNavigate} className={({ isActive }) => `flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition ${isActive ? "bg-white/10 text-white" : "text-white/38 hover:bg-white/[0.05] hover:text-white/80"}`}>{item.icon}<span>{item.label}</span></NavLink>)}</div>}
+  </div>;
+}
 function MobileNavLink({ to, label, icon, end = false, company }: NavItem & { company: boolean; key?: React.Key }) { return <NavLink to={to} end={end} className={({ isActive }) => `flex min-w-14 flex-col items-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-semibold transition ${company ? isActive ? "text-terracotta-700" : "text-stone-400" : isActive ? "bg-white/[0.08] text-[#f2c5ad]" : "text-white/38"}`}>{icon}<span>{label.replace("Banco de talentos", "Talentos").replace("Encontrar vagas", "Vagas").replace("Meu currículo", "Currículo").replace("Perfil profissional", "Perfil")}</span></NavLink>; }

@@ -2,6 +2,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -12,6 +13,8 @@ import { Company } from '../companies/entities/company.entity';
 import { SettingsService } from '../admin/settings.service';
 import { User, UserType } from './entities/user.entity';
 
+type AuthenticatedRequest = { user: { uid: string } };
+
 @Controller('candidates')
 @UseGuards(FirebaseAuthGuard)
 export class CandidatesController {
@@ -21,13 +24,10 @@ export class CandidatesController {
     private readonly settingsService: SettingsService,
   ) {}
 
-  @Get()
-  async list(@Req() req: any) {
-    const viewer = await this.users.findOne({ where: { id: req.user.uid } });
+  private async assertTalentAccess(uid: string) {
+    const viewer = await this.users.findOne({ where: { id: uid } });
     if (!viewer) throw new ForbiddenException('Conta não encontrada.');
 
-    // Acesso empresarial é uma capacidade do vínculo com a empresa, não um
-    // tipo exclusivo de usuário. ADMIN continua sendo o único papel global.
     if (viewer.type !== UserType.ADMIN) {
       if (!viewer.companyId)
         throw new ForbiddenException(
@@ -41,7 +41,73 @@ export class CandidatesController {
           'A empresa precisa ser verificada para acessar o banco de talentos.',
         );
     }
+  }
 
+  private serializeCandidate(candidate: User, aiEnabled: boolean) {
+    const candidateData: Partial<User> = { ...candidate };
+    delete candidateData.aiAnalysis;
+    delete candidateData.uploadedResumeFile;
+    delete candidateData.publishedResumeSnapshot;
+    delete candidateData.resumeURL;
+    const safeJobPreferences = { ...(candidate.jobPreferences || {}) };
+    delete safeJobPreferences.pcdDeclaration;
+    delete safeJobPreferences.pcdDocumentationStatus;
+    delete safeJobPreferences.pcdDataConsent;
+    delete safeJobPreferences.includeExclusivePcdJobs;
+    const published =
+      candidate.resumeStatus === 'PUBLISHED' &&
+      Boolean(candidate.publishedResumeSnapshot);
+
+    return {
+      ...candidateData,
+      resumeURL: published ? candidate.resumeURL : '',
+      publishedResumeSnapshot: published
+        ? candidate.publishedResumeSnapshot
+        : null,
+      jobPreferences: safeJobPreferences,
+      ...(aiEnabled ? { aiAnalysis: candidate.aiAnalysis } : {}),
+      name:
+        candidate.socialName ||
+        candidate.fullName ||
+        candidate.displayName ||
+        'Candidato',
+    };
+  }
+
+  @Get('by-email')
+  async findByEmail(
+    @Req() req: AuthenticatedRequest,
+    @Query('email') value: string,
+  ) {
+    await this.assertTalentAccess(req.user.uid);
+    const email = String(value || '')
+      .trim()
+      .toLowerCase();
+    if (
+      !email ||
+      email.length > 254 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    )
+      return null;
+
+    const candidate = await this.users
+      .createQueryBuilder('candidate')
+      .where('LOWER(candidate."email") = :email', { email })
+      .andWhere('candidate."isOpenToWork" = true')
+      .andWhere(
+        '(candidate."type" IS NULL OR candidate."type" <> :adminType)',
+        { adminType: UserType.ADMIN },
+      )
+      .getOne();
+    if (!candidate) return null;
+    const aiEnabled =
+      (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
+    return this.serializeCandidate(candidate, aiEnabled);
+  }
+
+  @Get()
+  async list(@Req() req: AuthenticatedRequest) {
+    await this.assertTalentAccess(req.user.uid);
     const aiEnabled =
       (await this.settingsService.getValue('AI_ENABLED', 'false')) === 'true';
 
@@ -54,41 +120,8 @@ export class CandidatesController {
       })
     ).filter((candidate) => candidate.type !== UserType.ADMIN);
 
-    return candidates.map((candidate) => {
-      const {
-        aiAnalysis,
-        uploadedResumeFile: _uploadedResumeFile,
-        publishedResumeSnapshot,
-        resumeURL,
-        ...candidateData
-      } = candidate;
-      const {
-        pcdDeclaration: _pcdDeclaration,
-        pcdDocumentationStatus: _pcdDocumentationStatus,
-        pcdDataConsent: _pcdDataConsent,
-        includeExclusivePcdJobs: _includeExclusivePcdJobs,
-        ...safeJobPreferences
-      } = candidate.jobPreferences || {};
-      const published = candidate.resumeStatus === 'PUBLISHED' && Boolean(publishedResumeSnapshot);
-
-      return {
-        ...candidateData,
-        // O arquivo-base importado pelo usuário não é parte do currículo
-        // empresarial. Empresas recebem somente a versão que o candidato
-        // publicou conscientemente no PiraNegócios.
-        resumeURL: published ? resumeURL : '',
-        publishedResumeSnapshot: published ? publishedResumeSnapshot : null,
-        // Autodeclaração PcD e situação de documentação são dados sensíveis.
-        // O banco de talentos recebe apenas mobilidade/CNH/veículo. A empresa
-        // não consegue inferir a resposta PcD pelo toggle de recomendações.
-        jobPreferences: safeJobPreferences,
-        ...(aiEnabled ? { aiAnalysis } : {}),
-        name:
-          candidate.socialName ||
-          candidate.fullName ||
-          candidate.displayName ||
-          'Candidato',
-      };
-    });
+    return candidates.map((candidate) =>
+      this.serializeCandidate(candidate, aiEnabled),
+    );
   }
 }
