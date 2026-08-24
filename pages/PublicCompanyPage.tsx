@@ -28,7 +28,13 @@ export default function PublicCompanyPage() {
       .get(`/public/companies/${encodeURIComponent(companySlug)}`)
       .then(async (response) => {
         if (!active) return;
-        const nextCompany = response.data.company as PublicCompanyLike;
+        // O endpoint público só resolve empresas com verificationStatus=VERIFIED.
+        // Mantemos essa garantia explícita no objeto visual para renderizar apenas o selo.
+        const nextCompany = {
+          ...(response.data.company as PublicCompanyLike),
+          isVerified: true,
+          verificationStatus: "VERIFIED",
+        };
         setCompany(nextCompany);
         setJobs(response.data.jobs || []);
         if (
