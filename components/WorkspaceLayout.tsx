@@ -16,6 +16,7 @@ import {
   Sparkles,
   User,
   UserRoundSearch,
+  UsersRound,
   X,
 } from "lucide-react";
 import { auth } from "../lib/firebase";
@@ -39,8 +40,7 @@ const userMobileNavigation = userNavigation.filter((item) => ["/user", "/user/va
 
 const companyNavigation: NavItem[] = [
   { to: "/company", label: "Visão geral", icon: <Home className="h-5 w-5" />, end: true },
-  { to: "/company/vagas", label: "Vagas", icon: <Briefcase className="h-5 w-5" /> },
-  { to: "/company/talentos", label: "Banco de talentos", icon: <UserRoundSearch className="h-5 w-5" /> },
+  { to: "/company/vagas", label: "Talentos", icon: <UsersRound className="h-5 w-5" /> },
   { to: "/company/pagina", label: "Minha Página", icon: <Globe2 className="h-5 w-5" /> },
   { to: "/company/contratacao", label: "Contratação", icon: <Settings2 className="h-5 w-5" /> },
   { to: "/company/perfil", label: "Perfil da empresa", icon: <Building2 className="h-5 w-5" /> },
@@ -57,7 +57,7 @@ export function WorkspaceLayout({ workspace, children }: { workspace: Workspace;
   const isCompany = workspace === "company";
   const navigation = isCompany ? companyNavigation : userNavigation;
   const greetingName = getGreetingName(profile);
-  const jobsRouteActive = isCompany && location.pathname.startsWith("/company/vagas");
+  const jobsRouteActive = isCompany && (location.pathname.startsWith("/company/vagas") || location.pathname.startsWith("/company/talentos"));
   const [jobsMenuOpen, setJobsMenuOpen] = useState(jobsRouteActive);
 
   useEffect(() => {
@@ -127,18 +127,19 @@ function WorkspaceChoice({ active, icon, title, subtitle, onClick }: { active: b
 function WorkspaceNavLink({ to, label, icon, end = false, company, onClick }: NavItem & { company: boolean; onClick?: () => void; key?: React.Key }) { return <NavLink to={to} end={end} onClick={onClick} className={({ isActive }) => `group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-semibold transition duration-200 ${company ? isActive ? "bg-white text-stone-950 shadow-lg" : "text-white/50 hover:bg-white/[0.06] hover:text-white" : isActive ? "bg-[#f2d2c1] text-[#342119] shadow-[0_10px_30px_rgba(0,0,0,.12)]" : "text-white/48 hover:bg-white/[0.06] hover:text-white"}`}><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.055] transition group-hover:bg-white/[0.08]">{icon}</span><span className="truncate">{label}</span></NavLink>; }
 function CompanyJobsNav({ open, onToggle, onNavigate }: { open: boolean; onToggle: () => void; onNavigate?: () => void }) {
   const location = useLocation();
-  const active = location.pathname.startsWith("/company/vagas");
+  const active = location.pathname.startsWith("/company/vagas") || location.pathname.startsWith("/company/talentos");
   const children = [
-    { to: "/company/vagas", label: "Minhas vagas", icon: <Briefcase className="h-3.5 w-3.5" />, end: true },
-    { to: "/company/vagas/nova", label: "Publicar vaga", icon: <Plus className="h-3.5 w-3.5" /> },
-    { to: "/company/vagas/convites", label: "Convites", icon: <MailPlus className="h-3.5 w-3.5" /> },
+    { to: "/company/vagas", label: "Minhas vagas", description: "Gerenciar oportunidades", icon: <Briefcase className="h-4 w-4" />, end: true },
+    { to: "/company/vagas/nova", label: "Publicar vaga", description: "Criar uma oportunidade", icon: <Plus className="h-4 w-4" /> },
+    { to: "/company/vagas/convites", label: "Convites", description: "Recrutamento reservado", icon: <MailPlus className="h-4 w-4" /> },
+    { to: "/company/talentos", label: "Banco de talentos", description: "Encontrar profissionais", icon: <UserRoundSearch className="h-4 w-4" /> },
   ];
   return <div>
     <div className={`flex items-center rounded-2xl transition ${active ? "bg-white text-stone-950 shadow-lg" : "text-white/50 hover:bg-white/[0.06] hover:text-white"}`}>
-      <NavLink to="/company/vagas" onClick={onNavigate} className="group flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-sm font-semibold"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/[0.055]"><Briefcase className="h-5 w-5" /></span><span className="truncate">Vagas</span></NavLink>
+      <NavLink to="/company/vagas" onClick={onNavigate} className="group flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-sm font-semibold"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${active ? "bg-stone-100 text-terracotta-700" : "bg-white/[0.055]"}`}><UsersRound className="h-5 w-5" /></span><span className="truncate">Talentos</span></NavLink>
       <button type="button" onClick={onToggle} className="mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl" aria-label={open ? "Fechar submenu de vagas" : "Abrir submenu de vagas"}><ChevronDown className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} /></button>
     </div>
-    {open && <div className="ml-7 mt-1 space-y-1 border-l border-white/10 pl-3">{children.map((item) => <NavLink key={item.to} to={item.to} end={item.end} onClick={onNavigate} className={({ isActive }) => `flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition ${isActive ? "bg-white/10 text-white" : "text-white/38 hover:bg-white/[0.05] hover:text-white/80"}`}>{item.icon}<span>{item.label}</span></NavLink>)}</div>}
+    {open && <div className="ml-4 mt-2 space-y-1.5 border-l border-white/10 pl-3">{children.map((item) => <NavLink key={item.to} to={item.to} end={item.end} onClick={onNavigate} className={({ isActive }) => `group/sub flex items-center gap-3 rounded-2xl border px-3 py-2.5 transition ${isActive ? "border-white/10 bg-white/[0.11] text-white shadow-sm" : "border-transparent text-white/42 hover:border-white/[0.06] hover:bg-white/[0.055] hover:text-white/85"}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-[#efb89c] transition group-hover/sub:bg-white/[0.09]">{item.icon}</span><span className="min-w-0"><span className="block truncate text-xs font-bold">{item.label}</span><span className="mt-0.5 block truncate text-[9px] font-medium text-white/28">{item.description}</span></span></NavLink>)}</div>}
   </div>;
 }
 function MobileNavLink({ to, label, icon, end = false, company }: NavItem & { company: boolean; key?: React.Key }) { return <NavLink to={to} end={end} className={({ isActive }) => `flex min-w-14 flex-col items-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-semibold transition ${company ? isActive ? "text-terracotta-700" : "text-stone-400" : isActive ? "bg-white/[0.08] text-[#f2c5ad]" : "text-white/38"}`}>{icon}<span>{label.replace("Banco de talentos", "Talentos").replace("Encontrar vagas", "Vagas").replace("Meu currículo", "Currículo").replace("Perfil profissional", "Perfil")}</span></NavLink>; }

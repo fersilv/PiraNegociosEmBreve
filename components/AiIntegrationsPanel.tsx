@@ -38,6 +38,7 @@ interface AiInstructionSettings {
   jobMatch: string;
   skillSuggestion: string;
   skillCompatibility: string;
+  supportChat: string;
 }
 
 const PROVIDERS: Array<{
@@ -77,6 +78,7 @@ const DEFAULT_INSTRUCTIONS: AiInstructionSettings = {
   jobMatch: "",
   skillSuggestion: "",
   skillCompatibility: "",
+  supportChat: "",
 };
 
 export function AiIntegrationsPanel() {
@@ -147,6 +149,7 @@ export function AiIntegrationsPanel() {
         skillSuggestion: settings.AI_INSTRUCTION_SKILL_SUGGESTION || "",
         skillCompatibility:
           settings.AI_INSTRUCTION_SKILL_COMPATIBILITY || "",
+        supportChat: settings.AI_INSTRUCTION_CHAT_SUPPORT || "",
       });
 
       const nextConfig: AiConfig = {
@@ -255,6 +258,11 @@ export function AiIntegrationsPanel() {
         "AI_INSTRUCTION_SKILL_COMPATIBILITY",
         instructions.skillCompatibility,
         "Instruções específicas para compatibilidade semântica de habilidades",
+      ],
+      [
+        "AI_INSTRUCTION_CHAT_SUPPORT",
+        instructions.supportChat,
+        "Instruções específicas para o chat de suporte da plataforma",
       ],
     ] as const;
 
@@ -800,6 +808,15 @@ export function AiIntegrationsPanel() {
               }))
             }
             placeholder="Ex.: traduções exatas podem valer 100%; tecnologias da mesma família devem receber compatibilidade parcial..."
+          />
+          <InstructionField
+            title="Chat e suporte"
+            description="Orienta o atendimento contextual dentro do site para candidatos, empresas e administradores."
+            value={instructions.supportChat}
+            onChange={(value) =>
+              setInstructions((current) => ({ ...current, supportChat: value }))
+            }
+            placeholder="Ex.: explique primeiro o caminho na interface; adapte a resposta ao tipo de perfil; quando não houver certeza, encaminhe ao suporte humano..."
           />
         </div>
 

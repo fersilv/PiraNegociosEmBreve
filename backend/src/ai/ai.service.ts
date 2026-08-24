@@ -388,14 +388,16 @@ export class AiService {
     config: AiRuntimeConfig,
     prompt: string,
     systemInstruction?: string,
+    options?: { json?: boolean; maxOutputTokens?: number },
   ) {
+    const maxOutputTokens = options?.maxOutputTokens || 3500;
     if (config.provider === 'OPENAI') {
       const openai = new OpenAI({ apiKey: config.apiKey });
       const response = await openai.responses.create({
         model: config.model,
         ...(systemInstruction ? { instructions: systemInstruction } : {}),
         input: prompt,
-        max_output_tokens: 3500,
+        max_output_tokens: maxOutputTokens,
       });
       return response.output_text || '';
     }
@@ -403,7 +405,7 @@ export class AiService {
       const anthropic = new Anthropic({ apiKey: config.apiKey });
       const response = await anthropic.messages.create({
         model: config.model,
-        max_tokens: 3500,
+        max_tokens: maxOutputTokens,
         ...(systemInstruction ? { system: systemInstruction } : {}),
         messages: [{ role: 'user', content: prompt }],
       });
@@ -415,8 +417,131 @@ export class AiService {
     return this.geminiGenerate(
       config,
       [{ role: 'user', parts: [{ text: prompt }] }],
-      { systemInstruction, json: true, maxOutputTokens: 3500 },
+      {
+        systemInstruction,
+        json: options?.json !== false,
+        maxOutputTokens,
+      },
     );
+  }
+
+  async supportChatReply(input: {
+    message: string;
+    pagePath: string;
+    process: string;
+    profile: Record<string, unknown>;
+    history?: Array<{ role: string; text: string }>;
+    screenshot?: { data: string; mimeType: string } | null;
+  }) {
+    const config = await this.getRuntimeConfig();
+    const customInstruction = await this.settingsService.getValue(
+      'AI_INSTRUCTION_CHAT_SUPPORT',
+      '',
+    );
+    const systemInstruction = await this.buildSystemInstruction(
+      `suporte ajuda navegação página ${input.pagePath} processo ${input.process} perfil ${String(input.profile.type || '')}`,
+      `Você atende usuários do PiraNegócios dentro da própria plataforma. Explique caminhos reais e ações seguras com linguagem curta e acolhedora. Use somente o contexto fornecido e a memória aprovada. Se não tiver certeza, admita e oriente o usuário a encaminhar a conversa ao suporte humano. Nunca afirme que executou ações, alterou cadastros ou consultou dados que não estejam no contexto.${customInstruction ? `\n\nINSTRUÇÕES ESPECÍFICAS DE CHAT E SUPORTE:\n${customInstruction}` : ''}`,
+    );
+    const history = (input.history || [])
+      .slice(-10)
+      .map((item) => `${item.role}: ${String(item.text || '').slice(0, 1200)}`)
+      .join('\n');
+    const prompt = `CONTEXTO DA TELA\nPágina: ${input.pagePath}\nProcesso: ${input.process}\nPerfil: ${JSON.stringify(input.profile).slice(0, 5000)}\n\nCONVERSA ANTERIOR\n${history || 'Sem mensagens anteriores.'}\n\nMENSAGEM ATUAL\n${input.message}\n\nResponda diretamente ao usuário em português brasileiro, sem markdown excessivo.`;
+    const screenshotMatch = input.screenshot?.data.match(
+      /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/,
+    );
+
+    try {
+      if (config.provider === 'OPENAI' && screenshotMatch) {
+        const openai = new OpenAI({ apiKey: config.apiKey });
+        const response = await openai.responses.create({
+          model: config.model,
+          instructions: systemInstruction,
+          input: [{
+            role: 'user',
+            content: [
+              { type: 'input_text', text: prompt },
+              { type: 'input_image', image_url: input.screenshot!.data, detail: 'auto' },
+            ],
+          }],
+          max_output_tokens: 900,
+        } as any);
+        return String(response.output_text || '').trim();
+      }
+      if (config.provider === 'ANTHROPIC' && screenshotMatch) {
+        const anthropic = new Anthropic({ apiKey: config.apiKey });
+        const response = await anthropic.messages.create({
+          model: config.model,
+          max_tokens: 900,
+          system: systemInstruction,
+          messages: [{
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: screenshotMatch[1],
+                  data: screenshotMatch[2],
+                },
+              },
+              { type: 'text', text: prompt },
+            ],
+          }],
+        } as any);
+        return response.content
+          .filter((block: any) => block.type === 'text')
+          .map((block: any) => block.text)
+          .join('\n')
+          .trim();
+      }
+      if (config.provider === 'GEMINI' && screenshotMatch) {
+        return (await this.geminiGenerate(
+          config,
+          [{ role: 'user', parts: [
+            { text: prompt },
+            { inlineData: { mimeType: screenshotMatch[1], data: screenshotMatch[2] } },
+          ] }],
+          { systemInstruction, json: false, maxOutputTokens: 900 },
+        )).trim();
+      }
+      return (await this.generateText(config, prompt, systemInstruction, {
+        json: false,
+        maxOutputTokens: 900,
+      })).trim();
+    } catch (error: any) {
+      if (error instanceof ServiceUnavailableException) throw error;
+      console.error('AI support chat error:', error);
+      throw new InternalServerErrorException(
+        error?.message || 'Não foi possível responder pelo suporte inteligente.',
+      );
+    }
+  }
+
+  async analyzeProductFeedback(
+    items: Array<{
+      id: string;
+      message: string;
+      pagePath: string;
+      process: string;
+      profileType: string;
+      createdAt: string;
+    }>,
+  ) {
+    const config = await this.getRuntimeConfig();
+    const systemInstruction = await this.buildSystemInstruction(
+      'feedback solicitações produto melhorias experiência usuário priorização',
+      'Você é analista de produto do PiraNegócios. Agrupe pedidos que descrevem a mesma necessidade, preserve os IDs recebidos e priorize por frequência, impacto no fluxo, gravidade e recência. Não invente pedidos.',
+    );
+    const prompt = `Analise as solicitações abaixo e devolva EXCLUSIVAMENTE JSON válido no formato {"clusters":[{"title":"tema curto","summary":"necessidade consolidada","feedbackIds":["uuid"],"score":0,"reason":"justificativa curta"}]}. O score vai de 0 a 100. Cada ID deve aparecer no máximo uma vez.\n\nSOLICITAÇÕES:\n${JSON.stringify(items.slice(0, 250))}`;
+    const text = await this.generateText(config, prompt, systemInstruction, {
+      json: true,
+      maxOutputTokens: 5000,
+    });
+    const parsed = this.parseJson(text);
+    return {
+      clusters: Array.isArray(parsed.clusters) ? parsed.clusters : [],
+    };
   }
 
   async matchJobs(profile: unknown, jobs: unknown[], applications: unknown[]) {

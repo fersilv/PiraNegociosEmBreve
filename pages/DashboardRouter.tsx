@@ -38,6 +38,7 @@ import { CompanyHiringConfig } from "./CompanyHiringConfig";
 import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
 import { CandidateJobViewPage } from "./CandidateJobViewPage";
 import { ResumeWorkspace } from "./ResumeWorkspace";
+import { AdminProductFeedbackPage } from "./AdminProductFeedbackPage";
 
 function AdminPage({ children }: { children: React.ReactNode }) {
   return <div className="admin-page-shell">{children}</div>;
@@ -63,6 +64,7 @@ function AdminRoutes() {
       <Route path="api" element={<AdminPage><div className="mx-auto max-w-7xl space-y-6 admin-standalone-page"><header><p className="text-xs font-bold uppercase tracking-[0.18em] text-terracotta-600">Infraestrutura · Integrações</p><h1 className="mt-1 text-3xl font-serif font-bold text-stone-900">API v1</h1><p className="mt-1 max-w-3xl text-stone-500">Gerencie chaves, origens, auditoria e a documentação da API de vagas.</p></header><section className="rounded-2xl border border-stone-200 bg-white shadow-sm admin-primary-surface"><ApiV1Panel /></section></div></AdminPage>} />
       <Route path="ai" element={<AdminPage><div className="mx-auto max-w-7xl space-y-6 admin-standalone-page admin-ai-page"><AiIntegrationsPanel /></div></AdminPage>} />
       <Route path="notificacoes" element={<AdminPage><NotificationPreferencesPage /></AdminPage>} />
+      <Route path="solicitacoes" element={<AdminPage><AdminProductFeedbackPage /></AdminPage>} />
       <Route path="conta" element={<AdminPage><AdminAccountPage /></AdminPage>} />
       <Route path="*" element={<Navigate to="/admin" replace />} />
     </Routes>

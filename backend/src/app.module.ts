@@ -20,6 +20,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { JobMatchModule } from './job-match/job-match.module';
 import { AiModule } from './ai/ai.module';
 import { PublicResumeModule } from './public-resume/public-resume.module';
+import { ProductFeedbackModule } from './product-feedback/product-feedback.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { PublicResumeModule } from './public-resume/public-resume.module';
     JobMatchModule,
     ExternalApiModule,
     AdminModule,
+    ProductFeedbackModule,
   ],
   controllers: [AppController],
   providers: [AppService],

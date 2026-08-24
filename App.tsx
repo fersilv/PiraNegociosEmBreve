@@ -11,6 +11,7 @@ import { PublicResumeAccountBridge } from "./components/PublicResumeAccountBridg
 import { PublicResumeExitIntent } from "./components/PublicResumeExitIntent";
 import { PublicResumeResponsiveStyles } from "./components/PublicResumeResponsiveStyles";
 import { CompanyLegalPage } from "./pages/CompanyLegalPage";
+import { ProductFeedbackWidget } from "./components/ProductFeedbackWidget";
 
 const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() =>
@@ -87,6 +88,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </Suspense>
+          {!isEmbed && !isMobileTransfer && !isCompanyPreview && <ProductFeedbackWidget />}
         </BrowserRouter>
       </AuthProvider>
     </FeedbackProvider>
