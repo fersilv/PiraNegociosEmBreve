@@ -62,7 +62,7 @@ export function CompanyJobInvitesPage() {
   const [profileCandidate, setProfileCandidate] = useState<any | null>(null);
   const [inviting, setInviting] = useState(false);
   const [resendingId, setResendingId] = useState<string | null>(null);
-  const [lastInviteUrl, setLastInviteUrl] = useState("");
+  const [copyingId, setCopyingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [companyVerified, setCompanyVerified] = useState<boolean | null>(null);
 
@@ -165,7 +165,6 @@ export function CompanyJobInvitesPage() {
     setEmail("");
     setMatchedCandidate(null);
     setLookupState("idle");
-    setLastInviteUrl("");
   };
 
   const invite = async (event: React.FormEvent) => {
@@ -180,12 +179,14 @@ export function CompanyJobInvitesPage() {
       const response = matchedCandidate?.id
         ? await api.post(`/companies/${profile.companyId}/talent-invites`, { candidateId: matchedCandidate.id, jobId: selectedJob.id })
         : await api.post(`/companies/${profile.companyId}/talent-invites/email`, { email: normalized, jobId: selectedJob.id });
-      setLastInviteUrl(response.data?.delivery?.inviteUrl || "");
       await loadInvites();
+      setEmail("");
+      setMatchedCandidate(null);
+      setLookupState("idle");
       const deliveryStatus = response.data?.delivery?.status;
       if (deliveryStatus === "SENT") alert(existingInvite ? "Convite reenviado por e-mail." : "Convite enviado por e-mail.");
       else if (deliveryStatus === "FAILED") alert(response.data?.delivery?.error || "O convite foi criado, mas o e-mail não pôde ser enviado.");
-      else alert("Convite criado. O link seguro está disponível abaixo.");
+      else alert("Convite criado. Você pode copiar o link na lista de convidados.");
     } catch (error: any) {
       alert(error?.response?.data?.message || "Não foi possível enviar o convite.");
     } finally {
@@ -198,13 +199,28 @@ export function CompanyJobInvitesPage() {
     setResendingId(inviteId);
     try {
       const response = await api.post(`/companies/${profile.companyId}/talent-invites/${inviteId}/resend`);
-      setLastInviteUrl(response.data?.delivery?.inviteUrl || "");
       await loadInvites();
       if (response.data?.delivery?.status === "SENT") alert("Convite reenviado por e-mail.");
     } catch (error: any) {
       alert(error?.response?.data?.message || "Não foi possível reenviar o convite.");
     } finally {
       setResendingId(null);
+    }
+  };
+
+  const copyInviteLink = async (inviteId: string) => {
+    if (!profile?.companyId) return;
+    setCopyingId(inviteId);
+    try {
+      const response = await api.post(`/companies/${profile.companyId}/talent-invites/${inviteId}/link`);
+      const inviteUrl = String(response.data?.inviteUrl || "");
+      if (!inviteUrl) throw new Error("Link indisponível");
+      await navigator.clipboard.writeText(inviteUrl);
+      alert("Link do convite copiado.");
+    } catch (error: any) {
+      alert(error?.response?.data?.message || "Não foi possível copiar o link do convite.");
+    } finally {
+      setCopyingId(null);
     }
   };
 
@@ -254,13 +270,11 @@ export function CompanyJobInvitesPage() {
 
                 {lookupState === "found" && matchedCandidate && <CandidateMatchCard candidate={matchedCandidate} onOpen={() => setProfileCandidate(matchedCandidate)} />}
                 {(lookupState === "not-found" || lookupState === "error") && <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-stone-500"><Mail className="h-3.5 w-3.5" /> O convite será enviado por e-mail.</p>}
-                {existingInvite && <div className={`mt-3 rounded-2xl border p-4 text-xs ${existingInvite.status === "ACCEPTED" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900"}`}><strong>{existingInvite.status === "ACCEPTED" ? "Convite já aceito." : "Esta pessoa já foi convidada para a vaga."}</strong>{existingInvite.status !== "ACCEPTED" && " O envio criará um novo link seguro e invalidará o anterior."}</div>}
                 <button type="submit" disabled={inviting || lookupState === "loading" || !isEmail(normalizeEmail(email)) || existingInvite?.status === "ACCEPTED"} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-terracotta-600 px-5 py-3.5 text-xs font-black text-white shadow-sm transition hover:bg-terracotta-700 disabled:cursor-not-allowed disabled:opacity-45">{inviting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{existingInvite ? "Reenviar convite" : matchedCandidate ? `Convidar ${candidateName(matchedCandidate)}` : "Enviar convite por e-mail"}</button>
               </form>
-              {lastInviteUrl && <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4"><p className="text-[11px] leading-5 text-amber-900">Link seguro do último convite, disponível como alternativa ao e-mail.</p><div className="mt-2 flex gap-2"><input readOnly value={lastInviteUrl} className="min-w-0 flex-1 rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-[10px] text-stone-600" /><button type="button" onClick={() => void navigator.clipboard.writeText(lastInviteUrl)} className="inline-flex items-center gap-1 rounded-xl bg-stone-900 px-3 text-[10px] font-bold text-white"><Copy className="h-3.5 w-3.5" /> Copiar</button></div></div>}
             </section>
 
-            <section className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm sm:p-6"><div className="flex items-center justify-between gap-4"><div><h2 className="font-serif text-2xl font-bold text-stone-950">Pessoas convidadas</h2><p className="mt-1 text-xs text-stone-500">Histórico exclusivo da vaga selecionada.</p></div><span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-600">{selectedInvites.length}</span></div><div className="mt-5 space-y-3">{selectedInvites.map((inviteItem) => <InviteRow key={inviteItem.id} invite={inviteItem} busy={resendingId === inviteItem.id} onResend={() => void resend(inviteItem.id)} onOpenProfile={inviteItem.candidateId ? () => void openInviteProfile(inviteItem) : undefined} />)}{selectedInvites.length === 0 && <div className="rounded-2xl border border-dashed border-stone-300 p-10 text-center"><Mail className="mx-auto h-6 w-6 text-stone-300" /><p className="mt-3 text-sm font-bold text-stone-700">Nenhum convite enviado para esta vaga.</p><p className="mt-1 text-xs text-stone-400">Use o campo acima para iniciar o processo.</p></div>}</div></section>
+            <section className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm sm:p-6"><div className="flex items-center justify-between gap-4"><div><h2 className="font-serif text-2xl font-bold text-stone-950">Pessoas convidadas</h2><p className="mt-1 text-xs text-stone-500">Histórico exclusivo da vaga selecionada.</p></div><span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-600">{selectedInvites.length}</span></div><div className="mt-5 space-y-3">{selectedInvites.map((inviteItem) => <InviteRow key={inviteItem.id} invite={inviteItem} busyResend={resendingId === inviteItem.id} busyCopy={copyingId === inviteItem.id} onCopyLink={() => void copyInviteLink(inviteItem.id)} onResend={() => void resend(inviteItem.id)} onOpenProfile={inviteItem.candidateId ? () => void openInviteProfile(inviteItem) : undefined} />)}{selectedInvites.length === 0 && <div className="rounded-2xl border border-dashed border-stone-300 p-10 text-center"><Mail className="mx-auto h-6 w-6 text-stone-300" /><p className="mt-3 text-sm font-bold text-stone-700">Nenhum convite enviado para esta vaga.</p><p className="mt-1 text-xs text-stone-400">Use o campo acima para iniciar o processo.</p></div>}</div></section>
           </>}
         </main>
       </div>
@@ -276,8 +290,8 @@ function CandidateMatchCard({ candidate, onOpen }: { candidate: any; onOpen: () 
   return <div className="mt-3 rounded-[22px] border border-emerald-200 bg-emerald-50/70 p-4"><div className="flex items-start gap-3"><span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white text-emerald-600 shadow-sm">{candidate.photoURL ? <img src={candidate.photoURL} alt="" className="h-full w-full object-cover" /> : <User className="h-5 w-5" />}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><strong className="text-sm text-stone-950">{candidateName(candidate)}</strong><span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[9px] font-black uppercase tracking-wide text-emerald-700"><UserCheck className="h-3 w-3" /> Perfil encontrado</span></div><p className="mt-1 truncate text-xs text-stone-500">{candidate.email}{candidate.phone ? ` · ${candidate.phone}` : ""}</p><p className="mt-2 line-clamp-2 text-xs leading-5 text-stone-600">{candidate.bio || "Sem resumo profissional cadastrado."}</p></div></div>{skills.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{skills.slice(0, 6).map((skill: string) => <span key={skill} className="rounded-full bg-white px-2 py-1 text-[9px] font-bold text-emerald-800">{skill}</span>)}</div>}{experiences.length > 0 && <div className="mt-3 rounded-xl bg-white/80 p-3"><p className="text-[9px] font-black uppercase tracking-wider text-stone-400">Experiência mais recente</p><p className="mt-1 text-xs font-bold text-stone-800">{experiences[0]?.role || "Cargo não informado"}</p><p className="text-[10px] text-stone-500">{experiences[0]?.company || "Empresa não informada"}</p></div>}<button type="button" onClick={onOpen} className="mt-3 inline-flex items-center gap-1.5 text-[10px] font-black text-emerald-800"><FileText className="h-3.5 w-3.5" /> Abrir perfil completo</button></div>;
 }
 
-function InviteRow({ invite, busy, onResend, onOpenProfile }: { invite: Invite; busy: boolean; onResend: () => void; onOpenProfile?: () => void }) {
-  return <article className="rounded-[22px] border border-stone-200 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="text-sm text-stone-900">{invite.candidateName || invite.candidateEmail || "Pessoa convidada"}</strong><InviteStatus status={invite.status} /></div><p className="mt-1 truncate text-xs text-stone-500">{invite.candidateEmail || "Convite interno"}</p></div><div className="flex shrink-0 gap-2">{onOpenProfile && <button type="button" onClick={onOpenProfile} className="rounded-xl border border-stone-200 px-3 py-2 text-[10px] font-bold text-stone-600">Ver perfil</button>}{invite.status === "PENDING" && <button type="button" disabled={busy} onClick={onResend} className="inline-flex items-center gap-1 rounded-xl bg-stone-900 px-3 py-2 text-[10px] font-bold text-white disabled:opacity-50">{busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Reenviar</button>}</div></div><div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 border-t border-stone-100 pt-3 text-[9px] font-bold uppercase tracking-wide text-stone-400"><span className="inline-flex items-center gap-1"><Mail className="h-3 w-3" /> {emailStatus(invite.emailStatus)}</span>{invite.registeredAt && <span className="inline-flex items-center gap-1"><UserPlus className="h-3 w-3" /> Cadastro {dateLabel(invite.registeredAt)}</span>}{invite.viewedAt && <span className="inline-flex items-center gap-1"><Eye className="h-3 w-3" /> Visualizou {dateLabel(invite.viewedAt)}</span>}{invite.acceptedAt && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="h-3 w-3" /> Aceitou {dateLabel(invite.acceptedAt)}</span>}{!invite.viewedAt && invite.createdAt && <span className="inline-flex items-center gap-1"><Clock3 className="h-3 w-3" /> Enviado {dateLabel(invite.createdAt)}</span>}</div></article>;
+function InviteRow({ invite, busyResend, busyCopy, onCopyLink, onResend, onOpenProfile }: { invite: Invite; busyResend: boolean; busyCopy: boolean; onCopyLink: () => void; onResend: () => void; onOpenProfile?: () => void }) {
+  return <article className="rounded-[22px] border border-stone-200 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><strong className="text-sm text-stone-900">{invite.candidateName || invite.candidateEmail || "Pessoa convidada"}</strong><InviteStatus status={invite.status} /></div><p className="mt-1 truncate text-xs text-stone-500">{invite.candidateEmail || "Convite interno"}</p></div><div className="flex shrink-0 flex-wrap gap-2">{onOpenProfile && <button type="button" onClick={onOpenProfile} className="rounded-xl border border-stone-200 px-3 py-2 text-[10px] font-bold text-stone-600">Ver perfil</button>}{invite.status === "PENDING" && <><button type="button" disabled={busyCopy || busyResend} onClick={onCopyLink} className="inline-flex items-center gap-1 rounded-xl border border-stone-200 px-3 py-2 text-[10px] font-bold text-stone-700 disabled:opacity-50">{busyCopy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Copy className="h-3 w-3" />} Copiar link</button><button type="button" disabled={busyResend || busyCopy} onClick={onResend} className="inline-flex items-center gap-1 rounded-xl bg-stone-900 px-3 py-2 text-[10px] font-bold text-white disabled:opacity-50">{busyResend ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Reenviar</button></>}</div></div><div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 border-t border-stone-100 pt-3 text-[9px] font-bold uppercase tracking-wide text-stone-400"><span className="inline-flex items-center gap-1"><Mail className="h-3 w-3" /> {emailStatus(invite.emailStatus)}</span>{invite.registeredAt && <span className="inline-flex items-center gap-1"><UserPlus className="h-3 w-3" /> Cadastro {dateLabel(invite.registeredAt)}</span>}{invite.viewedAt && <span className="inline-flex items-center gap-1"><Eye className="h-3 w-3" /> Visualizou {dateLabel(invite.viewedAt)}</span>}{invite.acceptedAt && <span className="inline-flex items-center gap-1 text-emerald-600"><CheckCircle2 className="h-3 w-3" /> Aceitou {dateLabel(invite.acceptedAt)}</span>}{!invite.viewedAt && invite.createdAt && <span className="inline-flex items-center gap-1"><Clock3 className="h-3 w-3" /> Enviado {dateLabel(invite.createdAt)}</span>}</div></article>;
 }
 
 function InviteStatus({ status }: { status: string }) {

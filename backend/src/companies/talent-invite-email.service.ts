@@ -44,7 +44,9 @@ export class TalentInviteEmailService {
     const siteOrigin = (
       process.env.PUBLIC_SITE_URL || 'https://piranegocios.com.br'
     ).replace(/\/$/, '');
-    const symbolUrl = escapeHtml(`${siteOrigin}/brand/symbol-white.png`);
+    const symbolUrl = escapeHtml(
+      `${siteOrigin}/brand/symbol-white-textured.png`,
+    );
     const footerLogoUrl = escapeHtml(
       `${siteOrigin}/brand/logo-horizontal-terracotta.png`,
     );

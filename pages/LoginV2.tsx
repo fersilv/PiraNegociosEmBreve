@@ -247,7 +247,7 @@ export function Login() {
 
       <section className="flex min-h-screen items-center justify-center px-4 py-8 sm:px-7 lg:px-12">
         <div className="w-full max-w-[540px]">
-          <div className="mb-7 flex items-center justify-between"><Link to="/" className="inline-flex items-center gap-2 text-xs font-bold text-stone-500 hover:text-stone-900"><ArrowLeft className="h-4 w-4" /> Voltar</Link><img src="/brand/logo-horizontal-burgundy.png" alt="PiraNegócios" className="h-7 w-auto max-w-[180px] object-contain lg:hidden" /></div>
+          <div className="mb-7 flex items-center justify-between"><Link to="/" className="inline-flex items-center gap-2 text-xs font-bold text-stone-500 hover:text-stone-900"><ArrowLeft className="h-4 w-4" /> Voltar</Link><img src="/brand/logo-horizontal-terracotta.png" alt="PiraNegócios" className="h-7 w-auto max-w-[180px] object-contain lg:hidden" /></div>
           <div className="rounded-[32px] border border-[#ddcfc3] bg-[#fffdfa] p-5 shadow-[0_30px_90px_rgba(73,45,28,.10)] sm:p-8">
             <div className="grid grid-cols-2 rounded-2xl bg-[#f2ebe4] p-1"><button type="button" onClick={() => changeMode("login")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${!isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>Entrar</button><button type="button" onClick={() => changeMode("register")} className={`rounded-xl px-4 py-2.5 text-sm font-black transition ${isRegister ? "bg-[#2b211c] text-white shadow-sm" : "text-stone-500"}`}>{registrationStatusLoaded && !registrationOpen && !isInviteFlow ? "Lista de espera" : "Criar conta"}</button></div>
 

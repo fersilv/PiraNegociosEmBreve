@@ -342,7 +342,7 @@ function InviteShell({ children, wide = false }: { children: React.ReactNode; wi
     <main className="min-h-screen bg-[#f5efe8] px-4 py-8 text-stone-900 sm:py-12">
       <div className={`mx-auto ${wide ? 'max-w-6xl' : 'max-w-2xl'}`}>
         <Link to="/" className="mb-6 inline-flex items-center">
-          <img src="/brand/logo-horizontal-burgundy.png" alt="PiraNegócios" className="h-8 w-auto max-w-[210px] object-contain" />
+          <img src="/brand/logo-horizontal-terracotta.png" alt="PiraNegócios" className="h-8 w-auto max-w-[210px] object-contain" />
         </Link>
         <div className="overflow-hidden rounded-[32px] border border-[#ddcfc3] bg-[#fffdfa] shadow-[0_30px_90px_rgba(73,45,28,.10)]">{children}</div>
       </div>

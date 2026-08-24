@@ -94,4 +94,25 @@ describe('TalentInvitesService', () => {
       expect.objectContaining({ candidateId: 'user-1', viewedAt: expect.any(Date) }),
     );
   });
+
+  it('gera um link copiável estável sem renovar o convite', async () => {
+    const { service, invites } = setup();
+    const storedInvite = {
+      ...invite(),
+      id: '123e4567-e89b-12d3-a456-426614174000',
+      tokenHash: 'b'.repeat(64),
+    };
+    invites.findOne.mockResolvedValue(storedInvite);
+
+    const first = await service.linkForCompany('company-1', storedInvite.id);
+    const second = await service.linkForCompany('company-1', storedInvite.id);
+    const preview = await service.preview(first.inviteUrl.split('/').pop()!);
+
+    expect(second).toEqual(first);
+    expect(first.inviteUrl).toMatch(
+      /^https:\/\/piranegocios\.com\.br\/convites\/vaga\/123e4567e89b12d3a456426614174000_[A-Za-z0-9_-]{43}$/,
+    );
+    expect(preview.job.title).toBe(job.title);
+    expect(invites.save).not.toHaveBeenCalled();
+  });
 });

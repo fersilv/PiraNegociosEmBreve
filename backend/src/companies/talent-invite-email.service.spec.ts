@@ -46,7 +46,7 @@ describe('TalentInviteEmailService', () => {
     );
     expect(body.html).toContain('Convite especial');
     expect(body.html).toContain(
-      'https://piranegocios.com.br/brand/symbol-white.png',
+      'https://piranegocios.com.br/brand/symbol-white-textured.png',
     );
     expect(body.html).toContain(
       'https://piranegocios.com.br/brand/logo-horizontal-terracotta.png',

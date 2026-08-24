@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import {
@@ -71,6 +72,42 @@ export class TalentInvitesService {
     return !job.deadlineDate || job.deadlineDate >= today;
   }
 
+  private publicToken(invite: Pick<CompanyTalentInvite, 'id' | 'tokenHash'>) {
+    const compactId = invite.id.replace(/-/g, '').toLowerCase();
+    const tokenHash = invite.tokenHash;
+    if (
+      !/^[a-f0-9]{32}$/.test(compactId) ||
+      !tokenHash ||
+      !/^[a-f0-9]{64}$/i.test(tokenHash)
+    ) {
+      throw new BadRequestException('Convite sem link seguro disponível.');
+    }
+    const signature = createHmac('sha256', tokenHash)
+      .update(invite.id)
+      .digest('base64url');
+    return `${compactId}_${signature}`;
+  }
+
+  private async findInviteByToken(token: string) {
+    const signedToken = /^([a-f0-9]{32})_([A-Za-z0-9_-]{43})$/.exec(token);
+    if (signedToken) {
+      const compactId = signedToken[1];
+      const inviteId = `${compactId.slice(0, 8)}-${compactId.slice(8, 12)}-${compactId.slice(12, 16)}-${compactId.slice(16, 20)}-${compactId.slice(20)}`;
+      const invite = await this.invites.findOne({ where: { id: inviteId } });
+      if (!invite?.tokenHash || !/^[a-f0-9]{64}$/i.test(invite.tokenHash))
+        return null;
+      const expected = Buffer.from(this.publicToken(invite));
+      const received = Buffer.from(token);
+      return expected.length === received.length &&
+        timingSafeEqual(expected, received)
+        ? invite
+        : null;
+    }
+    return this.invites.findOne({
+      where: { tokenHash: hashInviteToken(token) },
+    });
+  }
+
   private async findExisting(
     companyId: string,
     jobId: string,
@@ -103,7 +140,7 @@ export class TalentInvitesService {
     job: Job,
     invitedById: string,
   ) {
-    const { token, tokenHash } = createInviteToken();
+    const { tokenHash } = createInviteToken();
     invite.status = 'PENDING';
     invite.invitedById = invitedById;
     invite.tokenHash = tokenHash;
@@ -115,7 +152,6 @@ export class TalentInvitesService {
     invite.emailSentAt = null;
     invite.emailMessageId = null;
     invite.emailError = null;
-    return token;
   }
 
   private async deliver(
@@ -177,9 +213,14 @@ export class TalentInvitesService {
       data.candidateEmail || invite.candidateEmail || null;
     invite.candidateName = data.candidateName || invite.candidateName || null;
     invite.registeredAt = data.registeredAt || invite.registeredAt || null;
-    const token = this.resetInvite(invite, data.job, data.invitedById);
+    this.resetInvite(invite, data.job, data.invitedById);
     const saved = await this.invites.save(invite);
-    const delivery = await this.deliver(saved, data.company, data.job, token);
+    const delivery = await this.deliver(
+      saved,
+      data.company,
+      data.job,
+      this.publicToken(saved),
+    );
     return { invite: saved, delivery };
   }
 
@@ -270,10 +311,31 @@ export class TalentInvitesService {
       : null;
     if (!invite || !invite.candidateEmail || !this.jobIsAvailable(job))
       throw new BadRequestException('Convite não disponível para reenvio.');
-    const token = this.resetInvite(invite, job, invitedById);
+    this.resetInvite(invite, job, invitedById);
     await this.invites.save(invite);
-    const delivery = await this.deliver(invite, company, job, token);
+    const delivery = await this.deliver(
+      invite,
+      company,
+      job,
+      this.publicToken(invite),
+    );
     return { invite, delivery };
+  }
+
+  async linkForCompany(companyId: string, inviteId: string) {
+    const invite = await this.invites.findOne({
+      where: { id: inviteId, companyId, status: 'PENDING' },
+    });
+    const job = invite
+      ? await this.jobs.findOne({
+          where: { id: invite.jobId, companyId },
+        })
+      : null;
+    if (!invite || !this.jobIsAvailable(job))
+      throw new BadRequestException('Convite não disponível para copiar.');
+    return {
+      inviteUrl: `${this.publicOrigin()}/convites/vaga/${this.publicToken(invite)}`,
+    };
   }
 
   async listForCompany(companyId: string) {
@@ -332,9 +394,7 @@ export class TalentInvitesService {
   private async availableInviteByToken(token: string) {
     if (!/^[A-Za-z0-9_-]{40,100}$/.test(token))
       throw new NotFoundException('Vaga não encontrada.');
-    const invite = await this.invites.findOne({
-      where: { tokenHash: hashInviteToken(token) },
-    });
+    const invite = await this.findInviteByToken(token);
     if (
       !invite ||
       !['PENDING', 'ACCEPTED'].includes(invite.status) ||

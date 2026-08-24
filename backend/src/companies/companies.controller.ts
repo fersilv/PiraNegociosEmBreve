@@ -289,6 +289,16 @@ export class CompaniesController {
     return this.talentInvites.resend(company, inviteId, req.user.uid);
   }
 
+  @Post(':id/talent-invites/:inviteId/link')
+  async copyTalentInviteLink(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Param('inviteId') inviteId: string,
+  ) {
+    await this.assertManager(req.user.uid, id);
+    return this.talentInvites.linkForCompany(id, inviteId);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string) {
     const company = await this.companiesService.findOne(id);
