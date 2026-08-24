@@ -29,6 +29,7 @@ import { AdminBillingSupportPage } from "./AdminBillingSupportPage";
 import { PaymentMethodsPage } from "./PaymentMethodsPage";
 import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
 import { CompanyProfilePage } from "./CompanyProfilePage";
+import { CompanyPageBuilder } from "./CompanyPageBuilder";
 import { CompanyJobPage } from "./CompanyJobPage";
 import { CompanyHiringConfig } from "./CompanyHiringConfig";
 import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
@@ -94,6 +95,7 @@ function CompanyRoutes({ hasCompany }: { hasCompany: boolean }) {
       <Route path="vagas/:jobId" element={companyOnly(<CompanyJobPage />)} />
       <Route path="talentos" element={companyOnly(<TalentSearchPage />)} />
       <Route path="contratacao" element={companyOnly(<CompanyHiringConfig />)} />
+      <Route path="pagina" element={companyOnly(<CompanyPageBuilder />)} />
       <Route path="notificacoes" element={companyOnly(<NotificationPreferencesPage />)} />
       <Route path="perfil" element={<CompanyProfilePage />} />
       <Route path="*" element={<Navigate to={hasCompany ? "/company" : "/company/perfil"} replace />} />
@@ -136,6 +138,7 @@ function LegacyDashboardRedirect() {
   }
   if (path === "/dashboard/curriculos") return <Navigate to="/company/talentos" replace />;
   if (path === "/dashboard/configuracao-contratacao") return <Navigate to="/company/contratacao" replace />;
+  if (path === "/dashboard/empresa/pagina") return <Navigate to="/company/pagina" replace />;
   if (path === "/dashboard/empresa") return <Navigate to="/company/perfil" replace />;
   if (path === "/dashboard/onboarding") return <Navigate to={profile?.type === "ADMIN" ? "/admin/onboarding" : "/user/onboarding"} replace />;
   if (profile?.type === "ADMIN") return <Navigate to="/admin" replace />;
