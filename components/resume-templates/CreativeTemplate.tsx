@@ -22,7 +22,7 @@ export function CreativeTemplate({ profile, color = "#f97316", showPhoto, addres
   return (
     <TemplateWrapper>
       <div className="font-sans text-stone-800 min-h-[297mm]">
-        <div className="relative overflow-hidden pb-8 pt-12 px-12" style={{ backgroundColor: `${color}15` }}>
+        <div className="resume-creative-hero relative overflow-hidden pb-8 pt-12 px-12" style={{ backgroundColor: `${color}15` }}>
           <div className="absolute top-0 right-0 w-64 h-64 rounded-bl-[100px] opacity-20 -mr-10 -mt-10" style={{ backgroundColor: color }} />
           <div className="relative z-10 flex items-center gap-8">
             {showPhoto && photoUrl && <img src={photoUrl} alt="Foto de perfil" className="w-32 h-32 rounded-3xl object-cover shadow-lg transform -rotate-3 border-4 border-white" />}
@@ -36,8 +36,8 @@ export function CreativeTemplate({ profile, color = "#f97316", showPhoto, addres
           </div>
         </div>
 
-        <div className="grid grid-cols-12 gap-8 p-12">
-          <div className="col-span-8 space-y-10">
+        <div className="resume-creative-layout grid grid-cols-12 gap-8 p-12">
+          <div className="resume-creative-main col-span-8 space-y-10">
             {profile.bio && (
               <section>
                 <div className="flex items-center gap-3 mb-4">
@@ -49,7 +49,7 @@ export function CreativeTemplate({ profile, color = "#f97316", showPhoto, addres
             )}
 
             {profile.experiences && profile.experiences.length > 0 && (
-              <section>
+              <section className="resume-experience-section">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-white shadow-sm" style={{ backgroundColor: color }}>XP</div>
                   <h2 className="text-xl font-bold text-stone-900">Experiência</h2>
@@ -58,7 +58,7 @@ export function CreativeTemplate({ profile, color = "#f97316", showPhoto, addres
                   {profile.experiences.map((exp, idx) => {
                     const stages = getExperienceStages(exp);
                     return (
-                      <div key={exp.id || idx} className="bg-stone-50 rounded-2xl p-5 border border-stone-100 break-inside-avoid shadow-sm">
+                      <div key={exp.id || idx} className="resume-experience-card bg-stone-50 rounded-2xl p-5 border border-stone-100 break-inside-avoid shadow-sm">
                         <div className="flex justify-between items-start mb-3 gap-4">
                           <div>
                             <h3 className="font-bold text-base text-stone-900">{exp.company}</h3>
@@ -69,7 +69,7 @@ export function CreativeTemplate({ profile, color = "#f97316", showPhoto, addres
                         {exp.description && stages.length > 1 && <p className="mb-3 text-sm leading-relaxed text-stone-600">{exp.description}</p>}
                         <div className="space-y-4">
                           {stages.map((stage, stageIdx) => (
-                            <div key={stage.id || stageIdx} className="relative pl-4 border-l-2" style={{ borderColor: `${color}35` }}>
+                            <div key={stage.id || stageIdx} className="resume-experience-stage relative pl-4 border-l-2" style={{ borderColor: `${color}35` }}>
                               <div className="flex items-baseline justify-between gap-3">
                                 <h4 className="font-bold text-sm text-stone-900">{stage.role}</h4>
                                 <span className="text-[11px] text-stone-400 whitespace-nowrap">{stage.startDate} – {stage.current ? "Atual" : stage.endDate}</span>
@@ -109,7 +109,7 @@ export function CreativeTemplate({ profile, color = "#f97316", showPhoto, addres
             )}
           </div>
 
-          <div className="col-span-4 space-y-10">
+          <div className="resume-creative-side col-span-4 space-y-10">
             <section>
               <h2 className="text-lg font-bold text-stone-900 mb-4 border-b-2 pb-2 inline-block" style={{ borderColor: color }}>Contato</h2>
               <ul className="space-y-4 text-sm text-stone-600">
