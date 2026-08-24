@@ -1,1 +1,1 @@
-export { CompanyPageBuilder } from './CompanyPageBuilderWhiteLabel';
+export { CompanyPageBuilder } from './CompanyPageBuilderV2';
