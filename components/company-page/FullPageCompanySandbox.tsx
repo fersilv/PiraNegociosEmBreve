@@ -77,14 +77,15 @@ export function FullPageCompanySandbox({
     img,video,svg{max-width:100%}
     pn-company-name,pn-company-address,pn-verification-badge,pn-jobs,pn-company-logo,pn-company-about,pn-company-phone,pn-company-website,pn-social-links,pn-legal-links{display:block}
     pn-company-name{font:inherit}
-    pn-verification-badge .pn-badge{display:inline-flex;align-items:center;gap:.4rem;border:1px solid rgba(16,185,129,.22);background:rgba(16,185,129,.1);color:#047857;border-radius:999px;padding:.38rem .65rem;font-size:.7rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+    pn-verification-badge .pn-badge{display:inline-flex;width:28px;height:28px;align-items:center;justify-content:center;border-radius:999px;background:rgba(16,185,129,.1);color:#059669}
+    pn-verification-badge .pn-badge svg{width:20px;height:20px}
     pn-jobs .pn-jobs-grid{display:grid;gap:12px}
     pn-jobs .pn-job{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 20px;border:1px solid rgba(24,24,27,.1);border-radius:18px;background:#fff;color:inherit;text-decoration:none;box-shadow:0 10px 35px rgba(24,24,27,.04);transition:transform .18s ease,box-shadow .18s ease}
     pn-jobs .pn-job:hover{transform:translateY(-2px);box-shadow:0 16px 45px rgba(24,24,27,.09)}
     pn-jobs .pn-job-title{font-weight:850;letter-spacing:-.02em}
     pn-jobs .pn-job-meta{margin-top:5px;color:#71717a;font-size:.83rem}
     pn-jobs .pn-job-arrow{font-size:1.2rem;opacity:.55}
-    pn-company-logo img{display:block;width:100%;height:100%;object-fit:cover}
+    pn-company-logo img{display:block;width:100%;height:100%;object-fit:contain}
     pn-social-links .pn-socials{display:flex;flex-wrap:wrap;gap:8px}
     pn-social-links a,pn-legal-links a{color:inherit;text-decoration:none}
     .pn-required-recovery{margin:18px;padding:18px;border:2px dashed #f59e0b;border-radius:18px;background:#fffbeb;color:#92400e;font:700 13px/1.6 Inter,Arial,sans-serif}
@@ -112,7 +113,8 @@ export function FullPageCompanySandbox({
     class PNVerificationBadge extends HTMLElement {
       connectedCallback(){
         const verified = COMPANY.isVerified || COMPANY.verificationStatus === 'VERIFIED';
-        this.innerHTML = '<span class="pn-badge">' + (verified ? '✓ Empresa verificada' : 'Verificação pendente') + '</span>';
+        if (!verified) { this.innerHTML = ''; return; }
+        this.innerHTML = '<span class="pn-badge" title="Empresa verificada pelo PiraNegócios" aria-label="Empresa verificada pelo PiraNegócios"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 15 5l4 .5.5 4L22 12l-2.5 2.5-.5 4-4 .5-3 3-3-3-4-.5-.5-4L1 12l2.5-2.5.5-4L8 5l4-3Z"/><path d="m9 12 2 2 4-4"/></svg></span>';
       }
     }
     class PNCompanyLogo extends HTMLElement {
