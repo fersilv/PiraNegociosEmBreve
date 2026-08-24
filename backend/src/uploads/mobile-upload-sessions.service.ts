@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { mkdir, readFile, unlink, writeFile } from 'fs/promises';
@@ -8,6 +8,7 @@ import { ChatGateway } from '../chat/chat.gateway';
 import { MobileUploadPurpose, MobileUploadSession } from './entities/mobile-upload-session.entity';
 
 const SESSION_TTL_MS = 5 * 60 * 1000;
+const SESSION_METADATA_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const PAIRING_ATTEMPT_LIMIT = 5;
 
@@ -44,12 +45,25 @@ const PURPOSE_RULES: Record<MobileUploadPurpose, { accept: string; extensions: S
 };
 
 @Injectable()
-export class MobileUploadSessionsService {
+export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestroy {
+  private cleanupTimer: NodeJS.Timeout | null = null;
+
   constructor(
     @InjectRepository(MobileUploadSession)
     private readonly sessions: Repository<MobileUploadSession>,
     private readonly chatGateway: ChatGateway,
   ) {}
+
+  onModuleInit() {
+    this.cleanupTimer = setInterval(() => void this.cleanupExpired(), 60_000);
+    this.cleanupTimer.unref?.();
+    void this.cleanupExpired();
+  }
+
+  onModuleDestroy() {
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer);
+    this.cleanupTimer = null;
+  }
 
   private hash(value: string) {
     return createHash('sha256').update(value).digest('hex');
@@ -66,10 +80,37 @@ export class MobileUploadSessionsService {
     await unlink(path).catch(() => undefined);
   }
 
+  private async cleanupExpired() {
+    const now = new Date();
+    const expired = await this.sessions.createQueryBuilder('session')
+      .where('session."expiresAt" <= :now', { now })
+      .andWhere('session.status NOT IN (:...finalStatuses)', { finalStatuses: ['CONSUMED', 'CANCELED', 'EXPIRED'] })
+      .getMany()
+      .catch(() => [] as MobileUploadSession[]);
+
+    for (const session of expired) {
+      await this.deleteFile(session.filePath);
+      session.filePath = null;
+      session.uploadTokenHash = null;
+      session.status = 'EXPIRED';
+      await this.sessions.save(session).catch(() => undefined);
+    }
+
+    const cutoff = new Date(Date.now() - SESSION_METADATA_RETENTION_MS);
+    await this.sessions.createQueryBuilder()
+      .delete()
+      .from(MobileUploadSession)
+      .where('"expiresAt" < :cutoff', { cutoff })
+      .andWhere('status IN (:...finalStatuses)', { finalStatuses: ['CONSUMED', 'CANCELED', 'EXPIRED'] })
+      .execute()
+      .catch(() => undefined);
+  }
+
   private async expireIfNeeded(session: MobileUploadSession) {
     if (session.expiresAt.getTime() > Date.now()) return session;
     if (!['CONSUMED', 'CANCELED', 'EXPIRED'].includes(session.status)) {
       session.status = 'EXPIRED';
+      session.uploadTokenHash = null;
       await this.deleteFile(session.filePath);
       session.filePath = null;
       await this.sessions.save(session);
