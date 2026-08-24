@@ -84,6 +84,17 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
     await unlink(path).catch(() => undefined);
   }
 
+  private isPurpose(value: unknown): value is MobileUploadPurpose {
+    return value === 'avatar' || value === 'resume' || value === 'document';
+  }
+
+  private purposeRules(value: unknown) {
+    if (!this.isPurpose(value)) {
+      throw new BadRequestException('Esta sessão de transferência está inválida. Gere um novo QR Code e tente novamente.');
+    }
+    return PURPOSE_RULES[value];
+  }
+
   private async cleanupExpired() {
     const now = new Date();
     const expired = await this.sessions.createQueryBuilder('session')
@@ -96,6 +107,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
       await this.deleteFile(session.filePath);
       session.filePath = null;
       session.uploadTokenHash = null;
+      session.qrTokenHash = null;
       session.status = 'EXPIRED';
       await this.sessions.save(session).catch(() => undefined);
     }
@@ -115,6 +127,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
     if (!['CONSUMED', 'CANCELED', 'EXPIRED'].includes(session.status)) {
       session.status = 'EXPIRED';
       session.uploadTokenHash = null;
+      session.qrTokenHash = null;
       await this.deleteFile(session.filePath);
       session.filePath = null;
       await this.sessions.save(session);
@@ -123,7 +136,35 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
   }
 
   private normalizePurpose(value: unknown): MobileUploadPurpose {
-    return value === 'avatar' || value === 'resume' || value === 'document' ? value : 'document';
+    return this.isPurpose(value) ? value : 'document';
+  }
+
+  private completePairing(session: MobileUploadSession) {
+    const uploadToken = randomBytes(32).toString('base64url');
+    session.uploadTokenHash = this.hash(uploadToken);
+    session.qrTokenHash = null;
+    session.status = 'PAIRED';
+    session.pairedAt = new Date();
+    session.pairingAttempts = 0;
+    return uploadToken;
+  }
+
+  private throwPairError(reason: Exclude<PairOutcome, { ok: true }>['reason'], invalidMessage: string): never {
+    switch (reason) {
+      case 'EXPIRED':
+        throw new BadRequestException('Esta sessão expirou. Gere um novo QR Code no computador.');
+      case 'PAIRED':
+        throw new BadRequestException('Este telefone já foi pareado. Gere uma nova sessão para trocar de dispositivo.');
+      case 'USED':
+        throw new BadRequestException('Esta sessão já foi utilizada.');
+      case 'CANCELED':
+        throw new BadRequestException('Esta sessão foi cancelada. Gere um novo QR Code no computador.');
+      case 'TOO_MANY':
+        throw new ForbiddenException('Muitas tentativas incorretas. Gere uma nova sessão.');
+      case 'INVALID':
+      default:
+        throw new ForbiddenException(invalidMessage);
+    }
   }
 
   async create(userId: string, body: { purpose?: unknown; maxSizeKB?: unknown }) {
@@ -132,6 +173,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
     const maxSizeBytes = Math.min(MAX_FILE_BYTES, Math.round(requestedBytes));
     const pairingCode = String(randomInt(0, 1_000_000)).padStart(6, '0');
     const pairingSalt = randomBytes(24).toString('hex');
+    const qrToken = randomBytes(32).toString('base64url');
     const id = randomUUID();
     const session = this.sessions.create({
       id,
@@ -141,6 +183,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
       pairingSalt,
       pairingHash: this.hash(`${pairingSalt}:${pairingCode}`),
       pairingAttempts: 0,
+      qrTokenHash: this.hash(qrToken),
       uploadTokenHash: null,
       maxSizeBytes,
       accept: PURPOSE_RULES[purpose].accept,
@@ -157,6 +200,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
     return {
       id,
       pairingCode,
+      qrToken,
       purpose,
       accept: session.accept,
       maxSizeBytes,
@@ -176,6 +220,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
         await this.deleteFile(session.filePath);
         session.filePath = null;
         session.uploadTokenHash = null;
+        session.qrTokenHash = null;
         session.status = 'EXPIRED';
         await manager.save(session);
         return { ok: false, reason: 'EXPIRED' };
@@ -196,11 +241,8 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
         };
       }
 
-      const uploadToken = randomBytes(32).toString('base64url');
-      session.uploadTokenHash = this.hash(uploadToken);
-      session.status = 'PAIRED';
-      session.pairedAt = new Date();
-      session.pairingAttempts = 0;
+      this.purposeRules(session.purpose);
+      const uploadToken = this.completePairing(session);
       await manager.save(session);
       return {
         ok: true,
@@ -213,21 +255,51 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
     });
 
     if (outcome.ok) return outcome;
-    switch (outcome.reason) {
-      case 'EXPIRED':
-        throw new BadRequestException('Esta sessão expirou. Gere um novo QR Code no computador.');
-      case 'PAIRED':
-        throw new BadRequestException('Este telefone já foi pareado. Gere uma nova sessão para trocar de dispositivo.');
-      case 'USED':
-        throw new BadRequestException('Esta sessão já foi utilizada.');
-      case 'CANCELED':
-        throw new BadRequestException('Esta sessão foi cancelada. Gere um novo QR Code no computador.');
-      case 'TOO_MANY':
-        throw new ForbiddenException('Muitas tentativas incorretas. Gere uma nova sessão.');
-      case 'INVALID':
-      default:
-        throw new ForbiddenException('Código de pareamento inválido.');
-    }
+    return this.throwPairError(outcome.reason, 'Código de pareamento inválido.');
+  }
+
+  async pairWithQrToken(id: string, tokenInput: unknown) {
+    const token = String(tokenInput || '').trim();
+    if (token.length < 32) throw new ForbiddenException('QR Code inválido ou incompleto.');
+
+    const outcome: PairOutcome = await this.sessions.manager.transaction(async (manager): Promise<PairOutcome> => {
+      const session = await manager.findOne(MobileUploadSession, {
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!session) throw new NotFoundException('Sessão de transferência não encontrada.');
+
+      if (session.expiresAt.getTime() <= Date.now()) {
+        await this.deleteFile(session.filePath);
+        session.filePath = null;
+        session.uploadTokenHash = null;
+        session.qrTokenHash = null;
+        session.status = 'EXPIRED';
+        await manager.save(session);
+        return { ok: false, reason: 'EXPIRED' };
+      }
+      if (session.status === 'PAIRED') return { ok: false, reason: 'PAIRED' };
+      if (session.status === 'UPLOADED' || session.status === 'CONSUMED') return { ok: false, reason: 'USED' };
+      if (session.status === 'CANCELED') return { ok: false, reason: 'CANCELED' };
+      if (!session.qrTokenHash || !this.safeEqual(this.hash(token), session.qrTokenHash)) {
+        return { ok: false, reason: 'INVALID' };
+      }
+
+      this.purposeRules(session.purpose);
+      const uploadToken = this.completePairing(session);
+      await manager.save(session);
+      return {
+        ok: true,
+        uploadToken,
+        purpose: session.purpose,
+        accept: session.accept,
+        maxSizeBytes: session.maxSizeBytes,
+        expiresAt: session.expiresAt,
+      };
+    });
+
+    if (outcome.ok) return outcome;
+    return this.throwPairError(outcome.reason, 'QR Code inválido ou já utilizado.');
   }
 
   async authorizeUpload(id: string, token: string) {
@@ -245,6 +317,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
     );
     const row = rows?.[0];
     if (!row) throw new ForbiddenException('Sessão não autorizada para upload ou token já utilizado.');
+    this.purposeRules(row.purpose);
     return this.sessions.create({
       ...row,
       expiresAt: new Date(row.expiresAt),
@@ -258,7 +331,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
   private validateFile(session: MobileUploadSession, file: Express.Multer.File) {
     if (!file) throw new BadRequestException('Nenhum arquivo foi enviado.');
     if (file.size <= 0 || file.size > session.maxSizeBytes) throw new BadRequestException('O arquivo excede o limite permitido para esta transferência.');
-    const rules = PURPOSE_RULES[session.purpose];
+    const rules = this.purposeRules(session?.purpose);
     const extension = extname(file.originalname || '').toLowerCase();
     const mime = String(file.mimetype || '').toLowerCase();
     const mimeAllowed = rules.mimeTypes.has(mime) || rules.mimePrefixes.some((prefix) => mime.startsWith(prefix));
@@ -280,6 +353,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
     session.uploadedAt = new Date();
     session.status = 'UPLOADED';
     session.uploadTokenHash = null;
+    session.qrTokenHash = null;
     await this.sessions.save(session);
 
     this.chatGateway.publishMobileUploadReady(session.userId, {
@@ -319,6 +393,8 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
     const result = { dataUrl, fileName: session.fileName, mimeType: session.mimeType, size: session.fileSize || buffer.length };
     await this.deleteFile(session.filePath);
     session.filePath = null;
+    session.uploadTokenHash = null;
+    session.qrTokenHash = null;
     session.status = 'CONSUMED';
     session.consumedAt = new Date();
     await this.sessions.save(session);
@@ -331,6 +407,7 @@ export class MobileUploadSessionsService implements OnModuleInit, OnModuleDestro
     await this.deleteFile(session.filePath);
     session.filePath = null;
     session.uploadTokenHash = null;
+    session.qrTokenHash = null;
     session.status = 'CANCELED';
     await this.sessions.save(session);
     return { ok: true };
