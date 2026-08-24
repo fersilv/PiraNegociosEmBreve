@@ -184,6 +184,7 @@ function Mercado({ company, jobs, config, preview, s, cover }: LayoutProps) {
     <Jobs company={company} jobs={jobs} config={config} style="market" />
     <Contact company={company} config={config} style="tiles" />
     <Footer company={company} config={config} preview={preview} />
+    </Shell>
   </ThemeFrame>;
 }
 
