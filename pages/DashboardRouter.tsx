@@ -27,6 +27,7 @@ import { AdminFlaggedJobsPage } from "./AdminFlaggedJobsPage";
 import { AdminRegistrationPage } from "./AdminRegistrationPage";
 import { AdminPaymentsPage } from "./AdminPaymentsPage";
 import { AdminBillingSupportPage } from "./AdminBillingSupportPage";
+import { AdminPublicResumeBuilderPage } from "./AdminPublicResumeBuilderPage";
 import { PaymentMethodsPage } from "./PaymentMethodsPage";
 import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
 import { CompanyProfilePage } from "./CompanyProfilePage";
@@ -54,6 +55,7 @@ function AdminRoutes() {
       <Route path="vinculos" element={<AdminPage><AdminDashboard mode="moderation" section="access" /></AdminPage>} />
       <Route path="cadastros" element={<AdminPage><AdminRegistrationPage /></AdminPage>} />
       <Route path="publicidade" element={<AdminPage><AdminDashboard mode="moderation" section="advertising" /></AdminPage>} />
+      <Route path="criador-publico" element={<AdminPage><AdminPublicResumeBuilderPage /></AdminPage>} />
       <Route path="pagamentos" element={<AdminPage><AdminPaymentsPage /></AdminPage>} />
       <Route path="pagamentos/formas" element={<AdminPage><PaymentMethodsPage /></AdminPage>} />
       <Route path="pagamentos/suporte" element={<AdminPage><AdminBillingSupportPage /></AdminPage>} />
