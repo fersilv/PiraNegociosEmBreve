@@ -63,6 +63,7 @@ export function FullPageCompanySandbox({
     const companyJson = safeJson(company || {});
     const jobsJson = safeJson(Array.isArray(jobs) ? jobs : []);
     const siteOriginJson = safeJson(origin);
+    const normalizedHtml = html.replace(/Carreiras por PiraNegócios/g, 'PiraNegócios Business');
 
     return `<!doctype html>
 <html lang="pt-BR">
@@ -93,7 +94,7 @@ export function FullPageCompanySandbox({
   </style>
 </head>
 <body>
-  <div id="pn-site-root">${html}</div>
+  <div id="pn-site-root">${normalizedHtml}</div>
   <script>
     const COMPANY = ${companyJson};
     const JOBS = ${jobsJson};
