@@ -1,9 +1,33 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { PublicCompanyLike, PublicJobLike } from './CompanySiteRenderer';
+
+interface SandboxCompany {
+  name?: string;
+  address?: string;
+  cityState?: string;
+  city?: string;
+  state?: string;
+  phone?: string;
+  website?: string;
+  logoURL?: string;
+  description?: string;
+  socialInstagram?: string;
+  socialLinkedin?: string;
+  socialFacebook?: string;
+  isVerified?: boolean;
+  verificationStatus?: string;
+}
+
+interface SandboxJob {
+  slug?: string;
+  title?: string;
+  location?: string;
+  city?: string;
+  state?: string;
+}
 
 interface FullPageCompanySandboxProps {
-  company: PublicCompanyLike;
-  jobs: PublicJobLike[];
+  company: SandboxCompany;
+  jobs: SandboxJob[];
   html?: string;
   css?: string;
   js?: string;
@@ -63,6 +87,7 @@ export function FullPageCompanySandbox({
     pn-company-logo img{display:block;width:100%;height:100%;object-fit:cover}
     pn-social-links .pn-socials{display:flex;flex-wrap:wrap;gap:8px}
     pn-social-links a,pn-legal-links a{color:inherit;text-decoration:none}
+    .pn-required-recovery{margin:18px;padding:18px;border:2px dashed #f59e0b;border-radius:18px;background:#fffbeb;color:#92400e;font:700 13px/1.6 Inter,Arial,sans-serif}
     ${css}
   </style>
 </head>
@@ -72,6 +97,7 @@ export function FullPageCompanySandbox({
     const COMPANY = ${companyJson};
     const JOBS = ${jobsJson};
     const SITE_ORIGIN = ${siteOriginJson};
+    const REQUIRED_COMPONENTS = ['pn-company-name','pn-company-address','pn-verification-badge','pn-jobs'];
 
     const text = (value) => value == null ? '' : String(value);
     const cleanUrl = (value) => {
@@ -81,12 +107,8 @@ export function FullPageCompanySandbox({
     };
     const locationText = () => COMPANY.address || COMPANY.cityState || [COMPANY.city, COMPANY.state].filter(Boolean).join(', ');
 
-    class PNCompanyName extends HTMLElement {
-      connectedCallback(){ this.textContent = text(COMPANY.name || 'Sua empresa'); }
-    }
-    class PNCompanyAddress extends HTMLElement {
-      connectedCallback(){ this.textContent = locationText(); }
-    }
+    class PNCompanyName extends HTMLElement { connectedCallback(){ this.textContent = text(COMPANY.name || 'Sua empresa'); } }
+    class PNCompanyAddress extends HTMLElement { connectedCallback(){ this.textContent = locationText(); } }
     class PNVerificationBadge extends HTMLElement {
       connectedCallback(){
         const verified = COMPANY.isVerified || COMPANY.verificationStatus === 'VERIFIED';
@@ -103,12 +125,8 @@ export function FullPageCompanySandbox({
         this.replaceChildren(img);
       }
     }
-    class PNCompanyAbout extends HTMLElement {
-      connectedCallback(){ this.textContent = text(COMPANY.description || ''); }
-    }
-    class PNCompanyPhone extends HTMLElement {
-      connectedCallback(){ this.textContent = text(COMPANY.phone || ''); }
-    }
+    class PNCompanyAbout extends HTMLElement { connectedCallback(){ this.textContent = text(COMPANY.description || ''); } }
+    class PNCompanyPhone extends HTMLElement { connectedCallback(){ this.textContent = text(COMPANY.phone || ''); } }
     class PNCompanyWebsite extends HTMLElement {
       connectedCallback(){
         const href = cleanUrl(COMPANY.website);
@@ -146,9 +164,7 @@ export function FullPageCompanySandbox({
         this.replaceChildren(wrap);
       }
     }
-    class PNLegalLinks extends HTMLElement {
-      connectedCallback(){ this.innerHTML=''; }
-    }
+    class PNLegalLinks extends HTMLElement { connectedCallback(){ this.innerHTML=''; } }
 
     [
       ['pn-company-name', PNCompanyName], ['pn-company-address', PNCompanyAddress], ['pn-verification-badge', PNVerificationBadge],
@@ -162,10 +178,42 @@ export function FullPageCompanySandbox({
       const next = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, 480);
       parent.postMessage({ type: 'PN_FULL_COMPANY_PAGE_HEIGHT', height: next }, '*');
     };
+
+    let repairing = false;
+    const enforceRequiredComponents = () => {
+      if (repairing) return;
+      repairing = true;
+      try {
+        REQUIRED_COMPONENTS.forEach((tag) => {
+          let element = document.querySelector(tag);
+          if (!element) {
+            const recovery = document.createElement('div');
+            recovery.className = 'pn-required-recovery';
+            recovery.innerHTML = '<strong>Componente obrigatório restaurado:</strong> &lt;' + tag + '&gt;';
+            element = document.createElement(tag);
+            recovery.appendChild(element);
+            document.body.appendChild(recovery);
+          }
+          const style = getComputedStyle(element);
+          if (style.display === 'none') element.style.setProperty('display', 'block', 'important');
+          if (style.visibility === 'hidden' || style.visibility === 'collapse') element.style.setProperty('visibility', 'visible', 'important');
+          if (Number.parseFloat(style.opacity || '1') === 0) element.style.setProperty('opacity', '1', 'important');
+        });
+      } finally {
+        repairing = false;
+      }
+    };
+
+    enforceRequiredComponents();
+    const requiredGuard = new MutationObserver(() => {
+      enforceRequiredComponents();
+      reportHeight();
+    });
+    requiredGuard.observe(document.documentElement, { childList:true, subtree:true, attributes:true, attributeFilter:['class','style','hidden'] });
     new ResizeObserver(reportHeight).observe(document.documentElement);
-    addEventListener('load', reportHeight);
-    setTimeout(reportHeight, 80);
-    setTimeout(reportHeight, 350);
+    addEventListener('load', () => { enforceRequiredComponents(); reportHeight(); });
+    setTimeout(() => { enforceRequiredComponents(); reportHeight(); }, 80);
+    setTimeout(() => { enforceRequiredComponents(); reportHeight(); }, 350);
   <\/script>
 </body>
 </html>`;
