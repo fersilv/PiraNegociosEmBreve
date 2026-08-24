@@ -19,6 +19,7 @@ import { ExternalApiModule } from './external-api/external-api.module';
 import { PaymentsModule } from './payments/payments.module';
 import { JobMatchModule } from './job-match/job-match.module';
 import { AiModule } from './ai/ai.module';
+import { PublicResumeModule } from './public-resume/public-resume.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { AiModule } from './ai/ai.module';
     AdvertisingModule,
     PaymentsModule,
     AiModule,
+    PublicResumeModule,
     JobMatchModule,
     ExternalApiModule,
     AdminModule,
