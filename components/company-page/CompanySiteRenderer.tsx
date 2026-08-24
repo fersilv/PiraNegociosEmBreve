@@ -2,6 +2,7 @@ import React from 'react';
 import {
   CompanySiteRenderer as InstitutionalCompanySiteRenderer,
   COMPANY_PAGE_TEMPLATES as INSTITUTIONAL_TEMPLATES,
+  COMPANY_PAGE_THEME_PRESETS as INSTITUTIONAL_PRESETS,
   applyCompanyThemePreset as applyInstitutionalThemePreset,
 } from './PremiumCompanySiteRenderer';
 import type {
@@ -47,12 +48,40 @@ export type CompanyTemplateKey =
 
 export const COMPANY_PAGE_THEME_CATEGORIES = COMPANY_THEME_CATEGORIES;
 
-export const COMPANY_PAGE_TEMPLATES: CompanyThemeCatalogItem[] = [
+const ALL_TEMPLATES: CompanyThemeCatalogItem[] = [
   ...INSTITUTIONAL_TEMPLATES.map((template) => ({ ...template, category: 'institutional' as const })),
   ...EXTRA_COMPANY_PAGE_TEMPLATES,
 ];
 
+/*
+ * O builder histórico chama apenas COMPANY_PAGE_TEMPLATES.map(...).
+ * Mantemos essa API, mas a coleção injeta cabeçalhos reais entre as famílias
+ * para que 30 opções não virem uma lista única impossível de navegar.
+ */
+export const COMPANY_PAGE_TEMPLATES = {
+  map(callback: (template: CompanyThemeCatalogItem, index: number, array: CompanyThemeCatalogItem[]) => React.ReactNode): React.ReactNode[] {
+    const output: React.ReactNode[] = [];
+    COMPANY_THEME_CATEGORIES.forEach((category) => {
+      const items = ALL_TEMPLATES.filter((template) => template.category === category.id);
+      if (!items.length) return;
+      output.push(
+        <div key={`category-${category.id}`} className="px-2 pb-2 pt-5 first:pt-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-[.18em] text-stone-900">{category.label}</span>
+            <span className="h-px flex-1 bg-stone-200" />
+            <span className="text-[9px] font-bold text-stone-400">{items.length} temas</span>
+          </div>
+          <p className="mt-1 text-[10px] leading-4 text-stone-400">{category.description}</p>
+        </div>,
+      );
+      items.forEach((template) => output.push(callback(template, ALL_TEMPLATES.indexOf(template), ALL_TEMPLATES)));
+    });
+    return output;
+  },
+};
+
 export const COMPANY_PAGE_THEME_PRESETS = {
+  ...INSTITUTIONAL_PRESETS,
   ...EXTRA_THEME_PRESETS,
 };
 
@@ -62,12 +91,26 @@ function normalizeHex(value?: string) {
   return color;
 }
 
+function paletteMatches(theme: CompanyPageConfig['theme'], palette: { primary?: string; accent?: string; background?: string; text?: string }) {
+  if (!theme) return false;
+  return normalizeHex(theme.primary) === normalizeHex(palette.primary)
+    && normalizeHex(theme.accent) === normalizeHex(palette.accent)
+    && normalizeHex(theme.background) === normalizeHex(palette.background)
+    && normalizeHex(theme.text) === normalizeHex(palette.text);
+}
+
 function hasLegacyNeutralPalette(page?: CompanyPageConfig | null) {
   if (!page?.theme) return true;
-  return normalizeHex(page.theme.primary) === '#111111'
-    && normalizeHex(page.theme.accent) === '#555555'
-    && normalizeHex(page.theme.background) === '#ffffff'
-    && normalizeHex(page.theme.text) === '#171717';
+  return paletteMatches(page.theme, { primary: '#111111', accent: '#555555', background: '#ffffff', text: '#171717' });
+}
+
+function paletteIsKnownPreset(page?: CompanyPageConfig | null) {
+  if (!page?.theme) return true;
+  return Object.values(COMPANY_PAGE_THEME_PRESETS).some((preset) => paletteMatches(page.theme, preset.theme));
+}
+
+function shouldUseSelectedThemePreset(page?: CompanyPageConfig | null) {
+  return hasLegacyNeutralPalette(page) || paletteIsKnownPreset(page);
 }
 
 function institutionalKey(value?: string) {
@@ -91,13 +134,13 @@ export function CompanySiteRenderer({ company, jobs, page, preview = false }: { 
   const key = String(config.templateKey || 'aurora');
 
   if (isExtraCompanyTheme(key) && config.editorMode !== 'code') {
-    const visualPage = hasLegacyNeutralPalette(config) ? applyExtraCompanyThemePreset(config, key) : config;
+    const visualPage = shouldUseSelectedThemePreset(config) ? applyExtraCompanyThemePreset(config, key) : config;
     return <ExtraCompanyThemeRenderer themeKey={key} company={company} jobs={jobs} config={visualPage} preview={preview} />;
   }
 
   const visualPage = config.editorMode === 'code'
     ? config
-    : hasLegacyNeutralPalette(config)
+    : shouldUseSelectedThemePreset(config)
       ? applyInstitutionalThemePreset(config, institutionalKey(key))
       : config;
 
