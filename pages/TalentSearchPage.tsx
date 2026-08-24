@@ -12,7 +12,6 @@ import {
   RefreshCw,
   Search,
   Send,
-  Sparkles,
   UserRoundSearch,
   UserPlus,
   Zap,
@@ -31,7 +30,6 @@ export function TalentSearchPage() {
   const [companyJobs, setCompanyJobs] = useState<any[]>([]);
   const [companyInvites, setCompanyInvites] = useState<any[]>([]);
   const [jobRanking, setJobRanking] = useState<any[]>([]);
-  const [rankingLoading, setRankingLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [companyVerified, setCompanyVerified] = useState<boolean | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<any | null>(null);
@@ -86,10 +84,8 @@ export function TalentSearchPage() {
     let active = true;
     if (!inviteJobId) {
       setJobRanking([]);
-      setRankingLoading(false);
       return () => { active = false; };
     }
-    setRankingLoading(true);
     void api.get(`/job-match/jobs/${inviteJobId}/candidates`)
       .then((response) => {
         if (!active) return;
@@ -98,8 +94,7 @@ export function TalentSearchPage() {
       .catch((error) => {
         console.error("Erro ao ordenar talentos por aderência:", error);
         if (active) setJobRanking([]);
-      })
-      .finally(() => { if (active) setRankingLoading(false); });
+      });
     return () => { active = false; };
   }, [inviteJobId]);
 
@@ -255,12 +250,6 @@ export function TalentSearchPage() {
           </div>
         </div>
       </section>
-
-      {inviteJobId && (
-        <section className="rounded-2xl border border-violet-200 bg-violet-50 p-4 text-xs leading-5 text-violet-800">
-          <div className="flex items-start gap-2"><Sparkles className="mt-0.5 h-4 w-4 shrink-0" /><div><strong>Ordem inteligente para esta vaga.</strong> {rankingLoading ? "Organizando os currículos..." : `${jobRanking.length} currículo(s) aderentes foram priorizados.`} A nota não aparece na listagem. Abra o perfil para consultar o analytics detalhado de compatibilidade. Currículos com <strong>Em destaque</strong> ocupam posições promocionais entre os perfis aderentes.</div></div>
-        </section>
-      )}
 
       <div className="flex items-center justify-between"><p className="text-sm text-stone-500"><strong className="text-stone-900">{filtered.length}</strong> candidatos encontrados</p></div>
 

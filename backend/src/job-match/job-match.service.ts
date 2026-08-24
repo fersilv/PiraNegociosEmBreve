@@ -406,11 +406,11 @@ export class JobMatchService {
       return { jobId, preparing: true, candidates: [] };
     }
 
-    const candidates = await this.users.createQueryBuilder('user')
-      .where('user."resumeStatus" = :status', { status: 'PUBLISHED' })
-      .andWhere('user."isOpenToWork" = true')
-      .andWhere('(user.type IS NULL OR user.type = :candidateType)', { candidateType: UserType.CANDIDATE })
-      .orderBy('user."updatedAt"', 'DESC')
+    const candidates = await this.users.createQueryBuilder('candidate')
+      .where('candidate."resumeStatus" = :status', { status: 'PUBLISHED' })
+      .andWhere('candidate."isOpenToWork" = true')
+      .andWhere('(candidate."type" IS NULL OR candidate."type" = :candidateType)', { candidateType: UserType.CANDIDATE })
+      .orderBy('candidate."updatedAt"', 'DESC')
       .take(500)
       .getMany();
     if (!candidates.length) return { jobId, preparing: false, candidates: [] };

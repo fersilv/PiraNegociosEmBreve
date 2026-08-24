@@ -1,7 +1,7 @@
 import { JobMatchService } from './job-match.service';
 import type { JobMatchProfile } from './job-match-ai.service';
 import type { Job } from '../jobs/entities/job.entity';
-import type { User } from '../users/entities/user.entity';
+import { UserType, type User } from '../users/entities/user.entity';
 
 describe('JobMatchService scoring guardrails', () => {
   const service = new JobMatchService({} as any, {} as any, {} as any, {} as any, {} as any, {} as any) as any;
@@ -79,5 +79,37 @@ describe('JobMatchService scoring guardrails', () => {
     expect(ranked.map((item: any) => item.candidateId)).toEqual(['ana', 'joao', 'maria', 'luana']);
     expect(ranked.find((item: any) => item.candidateId === 'joao')?.score).toBe(59);
     expect(ranked.find((item: any) => item.candidateId === 'maria')?.score).toBe(76);
+  });
+
+  it('usa um alias SQL seguro ao buscar candidatos para a vaga', async () => {
+    const queryBuilder = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+    };
+    const jobs = {
+      findOne: jest.fn().mockResolvedValue({ id: 'job-1', ownerId: 'owner-1', companyId: 'company-1' }),
+    };
+    const users = {
+      findOne: jest.fn().mockResolvedValue({ id: 'owner-1', type: 'COMPANY', companyId: 'company-1' }),
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+    };
+    const dataSource = {
+      query: jest.fn().mockResolvedValue([{ profile: {} }]),
+    };
+    const queryService = new JobMatchService(jobs as any, users as any, dataSource as any, {} as any, {} as any, {} as any);
+
+    await expect(queryService.getCompanyCandidatesForJob('owner-1', 'job-1')).resolves.toEqual({
+      jobId: 'job-1',
+      preparing: false,
+      candidates: [],
+    });
+    expect(users.createQueryBuilder).toHaveBeenCalledWith('candidate');
+    expect(queryBuilder.where).toHaveBeenCalledWith('candidate."resumeStatus" = :status', { status: 'PUBLISHED' });
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('candidate."isOpenToWork" = true');
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('(candidate."type" IS NULL OR candidate."type" = :candidateType)', { candidateType: UserType.CANDIDATE });
+    expect(queryBuilder.orderBy).toHaveBeenCalledWith('candidate."updatedAt"', 'DESC');
   });
 });
