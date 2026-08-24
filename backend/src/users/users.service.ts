@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { unlink } from 'fs/promises';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { CompanyInvitation } from './entities/company-invitation.entity';
@@ -192,6 +193,65 @@ export class UsersService {
       sanitized.courses = this.preserveStructuredArray(data.courses, existing?.courses, ['name', 'institution']) as unknown[];
     }
     return sanitized;
+  }
+
+  async deleteResumePermanently(userId: string) {
+    const temporaryPaths: string[] = [];
+
+    await this.usersRepository.manager.transaction(async (manager) => {
+      const existing = await manager.findOne(User, { where: { id: userId } });
+      if (!existing) throw new NotFoundException(`User with ID ${userId} not found`);
+
+      const transferRows = await manager.query(
+        'SELECT "filePath" FROM mobile_upload_sessions WHERE "userId" = $1 AND "filePath" IS NOT NULL',
+        [userId],
+      );
+      for (const row of transferRows) {
+        if (typeof row?.filePath === 'string' && row.filePath) temporaryPaths.push(row.filePath);
+      }
+
+      await manager.query('DELETE FROM resume_analysis_history WHERE "userId" = $1', [userId]);
+      await manager.query('DELETE FROM resume_improvement_proposals WHERE "userId" = $1', [userId]);
+      await manager.query('DELETE FROM resume_publication_history WHERE "userId" = $1', [userId]);
+      await manager.query('DELETE FROM mobile_upload_sessions WHERE "userId" = $1', [userId]);
+      await manager.query(
+        'UPDATE applications SET "resumeSnapshot" = NULL, "resumeUrl" = NULL WHERE "candidateId" = $1',
+        [userId],
+      );
+      await manager.query(
+        `UPDATE users
+         SET bio = NULL,
+             experiences = NULL,
+             education = NULL,
+             skills = NULL,
+             courses = NULL,
+             languages = NULL,
+             "salaryExpectation" = NULL,
+             "resumeURL" = '',
+             "resumeStatus" = 'DRAFT',
+             "resumePublishedAt" = NULL,
+             "publishedResumeSnapshot" = NULL,
+             "uploadedResumeFile" = NULL,
+             "resumePhotoURL" = NULL,
+             "resumePreferences" = NULL,
+             "aiAnalysis" = NULL,
+             "hasAiAnalyzed" = false,
+             "isOpenToWork" = false,
+             "updatedAt" = now()
+         WHERE id = $1`,
+        [userId],
+      );
+    });
+
+    await Promise.all(temporaryPaths.map((path) => unlink(path).catch(() => undefined)));
+
+    const user = await this.findOne(userId);
+    return {
+      deleted: true,
+      isOpenToWork: user.isOpenToWork,
+      aiAnalysisCount: user.aiAnalysisCount,
+      aiImportCount: user.aiImportCount,
+    };
   }
 
   async createOrUpdate(id: string, data: Partial<User>): Promise<User> {
