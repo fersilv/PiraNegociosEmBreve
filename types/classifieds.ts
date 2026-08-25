@@ -13,6 +13,7 @@ export type ClassifiedPublicationChannel = 'CLASSIFIEDS' | 'COMPANY_PAGE';
 export type ClassifiedIdentityType = 'PERSONAL' | 'COMPANY';
 export type ClassifiedConversationSide = 'BUYER' | 'SELLER';
 export type ClassifiedCatalogPricingStrategy = 'BASE' | 'SUM' | 'HIGHEST_SELECTION' | 'LOWEST_SELECTION' | 'AVERAGE_SELECTION';
+export type ClassifiedOfferStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED' | 'WITHDRAWN';
 
 export interface ClassifiedCategory {
   slug: string;
@@ -102,6 +103,9 @@ export interface ClassifiedListing {
   catalogConfig?: ClassifiedCatalogConfig | null;
   contactPhone?: string | null;
   contactWhatsapp?: string | null;
+  moderationReason?: string | null;
+  duplicateOfListingId?: string | null;
+  moderationReviewedAt?: string | null;
   publishedAt?: string | null;
   expiresAt?: string | null;
   createdAt?: string;
@@ -155,6 +159,14 @@ export interface ClassifiedConversationParty {
   verified?: boolean;
 }
 
+export interface ClassifiedChatLabel {
+  id: string;
+  companyId: string;
+  name: string;
+  colorKey: 'STONE' | 'BLUE' | 'AMBER' | 'VIOLET' | 'GREEN' | 'ROSE' | 'TEAL' | string;
+  isSystem: boolean;
+}
+
 export interface ClassifiedConversation {
   id: string;
   listingId: string;
@@ -165,6 +177,8 @@ export interface ClassifiedConversation {
   role: ClassifiedConversationSide;
   unreadCount: number;
   lastMessageAt?: string | null;
+  customName?: string | null;
+  labels?: ClassifiedChatLabel[];
   listing: null | {
     id: string;
     slug: string;
@@ -195,4 +209,59 @@ export interface ClassifiedConversationMessage {
   messageType: 'TEXT' | 'OFFER' | 'SYSTEM';
   metadata?: Record<string, unknown> | null;
   createdAt: string;
+}
+
+export interface ClassifiedOffer {
+  id: string;
+  listingId: string;
+  buyerUserId: string;
+  buyerCompanyId?: string | null;
+  sellerUserId: string;
+  sellerCompanyId?: string | null;
+  amount: string | number;
+  status: ClassifiedOfferStatus;
+  expiresAt: string;
+  respondedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  role: 'BUYER' | 'SELLER';
+  title: string;
+  slug: string;
+  price?: string | number | null;
+  priceType?: ClassifiedPriceType;
+  listingStatus?: ClassifiedListingStatus;
+  image?: string | null;
+  buyerName?: string;
+  sellerName?: string;
+}
+
+export interface ClassifiedLimits {
+  photoLimit: number;
+  plan: string;
+  paid: boolean;
+}
+
+export interface ClassifiedAnalytics {
+  totals: {
+    views: number;
+    favorites: number;
+    conversations: number;
+    offers: number;
+    acceptedOffers: number;
+    contactClicks: number;
+  };
+  listings: Array<{
+    id: string;
+    title: string;
+    slug: string;
+    listingType: ClassifiedListingType;
+    status: ClassifiedListingStatus;
+    views: number;
+    favorites: number;
+    conversations: number;
+    offers: number;
+    acceptedOffers: number;
+    contactClicks: number;
+  }>;
+  daily: Array<{ day: string; eventType: string; count: number }>;
 }
