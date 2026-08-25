@@ -39,6 +39,7 @@ import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
 import { CandidateJobViewPage } from "./CandidateJobViewPage";
 import { ResumeWorkspace } from "./ResumeWorkspace";
 import { AdminProductFeedbackPage } from "./AdminProductFeedbackPage";
+import { AdminWhatsAppPage } from "./AdminWhatsAppPage";
 import UserClassifiedsPage from "./UserClassifiedsPage";
 import ClassifiedPublishPage from "./ClassifiedPublishPage";
 
@@ -63,6 +64,7 @@ function AdminRoutes() {
       <Route path="pagamentos" element={<AdminPage><AdminPaymentsPage /></AdminPage>} />
       <Route path="pagamentos/formas" element={<AdminPage><PaymentMethodsPage /></AdminPage>} />
       <Route path="pagamentos/suporte" element={<AdminPage><AdminBillingSupportPage /></AdminPage>} />
+      <Route path="whatsapp" element={<AdminPage><AdminWhatsAppPage /></AdminPage>} />
       <Route path="api" element={<AdminPage><div className="mx-auto max-w-7xl space-y-6 admin-standalone-page"><header><p className="text-xs font-bold uppercase tracking-[0.18em] text-terracotta-600">Infraestrutura · Integrações</p><h1 className="mt-1 text-3xl font-serif font-bold text-stone-900">API v1</h1><p className="mt-1 max-w-3xl text-stone-500">Gerencie chaves, origens, auditoria e a documentação da API de vagas.</p></header><section className="rounded-2xl border border-stone-200 bg-white shadow-sm admin-primary-surface"><ApiV1Panel /></section></div></AdminPage>} />
       <Route path="ai" element={<AdminPage><div className="mx-auto max-w-7xl space-y-6 admin-standalone-page admin-ai-page"><AiIntegrationsPanel /></div></AdminPage>} />
       <Route path="notificacoes" element={<AdminPage><NotificationPreferencesPage /></AdminPage>} />
@@ -171,6 +173,7 @@ function LegacyDashboardRedirect() {
     ["/dashboard/admin/cadastros", "/admin/cadastros"],
     ["/dashboard/admin/publicidade", "/admin/publicidade"],
     ["/dashboard/admin/pagamentos", "/admin/pagamentos"],
+    ["/dashboard/admin/whatsapp", "/admin/whatsapp"],
     ["/dashboard/admin/api", "/admin/api"],
     ["/dashboard/admin/ai", "/admin/ai"],
   ];
