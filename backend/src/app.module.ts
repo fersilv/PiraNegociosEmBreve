@@ -22,6 +22,7 @@ import { AiModule } from './ai/ai.module';
 import { PublicResumeModule } from './public-resume/public-resume.module';
 import { ProductFeedbackModule } from './product-feedback/product-feedback.module';
 import { ClassifiedsModule } from './classifieds/classifieds.module';
+import { CompanyPlansModule } from './company-plans/company-plans.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 
 @Module({
@@ -58,6 +59,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
     AdminModule,
     ProductFeedbackModule,
     ClassifiedsModule,
+    CompanyPlansModule,
     WhatsAppModule,
   ],
   controllers: [AppController],
