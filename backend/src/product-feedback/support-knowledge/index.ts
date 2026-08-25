@@ -2,8 +2,10 @@ import { PUBLIC_SUPPORT_TOPICS } from './public';
 import { CANDIDATE_SUPPORT_TOPICS } from './candidate';
 import { COMPANY_SUPPORT_TOPICS } from './company';
 import { ADMIN_SUPPORT_TOPICS } from './admin';
+import { SHARED_SUPPORT_TOPICS } from './shared';
 
 export const SUPPORT_KNOWLEDGE_TOPICS = [
+  ...SHARED_SUPPORT_TOPICS,
   ...PUBLIC_SUPPORT_TOPICS,
   ...CANDIDATE_SUPPORT_TOPICS,
   ...COMPANY_SUPPORT_TOPICS,
@@ -11,6 +13,7 @@ export const SUPPORT_KNOWLEDGE_TOPICS = [
 ];
 
 export {
+  SHARED_SUPPORT_TOPICS,
   PUBLIC_SUPPORT_TOPICS,
   CANDIDATE_SUPPORT_TOPICS,
   COMPANY_SUPPORT_TOPICS,
