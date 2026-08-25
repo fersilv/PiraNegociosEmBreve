@@ -1,4 +1,9 @@
 import { All, Controller, Param, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  publishChannelLink,
+  publishChannelMedia,
+  publishChannelTextWithLink,
+} from './whatsapp-channel-publisher';
 import { executeWppOperation } from './whatsapp-operation-runner';
 import { WPP_OPERATION_CAPABILITIES } from './whatsapp-operations.catalog';
 import { WhatsAppOAuthGuard } from './whatsapp-oauth.guard';
@@ -21,7 +26,7 @@ export class WhatsAppMcpController {
     const handler = createMcpHandler(() => {
       const server = new McpServer({
         name: `PiraNegocios WhatsApp - ${instanceId}`,
-        version: '2.2.0',
+        version: '2.3.0',
       });
 
       // Ferramentas semânticas antigas permanecem para não quebrar integrações já criadas.
@@ -256,9 +261,6 @@ export class WhatsAppMcpController {
         );
       }
 
-      // Tool de primeira classe para publicação em newsletter. Mantemos também
-      // a versão whatsapp_wpp_publishChannelText gerada pelo catálogo abaixo,
-      // mas esta forma explícita é muito mais fácil de descobrir e consumir.
       if (scopes.has('channels:publish:text')) {
         server.registerTool(
           'whatsapp_publish_channel_text',
@@ -271,6 +273,152 @@ export class WhatsAppMcpController {
           },
           async ({ newsletterId, text }: { newsletterId: string; text: string }) =>
             this.result(await executeWppOperation(this.whatsapp, instanceId, 'channels:publish:text', [newsletterId, text])),
+        );
+      }
+
+      if (scopes.has('channels:publish:image')) {
+        server.registerTool(
+          'whatsapp_publish_channel_image',
+          {
+            description: 'EXPERIMENTAL: publica imagem sem legenda em canal/newsletter. media aceita URL pública http/https, data URL ou Base64; não aceita caminho local do servidor.',
+            inputSchema: z.object({
+              newsletterId: z.string().min(1),
+              media: z.string().min(1),
+              filename: z.string().min(1).max(180).optional(),
+              mimetype: z.string().min(1).max(120).optional(),
+            }),
+          },
+          async (args: { newsletterId: string; media: string; filename?: string; mimetype?: string }) =>
+            this.result(await publishChannelMedia(this.whatsapp, instanceId, args.newsletterId, {
+              media: args.media,
+              type: 'image',
+              filename: args.filename,
+              mimetype: args.mimetype,
+            })),
+        );
+      }
+
+      if (scopes.has('channels:publish:image-caption')) {
+        server.registerTool(
+          'whatsapp_publish_channel_image_with_caption',
+          {
+            description: 'EXPERIMENTAL: publica imagem com legenda em canal/newsletter. media aceita URL pública http/https, data URL ou Base64.',
+            inputSchema: z.object({
+              newsletterId: z.string().min(1),
+              media: z.string().min(1),
+              caption: z.string().min(1).max(4096),
+              filename: z.string().min(1).max(180).optional(),
+              mimetype: z.string().min(1).max(120).optional(),
+            }),
+          },
+          async (args: { newsletterId: string; media: string; caption: string; filename?: string; mimetype?: string }) =>
+            this.result(await publishChannelMedia(this.whatsapp, instanceId, args.newsletterId, {
+              media: args.media,
+              type: 'image',
+              caption: args.caption,
+              filename: args.filename,
+              mimetype: args.mimetype,
+            })),
+        );
+      }
+
+      if (scopes.has('channels:publish:link')) {
+        server.registerTool(
+          'whatsapp_publish_channel_link',
+          {
+            description: 'Publica um link em canal/newsletter e tenta gerar a prévia nativa do WhatsApp.',
+            inputSchema: z.object({ newsletterId: z.string().min(1), url: z.string().min(1).max(2048) }),
+          },
+          async ({ newsletterId, url }: { newsletterId: string; url: string }) =>
+            this.result(await publishChannelLink(this.whatsapp, instanceId, newsletterId, url)),
+        );
+      }
+
+      if (scopes.has('channels:publish:text-link')) {
+        server.registerTool(
+          'whatsapp_publish_channel_text_with_link',
+          {
+            description: 'Publica texto seguido de URL em canal/newsletter e tenta gerar a prévia nativa do WhatsApp.',
+            inputSchema: z.object({
+              newsletterId: z.string().min(1),
+              text: z.string().min(1).max(4000),
+              url: z.string().min(1).max(2048),
+            }),
+          },
+          async ({ newsletterId, text, url }: { newsletterId: string; text: string; url: string }) =>
+            this.result(await publishChannelTextWithLink(this.whatsapp, instanceId, newsletterId, text, url)),
+        );
+      }
+
+      if (scopes.has('channels:publish:file')) {
+        server.registerTool(
+          'whatsapp_publish_channel_file',
+          {
+            description: 'EXPERIMENTAL: publica documento/arquivo em canal/newsletter com legenda opcional. media aceita URL pública, data URL ou Base64.',
+            inputSchema: z.object({
+              newsletterId: z.string().min(1),
+              media: z.string().min(1),
+              filename: z.string().min(1).max(180),
+              caption: z.string().max(4096).optional(),
+              mimetype: z.string().min(1).max(120).optional(),
+            }),
+          },
+          async (args: { newsletterId: string; media: string; filename: string; caption?: string; mimetype?: string }) =>
+            this.result(await publishChannelMedia(this.whatsapp, instanceId, args.newsletterId, {
+              media: args.media,
+              type: 'document',
+              caption: args.caption,
+              filename: args.filename,
+              mimetype: args.mimetype,
+            })),
+        );
+      }
+
+      if (scopes.has('channels:publish:audio')) {
+        server.registerTool(
+          'whatsapp_publish_channel_audio',
+          {
+            description: 'EXPERIMENTAL: publica áudio em canal/newsletter. asVoice solicita PTT/voz; o suporte final depende do WhatsApp para canais.',
+            inputSchema: z.object({
+              newsletterId: z.string().min(1),
+              media: z.string().min(1),
+              filename: z.string().min(1).max(180).optional(),
+              mimetype: z.string().min(1).max(120).optional(),
+              asVoice: z.boolean().optional(),
+            }),
+          },
+          async (args: { newsletterId: string; media: string; filename?: string; mimetype?: string; asVoice?: boolean }) =>
+            this.result(await publishChannelMedia(this.whatsapp, instanceId, args.newsletterId, {
+              media: args.media,
+              type: 'audio',
+              filename: args.filename,
+              mimetype: args.mimetype,
+              asVoice: args.asVoice,
+            })),
+        );
+      }
+
+      if (scopes.has('channels:publish:video')) {
+        server.registerTool(
+          'whatsapp_publish_channel_video',
+          {
+            description: 'EXPERIMENTAL: publica vídeo em canal/newsletter com legenda opcional. media aceita URL pública, data URL ou Base64.',
+            inputSchema: z.object({
+              newsletterId: z.string().min(1),
+              media: z.string().min(1),
+              caption: z.string().max(4096).optional(),
+              filename: z.string().min(1).max(180).optional(),
+              mimetype: z.string().min(1).max(120).optional(),
+            }),
+          },
+          async (args: { newsletterId: string; media: string; caption?: string; filename?: string; mimetype?: string }) =>
+            this.result(await publishChannelMedia(this.whatsapp, instanceId, args.newsletterId, {
+              media: args.media,
+              type: 'video',
+              caption: args.caption,
+              filename: args.filename,
+              mimetype: args.mimetype,
+            })),
         );
       }
 
