@@ -77,11 +77,20 @@ function ensureGroq() {
   require('./ensure-groq-provider.cjs');
 }
 
+function ensureWhatsAppAdminConcierge() {
+  require('./ensure-whatsapp-admin-concierge.cjs');
+}
+
+function ensurePostPatches() {
+  ensureGroq();
+  ensureWhatsAppAdminConcierge();
+}
+
 repairAppliedCompatibility();
 
 if (isFullyApplied()) {
   console.log('Hugging Face provider integration already applied.');
-  ensureGroq();
+  ensurePostPatches();
   process.exit(0);
 }
 
@@ -98,7 +107,7 @@ try {
     throw new Error('Hugging Face patch finished without covering every required AI surface.');
   }
   console.log('Hugging Face provider integration verified.');
-  ensureGroq();
+  ensurePostPatches();
 } catch (error) {
   for (const [file, contents] of backup) {
     fs.writeFileSync(file, contents);
