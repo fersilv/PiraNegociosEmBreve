@@ -16,14 +16,14 @@ VALUES
   (
     'COMPANY_ELITE_MONTHLY',
     'PiraNegócios Empresa Elite',
-    'Plano mensal completo para gestão de recrutamento pelo WhatsApp e elegibilidade aos destaques publicitários do PiraNegócios.',
+    'Plano mensal completo para gestão de recrutamento pelo WhatsApp, destaque de vagas e elegibilidade aos destaques publicitários do PiraNegócios.',
     4990,
     true,
     0,
     75,
     30,
     'RECURRING',
-    '[{"kind":"COMPANY_PLAN","plan":"ELITE"},{"kind":"AD_HIGHLIGHT_ELIGIBILITY","channels":["META","GOOGLE"]}]'::jsonb
+    '[{"kind":"COMPANY_PLAN","plan":"ELITE"},{"kind":"JOB_HIGHLIGHT_ELIGIBILITY"},{"kind":"AD_HIGHLIGHT_ELIGIBILITY","channels":["META","GOOGLE"]}]'::jsonb
   )
 ON CONFLICT (code) DO UPDATE SET
   name = EXCLUDED.name,
@@ -71,6 +71,20 @@ CREATE TABLE IF NOT EXISTS company_ad_highlight_eligibility (
   "updatedAt" timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS company_plan_trials (
+  "companyId" uuid PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+  "startedBy" varchar NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status varchar(16) NOT NULL DEFAULT 'ACTIVE',
+  "startedAt" timestamptz NOT NULL DEFAULT now(),
+  "endsAt" timestamptz NOT NULL,
+  "createdAt" timestamptz NOT NULL DEFAULT now(),
+  "updatedAt" timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT company_plan_trials_status_check CHECK (status IN ('ACTIVE','EXPIRED')),
+  CONSTRAINT company_plan_trials_positive_period_check CHECK ("endsAt" > "startedAt")
+);
+CREATE INDEX IF NOT EXISTS company_plan_trials_status_idx
+  ON company_plan_trials (status, "endsAt");
+
 CREATE OR REPLACE FUNCTION settle_company_plan_payment()
 RETURNS trigger AS $$
 DECLARE
@@ -80,6 +94,7 @@ DECLARE
   period_end timestamptz;
   existing_plan varchar(16);
   provider_subscription_id varchar(180);
+  parent_payment_id uuid;
 BEGIN
   IF NEW.status <> 'PAID' OR OLD.status = 'PAID' THEN
     RETURN NEW;
@@ -89,11 +104,46 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  provider_subscription_id := COALESCE(
+    NULLIF(NEW.metadata->>'efiRecurrenceId', ''),
+    NULLIF(NEW.metadata->>'subscriptionId', ''),
+    NULLIF(NEW.metadata->>'preapprovalId', '')
+  );
+
   BEGIN
     company_id := NULLIF(NEW.metadata->>'companyId', '')::uuid;
   EXCEPTION WHEN others THEN
     company_id := NULL;
   END;
+
+  -- As cobranças mensais seguintes do Pix Automático carregam o idRec e o
+  -- parentPaymentId, mas não necessariamente repetem companyId. Reaproveita
+  -- a assinatura já vinculada ou o pagamento original para manter a renovação.
+  IF company_id IS NULL AND provider_subscription_id IS NOT NULL THEN
+    SELECT "companyId" INTO company_id
+    FROM company_plan_subscriptions
+    WHERE "providerSubscriptionId" = provider_subscription_id
+    LIMIT 1;
+  END IF;
+
+  IF company_id IS NULL THEN
+    BEGIN
+      parent_payment_id := NULLIF(NEW.metadata->>'parentPaymentId', '')::uuid;
+    EXCEPTION WHEN others THEN
+      parent_payment_id := NULL;
+    END;
+    IF parent_payment_id IS NOT NULL THEN
+      BEGIN
+        SELECT NULLIF(metadata->>'companyId', '')::uuid INTO company_id
+        FROM payments
+        WHERE id = parent_payment_id
+        LIMIT 1;
+      EXCEPTION WHEN others THEN
+        company_id := NULL;
+      END;
+    END IF;
+  END IF;
+
   IF company_id IS NULL THEN
     RETURN NEW;
   END IF;
@@ -117,12 +167,6 @@ BEGIN
     period_end := now() + make_interval(days => duration_days);
   END IF;
   period_end := COALESCE(period_end, now() + make_interval(days => duration_days));
-
-  provider_subscription_id := COALESCE(
-    NULLIF(NEW.metadata->>'efiRecurrenceId', ''),
-    NULLIF(NEW.metadata->>'subscriptionId', ''),
-    NULLIF(NEW.metadata->>'preapprovalId', '')
-  );
 
   INSERT INTO company_plan_subscriptions
     ("companyId", "payerUserId", plan, status, "productCode", provider,

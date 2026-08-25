@@ -12,7 +12,13 @@ import {
 } from '../payments/payment-provider-manager.service';
 
 export type CompanyPlan = 'FREE' | 'PLUS' | 'ELITE';
-export type CompanyPlanFeature =
+
+/**
+ * IMPORTANT: these entitlements apply only to operations performed by the
+ * company through the WhatsApp concierge. They must never be used to hide or
+ * block the existing company web dashboard functionality.
+ */
+export type CompanyWhatsAppFeature =
   | 'WHATSAPP_FREE'
   | 'JOB_ACTIVATE'
   | 'JOB_DEACTIVATE'
@@ -26,10 +32,10 @@ export type CompanyPlanFeature =
   | 'TALENT_MANAGE'
   | 'CANDIDATE_WHATSAPP'
   | 'RECENT_APPLICATIONS'
-  | 'ADVANCED_JOB_STATS'
-  | 'AD_HIGHLIGHTS';
+  | 'ADVANCED_JOB_STATS';
 
 const RANK: Record<CompanyPlan, number> = { FREE: 0, PLUS: 1, ELITE: 2 };
+const ELITE_TRIAL_DAYS = 15;
 
 export const COMPANY_PLAN_CATALOG = [
   {
@@ -37,13 +43,13 @@ export const COMPANY_PLAN_CATALOG = [
     name: 'Free',
     priceCents: 0,
     monthly: false,
-    description: 'O essencial para recrutar e conversar com a assistente pelo WhatsApp.',
+    description: 'Mantém as operações atuais da assistente empresarial no WhatsApp.',
     features: [
-      'Listar vagas da empresa',
-      'Consultar quantidade de candidaturas por vaga',
-      'Consultar candidatos compatíveis',
-      'Criar vagas pelo WhatsApp',
-      'Editar vagas pelo WhatsApp',
+      'WhatsApp: listar vagas da empresa',
+      'WhatsApp: consultar quantidade de candidaturas por vaga',
+      'WhatsApp: consultar candidatos compatíveis',
+      'WhatsApp: criar vagas',
+      'WhatsApp: editar vagas',
     ],
   },
   {
@@ -52,14 +58,14 @@ export const COMPANY_PLAN_CATALOG = [
     priceCents: 1990,
     monthly: true,
     productCode: 'COMPANY_PLUS_MONTHLY',
-    description: 'Controle operacional das vagas e visão detalhada dos candidatos pelo WhatsApp.',
+    description: 'Amplia a operação da assistente no WhatsApp. O painel web continua com os recursos atuais.',
     features: [
-      'Tudo do plano Free',
-      'Ativar vaga',
-      'Desativar vaga',
-      'Encerrar vaga',
-      'Listar candidatos individualmente com detalhes',
-      'Abrir perfil e currículo de candidato',
+      'Tudo do Free no WhatsApp',
+      'WhatsApp: ativar vaga',
+      'WhatsApp: desativar vaga',
+      'WhatsApp: encerrar vaga',
+      'WhatsApp: listar candidatos individualmente com detalhes',
+      'WhatsApp: abrir perfil e currículo de candidato',
     ],
   },
   {
@@ -68,22 +74,23 @@ export const COMPANY_PLAN_CATALOG = [
     priceCents: 4990,
     monthly: true,
     productCode: 'COMPANY_ELITE_MONTHLY',
-    description: 'Gestão completa do recrutamento pelo WhatsApp e participação nos destaques publicitários.',
+    description: 'Gestão completa pelo WhatsApp, além dos benefícios promocionais exclusivos da assinatura paga.',
     features: [
-      'Tudo dos planos Free e Plus',
-      'Mudar status da candidatura',
-      'Adicionar observações internas',
-      'Convidar e remover convite de candidato',
-      'Adicionar e remover candidatos do Banco de Talentos e pastas',
-      'Responder e gerenciar candidatos pelo WhatsApp',
-      'Consultar novas candidaturas por período',
-      'Estatísticas avançadas das vagas',
-      'Elegibilidade aos destaques de anúncios do PiraNegócios na Meta e Google',
+      'Tudo do Free e Plus no WhatsApp',
+      'WhatsApp: mudar status da candidatura',
+      'WhatsApp: adicionar observações internas',
+      'WhatsApp: convidar e remover convite de candidato',
+      'WhatsApp: adicionar e remover candidatos do Banco de Talentos e pastas',
+      'WhatsApp: responder e gerenciar candidatos',
+      'WhatsApp: consultar novas candidaturas por período',
+      'WhatsApp: estatísticas avançadas das vagas',
+      'Elite pago: elegibilidade para destaque das vagas no PiraNegócios',
+      'Elite pago: elegibilidade aos destaques do PiraNegócios na Meta e Google',
     ],
   },
 ] as const;
 
-const FEATURE_PLAN: Record<CompanyPlanFeature, CompanyPlan> = {
+const WHATSAPP_FEATURE_PLAN: Record<CompanyWhatsAppFeature, CompanyPlan> = {
   WHATSAPP_FREE: 'FREE',
   JOB_ACTIVATE: 'PLUS',
   JOB_DEACTIVATE: 'PLUS',
@@ -98,7 +105,6 @@ const FEATURE_PLAN: Record<CompanyPlanFeature, CompanyPlan> = {
   CANDIDATE_WHATSAPP: 'ELITE',
   RECENT_APPLICATIONS: 'ELITE',
   ADVANCED_JOB_STATS: 'ELITE',
-  AD_HIGHLIGHTS: 'ELITE',
 };
 
 @Injectable()
@@ -131,6 +137,20 @@ export class CompanyPlansService {
     return rows[0];
   }
 
+  private async trialForCompany(companyId: string) {
+    await this.dataSource.query(
+      `UPDATE company_plan_trials
+       SET status = 'EXPIRED', "updatedAt" = now()
+       WHERE "companyId" = $1 AND status = 'ACTIVE' AND "endsAt" <= now()`,
+      [companyId],
+    ).catch(() => undefined);
+    const rows = await this.dataSource.query(
+      `SELECT * FROM company_plan_trials WHERE "companyId" = $1 LIMIT 1`,
+      [companyId],
+    ).catch(() => []);
+    return rows[0] || null;
+  }
+
   async getCompanyPlan(companyId: string) {
     await this.dataSource.query(
       `UPDATE company_plan_subscriptions
@@ -139,61 +159,101 @@ export class CompanyPlansService {
       [companyId],
     ).catch(() => undefined);
 
-    const rows = await this.dataSource.query(
-      `SELECT * FROM company_plan_subscriptions
-       WHERE "companyId" = $1 AND status IN ('ACTIVE','PAST_DUE') AND "currentPeriodEnd" > now()
-       LIMIT 1`,
-      [companyId],
+    const [subscriptionRows, trial] = await Promise.all([
+      this.dataSource.query(
+        `SELECT * FROM company_plan_subscriptions
+         WHERE "companyId" = $1 AND status IN ('ACTIVE','PAST_DUE') AND "currentPeriodEnd" > now()
+         LIMIT 1`,
+        [companyId],
+      ),
+      this.trialForCompany(companyId),
+    ]);
+    const subscription = subscriptionRows[0] || null;
+    const basePlan = subscription ? this.normalizePlan(subscription.plan) : 'FREE';
+    const trialActive = Boolean(
+      trial?.status === 'ACTIVE' && new Date(trial.endsAt).getTime() > Date.now(),
     );
-    const subscription = rows[0] || null;
-    const plan = subscription ? this.normalizePlan(subscription.plan) : 'FREE';
+    const plan: CompanyPlan = trialActive ? 'ELITE' : basePlan;
+
     return {
       plan,
+      basePlan,
       rank: RANK[plan],
-      active: plan !== 'FREE',
-      status: subscription?.status || 'FREE',
-      currentPeriodStart: subscription?.currentPeriodStart || null,
-      currentPeriodEnd: subscription?.currentPeriodEnd || null,
-      cancelAtPeriodEnd: Boolean(subscription?.cancelAtPeriodEnd),
-      provider: subscription?.provider || null,
+      active: trialActive || basePlan !== 'FREE',
+      status: trialActive ? 'TRIAL' : subscription?.status || 'FREE',
+      currentPeriodStart: trialActive ? trial.startedAt : subscription?.currentPeriodStart || null,
+      currentPeriodEnd: trialActive ? trial.endsAt : subscription?.currentPeriodEnd || null,
+      paidCurrentPeriodEnd: subscription?.currentPeriodEnd || null,
+      cancelAtPeriodEnd: trialActive ? false : Boolean(subscription?.cancelAtPeriodEnd),
+      provider: subscription?.provider || trial?.provider || null,
+      providerSubscriptionId: subscription?.providerSubscriptionId || trial?.providerSubscriptionId || null,
       isSimulation: Boolean(subscription?.isSimulation),
-      advertisingEligible: plan === 'ELITE',
+      isTrial: trialActive,
+      trialEndsAt: trialActive ? trial.endsAt : null,
+      trialTargetPlan: trial?.targetPlan ? this.normalizePlan(trial.targetPlan) : null,
+      hasPaidSubscription: Boolean(subscription),
+      // Trial unlocks WhatsApp operations only. Promotional benefits are paid-Elite-only.
+      advertisingEligible: !trialActive && basePlan === 'ELITE',
+      jobHighlightEligible: !trialActive && basePlan === 'ELITE',
     };
   }
 
   async getForUser(userId: string) {
     const company = await this.managedCompany(userId);
-    const current = await this.getCompanyPlan(company.id);
+    const [current, trialRecord] = await Promise.all([
+      this.getCompanyPlan(company.id),
+      this.trialForCompany(company.id),
+    ]);
+    const trialUsed = Boolean(trialRecord);
+    const trialEligibleOnSubscription = !trialUsed && !current.hasPaidSubscription;
     return {
       company: { id: company.id, name: company.name },
       current,
+      trial: {
+        days: ELITE_TRIAL_DAYS,
+        active: current.isTrial,
+        eligibleOnSubscription: trialEligibleOnSubscription,
+        used: trialUsed,
+        targetPlan: trialRecord?.targetPlan || null,
+        startedAt: trialRecord?.startedAt || null,
+        endsAt: trialRecord?.endsAt || null,
+        restrictions: [
+          'O teste só é concedido ao concluir a assinatura Plus ou Elite',
+          'Sem elegibilidade para destaques na Meta e Google durante o período gratuito',
+          'Sem destaque ou impulsionamento de vagas durante o período gratuito',
+          'As funções do painel web da empresa não são limitadas por estes planos',
+        ],
+      },
       plans: COMPANY_PLAN_CATALOG.map((plan) => ({
         ...plan,
-        current: current.plan === plan.id,
-        available: RANK[plan.id] >= RANK[current.plan] || plan.id === current.plan,
+        current: !current.isTrial && current.basePlan === plan.id,
+        available: RANK[plan.id] >= RANK[current.basePlan] || plan.id === current.basePlan,
+        includesEliteTrial: plan.id !== 'FREE' && trialEligibleOnSubscription,
+        eliteTrialDays: plan.id !== 'FREE' && trialEligibleOnSubscription ? ELITE_TRIAL_DAYS : 0,
       })),
     };
   }
 
-  requiredPlan(feature: CompanyPlanFeature) {
-    return FEATURE_PLAN[feature];
+  requiredWhatsAppPlan(feature: CompanyWhatsAppFeature) {
+    return WHATSAPP_FEATURE_PLAN[feature];
   }
 
-  async hasFeature(companyId: string, feature: CompanyPlanFeature) {
+  async hasWhatsAppFeature(companyId: string, feature: CompanyWhatsAppFeature) {
     const current = await this.getCompanyPlan(companyId);
-    return RANK[current.plan] >= RANK[FEATURE_PLAN[feature]];
+    return RANK[current.plan] >= RANK[WHATSAPP_FEATURE_PLAN[feature]];
   }
 
-  async assertFeature(companyId: string, feature: CompanyPlanFeature) {
+  async assertWhatsAppFeature(companyId: string, feature: CompanyWhatsAppFeature) {
     const current = await this.getCompanyPlan(companyId);
-    const requiredPlan = FEATURE_PLAN[feature];
+    const requiredPlan = WHATSAPP_FEATURE_PLAN[feature];
     if (RANK[current.plan] < RANK[requiredPlan]) {
       throw new ForbiddenException({
-        code: 'COMPANY_PLAN_REQUIRED',
-        message: `Este recurso exige o plano ${requiredPlan}.`,
+        code: 'COMPANY_WHATSAPP_PLAN_REQUIRED',
+        message: `Este comando pelo WhatsApp exige o plano ${requiredPlan}.`,
         feature,
         currentPlan: current.plan,
         requiredPlan,
+        scope: 'WHATSAPP_ONLY',
         upgradeUrl: 'https://piranegocios.com.br/company/planos',
       });
     }
@@ -210,29 +270,62 @@ export class CompanyPlansService {
       throw new BadRequestException('O plano Free não precisa de checkout.');
     }
     const company = await this.managedCompany(userId);
-    const current = await this.getCompanyPlan(company.id);
-    if (current.plan === plan && current.active) {
+    const [current, trialRecord] = await Promise.all([
+      this.getCompanyPlan(company.id),
+      this.trialForCompany(company.id),
+    ]);
+    if (!current.isTrial && current.basePlan === plan && current.hasPaidSubscription) {
       throw new BadRequestException(`A empresa já possui o plano ${plan} ativo.`);
     }
 
+    // Trial is automatic only on the first successful subscription authorization.
+    // There is no standalone endpoint/button capable of granting it.
+    const trialDays = !trialRecord && !current.hasPaidSubscription ? ELITE_TRIAL_DAYS : 0;
     const productCode = plan === 'ELITE' ? 'COMPANY_ELITE_MONTHLY' : 'COMPANY_PLUS_MONTHLY';
     const payment = await this.payments.createPixPayment(userId, productCode);
+    const paymentMetadata = {
+      companyId: company.id,
+      companyPlan: plan,
+      companyName: company.name,
+      companyWhatsAppPlan: true,
+      companyEliteTrialDays: trialDays,
+      companyEliteTrialPending: trialDays > 0,
+    };
 
     await this.dataSource.query(
       `UPDATE payments SET metadata = coalesce(metadata, '{}'::jsonb) || $2::jsonb, "updatedAt" = now()
        WHERE id = $1`,
-      [payment.id, JSON.stringify({ companyId: company.id, companyPlan: plan, companyName: company.name })],
+      [payment.id, JSON.stringify(paymentMetadata)],
     );
-    payment.metadata = { ...(payment.metadata || {}), companyId: company.id, companyPlan: plan, companyName: company.name };
+    payment.metadata = { ...(payment.metadata || {}), ...paymentMetadata };
 
     const devMode = await this.payments.getDevMode();
     if (devMode.enabled) {
+      if (trialDays > 0) {
+        await this.payments.activateCompanyPlanTrial(payment.id, {
+          provider: 'DEV',
+          providerSubscriptionId: `dev-${payment.id}`,
+        });
+        return {
+          ...payment,
+          product: payment.product,
+          plan,
+          trialDays,
+          paymentRequired: false,
+          checkoutReady: false,
+          providerConfigured: false,
+          devSimulation: true,
+          trialActivated: true,
+          message: `Modo DEV: assinatura ${plan} autorizada e Elite gratuito ativado por ${trialDays} dias para ${company.name}.`,
+        };
+      }
       const settled = await this.payments.simulatePayment(payment.id, userId);
       return {
         ...payment,
         ...settled,
         product: payment.product,
         plan,
+        trialDays: 0,
         paymentRequired: false,
         checkoutReady: false,
         providerConfigured: false,
@@ -242,13 +335,18 @@ export class CompanyPlansService {
     }
 
     try {
-      const checkout = await this.providers.createCheckout(payment, payer || {});
+      const checkout = await this.providers.createCheckout(
+        payment,
+        payer || {},
+        { trialDays },
+      );
       const stored = await this.payments.attachProviderCheckout(payment.id, checkout);
       const metadata = stored.metadata as any;
       return {
         ...stored,
         product: payment.product,
         plan,
+        trialDays,
         company: { id: company.id, name: company.name },
         checkoutReady: Boolean(
           stored.pixCopyPaste ||
@@ -258,6 +356,7 @@ export class CompanyPlansService {
         ),
         providerConfigured: true,
         paymentRequired: true,
+        trialStartsAfterAuthorization: trialDays > 0,
       };
     } catch (error) {
       await this.payments.cancelProviderCheckout(payment.id, error).catch(() => undefined);
@@ -290,7 +389,7 @@ export class CompanyPlansService {
        RETURNING *`,
       [company.id, enabled],
     );
-    if (!rows[0]) throw new NotFoundException('A empresa não possui uma assinatura ativa.');
+    if (!rows[0]) throw new NotFoundException('A empresa não possui uma assinatura paga ativa.');
     return rows[0];
   }
 }
