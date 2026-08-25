@@ -63,10 +63,19 @@ export class JobMatchSubscriber implements EntitySubscriberInterface<Job> {
     const fromMetadata = event.updatedColumns
       .flatMap((column) => [column.propertyName, column.databaseName])
       .filter(Boolean);
+
+    // save(entity) entrega a entidade inteira em event.entity. Nessa situação,
+    // Object.keys(entity) NÃO representa o que mudou e faria qualquer auditoria
+    // parecer uma alteração de active/title/etc. Quando o TypeORM conhece as
+    // colunas modificadas, elas são a fonte de verdade.
+    if (fromMetadata.length > 0) return new Set(fromMetadata);
+
+    // QueryBuilder/update parcial pode não preencher updatedColumns. Só nesse
+    // fallback usamos as chaves do payload parcial recebido pelo subscriber.
     const fromEntity = event.entity && typeof event.entity === 'object'
       ? Object.keys(event.entity)
       : [];
-    return new Set([...fromMetadata, ...fromEntity]);
+    return new Set(fromEntity);
   }
 
   async afterInsert(event: InsertEvent<Job>) {
