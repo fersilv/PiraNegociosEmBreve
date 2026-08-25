@@ -1,4 +1,6 @@
 import { All, Controller, Param, Req, Res, UseGuards } from '@nestjs/common';
+import { executeWppOperation } from './whatsapp-operation-runner';
+import { WPP_OPERATION_CAPABILITIES } from './whatsapp-operations.catalog';
 import { WhatsAppOAuthGuard } from './whatsapp-oauth.guard';
 import { WhatsAppService } from './whatsapp.service';
 
@@ -19,9 +21,10 @@ export class WhatsAppMcpController {
     const handler = createMcpHandler(() => {
       const server = new McpServer({
         name: `PiraNegocios WhatsApp - ${instanceId}`,
-        version: '1.1.0',
+        version: '2.0.0',
       });
 
+      // Ferramentas semânticas antigas permanecem para não quebrar integrações já criadas.
       if (scopes.has('connection:read')) {
         server.registerTool(
           'whatsapp_connection_status',
@@ -83,7 +86,7 @@ export class WhatsAppMcpController {
         server.registerTool(
           'whatsapp_get_group_history',
           {
-            description: 'Busca diretamente no WhatsApp o histórico de um grupo. Use paginação com beforeMessageId para percorrer mensagens antigas sem depender apenas do histórico salvo no PiraNegócios.',
+            description: 'Busca diretamente no WhatsApp o histórico de um grupo com paginação por beforeMessageId.',
             inputSchema: z.object({
               groupId: z.string().min(1),
               count: z.number().int().min(1).max(500).optional(),
@@ -100,7 +103,7 @@ export class WhatsAppMcpController {
         server.registerTool(
           'whatsapp_get_group_media',
           {
-            description: 'Baixa a mídia original de uma mensagem do WhatsApp pelo messageId. Imagens são devolvidas como conteúdo visual para análise.',
+            description: 'Baixa a mídia original de uma mensagem pelo messageId. Imagens são devolvidas como conteúdo visual para análise.',
             inputSchema: z.object({ messageId: z.string().min(1) }),
           },
           async ({ messageId }: { messageId: string }) => this.mediaResult(await this.whatsapp.getGroupMedia(instanceId, messageId)),
@@ -111,7 +114,7 @@ export class WhatsAppMcpController {
         server.registerTool(
           'whatsapp_list_group_members',
           {
-            description: 'Lista os participantes atuais de um grupo, permitindo identificar membros, administradores e dados disponíveis dos contatos.',
+            description: 'Lista participantes atuais de um grupo.',
             inputSchema: z.object({ groupId: z.string().min(1) }),
           },
           async ({ groupId }: { groupId: string }) => this.result(await this.whatsapp.listGroupMembers(instanceId, groupId)),
@@ -122,7 +125,7 @@ export class WhatsAppMcpController {
         server.registerTool(
           'whatsapp_join_group',
           {
-            description: 'Entra em um grupo usando um link ou código de convite do WhatsApp. Não envia mensagens no grupo.',
+            description: 'Entra em um grupo usando link ou código de convite.',
             inputSchema: z.object({ inviteCodeOrLink: z.string().min(1) }),
           },
           async ({ inviteCodeOrLink }: { inviteCodeOrLink: string }) => this.result(await this.whatsapp.joinGroup(instanceId, inviteCodeOrLink)),
@@ -133,7 +136,7 @@ export class WhatsAppMcpController {
         server.registerTool(
           'whatsapp_add_group_member',
           {
-            description: 'Adiciona uma pessoa a um grupo administrado por este número. Exige permissões de administrador no próprio WhatsApp.',
+            description: 'Adiciona uma pessoa a um grupo administrado por este número.',
             inputSchema: z.object({ groupId: z.string().min(1), participantId: z.string().min(1) }),
           },
           async ({ groupId, participantId }: { groupId: string; participantId: string }) =>
@@ -145,7 +148,7 @@ export class WhatsAppMcpController {
         server.registerTool(
           'whatsapp_remove_group_member',
           {
-            description: 'Remove um participante de um grupo administrado por este número. Use somente quando houver motivo de moderação claro e verificável.',
+            description: 'Remove participante de um grupo. A ação é administrativa e deve ser usada com critério.',
             inputSchema: z.object({ groupId: z.string().min(1), participantId: z.string().min(1) }),
           },
           async ({ groupId, participantId }: { groupId: string; participantId: string }) =>
@@ -157,7 +160,7 @@ export class WhatsAppMcpController {
         server.registerTool(
           'whatsapp_list_group_join_requests',
           {
-            description: 'Lista pedidos pendentes de entrada em um grupo que usa aprovação de participantes.',
+            description: 'Lista pedidos pendentes de entrada em um grupo.',
             inputSchema: z.object({ groupId: z.string().min(1) }),
           },
           async ({ groupId }: { groupId: string }) => this.result(await this.whatsapp.listGroupMembershipRequests(instanceId, groupId)),
@@ -174,7 +177,6 @@ export class WhatsAppMcpController {
           async ({ groupId, participantId }: { groupId: string; participantId: string }) =>
             this.result(await this.whatsapp.approveGroupMembershipRequest(instanceId, groupId, participantId)),
         );
-
         server.registerTool(
           'whatsapp_reject_group_join_request',
           {
@@ -190,7 +192,7 @@ export class WhatsAppMcpController {
         server.registerTool(
           'whatsapp_send_group_message',
           {
-            description: 'Envia texto para um grupo usando o ID ...@g.us. Esta permissão é independente das permissões de leitura e moderação.',
+            description: 'Envia texto novo para um grupo. É independente das permissões de leitura/moderação.',
             inputSchema: z.object({ groupId: z.string().min(1), text: z.string().min(1) }),
           },
           async ({ groupId, text }: { groupId: string; text: string }) => this.result(await this.whatsapp.sendText(instanceId, groupId, text)),
@@ -200,7 +202,7 @@ export class WhatsAppMcpController {
       if (scopes.has('channels:read')) {
         server.registerTool(
           'whatsapp_list_channels',
-          { description: 'Lista canais/newsletters visíveis para esta sessão quando o WhatsApp Web disponibilizar a função.', inputSchema: z.object({}) },
+          { description: 'Lista canais/newsletters visíveis para esta sessão.', inputSchema: z.object({}) },
           async () => this.result(await this.whatsapp.listChannels(instanceId)),
         );
       }
@@ -209,7 +211,7 @@ export class WhatsAppMcpController {
         server.registerTool(
           'whatsapp_publish_channel',
           {
-            description: 'EXPERIMENTAL: publica texto em um canal administrado pelo número. O suporte depende da versão corrente do WhatsApp Web.',
+            description: 'EXPERIMENTAL: publica texto em um canal administrado pelo número.',
             inputSchema: z.object({ channelId: z.string().min(1), text: z.string().min(1) }),
           },
           async ({ channelId, text }: { channelId: string; text: string }) => this.result(await this.whatsapp.publishChannel(instanceId, channelId, text)),
@@ -224,6 +226,25 @@ export class WhatsAppMcpController {
             inputSchema: z.object({ text: z.string().optional(), media: z.string().optional(), caption: z.string().optional() }),
           },
           async (args: { text?: string; media?: string; caption?: string }) => this.result(await this.whatsapp.publishStatus(instanceId, args)),
+        );
+      }
+
+      // Catálogo operacional por função. Somente métodos explicitamente
+      // allowlisted aparecem, e apenas quando o token OAuth possui o scope.
+      for (const capability of WPP_OPERATION_CAPABILITIES) {
+        if (!scopes.has(capability.scope)) continue;
+        const toolName = `whatsapp_wpp_${capability.method}`;
+        const riskNotice = capability.risk === 'destructive'
+          ? ' AÇÃO SENSÍVEL/DESTRUTIVA: confirme a intenção e os identificadores antes de executar.'
+          : '';
+        server.registerTool(
+          toolName,
+          {
+            description: `${capability.description} Assinatura: ${capability.signature}.${riskNotice} Passe os parâmetros posicionais no array arguments exatamente na ordem da assinatura.`,
+            inputSchema: z.object({ arguments: z.array(z.any()).max(20).optional() }),
+          },
+          async ({ arguments: args }: { arguments?: unknown[] }) =>
+            this.result(await executeWppOperation(this.whatsapp, instanceId, capability.scope, args || [])),
         );
       }
 
@@ -253,14 +274,14 @@ export class WhatsAppMcpController {
   }
 
   private result(value: unknown) {
-    return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] };
+    return { content: [{ type: 'text' as const, text: this.safeStringify(value) }] };
   }
 
   private mediaResult(value: { message: unknown; mimeType: string; data: string }) {
     const content: any[] = [
       {
         type: 'text',
-        text: JSON.stringify({ message: value.message, mimeType: value.mimeType }, null, 2),
+        text: this.safeStringify({ message: value.message, mimeType: value.mimeType }),
       },
     ];
     if (value.data && value.mimeType.startsWith('image/')) {
@@ -268,11 +289,22 @@ export class WhatsAppMcpController {
     } else if (value.data && value.mimeType.startsWith('audio/')) {
       content.push({ type: 'audio', data: value.data, mimeType: value.mimeType });
     } else if (value.data) {
-      content.push({
-        type: 'text',
-        text: `A mídia foi localizada (${value.mimeType}), mas este tipo não é renderizado inline por este tool.`,
-      });
+      content.push({ type: 'text', text: `Mídia localizada (${value.mimeType}), mas este tipo não é renderizado inline por este tool.` });
     }
     return { content };
+  }
+
+  private safeStringify(value: unknown) {
+    const seen = new WeakSet<object>();
+    return JSON.stringify(value, (_key, nested) => {
+      if (typeof nested === 'bigint') return nested.toString();
+      if (Buffer.isBuffer(nested)) return { type: 'buffer', base64: nested.toString('base64') };
+      if (nested && typeof nested === 'object') {
+        if (seen.has(nested)) return '[circular]';
+        seen.add(nested);
+      }
+      if (typeof nested === 'function') return undefined;
+      return nested;
+    }, 2);
   }
 }
