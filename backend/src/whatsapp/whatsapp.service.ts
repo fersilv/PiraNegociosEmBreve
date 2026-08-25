@@ -21,6 +21,8 @@ import {
   WhatsAppMessage,
   WhatsAppMessageDirection,
 } from './entities/whatsapp-message.entity';
+import { WhatsAppAlertService } from './whatsapp-alert.service';
+import { WhatsAppConciergeService } from './whatsapp-concierge.service';
 import { sanitizeWhatsAppScopes } from './whatsapp.scopes';
 
 type RuntimeState = {
@@ -35,12 +37,15 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private readonly clients = new Map<string, any>();
   private readonly states = new Map<string, RuntimeState>();
   private readonly connecting = new Map<string, Promise<void>>();
+  private readonly expectedDisconnects = new Set<string>();
 
   constructor(
     @InjectRepository(WhatsAppInstance) private readonly instances: Repository<WhatsAppInstance>,
     @InjectRepository(WhatsAppApiKey) private readonly keys: Repository<WhatsAppApiKey>,
     @InjectRepository(WhatsAppMessage) private readonly messages: Repository<WhatsAppMessage>,
     @InjectRepository(WhatsAppSavedContact) private readonly savedContacts: Repository<WhatsAppSavedContact>,
+    private readonly concierge: WhatsAppConciergeService,
+    private readonly alerts: WhatsAppAlertService,
   ) {}
 
   async onModuleInit() {
@@ -88,6 +93,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         status: WhatsAppConnectionStatus.DISCONNECTED,
         allowedScopes,
         active: true,
+        isPrimarySupport: false,
         lastError: null,
         lastConnectedAt: null,
         lastSeenAt: null,
@@ -103,6 +109,16 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     if (typeof data.purpose === 'string') instance.purpose = data.purpose.trim().slice(0, 180) || null;
     if (typeof data.phoneNumber === 'string') instance.phoneNumber = this.onlyDigits(data.phoneNumber) || null;
     if (typeof data.active === 'boolean') instance.active = data.active;
+    if (typeof data.isPrimarySupport === 'boolean') {
+      if (data.isPrimarySupport) {
+        await this.instances.createQueryBuilder()
+          .update(WhatsAppInstance)
+          .set({ isPrimarySupport: false })
+          .where('id != :id', { id })
+          .execute();
+      }
+      instance.isPrimarySupport = data.isPrimarySupport;
+    }
     if (Array.isArray(data.allowedScopes)) instance.allowedScopes = sanitizeWhatsAppScopes(data.allowedScopes);
     await this.instances.save(instance);
     return this.decorateInstance(instance);
@@ -126,15 +142,12 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
     const task = this.connectInternal(instance)
       .catch((error) => {
-        this.logger.error(
-          `Falha ao abrir sessão WhatsApp ${id}: ${this.errorMessage(error)}`,
-        );
+        this.logger.error(`Falha ao abrir sessão WhatsApp ${id}: ${this.errorMessage(error)}`);
       })
       .finally(() => {
         this.connecting.delete(id);
       });
     this.connecting.set(id, task);
-
     return this.status(id);
   }
 
@@ -161,9 +174,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             : []),
         ],
         catchQR: (base64Qr: string) => {
-          const qrCode = base64Qr.startsWith('data:')
-            ? base64Qr
-            : `data:image/png;base64,${base64Qr}`;
+          const qrCode = base64Qr.startsWith('data:') ? base64Qr : `data:image/png;base64,${base64Qr}`;
           this.setRuntime(id, { qrCode, detail: 'Leia o QR Code no WhatsApp do aparelho.' });
           void this.setStatusById(id, WhatsAppConnectionStatus.QR_REQUIRED, null);
         },
@@ -181,7 +192,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             status.includes('delete')
           ) {
             this.clients.delete(id);
-            void this.setStatusById(id, WhatsAppConnectionStatus.DISCONNECTED, null);
+            void this.setStatusById(id, WhatsAppConnectionStatus.DISCONNECTED, statusSession);
+            void this.notifyUnexpectedDisconnect(instance, `statusFind: ${statusSession}`);
           }
         },
       } as any);
@@ -190,12 +202,30 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       this.setRuntime(id, { qrCode: null, detail: 'Conectado e recebendo eventos.' });
       await this.setStatusById(id, WhatsAppConnectionStatus.CONNECTED, null, true);
       await this.capturePhoneNumber(instance, client);
-      client.onMessage?.((message: any) => void this.storeInbound(instance.id, message));
+
+      client.onMessage?.((message: any) => {
+        void (async () => {
+          await this.storeInbound(instance.id, message);
+          await this.concierge.handleInbound(instance, message, client);
+        })().catch(async (error) => {
+          this.logger.error(`Falha ao processar mensagem WhatsApp ${instance.id}: ${this.errorMessage(error)}`);
+          await this.alerts.send({
+            severity: 'ATTENTION',
+            title: 'Erro ao processar mensagem recebida no WhatsApp',
+            instanceName: instance.name,
+            instanceId: instance.id,
+            error,
+            context: { messageId: this.serializeWid(message?.id), type: message?.type },
+          });
+        });
+      });
+
       client.onStateChange?.((state: unknown) => {
         const value = String(state || '');
         if (/DISCONNECTED|UNPAIRED|UNLAUNCHED|CONFLICT/i.test(value)) {
           this.clients.delete(id);
           void this.setStatusById(id, WhatsAppConnectionStatus.DISCONNECTED, value);
+          void this.notifyUnexpectedDisconnect(instance, `onStateChange: ${value}`);
         }
       });
     } catch (error) {
@@ -203,28 +233,55 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`Falha ao conectar WhatsApp ${id}: ${detail}`);
       this.setRuntime(id, { qrCode: null, detail });
       await this.setStatusById(id, WhatsAppConnectionStatus.ERROR, detail);
+      await this.alerts.send({
+        severity: instance.isPrimarySupport ? 'CRITICAL' : 'ATTENTION',
+        title: 'Falha ao conectar sessão do WhatsApp',
+        instanceName: instance.name,
+        instanceId: instance.id,
+        error,
+        context: { primarySupport: instance.isPrimarySupport },
+      });
     }
   }
 
   async disconnect(id: string, logout = false) {
     const instance = await this.getInstance(id);
     const client = this.clients.get(id);
-    if (client) {
-      try {
-        if (logout && typeof client.logout === 'function') await client.logout();
-        else if (typeof client.close === 'function') await client.close();
-      } finally {
-        this.clients.delete(id);
+    this.expectedDisconnects.add(id);
+    try {
+      if (client) {
+        try {
+          if (logout && typeof client.logout === 'function') await client.logout();
+          else if (typeof client.close === 'function') await client.close();
+        } finally {
+          this.clients.delete(id);
+        }
       }
+      this.setRuntime(id, { qrCode: null, detail: logout ? 'Aparelho desvinculado.' : 'Sessão parada.' });
+      await this.setStatus(instance, WhatsAppConnectionStatus.DISCONNECTED, null);
+      return this.status(id);
+    } finally {
+      setTimeout(() => this.expectedDisconnects.delete(id), 10_000);
     }
-    this.setRuntime(id, { qrCode: null, detail: logout ? 'Aparelho desvinculado.' : 'Sessão parada.' });
-    await this.setStatus(instance, WhatsAppConnectionStatus.DISCONNECTED, null);
-    return this.status(id);
   }
 
   async status(id: string) {
     const instance = await this.getInstance(id);
     return this.decorateInstance(instance);
+  }
+
+  async checkNumberStatus(id: string, phone: string) {
+    const client = this.requireClient(id);
+    const digits = this.onlyDigits(phone);
+    if (!digits) throw new BadRequestException('Telefone inválido.');
+    return client.checkNumberStatus(`${digits}@c.us`);
+  }
+
+  async resolvePnLid(id: string, phoneOrLid: string) {
+    const client = this.requireClient(id);
+    const target = String(phoneOrLid || '').trim();
+    if (!target) throw new BadRequestException('Identificador do WhatsApp inválido.');
+    return client.getPnLidEntry(target.includes('@') ? target : `${this.onlyDigits(target)}@c.us`);
   }
 
   async listContacts(id: string) {
@@ -238,7 +295,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     const chats = await client.listChats({ onlyGroups: true });
     if (!Array.isArray(chats)) return [];
     return chats.filter((chat: any) => {
-      const serialized = String(chat?.id?._serialized || chat?.id || '');
+      const serialized = this.serializeWid(chat?.id);
       return serialized.endsWith('@g.us');
     });
   }
@@ -306,6 +363,32 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     return { ok: true, groupId: target, participantId: participant };
   }
 
+  async replyGroupMessage(id: string, groupId: string, messageId: string, text: string) {
+    const client = this.requireClient(id);
+    const target = this.normalizeGroupId(groupId);
+    const clean = String(text || '').trim();
+    if (!clean) throw new BadRequestException('A resposta está vazia.');
+    const result = await client.sendText(target, clean, { quotedMsg: String(messageId || '').trim() });
+    await this.storeOutbound(id, target, clean, 'text', result);
+    return { ok: true, groupId: target, quotedMessageId: messageId, result };
+  }
+
+  async reactToGroupMessage(id: string, messageId: string, reaction: string | false) {
+    const client = this.requireClient(id);
+    const target = String(messageId || '').trim();
+    if (!target) throw new BadRequestException('messageId não informado.');
+    return { ok: true, result: await client.sendReactionToMessage(target, reaction) };
+  }
+
+  async deleteGroupMessage(id: string, groupId: string, messageId: string) {
+    const client = this.requireClient(id);
+    const target = this.normalizeGroupId(groupId);
+    const msgId = String(messageId || '').trim();
+    if (!msgId) throw new BadRequestException('messageId não informado.');
+    const result = await client.deleteMessage(target, msgId);
+    return { ok: true, groupId: target, messageId: msgId, result };
+  }
+
   async listGroupMembershipRequests(id: string, groupId: string) {
     const client = this.requireClient(id);
     const target = this.normalizeGroupId(groupId);
@@ -333,10 +416,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     const client = this.requireClient(id);
     const chats = await client.listChats();
     if (!Array.isArray(chats)) return [];
-    return chats.filter((chat: any) => {
-      const serialized = String(chat?.id?._serialized || chat?.id || '');
-      return serialized.endsWith('@newsletter');
-    });
+    return chats.filter((chat: any) => this.serializeWid(chat?.id).endsWith('@newsletter'));
   }
 
   async sendText(id: string, target: string, text: string) {
@@ -510,6 +590,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         status: true,
         multiSession: true,
         mcp: true,
+        concierge: true,
+        otp: true,
       },
     };
   }
@@ -529,6 +611,18 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private async setStatusById(id: string, status: WhatsAppConnectionStatus, error: string | null, connected = false) {
     const instance = await this.instances.findOne({ where: { id } });
     if (instance) await this.setStatus(instance, status, error, connected);
+  }
+
+  private async notifyUnexpectedDisconnect(instance: WhatsAppInstance, detail: string) {
+    if (this.expectedDisconnects.has(instance.id)) return;
+    await this.alerts.send({
+      severity: 'CRITICAL',
+      title: 'WhatsApp desconectado',
+      instanceName: instance.name,
+      instanceId: instance.id,
+      error: detail,
+      context: { primarySupport: instance.isPrimarySupport, phoneNumber: instance.phoneNumber },
+    });
   }
 
   private async capturePhoneNumber(instance: WhatsAppInstance, client: any) {
@@ -551,16 +645,18 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       await this.messages.save(
         this.messages.create({
           instanceId,
-          providerMessageId: String(message?.id?._serialized || message?.id || '').slice(0, 100) || null,
-          chatId: String(message?.from || message?.chatId || 'unknown').slice(0, 120),
-          senderId: String(message?.sender?.id || message?.author || message?.from || '').slice(0, 120) || null,
+          providerMessageId: this.serializeWid(message?.id?._serialized || message?.id).slice(0, 100) || null,
+          chatId: (this.serializeWid(message?.from || message?.chatId) || 'unknown').slice(0, 120),
+          senderId: this.serializeWid(message?.sender?.id || message?.author || message?.from).slice(0, 120) || null,
           direction: WhatsAppMessageDirection.INBOUND,
           type: String(message?.type || 'message').slice(0, 40),
-          body: typeof message?.body === 'string' ? message.body : null,
+          body: typeof message?.body === 'string' ? message.body : typeof message?.caption === 'string' ? message.caption : null,
           metadata: {
             isGroupMsg: Boolean(message?.isGroupMsg),
             isMedia: Boolean(message?.isMedia),
             fromMe: Boolean(message?.fromMe),
+            isNotification: Boolean(message?.isNotification),
+            broadcast: Boolean(message?.broadcast),
             mimetype: message?.mimetype || message?.mimeType || null,
             caption: message?.caption || null,
           },
@@ -576,7 +672,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     await this.messages.save(
       this.messages.create({
         instanceId,
-        providerMessageId: String(result?.id?._serialized || result?.id || '').slice(0, 100) || null,
+        providerMessageId: this.serializeWid(result?.id?._serialized || result?.id).slice(0, 100) || null,
         chatId: chatId.slice(0, 120),
         senderId: null,
         direction: WhatsAppMessageDirection.OUTBOUND,
@@ -590,10 +686,10 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   private publicMessage(message: any) {
     return {
-      id: String(message?.id?._serialized || message?.id || ''),
-      from: String(message?.from || ''),
-      to: String(message?.to || ''),
-      author: String(message?.author || message?.sender?.id?._serialized || message?.sender?.id || ''),
+      id: this.serializeWid(message?.id?._serialized || message?.id),
+      from: this.serializeWid(message?.from),
+      to: this.serializeWid(message?.to),
+      author: this.serializeWid(message?.author || message?.sender?.id),
       body: typeof message?.body === 'string' ? message.body : null,
       caption: typeof message?.caption === 'string' ? message.caption : null,
       type: String(message?.type || 'message'),
@@ -602,8 +698,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       isGroupMsg: Boolean(message?.isGroupMsg),
       isMedia: Boolean(message?.isMedia || message?.mimetype || message?.mimeType),
       mimetype: message?.mimetype || message?.mimeType || null,
-      quotedMsgId: String(message?.quotedMsgId?._serialized || message?.quotedMsgId || '') || null,
-      mentionedJidList: Array.isArray(message?.mentionedJidList) ? message.mentionedJidList : [],
+      quotedMsgId: this.serializeWid(message?.quotedMsgId) || null,
+      mentionedJidList: Array.isArray(message?.mentionedJidList) ? message.mentionedJidList.map((item: any) => this.serializeWid(item)) : [],
     };
   }
 
@@ -625,10 +721,19 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private normalizeChatId(target: string) {
     const value = String(target || '').trim();
     if (!value) throw new BadRequestException('Destino não informado.');
-    if (/@(?:c\.us|g\.us|newsletter)$/.test(value)) return value;
+    if (/@(?:c\.us|g\.us|newsletter|lid)$/.test(value)) return value;
     const digits = this.onlyDigits(value);
     if (!digits) throw new BadRequestException('Destino inválido.');
     return `${digits}@c.us`;
+  }
+
+  private serializeWid(value: any) {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value?._serialized === 'string') return value._serialized;
+    if (value?.user && value?.server) return `${value.user}@${value.server}`;
+    const text = String(value);
+    return text === '[object Object]' ? '' : text;
   }
 
   private onlyDigits(value: string) {
