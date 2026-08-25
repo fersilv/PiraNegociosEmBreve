@@ -35,8 +35,39 @@ const LEGACY_WHATSAPP_CAPABILITIES: WhatsAppCapability[] = [
   { scope: 'status:publish', category: 'Compatibilidade', label: 'Publicar status', description: 'Scope legado para publicar status.', risk: 'write', legacy: true },
 ];
 
+const CUSTOM_WHATSAPP_CAPABILITIES: WhatsAppCapability[] = [
+  {
+    scope: 'groups:reply',
+    category: 'Grupos · Moderação',
+    label: 'Responder mensagem no grupo',
+    description: 'Permite responder uma mensagem específica do grupo sem liberar envio de mensagem avulsa.',
+    risk: 'write',
+    signature: 'replyGroup(groupId, messageId, text)',
+    legacy: false,
+  },
+  {
+    scope: 'groups:reaction',
+    category: 'Grupos · Moderação',
+    label: 'Reagir a mensagem do grupo',
+    description: 'Permite reagir a uma mensagem específica com emoji sem publicar texto novo.',
+    risk: 'write',
+    signature: 'reactGroupMessage(messageId, reactionOrFalse)',
+    legacy: false,
+  },
+  {
+    scope: 'groups:message:delete',
+    category: 'Grupos · Moderação',
+    label: 'Remover mensagem do grupo',
+    description: 'Permite apagar uma mensagem específica do grupo quando o WhatsApp e as permissões de administrador permitirem.',
+    risk: 'destructive',
+    signature: 'deleteGroupMessage(groupId, messageId, onlyLocal?)',
+    legacy: false,
+  },
+];
+
 export const WHATSAPP_CAPABILITIES: WhatsAppCapability[] = [
   ...LEGACY_WHATSAPP_CAPABILITIES,
+  ...CUSTOM_WHATSAPP_CAPABILITIES,
   ...(WPP_OPERATION_CAPABILITIES.map((capability) => ({ ...capability, legacy: false })) as WhatsAppCapability[]),
 ];
 
