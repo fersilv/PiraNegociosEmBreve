@@ -60,5 +60,6 @@ import { TalentInvitePreviewController } from './talent-invite-preview.controlle
     CompanyHiringConfigController,
     HiringConfigCompatController,
   ],
+  exports: [CompaniesService, TalentInvitesService],
 })
 export class CompaniesModule {}
