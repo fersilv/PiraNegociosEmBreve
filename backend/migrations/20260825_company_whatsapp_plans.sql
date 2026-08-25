@@ -16,14 +16,14 @@ VALUES
   (
     'COMPANY_ELITE_MONTHLY',
     'PiraNegócios Empresa Elite',
-    'Plano mensal completo para gestão de recrutamento pelo WhatsApp e elegibilidade aos destaques publicitários do PiraNegócios.',
+    'Plano mensal completo para gestão de recrutamento pelo WhatsApp, destaque de vagas e elegibilidade aos destaques publicitários do PiraNegócios.',
     4990,
     true,
     0,
     75,
     30,
     'RECURRING',
-    '[{"kind":"COMPANY_PLAN","plan":"ELITE"},{"kind":"AD_HIGHLIGHT_ELIGIBILITY","channels":["META","GOOGLE"]}]'::jsonb
+    '[{"kind":"COMPANY_PLAN","plan":"ELITE"},{"kind":"JOB_HIGHLIGHT_ELIGIBILITY"},{"kind":"AD_HIGHLIGHT_ELIGIBILITY","channels":["META","GOOGLE"]}]'::jsonb
   )
 ON CONFLICT (code) DO UPDATE SET
   name = EXCLUDED.name,
@@ -70,6 +70,20 @@ CREATE TABLE IF NOT EXISTS company_ad_highlight_eligibility (
   source varchar(32) NOT NULL DEFAULT 'COMPANY_ELITE',
   "updatedAt" timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS company_plan_trials (
+  "companyId" uuid PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+  "startedBy" varchar NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status varchar(16) NOT NULL DEFAULT 'ACTIVE',
+  "startedAt" timestamptz NOT NULL DEFAULT now(),
+  "endsAt" timestamptz NOT NULL,
+  "createdAt" timestamptz NOT NULL DEFAULT now(),
+  "updatedAt" timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT company_plan_trials_status_check CHECK (status IN ('ACTIVE','EXPIRED')),
+  CONSTRAINT company_plan_trials_positive_period_check CHECK ("endsAt" > "startedAt")
+);
+CREATE INDEX IF NOT EXISTS company_plan_trials_status_idx
+  ON company_plan_trials (status, "endsAt");
 
 CREATE OR REPLACE FUNCTION settle_company_plan_payment()
 RETURNS trigger AS $$
