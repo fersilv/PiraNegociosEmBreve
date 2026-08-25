@@ -2,6 +2,21 @@ import { BadRequestException } from '@nestjs/common';
 import { WPP_OPERATION_CAPABILITIES } from './whatsapp-operations.catalog';
 import { WhatsAppService } from './whatsapp.service';
 
+type EventSubscription = {
+  client: any;
+  disposable?: { dispose?: () => void } | null;
+};
+
+type BufferedWppEvent = {
+  at: string;
+  event: string;
+  args: unknown[];
+};
+
+const EVENT_BUFFER_LIMIT = 200;
+const eventBuffers = new Map<string, BufferedWppEvent[]>();
+const eventSubscriptions = new Map<string, EventSubscription>();
+
 export async function executeWppOperation(
   whatsapp: WhatsAppService,
   instanceId: string,
@@ -68,7 +83,7 @@ export async function executeWppOperation(
       );
       return {
         operation: 'searchChannels',
-        scope: 'channels:read',
+        scope: 'channels:search',
         result: normalizeWppResult(value),
       };
     } catch (error) {
@@ -79,6 +94,27 @@ export async function executeWppOperation(
 
   const capability = WPP_OPERATION_CAPABILITIES.find((item) => item.scope === scope);
   if (!capability) throw new BadRequestException('Operação WPPConnect não autorizada pelo catálogo.');
+
+  // Métodos on* do WPPConnect recebem callbacks. Não faz sentido permitir que
+  // um cliente MCP injete uma função JavaScript. Em vez disso, a primeira
+  // chamada ativa o listener no backend e todas as chamadas consultam um ring
+  // buffer dos eventos capturados. Continua sendo a função real da biblioteca,
+  // mas com uma representação segura e útil para MCP.
+  if (capability.event) {
+    const limit = Math.min(EVENT_BUFFER_LIMIT, Math.max(1, Number(args[0] || 50)));
+    await ensureEventSubscription(client, instanceId, capability.method);
+    const key = eventKey(instanceId, capability.method);
+    const rows = eventBuffers.get(key) || [];
+    return {
+      operation: capability.method,
+      scope: capability.scope,
+      mode: 'event-monitor',
+      subscribed: true,
+      retainedEvents: rows.length,
+      result: rows.slice(-limit),
+      note: 'O listener permanece ativo neste processo do backend enquanto a sessão atual estiver conectada.',
+    };
+  }
 
   const method = (client as any)[capability.method];
   if (typeof method !== 'function') {
@@ -97,6 +133,53 @@ export async function executeWppOperation(
     const message = error instanceof Error ? error.message : String(error);
     throw new BadRequestException(`${capability.method} falhou: ${message.slice(0, 2000)}`);
   }
+}
+
+async function ensureEventSubscription(client: any, instanceId: string, event: string) {
+  const key = eventKey(instanceId, event);
+  const current = eventSubscriptions.get(key);
+  if (current?.client === client) return;
+
+  try {
+    current?.disposable?.dispose?.();
+  } catch {
+    // Listener anterior pertencia a uma sessão que já foi substituída.
+  }
+  eventSubscriptions.delete(key);
+
+  const method = client?.[event];
+  if (typeof method !== 'function') {
+    throw new BadRequestException(`A versão atual do WPPConnect não disponibiliza o listener ${event}.`);
+  }
+
+  try {
+    const disposable = await Promise.resolve(
+      method.call(client, (...callbackArgs: unknown[]) => {
+        const buffer = eventBuffers.get(key) || [];
+        buffer.push({
+          at: new Date().toISOString(),
+          event,
+          args: callbackArgs.map((value) => normalizeWppResult(value)),
+        });
+        if (buffer.length > EVENT_BUFFER_LIMIT) {
+          buffer.splice(0, buffer.length - EVENT_BUFFER_LIMIT);
+        }
+        eventBuffers.set(key, buffer);
+      }),
+    );
+
+    eventSubscriptions.set(key, {
+      client,
+      disposable: disposable && typeof disposable === 'object' ? disposable : null,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new BadRequestException(`Não foi possível ativar ${event}: ${message.slice(0, 2000)}`);
+  }
+}
+
+function eventKey(instanceId: string, event: string) {
+  return `${instanceId}:${event}`;
 }
 
 function requireText(value: unknown, field: string) {
