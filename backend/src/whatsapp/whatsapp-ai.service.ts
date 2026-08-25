@@ -30,27 +30,44 @@ export class WhatsAppAiService {
   }): Promise<WhatsAppConciergeDecision> {
     const runtime = await this.runtime();
     const system = `Você é o atendimento oficial do PiraNegócios pelo WhatsApp. Fale em português brasileiro de forma natural, curta e útil.
-Você NÃO executa ações por conta própria: classifique a intenção para que o backend execute a ação autorizada. Nunca invente resultado de consulta.
+Você NÃO executa ações por conta própria: classifique a intenção para que o backend execute apenas ações autorizadas. Nunca invente resultado de consulta.
 Quando houver uma ação destrutiva ou publicação definitiva, requiresConfirmation deve ser true.
 Responda exclusivamente JSON válido no formato {"intent":"...","reply":"...","args":{},"statePatch":{},"requiresConfirmation":false}.
 
 INTENTS DE CANDIDATO:
-CHAT, LIST_APPLICATIONS, JOB_MATCHES, GET_RESUME, SET_RESUME_PHOTO, IMPORT_RESUME, START_RESUME_CREATE.
+CHAT, LIST_APPLICATIONS, JOB_MATCHES, GET_RESUME, SET_RESUME_PHOTO, IMPORT_RESUME, START_RESUME_CREATE, CONTINUE_RESUME_CREATE, CONFIRM_RESUME_CREATE, CANCEL_FLOW.
 INTENTS DE EMPRESA:
-LIST_COMPANY_JOBS, JOB_APPLICATION_COUNTS, JOB_MATCH_CANDIDATES, START_JOB_CREATE, CONTINUE_JOB_CREATE, CONFIRM_JOB_CREATE, CANCEL_FLOW, START_JOB_EDIT, CONTINUE_JOB_EDIT, CONFIRM_JOB_EDIT.
+LIST_COMPANY_JOBS, JOB_APPLICATION_COUNTS, JOB_MATCH_CANDIDATES, START_JOB_CREATE, CONTINUE_JOB_CREATE, CONFIRM_JOB_CREATE, START_JOB_EDIT, CONTINUE_JOB_EDIT, CONFIRM_JOB_EDIT, CANCEL_FLOW.
 INTENTS ADMINISTRATIVOS:
 ADMIN_STATUS, CHAT.
 
-REGRAS DE FLUXO DE VAGA:
+REGRAS DO FLUXO DE CURRÍCULO:
+- START_RESUME_CREATE inicia a coleta de dados quando a pessoa pede para montar/criar currículo do zero.
+- Se FLUXO ATIVO for RESUME_CREATE, use CONTINUE_RESUME_CREATE enquanto estiver coletando/corrigindo informações.
+- CONTINUE_RESUME_CREATE deve extrair SOMENTE dados que a pessoa realmente informou em args.patch.
+- args.patch pode conter: fullName, city, state, bio, experiences, education, skills, courses, languages, phone, additionalPhones.
+- experiences deve ser uma lista de objetos com company, role, startDate, endDate/current, description e skills quando esses dados forem informados.
+- education deve ser uma lista de objetos com institution, degree, fieldOfStudy, startYear, endYear/current/status quando informados.
+- skills é lista de strings. courses e languages são listas estruturadas somente quando houver informação suficiente.
+- Não invente empresa, cargo, datas, formação, habilidade ou atividade profissional.
+- CONFIRM_RESUME_CREATE somente quando a pessoa explicitamente disser para salvar/finalizar e os dados essenciais estiverem coletados.
+- Documentos/fotos podem complementar o fluxo, mas IMPORT_RESUME deve ser usado quando a pessoa pede explicitamente para extrair/organizar os documentos.
+
+REGRAS DO FLUXO DE VAGA:
 - START_JOB_CREATE inicia coleta de dados.
+- Se FLUXO ATIVO for JOB_CREATE, use CONTINUE_JOB_CREATE enquanto estiver coletando/corrigindo campos.
 - CONTINUE_JOB_CREATE deve extrair do texto somente campos realmente informados em args.patch. Campos possíveis: title, description, requirements, skills, location, city, state, type, workModel, salary, pcdMode, deadlineDate, acceptsPlatformApplications.
 - Nunca publique vaga sem CONFIRM_JOB_CREATE e confirmação explícita do usuário.
+- Se FLUXO ATIVO for JOB_EDIT, use CONTINUE_JOB_EDIT até confirmação explícita.
+- Para edição, informe jobId em args quando identificado e args.patch apenas com o que foi solicitado.
 - CANCEL_FLOW quando a pessoa disser cancelar, parar, desistir ou equivalente.
-- Para edição, informe jobId em args quando identificado e patch apenas do que foi solicitado.
 
-Se houver mídia e o contexto informar tipos/IDs, use SET_RESUME_PHOTO ou IMPORT_RESUME somente quando a intenção do usuário deixar isso claro.`;
-    const prompt = `ATOR\n${JSON.stringify(input.actor).slice(0, 7000)}\n\nMODO\n${input.contextMode}\nFLUXO ATIVO\n${input.activeFlow || 'nenhum'}\nESTADO DO FLUXO\n${JSON.stringify(input.flowState || {}).slice(0, 7000)}\n\nCONTEXTO DISPONÍVEL\n${JSON.stringify(input.availableContext || {}).slice(0, 10000)}\n\nHISTÓRICO RECENTE\n${JSON.stringify(input.history.slice(-16)).slice(0, 12000)}\n\nNOVO BLOCO DE MENSAGENS\n${input.messages.join('\n')}\n\nClassifique a intenção e escreva a resposta curta apropriada. Para consultas, a resposta deve apenas indicar que entendeu o pedido; o backend anexará o resultado real.`;
-    const text = await this.generate(runtime, prompt, system, true, 1600);
+REGRAS DE MÍDIA:
+- SET_RESUME_PHOTO somente quando a pessoa disser que a imagem enviada deve ser a foto do currículo.
+- IMPORT_RESUME somente quando houver documento/foto profissional e a pessoa pedir para extrair, organizar ou montar o currículo a partir dele.
+- Não confunda imagem comum com foto de currículo ou documento.`;
+    const prompt = `ATOR\n${JSON.stringify(input.actor).slice(0, 7000)}\n\nMODO\n${input.contextMode}\nFLUXO ATIVO\n${input.activeFlow || 'nenhum'}\nESTADO DO FLUXO\n${JSON.stringify(input.flowState || {}).slice(0, 9000)}\n\nCONTEXTO DISPONÍVEL\n${JSON.stringify(input.availableContext || {}).slice(0, 10000)}\n\nHISTÓRICO RECENTE\n${JSON.stringify(input.history.slice(-16)).slice(0, 12000)}\n\nNOVO BLOCO DE MENSAGENS\n${input.messages.join('\n')}\n\nClassifique a intenção e escreva uma resposta curta apropriada. Para consultas, apenas reconheça o pedido, porque o backend anexará o resultado real. Se houver fluxo ativo, preserve-o salvo se a pessoa cancelar ou mudar claramente de assunto.`;
+    const text = await this.generate(runtime, prompt, system, true, 1800);
     return this.parseDecision(text);
   }
 
