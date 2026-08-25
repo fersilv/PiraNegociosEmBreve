@@ -29,8 +29,9 @@ export class WhatsAppAiService {
     availableContext?: Record<string, unknown>;
   }): Promise<WhatsAppConciergeDecision> {
     const runtime = await this.runtime();
-    const system = `Você é o atendimento oficial do PiraNegócios pelo WhatsApp. Fale em português brasileiro de forma natural, curta e útil.
-Você NÃO executa ações por conta própria: classifique a intenção para que o backend execute apenas ações autorizadas. Nunca invente resultado de consulta.
+    const system = `Você é o atendimento oficial do PiraNegócios pelo WhatsApp. Fale em português brasileiro de forma natural, objetiva, útil e humana.
+Você NÃO executa ações por conta própria: classifique a intenção para que o backend execute apenas ações autorizadas. Nunca invente resultado de consulta, cadastro, envio, pagamento, publicação ou alteração.
+Use intensamente os dados reais enviados em ATOR, CONTEXTO DISPONÍVEL, HISTÓRICO e ESTADO DO FLUXO. Se uma informação estiver disponível ali, não peça novamente ao usuário.
 Quando houver uma ação destrutiva ou publicação definitiva, requiresConfirmation deve ser true.
 Responda exclusivamente JSON válido no formato {"intent":"...","reply":"...","args":{},"statePatch":{},"requiresConfirmation":false}.
 
@@ -40,6 +41,13 @@ INTENTS DE EMPRESA:
 LIST_COMPANY_JOBS, JOB_APPLICATION_COUNTS, JOB_MATCH_CANDIDATES, START_JOB_CREATE, CONTINUE_JOB_CREATE, CONFIRM_JOB_CREATE, START_JOB_EDIT, CONTINUE_JOB_EDIT, CONFIRM_JOB_EDIT, CANCEL_FLOW.
 INTENTS ADMINISTRATIVOS:
 ADMIN_STATUS, CHAT.
+
+REGRAS DE CONTEXTO:
+- CONTEXTO DISPONÍVEL contém somente dados que o backend decidiu disponibilizar para esta conversa. Você pode usá-los para personalizar e responder perguntas.
+- No modo ADMIN, responda perguntas de leitura diretamente quando a resposta estiver no CONTEXTO DISPONÍVEL, inclusive totais, usuários, empresas, vagas, candidaturas e dados operacionais recentes. Não diga que consultou algo que não esteja no contexto.
+- No modo ADMIN, ADMIN_STATUS é apropriado para perguntas sobre a instância/sessão do WhatsApp e saúde operacional. Use CHAT para perguntas administrativas que possam ser respondidas exclusivamente com o snapshot fornecido.
+- Em CANDIDATE e COMPANY, use o contexto para evitar perguntas repetidas, mas mantenha intents específicas quando o pedido exigir uma consulta/ação do backend.
+- Nunca revele tokens, chaves, credenciais, cookies, segredos, conteúdo de arquivos privados ou campos que não tenham sido fornecidos no contexto.
 
 REGRAS DO FLUXO DE CURRÍCULO:
 - START_RESUME_CREATE inicia a coleta de dados quando a pessoa pede para montar/criar currículo do zero.
@@ -66,8 +74,8 @@ REGRAS DE MÍDIA:
 - SET_RESUME_PHOTO somente quando a pessoa disser que a imagem enviada deve ser a foto do currículo.
 - IMPORT_RESUME somente quando houver documento/foto profissional e a pessoa pedir para extrair, organizar ou montar o currículo a partir dele.
 - Não confunda imagem comum com foto de currículo ou documento.`;
-    const prompt = `ATOR\n${JSON.stringify(input.actor).slice(0, 7000)}\n\nMODO\n${input.contextMode}\nFLUXO ATIVO\n${input.activeFlow || 'nenhum'}\nESTADO DO FLUXO\n${JSON.stringify(input.flowState || {}).slice(0, 9000)}\n\nCONTEXTO DISPONÍVEL\n${JSON.stringify(input.availableContext || {}).slice(0, 10000)}\n\nHISTÓRICO RECENTE\n${JSON.stringify(input.history.slice(-16)).slice(0, 12000)}\n\nNOVO BLOCO DE MENSAGENS\n${input.messages.join('\n')}\n\nClassifique a intenção e escreva uma resposta curta apropriada. Para consultas, apenas reconheça o pedido, porque o backend anexará o resultado real. Se houver fluxo ativo, preserve-o salvo se a pessoa cancelar ou mudar claramente de assunto.`;
-    const text = await this.generate(runtime, prompt, system, true, 1800);
+    const prompt = `ATOR\n${JSON.stringify(input.actor).slice(0, 14000)}\n\nMODO\n${input.contextMode}\nFLUXO ATIVO\n${input.activeFlow || 'nenhum'}\nESTADO DO FLUXO\n${JSON.stringify(input.flowState || {}).slice(0, 16000)}\n\nCONTEXTO DISPONÍVEL\n${JSON.stringify(input.availableContext || {}).slice(0, 40000)}\n\nHISTÓRICO RECENTE\n${JSON.stringify(input.history.slice(-24)).slice(0, 22000)}\n\nNOVO BLOCO DE MENSAGENS\n${input.messages.join('\n').slice(0, 14000)}\n\nClassifique a intenção e escreva uma resposta apropriada. Para consultas com intent específico, reconheça o pedido sem inventar o resultado que o backend ainda executará. No modo ADMIN, você pode responder diretamente quando a informação pedida já estiver presente no CONTEXTO DISPONÍVEL. Se houver fluxo ativo, preserve-o salvo se a pessoa cancelar ou mudar claramente de assunto.`;
+    const text = await this.generate(runtime, prompt, system, true, 2200);
     return this.parseDecision(text);
   }
 
@@ -78,9 +86,9 @@ REGRAS DE MÍDIA:
     contextMode: string;
   }) {
     const runtime = await this.runtime();
-    const system = 'Você redige respostas curtas de atendimento do PiraNegócios no WhatsApp. Use somente o resultado fornecido. Não invente dados. Não use markdown pesado. Se houver links, preserve-os exatamente.';
-    const prompt = `Nome: ${input.firstName || 'pessoa'}\nModo: ${input.contextMode}\nPedido: ${input.request}\nResultado real do sistema: ${JSON.stringify(input.result).slice(0, 16000)}\n\nResponda de forma direta e natural.`;
-    return (await this.generate(runtime, prompt, system, false, 1000)).trim();
+    const system = 'Você redige respostas de atendimento do PiraNegócios no WhatsApp. Use somente o resultado fornecido. Não invente dados. Seja direto, mas inclua os detalhes úteis disponíveis quando a pessoa pedir informação. Não use markdown pesado. Se houver links, preserve-os exatamente.';
+    const prompt = `Nome: ${input.firstName || 'pessoa'}\nModo: ${input.contextMode}\nPedido: ${input.request}\nResultado real do sistema: ${JSON.stringify(input.result).slice(0, 30000)}\n\nResponda de forma direta, natural e informativa.`;
+    return (await this.generate(runtime, prompt, system, false, 1400)).trim();
   }
 
   async explainOperationalError(input: { title: string; error: string; context: Record<string, unknown> }) {
