@@ -1,10 +1,9 @@
 import { All, Controller, Param, Req, Res, UseGuards } from '@nestjs/common';
-import { WhatsAppApiKey } from './entities/whatsapp-api-key.entity';
-import { WhatsAppApiKeyGuard } from './whatsapp-key.guard';
+import { WhatsAppOAuthGuard } from './whatsapp-oauth.guard';
 import { WhatsAppService } from './whatsapp.service';
 
 @Controller('whatsapp/mcp/:instanceId')
-@UseGuards(WhatsAppApiKeyGuard)
+@UseGuards(WhatsAppOAuthGuard)
 export class WhatsAppMcpController {
   constructor(private readonly whatsapp: WhatsAppService) {}
 
@@ -15,8 +14,7 @@ export class WhatsAppMcpController {
       import('@modelcontextprotocol/node'),
       import('zod/v4'),
     ]);
-    const key = req.whatsappApiKey as WhatsAppApiKey;
-    const scopes = new Set(key.scopes);
+    const scopes = new Set<string>(req.whatsappOAuth?.scopes || []);
 
     const handler = createMcpHandler(() => {
       const server = new McpServer({
