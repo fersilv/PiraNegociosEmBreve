@@ -7,11 +7,15 @@ import { Application } from '../applications/entities/application.entity';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { AuthModule } from '../auth/auth.module';
 import { Company } from '../companies/entities/company.entity';
+import { JobsOAuthClient } from '../external-api/entities/jobs-oauth.entity';
+import { ExternalApiModule } from '../external-api/external-api.module';
 import { JobMatchModule } from '../job-match/job-match.module';
 import { Job } from '../jobs/entities/job.entity';
 import { JobsModule } from '../jobs/jobs.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { User } from '../users/entities/user.entity';
+import { OAuthBrokerController } from './oauth-broker.controller';
+import { OAuthBrokerService } from './oauth-broker.service';
 import { WhatsAppApiKey } from './entities/whatsapp-api-key.entity';
 import { WhatsAppConversation, WhatsAppPhoneOtp } from './entities/whatsapp-concierge.entity';
 import { WhatsAppSavedContact } from './entities/whatsapp-contact.entity';
@@ -50,6 +54,7 @@ import { WhatsAppService } from './whatsapp.service';
       WhatsAppOAuthClient,
       WhatsAppOAuthCode,
       WhatsAppOAuthToken,
+      JobsOAuthClient,
       WhatsAppConversation,
       WhatsAppPhoneOtp,
     ]),
@@ -59,11 +64,13 @@ import { WhatsAppService } from './whatsapp.service';
     PaymentsModule,
     JobsModule,
     JobMatchModule,
+    ExternalApiModule,
   ],
   controllers: [
     WhatsAppAdminController,
     WhatsAppApiController,
     WhatsAppMcpController,
+    OAuthBrokerController,
     WhatsAppOAuthController,
     WhatsAppPhoneVerificationController,
   ],
@@ -74,11 +81,17 @@ import { WhatsAppService } from './whatsapp.service';
     WhatsAppConciergeService,
     WhatsAppPhoneVerificationService,
     WhatsAppOAuthService,
+    OAuthBrokerService,
     WhatsAppOAuthGuard,
     WhatsAppApiKeyGuard,
     FirebaseAuthGuard,
     AdminGuard,
   ],
-  exports: [WhatsAppService, WhatsAppOAuthService, WhatsAppPhoneVerificationService],
+  exports: [
+    WhatsAppService,
+    WhatsAppOAuthService,
+    OAuthBrokerService,
+    WhatsAppPhoneVerificationService,
+  ],
 })
 export class WhatsAppModule {}
