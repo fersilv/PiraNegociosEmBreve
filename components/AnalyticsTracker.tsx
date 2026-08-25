@@ -1,6 +1,10 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { trackAnalytics } from '../lib/analytics';
+import {
+  syncGoogleAnalyticsConsent,
+  trackGooglePageView,
+} from '../lib/googleAnalytics';
 import { PRIVACY_CONSENT_EVENT } from '../lib/privacyConsent';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
@@ -16,7 +20,9 @@ export function AnalyticsTracker() {
     if (loading || isAdmin) return;
 
     const startedAt = Date.now();
+    syncGoogleAnalyticsConsent();
     trackAnalytics('PAGE_VIEW');
+    trackGooglePageView();
 
     const jobMatch = location.pathname.match(/^\/vagas\/([^/]+)$/);
     if (jobMatch?.[1]) {
@@ -27,7 +33,11 @@ export function AnalyticsTracker() {
         });
     }
 
-    const onConsentChanged = () => trackAnalytics('PAGE_VIEW');
+    const onConsentChanged = () => {
+      syncGoogleAnalyticsConsent();
+      trackAnalytics('PAGE_VIEW');
+      trackGooglePageView();
+    };
     window.addEventListener(PRIVACY_CONSENT_EVENT, onConsentChanged);
 
     return () => {

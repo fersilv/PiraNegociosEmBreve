@@ -72,56 +72,144 @@ export async function publishChannelMedia(
         asVoice: boolean;
       }) => {
         const wpp = (globalThis as any).WPP;
-        const newsletter = wpp?.whatsapp?.NewsletterStore?.get?.(newsletterId);
-        if (!newsletter) throw new Error(`Newsletter ${newsletterId} não foi encontrada na NewsletterStore da sessão.`);
-        if (!wpp?.chat?.sendFileMessage || typeof wpp?.chat?.find !== 'function') {
-          throw new Error('O pipeline de mídia do WA-JS não está disponível nesta sessão.');
-        }
+        const wa = wpp?.whatsapp;
+        const newsletter = wa?.NewsletterStore?.get?.(newsletterId);
+        let stage = 'bootstrap';
 
-        // WA-JS 4.6 prepara mídia corretamente, mas assertFindChat resolve apenas
-        // ChatStore. Durante esta chamada desviamos somente este newsletterId para
-        // a NewsletterStore e delegamos todos os demais IDs ao find original.
-        const originalFind = wpp.chat.find;
-        const bridgedFind = async (...args: any[]) => {
-          const requested = args[0]?.toString?.() || String(args[0] || '');
-          if (requested === newsletterId) return newsletter;
-          return originalFind.apply(wpp.chat, args);
-        };
+        const errorDetails = (error: any) => ({
+          name: String(error?.name || 'Error'),
+          message: String(error?.message || error || 'Erro sem mensagem'),
+          code: error?.code == null ? null : String(error.code),
+          stack: typeof error?.stack === 'string' ? error.stack.slice(0, 1800) : null,
+        });
 
-        let restoreFind: (() => void) | null = null;
-        const descriptor = Object.getOwnPropertyDescriptor(wpp.chat, 'find');
         try {
-          if (!descriptor || descriptor.writable) {
-            wpp.chat.find = bridgedFind;
-            restoreFind = () => { wpp.chat.find = originalFind; };
-          } else if (descriptor.configurable) {
-            Object.defineProperty(wpp.chat, 'find', { ...descriptor, value: bridgedFind });
-            restoreFind = () => Object.defineProperty(wpp.chat, 'find', descriptor);
-          } else {
-            throw new Error('WPP.chat.find não pode ser temporariamente adaptado nesta versão do WA-JS.');
+          if (!newsletter) {
+            throw new Error(`Newsletter ${newsletterId} não foi encontrada na NewsletterStore da sessão.`);
+          }
+          if (!wpp?.chat?.prepareRawMessage || !wa?.OpaqueData?.createFromData || !wa?.MediaPrep?.prepRawMedia) {
+            throw new Error('O pipeline MediaPrep/OpaqueData do WA-JS não está disponível nesta sessão.');
           }
 
-          const sendOptions: Record<string, unknown> = {
-            type,
-            filename,
-            mimetype,
-            waitForAck: true,
-          };
-          if (caption !== undefined) sendOptions.caption = caption;
-          if (type === 'audio') sendOptions.isPtt = asVoice;
+          stage = 'decode-media';
+          const match = media.match(/^data:([^;,]+)?;base64,([\s\S]+)$/i);
+          if (!match) throw new Error('A mídia normalizada não chegou ao navegador como data URL Base64.');
+          const mediaType = String(match[1] || mimetype || 'application/octet-stream');
+          const binary = atob(match[2].replace(/\s+/g, ''));
+          const bytes = new Uint8Array(binary.length);
+          for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+          const file = new File([bytes], filename, { type: mediaType });
 
-          const result = await wpp.chat.sendFileMessage(newsletterId, media, sendOptions);
+          stage = 'opaque-data';
+          const opaqueData = await wa.OpaqueData.createFromData(file, mediaType);
+          const rawMediaOptions: Record<string, unknown> = {};
+          if (type === 'audio') rawMediaOptions.isPtt = asVoice;
+          if (type === 'document') rawMediaOptions.asDocument = true;
+
+          stage = 'media-prep';
+          const mediaPrep = wa.MediaPrep.prepRawMedia(opaqueData, rawMediaOptions);
+          const rawMessage = await wpp.chat.prepareRawMessage(
+            newsletter,
+            {
+              caption: caption || filename,
+              filename,
+              isCaptionByUser: caption !== undefined,
+            },
+            {
+              type,
+              filename,
+              mimetype: mediaType,
+              ...(caption !== undefined ? { caption } : {}),
+              ...(type === 'audio' ? { isPtt: asVoice } : {}),
+              waitForAck: true,
+            },
+          );
+
+          stage = 'wait-for-prep';
+          const preparedMedia = await mediaPrep.waitForPrep();
+          const preparedType = String((preparedMedia as any)?.type || rawMessage?.type || type);
+
+          const collection = newsletter.msgs;
+          const rawId = rawMessage?.id?.toString?.() || String(rawMessage?.id || '');
+          let observedMessage: any = null;
+          let detachListener: (() => void) | null = null;
+          const observed = new Promise<any>((resolve) => {
+            if (!collection?.on || !rawId) {
+              resolve(null);
+              return;
+            }
+            const handler = (msg: any) => {
+              const id = msg?.id?.toString?.() || String(msg?.id || '');
+              if (id !== rawId) return;
+              observedMessage = msg;
+              collection.off?.('add', handler);
+              resolve(msg);
+            };
+            collection.on('add', handler);
+            detachListener = () => collection.off?.('add', handler);
+            setTimeout(() => {
+              collection.off?.('add', handler);
+              resolve(observedMessage);
+            }, 12_000);
+          });
+
+          stage = 'send-to-newsletter';
+          const processedOptions: Record<string, unknown> = {
+            caption,
+            productMsgOptions: rawMessage,
+            addEvenWhilePreparing: false,
+            type: rawMessage?.type || preparedType,
+          };
+          const sendResult = mediaPrep.sendToChat.length === 1
+            ? await mediaPrep.sendToChat({ chat: newsletter, options: processedOptions })
+            : await mediaPrep.sendToChat(newsletter, processedOptions);
+
+          stage = 'observe-message';
+          const msg = await observed;
+          detachListener?.();
+          const finalMessage = msg || collection?.get?.(rawMessage?.id) || null;
+          const finalId = finalMessage?.id?.toString?.() || rawId || null;
+          const ack = finalMessage?.ack ?? null;
+          const serverId = finalMessage?.serverId ?? null;
+
           return {
             success: true,
+            stage: 'done',
             newsletterId,
             type,
+            preparedType,
             caption: caption ?? null,
             filename,
-            mimetype,
-            result,
+            mimetype: mediaType,
+            id: finalId,
+            ack,
+            serverId,
+            sendResult: sendResult ?? null,
+            diagnostics: {
+              newsletterIsNewsletter: Boolean(newsletter?.isNewsletter),
+              hasNewsletterMessages: Boolean(collection),
+              mediaPrepSendArity: Number(mediaPrep?.sendToChat?.length || 0),
+              observedMessage: Boolean(finalMessage),
+            },
           };
-        } finally {
-          restoreFind?.();
+        } catch (error) {
+          return {
+            success: false,
+            stage,
+            newsletterId,
+            type,
+            filename,
+            mimetype,
+            error: errorDetails(error),
+            diagnostics: {
+              newsletterFound: Boolean(newsletter),
+              newsletterIsNewsletter: Boolean(newsletter?.isNewsletter),
+              hasOpaqueData: Boolean(wa?.OpaqueData?.createFromData),
+              hasMediaPrep: Boolean(wa?.MediaPrep?.prepRawMedia),
+              hasPrepareRawMessage: Boolean(wpp?.chat?.prepareRawMessage),
+              hasNewsletterJob: Boolean(wa?.functions?.sendNewsletterMessageJob),
+            },
+          };
         }
       },
       {
@@ -138,12 +226,27 @@ export async function publishChannelMedia(
     return {
       operation: `publishChannel${type.charAt(0).toUpperCase()}${type.slice(1)}`,
       scope: `channels:publish:${type === 'document' ? 'file' : type}`,
-      mode: 'newsletter-media-bridge',
+      mode: 'newsletter-native-media-prep',
+      ok: Boolean(value?.success),
       result: value,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new BadRequestException(`Publicação de ${type} no canal falhou: ${message.slice(0, 2000)}`);
+    return {
+      operation: `publishChannel${type.charAt(0).toUpperCase()}${type.slice(1)}`,
+      scope: `channels:publish:${type === 'document' ? 'file' : type}`,
+      mode: 'newsletter-native-media-prep',
+      ok: false,
+      result: {
+        success: false,
+        stage: 'server-wrapper',
+        newsletterId,
+        type,
+        filename,
+        mimetype,
+        error: { message: message.slice(0, 2000) },
+      },
+    };
   }
 }
 
