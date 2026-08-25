@@ -15,6 +15,11 @@ export class ClassifiedsPublicController {
     return this.classifieds.search(query);
   }
 
+  @Get('company/:companyId/listings')
+  companyListings(@Param('companyId') companyId: string) {
+    return this.classifieds.companyPageListings(companyId);
+  }
+
   @Get('listings/:slug')
   detail(@Param('slug') slug: string) {
     return this.classifieds.getPublicBySlug(slug);
