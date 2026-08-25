@@ -34,13 +34,12 @@ function replaceMethod(source, marker, replacement, label) {
 function transformProviderSource(source, compatImport) {
   let next = source
     .replaceAll('ANTHROPIC', 'GROQ')
-    .replaceAll('Anthropic', 'Groq')
-    .replaceAll('anthropic', 'groq');
+    .replaceAll('Anthropic', 'Groq');
 
-  const badImport = "import Groq from '@groq-ai/sdk';";
-  if (next.includes(badImport)) {
+  const legacyImport = "import Groq from '@anthropic-ai/sdk';";
+  if (next.includes(legacyImport)) {
     next = next.replace(
-      badImport,
+      legacyImport,
       `import { GroqCompat as Groq } from '${compatImport}';`,
     );
   }
@@ -86,7 +85,6 @@ for (const [file, compatImport] of providerFiles) {
   let source = read(file)
     .replaceAll('ANTHROPIC', 'GROQ')
     .replaceAll('Anthropic', 'Groq')
-    .replaceAll('anthropic', 'groq')
     .replaceAll('sk-ant-...', 'gsk_...');
   write(file, source);
 }
@@ -96,18 +94,16 @@ for (const [file, compatImport] of providerFiles) {
   const file = 'backend/src/admin/settings.controller.ts';
   let source = read(file)
     .replaceAll('ANTHROPIC', 'GROQ')
-    .replaceAll('Anthropic', 'Groq')
-    .replaceAll('anthropic', 'groq');
+    .replaceAll('Anthropic', 'Groq');
   write(file, source);
 }
 
-// Exemplos de ambiente passam a documentar a chave gratuita do Groq.
+// Exemplos de ambiente passam a documentar a chave do Groq.
 for (const file of ['backend/.env.example', '.env.example']) {
   if (!fs.existsSync(file)) continue;
   let source = read(file)
     .replaceAll('ANTHROPIC_API_KEY', 'GROQ_API_KEY')
-    .replaceAll('Anthropic', 'Groq')
-    .replaceAll('anthropic', 'groq');
+    .replaceAll('Anthropic', 'Groq');
   if (!source.includes('GROQ_API_KEY=')) {
     const lines = source.split(/\r?\n/);
     const openAiIndex = lines.findIndex((line) => line.startsWith('OPENAI_API_KEY='));
