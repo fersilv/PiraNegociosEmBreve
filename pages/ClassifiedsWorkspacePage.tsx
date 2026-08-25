@@ -5,7 +5,11 @@ import { ClassifiedsWorkspaceProvider } from '../contexts/ClassifiedsWorkspaceCo
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
 import ClassifiedPublishPage from './ClassifiedPublishPage';
-import ClassifiedsInboxPage from './ClassifiedsInboxPage';
+import ClassifiedsAnalyticsPage from './ClassifiedsAnalyticsPage';
+import ClassifiedsExplorePage from './ClassifiedsExplorePage';
+import ClassifiedsListingsPage from './ClassifiedsListingsPage';
+import ClassifiedsMessengerPage from './ClassifiedsMessengerPage';
+import ClassifiedsOffersPage from './ClassifiedsOffersPage';
 import ClassifiedsSettingsPage from './ClassifiedsSettingsPage';
 import UserClassifiedsPage from './UserClassifiedsPage';
 
@@ -55,14 +59,19 @@ function WorkspaceReadyContent() {
   }
 
   let page: React.ReactNode = <UserClassifiedsPage />;
-  if (location.pathname.startsWith('/classificados/publicar')) page = <ClassifiedPublishPage />;
-  else if (location.pathname.startsWith('/classificados/conversas')) page = <ClassifiedsInboxPage />;
+  if (location.pathname.startsWith('/classificados/explorar')) page = <ClassifiedsExplorePage />;
+  else if (location.pathname.startsWith('/classificados/publicar')) page = <ClassifiedPublishPage />;
+  else if (location.pathname.startsWith('/classificados/ofertas')) page = <ClassifiedsOffersPage />;
+  else if (location.pathname.startsWith('/classificados/anuncios')) page = <ClassifiedsListingsPage listingType="PRODUCT" />;
+  else if (location.pathname.startsWith('/classificados/servicos')) page = <ClassifiedsListingsPage listingType="SERVICE" />;
+  else if (location.pathname.startsWith('/classificados/analytics')) page = <ClassifiedsAnalyticsPage />;
+  else if (location.pathname.startsWith('/classificados/conversas')) page = <ClassifiedsMessengerPage />;
   else if (location.pathname.startsWith('/classificados/configuracoes')) page = <ClassifiedsSettingsPage />;
 
   return <ClassifiedsWorkspaceLayout>{page}</ClassifiedsWorkspaceLayout>;
 }
 
 function safeReturnTo(value: string | null) {
-  const candidate = String(value || '/classificados').trim();
-  return candidate.startsWith('/classificados/') || candidate === '/classificados' ? candidate : '/classificados';
+  const candidate = String(value || '/classificados/explorar').trim();
+  return candidate.startsWith('/classificados/') || candidate === '/classificados' ? candidate : '/classificados/explorar';
 }
