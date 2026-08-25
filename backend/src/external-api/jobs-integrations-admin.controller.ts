@@ -24,6 +24,7 @@ import {
 } from './jobs-mcp.scopes';
 
 type IntegrationKind = 'v1' | 'v2' | 'mcp';
+const LEGACY_OAUTH_ENVELOPE = ['jobs:read', 'jobs:write'];
 
 @Controller('admin/job-integrations')
 @UseGuards(FirebaseAuthGuard, AdminGuard)
@@ -38,7 +39,7 @@ export class JobsIntegrationsAdminController {
     return {
       capabilities: JOBS_CAPABILITIES,
       defaults: {
-        v1: ['jobs:read', 'jobs:write'],
+        v1: LEGACY_OAUTH_ENVELOPE,
         v2: DEFAULT_JOBS_MCP_SCOPES,
         mcp: DEFAULT_JOBS_MCP_SCOPES,
       },
@@ -73,12 +74,7 @@ export class JobsIntegrationsAdminController {
   async create(
     @Req() req: any,
     @Body()
-    data: {
-      kind?: string;
-      name?: string;
-      sourceLabel?: string;
-      scopes?: string[];
-    },
+    data: { kind?: string; name?: string; sourceLabel?: string; scopes?: string[] },
   ) {
     const kind = this.kind(data.kind || 'v2');
     const target = this.target(kind);
@@ -88,12 +84,15 @@ export class JobsIntegrationsAdminController {
       throw new BadRequestException('Nome e identificação da origem são obrigatórios.');
     }
 
-    const scopes = kind === 'v1'
-      ? ['jobs:read', 'jobs:write']
+    const selected = kind === 'v1'
+      ? [...LEGACY_OAUTH_ENVELOPE]
       : sanitizeJobsScopes(data.scopes, DEFAULT_JOBS_MCP_SCOPES).filter(
-          (scope) => !['jobs:read', 'jobs:write'].includes(scope),
+          (scope) => !LEGACY_OAUTH_ENVELOPE.includes(scope),
         );
-    if (!scopes.length) throw new BadRequestException('Selecione pelo menos uma permissão.');
+    if (!selected.length) throw new BadRequestException('Selecione pelo menos uma permissão.');
+    const scopes = kind === 'mcp'
+      ? Array.from(new Set([...LEGACY_OAUTH_ENVELOPE, ...selected]))
+      : selected;
 
     const apiKey = this.newKey(kind);
     const client = await this.clients.save(
@@ -122,12 +121,7 @@ export class JobsIntegrationsAdminController {
   async update(
     @Param('id') id: string,
     @Body()
-    data: {
-      name?: string;
-      sourceLabel?: string;
-      active?: boolean;
-      scopes?: string[];
-    },
+    data: { name?: string; sourceLabel?: string; active?: boolean; scopes?: string[] },
   ) {
     const client = await this.clients.findOne({ where: { id } });
     if (!client) throw new NotFoundException('Chave não encontrada.');
@@ -135,14 +129,16 @@ export class JobsIntegrationsAdminController {
     if (data.sourceLabel?.trim()) client.sourceLabel = data.sourceLabel.trim().slice(0, 160);
     if (typeof data.active === 'boolean') client.active = data.active;
     if (Array.isArray(data.scopes)) {
-      if (client.apiVersion === 'v1') {
-        client.scopes = ['jobs:read', 'jobs:write'];
+      if (client.apiVersion === 'v1' && client.audience === 'api') {
+        client.scopes = [...LEGACY_OAUTH_ENVELOPE];
       } else {
-        const scopes = sanitizeJobsScopes(data.scopes, []).filter(
-          (scope) => !['jobs:read', 'jobs:write'].includes(scope),
+        const selected = sanitizeJobsScopes(data.scopes, []).filter(
+          (scope) => !LEGACY_OAUTH_ENVELOPE.includes(scope),
         );
-        if (!scopes.length) throw new BadRequestException('Selecione pelo menos uma permissão.');
-        client.scopes = scopes;
+        if (!selected.length) throw new BadRequestException('Selecione pelo menos uma permissão.');
+        client.scopes = client.audience === 'mcp'
+          ? Array.from(new Set([...LEGACY_OAUTH_ENVELOPE, ...selected]))
+          : selected;
       }
     }
     return this.publicClient(await this.clients.save(client));
@@ -162,10 +158,7 @@ export class JobsIntegrationsAdminController {
     client.keyHash = this.hash(apiKey);
     client.active = true;
     await this.clients.save(client);
-    return {
-      apiKey,
-      warning: 'A chave anterior foi revogada. Copie esta chave agora.',
-    };
+    return { apiKey, warning: 'A chave anterior foi revogada. Copie esta chave agora.' };
   }
 
   private kind(value: string): IntegrationKind {
@@ -182,7 +175,10 @@ export class JobsIntegrationsAdminController {
   }
 
   private newKey(kind: IntegrationKind) {
-    const prefix = kind === 'mcp' ? 'pn_mcp_' : kind === 'v2' ? 'pn_v2_' : 'pn_v1_';
+    // O OAuth atual autentica a chave administrativa pn_v1_. A audiência MCP
+    // continua separada no banco e nunca passa no guard REST; o prefixo é só
+    // compatibilidade da etapa de autorização e pode mudar numa revisão futura.
+    const prefix = kind === 'v2' ? 'pn_v2_' : 'pn_v1_';
     return `${prefix}${randomBytes(32).toString('hex')}`;
   }
 
