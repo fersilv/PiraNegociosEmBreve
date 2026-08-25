@@ -223,22 +223,30 @@ export async function publishChannelMedia(
       },
     );
 
-    if (!value?.success) {
-      const detail = value?.error?.message || 'erro sem mensagem do WA-JS';
-      throw new Error(
-        `[stage=${String(value?.stage || 'unknown')}] ${detail}; diagnostics=${JSON.stringify(value?.diagnostics || {})}`,
-      );
-    }
-
     return {
       operation: `publishChannel${type.charAt(0).toUpperCase()}${type.slice(1)}`,
       scope: `channels:publish:${type === 'document' ? 'file' : type}`,
       mode: 'newsletter-native-media-prep',
+      ok: Boolean(value?.success),
       result: value,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new BadRequestException(`Publicação de ${type} no canal falhou: ${message.slice(0, 2000)}`);
+    return {
+      operation: `publishChannel${type.charAt(0).toUpperCase()}${type.slice(1)}`,
+      scope: `channels:publish:${type === 'document' ? 'file' : type}`,
+      mode: 'newsletter-native-media-prep',
+      ok: false,
+      result: {
+        success: false,
+        stage: 'server-wrapper',
+        newsletterId,
+        type,
+        filename,
+        mimetype,
+        error: { message: message.slice(0, 2000) },
+      },
+    };
   }
 }
 
