@@ -11,22 +11,8 @@ export type JobsCapability = {
 };
 
 export const JOBS_CAPABILITIES: JobsCapability[] = [
-  {
-    scope: 'jobs:read',
-    category: 'Compatibilidade',
-    label: 'Leitura ampla de vagas',
-    description: 'Escopo legado que mantém compatibilidade com integrações antigas de leitura.',
-    risk: 'read',
-    legacy: true,
-  },
-  {
-    scope: 'jobs:write',
-    category: 'Compatibilidade',
-    label: 'Escrita ampla de vagas',
-    description: 'Escopo legado que mantém compatibilidade com integrações antigas de escrita.',
-    risk: 'write',
-    legacy: true,
-  },
+  { scope: 'jobs:read', category: 'Compatibilidade', label: 'Leitura ampla de vagas', description: 'Escopo legado que mantém compatibilidade com integrações antigas de leitura.', risk: 'read', legacy: true },
+  { scope: 'jobs:write', category: 'Compatibilidade', label: 'Escrita ampla de vagas', description: 'Escopo legado que mantém compatibilidade com integrações antigas de escrita.', risk: 'write', legacy: true },
   { scope: 'jobs:list', category: 'Vagas · Consulta', label: 'Listar vagas', description: 'Lista vagas com filtros, paginação e estado operacional.', risk: 'read', defaultMcp: true },
   { scope: 'jobs:detail', category: 'Vagas · Consulta', label: 'Consultar vaga por ID', description: 'Lê os dados completos de uma vaga específica.', risk: 'read', defaultMcp: true },
   { scope: 'jobs:stats:read', category: 'Vagas · Consulta', label: 'Consultar estatísticas', description: 'Consulta totais de vagas por atividade, moderação, revisão e alertas.', risk: 'read', defaultMcp: true },
@@ -54,20 +40,28 @@ export function sanitizeJobsScopes(value: unknown, fallback: string[] = DEFAULT_
   return Array.from(new Set(value.map(String).filter((scope) => allowed.has(scope))));
 }
 
+const LEGACY_READ_EQUIVALENTS = new Set(['jobs:list', 'jobs:match:read']);
+const LEGACY_WRITE_EQUIVALENTS = new Set([
+  'jobs:duplicates:check',
+  'jobs:create',
+  'jobs:update',
+  'jobs:verify',
+]);
+
 export function hasJobsScope(scopes: Iterable<string>, scope: string) {
   const values = scopes instanceof Set ? scopes : new Set(scopes);
   if (values.has(scope)) return true;
   if (scope === 'jobs:read' || scope === 'jobs:write') return values.has(scope);
 
-  // Se a credencial já possui qualquer scope granular, os umbrellas antigos
-  // deixam de conceder permissões implícitas. Isso preserva OAuths antigos sem
-  // transformar jobs:write em autorização acidental para delete/deactivate.
   const hasGranularScope = Array.from(values).some(
     (value) => value.startsWith('jobs:') && !['jobs:read', 'jobs:write'].includes(value),
   );
   if (hasGranularScope) return false;
 
-  const capability = JOBS_CAPABILITIES.find((item) => item.scope === scope);
-  if (!capability) return false;
-  return capability.risk === 'read' ? values.has('jobs:read') : values.has('jobs:write');
+  // OAuths/clients antigos continuam vendo exatamente o conjunto de funções
+  // que existia antes. O umbrella legado nunca concede ativação, desativação,
+  // revisão, flags ou exclusão introduzidas na V2.
+  if (values.has('jobs:read') && LEGACY_READ_EQUIVALENTS.has(scope)) return true;
+  if (values.has('jobs:write') && LEGACY_WRITE_EQUIVALENTS.has(scope)) return true;
+  return false;
 }
