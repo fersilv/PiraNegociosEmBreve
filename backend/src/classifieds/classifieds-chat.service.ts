@@ -1,8 +1,9 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Repository } from 'typeorm';
+import { Brackets, IsNull, Repository } from 'typeorm';
 import { Company } from '../companies/entities/company.entity';
 import { User, UserType } from '../users/entities/user.entity';
+import { ActiveClassifiedIdentity, ClassifiedsIdentityService } from './classifieds-identity.service';
 import { ClassifiedConversation } from './entities/classified-conversation.entity';
 import { ClassifiedConversationMessage } from './entities/classified-conversation-message.entity';
 import { ClassifiedListing } from './entities/classified-listing.entity';
@@ -23,12 +24,14 @@ export class ClassifiedsChatService {
     private readonly users: Repository<User>,
     @InjectRepository(Company)
     private readonly companies: Repository<Company>,
+    private readonly identities: ClassifiedsIdentityService,
   ) {}
 
   async start(listingId: string, uid: string) {
-    const [listing, user] = await Promise.all([
+    const [listing, user, identity] = await Promise.all([
       this.listings.findOne({ where: { id: listingId, status: 'PUBLISHED' } }),
       this.users.findOne({ where: { id: uid } }),
+      this.identities.active(uid),
     ]);
     if (!listing) throw new NotFoundException('Anúncio não encontrado.');
     if (!user) throw new ForbiddenException('Usuário não encontrado.');
@@ -36,11 +39,16 @@ export class ClassifiedsChatService {
       throw new BadRequestException('Você não pode iniciar uma negociação com o seu próprio anúncio.');
     }
 
-    let conversation = await this.conversations.findOne({ where: { listingId, buyerUserId: uid } });
+    const buyerCompanyId = identity.type === 'COMPANY' ? identity.company!.id : null;
+    let conversation = buyerCompanyId
+      ? await this.conversations.findOne({ where: { listingId, buyerCompanyId } })
+      : await this.conversations.findOne({ where: { listingId, buyerUserId: uid, buyerCompanyId: IsNull() } });
+
     if (!conversation) {
       conversation = this.conversations.create({
         listingId,
         buyerUserId: uid,
+        buyerCompanyId,
         sellerUserId: listing.sellerUserId,
         sellerCompanyId: listing.companyId,
         buyerLastReadAt: new Date(),
@@ -49,30 +57,32 @@ export class ClassifiedsChatService {
       });
       conversation = await this.conversations.save(conversation);
     }
-    return this.hydrate(conversation, uid);
+    return this.hydrate(conversation, uid, identity);
   }
 
   async list(uid: string) {
-    const user = await this.users.findOne({ where: { id: uid } });
+    const [user, identity] = await Promise.all([
+      this.users.findOne({ where: { id: uid } }),
+      this.identities.active(uid),
+    ]);
     if (!user) throw new ForbiddenException('Usuário não encontrado.');
-    const ownedCompany = await this.companies.findOne({ where: { ownerId: uid } });
-    const managedCompanyId = user.companyId && user.isCompanyAdmin
-      ? user.companyId
-      : ownedCompany?.id || null;
 
     const query = this.conversations.createQueryBuilder('conversation')
       .where(new Brackets((where) => {
-        where.where('conversation.buyerUserId = :uid', { uid })
-          .orWhere('conversation.sellerUserId = :uid', { uid });
-        if (managedCompanyId) {
-          where.orWhere('conversation.sellerCompanyId = :companyId', { companyId: managedCompanyId });
+        if (identity.type === 'COMPANY') {
+          const companyId = identity.company!.id;
+          where.where('conversation.buyerCompanyId = :companyId', { companyId })
+            .orWhere('conversation.sellerCompanyId = :companyId', { companyId });
+        } else {
+          where.where('(conversation.buyerUserId = :uid AND conversation.buyerCompanyId IS NULL)', { uid })
+            .orWhere('(conversation.sellerUserId = :uid AND conversation.sellerCompanyId IS NULL)', { uid });
         }
       }))
       .orderBy('conversation.lastMessageAt', 'DESC', 'NULLS LAST')
       .addOrderBy('conversation.updatedAt', 'DESC');
 
     const rows = await query.getMany();
-    return Promise.all(rows.map((conversation) => this.hydrate(conversation, uid)));
+    return Promise.all(rows.map((conversation) => this.hydrate(conversation, uid, identity)));
   }
 
   async listMessages(conversationId: string, uid: string) {
@@ -87,15 +97,15 @@ export class ClassifiedsChatService {
     if (!body) throw new BadRequestException('Escreva uma mensagem.');
     if (body.length > 4000) throw new BadRequestException('A mensagem excede o limite de 4.000 caracteres.');
 
-    const senderName = role === 'SELLER' && conversation.sellerCompanyId
-      ? (await this.companies.findOne({ where: { id: conversation.sellerCompanyId } }))?.name
-        || user.socialName || user.displayName || user.fullName || 'Empresa'
-      : user.socialName || user.displayName || user.fullName || 'Usuário';
+    const companyId = role === 'BUYER' ? conversation.buyerCompanyId : conversation.sellerCompanyId;
+    const company = companyId ? await this.companies.findOne({ where: { id: companyId } }) : null;
+    const senderName = company?.name || user.socialName || user.displayName || user.fullName || 'Usuário';
 
     const message = await this.messages.save(this.messages.create({
       conversationId,
       senderId: uid,
       senderName,
+      senderRole: role,
       body,
       messageType: 'TEXT',
       metadata: null,
@@ -130,13 +140,18 @@ export class ClassifiedsChatService {
       this.users.findOne({ where: { id: uid } }),
     ]);
     if (!conversation || !user) throw new NotFoundException('Conversa não encontrada.');
-    if (conversation.buyerUserId === uid) return { conversation, user, role: 'BUYER' as const };
-    if (conversation.sellerUserId === uid) return { conversation, user, role: 'SELLER' as const };
-    if (conversation.sellerCompanyId && await this.isCompanyOperator(conversation.sellerCompanyId, user)) {
-      return { conversation, user, role: 'SELLER' as const };
-    }
     if (user.type === UserType.ADMIN) return { conversation, user, role: 'SELLER' as const };
-    throw new ForbiddenException('Você não participa desta conversa.');
+
+    const identity = await this.identities.active(uid);
+    if (identity.type === 'COMPANY') {
+      const companyId = identity.company!.id;
+      if (conversation.buyerCompanyId === companyId) return { conversation, user, role: 'BUYER' as const };
+      if (conversation.sellerCompanyId === companyId) return { conversation, user, role: 'SELLER' as const };
+    } else {
+      if (!conversation.buyerCompanyId && conversation.buyerUserId === uid) return { conversation, user, role: 'BUYER' as const };
+      if (!conversation.sellerCompanyId && conversation.sellerUserId === uid) return { conversation, user, role: 'SELLER' as const };
+    }
+    throw new ForbiddenException('Esta conversa pertence a outra identidade dos Classificados.');
   }
 
   private async isSeller(listing: ClassifiedListing, user: User) {
@@ -153,35 +168,45 @@ export class ClassifiedsChatService {
 
   private async recipientIds(conversation: ClassifiedConversation, senderId: string) {
     const ids = new Set<string>();
-    if (conversation.buyerUserId !== senderId) ids.add(conversation.buyerUserId);
-    if (conversation.sellerUserId !== senderId) ids.add(conversation.sellerUserId);
-    if (conversation.sellerCompanyId) {
-      const admins = await this.users.find({ where: { companyId: conversation.sellerCompanyId, isCompanyAdmin: true } });
-      admins.forEach((user) => { if (user.id !== senderId) ids.add(user.id); });
-      const company = await this.companies.findOne({ where: { id: conversation.sellerCompanyId } });
-      if (company?.ownerId && company.ownerId !== senderId) ids.add(company.ownerId);
-    }
+    await this.addIdentityRecipients(ids, conversation.buyerUserId, conversation.buyerCompanyId);
+    await this.addIdentityRecipients(ids, conversation.sellerUserId, conversation.sellerCompanyId);
+    ids.delete(senderId);
     return [...ids];
   }
 
-  private async hydrate(conversation: ClassifiedConversation, uid: string) {
+  private async addIdentityRecipients(ids: Set<string>, fallbackUserId: string, companyId: string | null) {
+    if (!companyId) {
+      ids.add(fallbackUserId);
+      return;
+    }
+    ids.add(fallbackUserId);
+    const [admins, company] = await Promise.all([
+      this.users.find({ where: { companyId, isCompanyAdmin: true } }),
+      this.companies.findOne({ where: { id: companyId } }),
+    ]);
+    admins.forEach((user) => ids.add(user.id));
+    if (company?.ownerId) ids.add(company.ownerId);
+  }
+
+  private async hydrate(conversation: ClassifiedConversation, uid: string, identity?: ActiveClassifiedIdentity) {
+    const activeIdentity = identity || await this.identities.active(uid);
+    const role: 'BUYER' | 'SELLER' = activeIdentity.type === 'COMPANY'
+      ? conversation.buyerCompanyId === activeIdentity.company!.id ? 'BUYER' : 'SELLER'
+      : !conversation.buyerCompanyId && conversation.buyerUserId === uid ? 'BUYER' : 'SELLER';
+
     const listing = await this.listings.findOne({ where: { id: conversation.listingId } });
     const image = listing ? await this.images.findOne({ where: { listingId: listing.id }, order: { sortOrder: 'ASC' } }) : null;
-    const [buyer, seller, company, lastMessage] = await Promise.all([
+    const [buyer, buyerCompany, seller, sellerCompany, lastMessage] = await Promise.all([
       this.users.findOne({ where: { id: conversation.buyerUserId } }),
+      conversation.buyerCompanyId ? this.companies.findOne({ where: { id: conversation.buyerCompanyId } }) : Promise.resolve(null),
       this.users.findOne({ where: { id: conversation.sellerUserId } }),
       conversation.sellerCompanyId ? this.companies.findOne({ where: { id: conversation.sellerCompanyId } }) : Promise.resolve(null),
       this.messages.findOne({ where: { conversationId: conversation.id }, order: { createdAt: 'DESC' } }),
     ]);
-    const role = conversation.buyerUserId === uid ? 'BUYER' : 'SELLER';
     const readAt = role === 'BUYER' ? conversation.buyerLastReadAt : conversation.sellerLastReadAt;
     const unreadQuery = this.messages.createQueryBuilder('message')
-      .where('message.conversationId = :conversationId', { conversationId: conversation.id });
-    if (role === 'BUYER') {
-      unreadQuery.andWhere('message.senderId != :buyerUserId', { buyerUserId: conversation.buyerUserId });
-    } else {
-      unreadQuery.andWhere('message.senderId = :buyerUserId', { buyerUserId: conversation.buyerUserId });
-    }
+      .where('message.conversationId = :conversationId', { conversationId: conversation.id })
+      .andWhere('message.senderRole != :role', { role });
     if (readAt) unreadQuery.andWhere('message.createdAt > :readAt', { readAt });
     const unreadCount = await unreadQuery.getCount();
 
@@ -199,20 +224,23 @@ export class ClassifiedsChatService {
         image: image?.url || null,
       } : null,
       buyer: {
-        id: buyer?.id || conversation.buyerUserId,
-        name: buyer?.socialName || buyer?.displayName || buyer?.fullName || 'Comprador',
-        photoURL: buyer?.photoURL || null,
+        id: conversation.buyerCompanyId || buyer?.id || conversation.buyerUserId,
+        type: conversation.buyerCompanyId ? 'COMPANY' : 'PERSON',
+        name: buyerCompany?.name || buyer?.socialName || buyer?.displayName || buyer?.fullName || 'Comprador',
+        photoURL: buyerCompany?.logoURL || buyer?.photoURL || null,
+        verified: Boolean(buyerCompany?.isVerified || buyer?.isVerified),
       },
       seller: {
         id: conversation.sellerCompanyId || conversation.sellerUserId,
         type: conversation.sellerCompanyId ? 'COMPANY' : 'PERSON',
-        name: company?.name || seller?.socialName || seller?.displayName || seller?.fullName || 'Anunciante',
-        photoURL: company?.logoURL || seller?.photoURL || null,
-        verified: Boolean(company?.isVerified || seller?.isVerified),
+        name: sellerCompany?.name || seller?.socialName || seller?.displayName || seller?.fullName || 'Anunciante',
+        photoURL: sellerCompany?.logoURL || seller?.photoURL || null,
+        verified: Boolean(sellerCompany?.isVerified || seller?.isVerified),
       },
       lastMessage: lastMessage ? {
         id: lastMessage.id,
         senderId: lastMessage.senderId,
+        senderRole: lastMessage.senderRole,
         body: lastMessage.body,
         createdAt: lastMessage.createdAt,
       } : null,
