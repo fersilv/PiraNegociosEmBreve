@@ -61,11 +61,53 @@ export async function huggingFaceGenerateText(input: {
     );
   }
 
+  const responseText = String(response?.output_text || '').trim();
+  if (responseText) {
+    return {
+      text: responseText,
+      usage: {
+        input: response?.usage?.input_tokens,
+        output: response?.usage?.output_tokens,
+      },
+    };
+  }
+
+  // A Responses API do router ainda é beta e alguns modelos/provedores podem
+  // concluir a requisição sem popular output_text. O endpoint de Chat
+  // Completions é a superfície OpenAI-compatible mais ampla do HF Router.
+  const userContent: any = images.length
+    ? [
+        { type: 'text', text: input.prompt },
+        ...images.map((imageUrl) => ({
+          type: 'image_url',
+          image_url: { url: imageUrl },
+        })),
+      ]
+    : input.prompt;
+
+  const completion: any = await client.chat.completions.create({
+    model: input.model,
+    messages: [
+      ...(systemInstruction
+        ? [{ role: 'system' as const, content: systemInstruction }]
+        : []),
+      { role: 'user' as const, content: userContent },
+    ],
+    max_tokens: input.maxOutputTokens || 3500,
+    ...(input.json ? { response_format: { type: 'json_object' } } : {}),
+  } as any);
+
+  const completionText = String(
+    completion?.choices?.[0]?.message?.content || '',
+  ).trim();
+
   return {
-    text: String(response?.output_text || ''),
+    text: completionText,
     usage: {
-      input: response?.usage?.input_tokens,
-      output: response?.usage?.output_tokens,
+      input:
+        completion?.usage?.prompt_tokens ?? response?.usage?.input_tokens,
+      output:
+        completion?.usage?.completion_tokens ?? response?.usage?.output_tokens,
     },
   };
 }
