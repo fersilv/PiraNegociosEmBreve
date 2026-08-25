@@ -143,18 +143,27 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
     const listing = listingRows[0];
     if (!listing) throw new BadRequestException('O leilão precisa usar um produto publicado desta empresa.');
 
-    const active = await this.dataSource.query(
-      `SELECT id FROM classified_auctions WHERE "listingId" = $1 AND status = 'OPEN' LIMIT 1`,
-      [listingId],
-    );
+    const [active, pendingOffers] = await Promise.all([
+      this.dataSource.query(
+        `SELECT id FROM classified_auctions WHERE "listingId" = $1 AND status = 'OPEN' LIMIT 1`,
+        [listingId],
+      ),
+      this.dataSource.query(
+        `SELECT id FROM classified_offers WHERE "listingId" = $1 AND status = 'PENDING' LIMIT 1`,
+        [listingId],
+      ).catch(() => []),
+    ]);
     if (active[0]) throw new BadRequestException('Este produto já está em um leilão ativo.');
+    if (pendingOffers[0]) {
+      throw new BadRequestException('Resolva ou aguarde expirar as ofertas pendentes deste produto antes de abrir um leilão.');
+    }
 
     const startPrice = this.money(body.startPrice);
     const minIncrement = this.money(body.minIncrement ?? 1);
     if (!startPrice) throw new BadRequestException('Informe um lance inicial válido.');
     if (!minIncrement) throw new BadRequestException('Informe um incremento mínimo válido.');
 
-    const endsAt = new Date(String(body.endsAt || ''));
+    const endsAt = this.parseEndsAt(body.endsAt);
     const duration = endsAt.getTime() - Date.now();
     if (!Number.isFinite(endsAt.getTime()) || duration < MIN_DURATION_MS) {
       throw new BadRequestException('O leilão deve durar pelo menos 30 minutos.');
@@ -173,6 +182,7 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
   }
 
   async bid(uid: string, auctionId: string, rawAmount: unknown) {
+    await this.closeOneIfDue(auctionId).catch(() => undefined);
     const identity = await this.identities.active(uid);
     const bidderCompanyId = identity.type === 'COMPANY' ? identity.company!.id : null;
     const amount = this.money(rawAmount);
@@ -189,7 +199,6 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
       if (!auction) throw new NotFoundException('Leilão não encontrado.');
       if (auction.status !== 'OPEN') throw new BadRequestException('Este leilão já foi encerrado.');
       if (new Date(auction.endsAt).getTime() <= Date.now()) {
-        await this.finalizeLocked(manager, auction);
         throw new BadRequestException('O prazo deste leilão terminou.');
       }
       if (auction.sellerUserId === uid || (bidderCompanyId && auction.companyId === bidderCompanyId)) {
@@ -279,8 +288,12 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
     const due = await this.dataSource.query(
       `SELECT id FROM classified_auctions WHERE status = 'OPEN' AND "endsAt" <= now() ORDER BY "endsAt" ASC LIMIT 100`,
     ).catch(() => []);
-    for (const row of due) await this.closeOneIfDue(row.id).catch(() => undefined);
-    return { closed: due.length };
+    let closed = 0;
+    for (const row of due) {
+      const didClose = await this.closeOneIfDue(row.id).catch(() => false);
+      if (didClose) closed += 1;
+    }
+    return { closed };
   }
 
   private async closeOneIfDue(auctionId: string) {
@@ -291,7 +304,11 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
       if (!auction || auction.status !== 'OPEN' || new Date(auction.endsAt).getTime() > Date.now()) return;
       closed = await this.finalizeLocked(manager, auction);
     });
-    if (closed) await this.notifyClosed(closed).catch(() => undefined);
+    if (closed) {
+      await this.notifyClosed(closed).catch(() => undefined);
+      return true;
+    }
+    return false;
   }
 
   private async finalizeLocked(manager: EntityManager, auction: any) {
@@ -308,6 +325,13 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
        WHERE id = $1 AND status = 'OPEN' RETURNING *`,
       [auction.id, winner?.bidderUserId || null, winner?.bidderCompanyId || null, winner?.id || null, winner?.amount || null],
     );
+    if (rows[0] && winner) {
+      await manager.query(
+        `UPDATE classified_listings SET status = 'PAUSED', "updatedAt" = now()
+         WHERE id = $1 AND status = 'PUBLISHED'`,
+        [auction.listingId],
+      );
+    }
     return rows[0] ? { ...rows[0], title: auction.title || null } : null;
   }
 
@@ -317,13 +341,13 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
     if (auction.winnerUserId) {
       await this.notifyIdentity(auction.winnerUserId, auction.winnerCompanyId, {
         title: 'Você venceu o leilão 🏆',
-        message: `Seu lance de ${this.currency(auction.finalAmount)} venceu “${title}”. Combine pagamento e entrega com o anunciante.`,
+        message: `Seu lance de ${this.currency(auction.finalAmount)} venceu “${title}”. O item foi reservado; combine pagamento e entrega com o anunciante.`,
         type: 'classified_auction_won',
         link: `/classificados/leiloes/${auction.id}`,
       });
       await this.notifyIdentity(auction.sellerUserId, auction.companyId, {
         title: 'Leilão encerrado com vencedor',
-        message: `“${title}” terminou em ${this.currency(auction.finalAmount)}. Combine pagamento e entrega com o vencedor.`,
+        message: `“${title}” terminou em ${this.currency(auction.finalAmount)} e foi pausado como reservado. Combine pagamento e entrega com o vencedor.`,
         type: 'classified_auction_sold',
         link: `/classificados/leiloes/${auction.id}`,
       });
@@ -370,6 +394,16 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
       rows.forEach((row: any) => row.id && ids.add(row.id));
     }
     await Promise.all([...ids].map((id) => this.notifications.notifyUser(id, data).catch(() => undefined)));
+  }
+
+  private parseEndsAt(value: unknown) {
+    let raw = String(value || '').trim();
+    if (!raw) return new Date(NaN);
+    const hasZone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(raw);
+    if (!hasZone && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(raw)) {
+      raw = `${raw}${raw.length === 16 ? ':00' : ''}-03:00`;
+    }
+    return new Date(raw);
   }
 
   private money(value: unknown) {
