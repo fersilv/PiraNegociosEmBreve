@@ -15,6 +15,10 @@ export class ExternalApiClient {
   @Column({ length: 64 }) keyHash: string;
   @Column({ type: 'jsonb', default: () => '\'["jobs:read","jobs:write"]\'' })
   scopes: string[];
+  @Column({ type: 'varchar', length: 8, default: 'v1' })
+  apiVersion: 'v1' | 'v2';
+  @Column({ type: 'varchar', length: 12, default: 'api' })
+  audience: 'api' | 'mcp';
   @Column({ default: true }) active: boolean;
   @Column() createdById: string;
   @Column({ type: 'timestamptz', nullable: true }) lastUsedAt: Date | null;
