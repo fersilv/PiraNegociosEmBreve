@@ -210,6 +210,24 @@ export class SupportContextService {
       }
     }
 
+    if (contextIds.includes('candidate.payments')) {
+      try {
+        const rows = await this.dataSource.query(
+          `SELECT p.id, p."productCode", pp.name AS "productName", p.status,
+                  p.method, p.provider, p."amountCents", p."createdAt", p."paidAt", p."expiresAt"
+           FROM payments p
+           LEFT JOIN payment_products pp ON pp.code = p."productCode"
+           WHERE p."userId" = $1
+           ORDER BY p."createdAt" DESC
+           LIMIT 5`,
+          [user.id],
+        );
+        facts.recentPayments = rows;
+      } catch {
+        // Nunca substituir consulta falha por um status inventado.
+      }
+    }
+
     return facts;
   }
 
