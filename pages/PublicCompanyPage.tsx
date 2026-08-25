@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { Navbar } from "../components/Navbar";
 import { SeoHead } from "../components/SeoHead";
+import { CompanyClassifiedsShowcase } from "../components/company-page/CompanyClassifiedsShowcase";
 import {
   CompanyPageConfig,
   CompanySiteRenderer,
@@ -28,8 +29,6 @@ export default function PublicCompanyPage() {
       .get(`/public/companies/${encodeURIComponent(companySlug)}`)
       .then(async (response) => {
         if (!active) return;
-        // O endpoint público só resolve empresas com verificationStatus=VERIFIED.
-        // Mantemos essa garantia explícita no objeto visual para renderizar apenas o selo.
         const nextCompany = {
           ...(response.data.company as PublicCompanyLike),
           isVerified: true,
@@ -37,10 +36,7 @@ export default function PublicCompanyPage() {
         };
         setCompany(nextCompany);
         setJobs(response.data.jobs || []);
-        if (
-          response.data.resolvedFromAlias &&
-          response.data.company?.slug !== companySlug
-        ) {
+        if (response.data.resolvedFromAlias && response.data.company?.slug !== companySlug) {
           navigate(`/${response.data.company.slug}`, { replace: true });
         }
         try {
@@ -90,17 +86,18 @@ export default function PublicCompanyPage() {
     );
   }
 
-  const description = `${company.name}${company.cityState ? ` em ${company.cityState}` : ", Pirassununga e região"}. ${company.description?.slice(0, 120) || "Conheça a empresa e suas vagas abertas."}`;
+  const description = `${company.name}${company.cityState ? ` em ${company.cityState}` : ", Pirassununga e região"}. ${company.description?.slice(0, 120) || "Conheça a empresa, suas oportunidades, produtos e serviços."}`;
 
   return (
     <>
       <SeoHead
-        title={`${company.name} | Carreiras`}
+        title={`${company.name} | PiraNegócios`}
         description={description}
         canonical={canonical}
         structuredData={structuredData}
       />
       <CompanySiteRenderer company={company} jobs={jobs} page={page} />
+      <CompanyClassifiedsShowcase companyId={company.id} companyName={company.name} />
     </>
   );
 }
