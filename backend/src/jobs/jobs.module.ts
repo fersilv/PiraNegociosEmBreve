@@ -23,5 +23,6 @@ import { Application } from '../applications/entities/application.entity';
   ],
   controllers: [JobsController],
   providers: [JobsService, JobsGateway],
+  exports: [JobsService],
 })
 export class JobsModule {}
