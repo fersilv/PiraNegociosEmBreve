@@ -44,9 +44,13 @@ export function Navbar() {
           </Link>
           <Link
             to="/classificados"
-            className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-semibold text-[#5e4a40] transition hover:bg-[#f2e8df] hover:text-[#2d211c]"
+            className="group inline-flex items-center gap-2 rounded-2xl border border-[#c96847]/20 bg-[#fff0e8] px-4 py-2.5 text-sm font-black text-[#a84f34] shadow-[0_8px_24px_rgba(201,104,71,.12)] transition hover:-translate-y-0.5 hover:border-[#c96847]/35 hover:bg-[#ffe7dc] hover:shadow-[0_12px_30px_rgba(201,104,71,.18)]"
           >
-            <Tags className="h-3.5 w-3.5" /> Classificados
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#c96847] text-white shadow-sm transition group-hover:scale-105">
+              <Tags className="h-4 w-4" />
+            </span>
+            <span>Classificados</span>
+            <span className="rounded-full bg-[#c96847] px-2 py-0.5 text-[8px] font-black uppercase tracking-[.12em] text-white">Novo</span>
           </Link>
           <a
             href="/#como-funciona"
@@ -106,8 +110,9 @@ export function Navbar() {
             <Link onClick={() => setMobileOpen(false)} to="/vagas" className="rounded-xl px-3 py-3 text-sm font-bold text-[#4f3b31] hover:bg-[#f2e8df]">
               Encontrar vagas
             </Link>
-            <Link onClick={() => setMobileOpen(false)} to="/classificados" className="inline-flex items-center gap-2 rounded-xl px-3 py-3 text-sm font-bold text-[#4f3b31] hover:bg-[#f2e8df]">
-              <Tags className="h-4 w-4" /> Classificados
+            <Link onClick={() => setMobileOpen(false)} to="/classificados" className="mt-1 flex items-center justify-between gap-3 rounded-2xl border border-[#c96847]/20 bg-[#fff0e8] px-3 py-3 text-sm font-black text-[#a84f34] shadow-sm">
+              <span className="inline-flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#c96847] text-white"><Tags className="h-4 w-4" /></span> Classificados</span>
+              <span className="rounded-full bg-[#c96847] px-2 py-1 text-[8px] font-black uppercase tracking-[.12em] text-white">Novo</span>
             </Link>
             <a onClick={() => setMobileOpen(false)} href="/#como-funciona" className="rounded-xl px-3 py-3 text-sm font-bold text-[#4f3b31] hover:bg-[#f2e8df]">
               Como funciona
