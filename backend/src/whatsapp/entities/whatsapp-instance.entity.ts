@@ -18,8 +18,8 @@ export enum WhatsAppConnectionStatus {
 export class WhatsAppInstance {
   @PrimaryGeneratedColumn('uuid') id: string;
   @Column({ length: 100 }) name: string;
-  @Column({ length: 180, nullable: true }) purpose: string | null;
-  @Column({ length: 32, nullable: true }) phoneNumber: string | null;
+  @Column({ type: 'varchar', length: 180, nullable: true }) purpose: string | null;
+  @Column({ type: 'varchar', length: 32, nullable: true }) phoneNumber: string | null;
   @Column({ length: 40, unique: true }) sessionName: string;
   @Column({ length: 30, default: 'wppconnect' }) provider: string;
   @Column({
