@@ -5,7 +5,7 @@ import {
   Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
-} from '@nestjs/typeorm/node_modules/typeorm';
+} from 'typeorm';
 
 @Entity('jobs_oauth_clients')
 export class JobsOAuthClient {
