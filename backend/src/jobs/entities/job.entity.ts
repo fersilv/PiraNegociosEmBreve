@@ -6,6 +6,16 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
+export const JOB_REVIEW_STATUSES = [
+  'PENDING_REVIEW',
+  'REVIEWED_OK',
+  'RECHECK_REQUIRED',
+  'DEACTIVATION_REQUIRED',
+  'RESOLVED',
+] as const;
+
+export type JobReviewStatus = (typeof JOB_REVIEW_STATUSES)[number];
+
 @Entity('jobs')
 export class Job {
   @PrimaryGeneratedColumn('uuid')
@@ -103,6 +113,18 @@ export class Job {
 
   @Column({ type: 'varchar', length: 24, default: 'APPROVED' })
   moderationStatus: string;
+
+  @Column({ type: 'varchar', length: 32, default: 'PENDING_REVIEW' })
+  reviewStatus: JobReviewStatus;
+
+  @Column({ type: 'timestamp', nullable: true })
+  reviewedAt: Date | null;
+
+  @Column({ type: 'varchar', length: 160, nullable: true })
+  reviewedBy: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  reviewNote: string | null;
 
   @Column({ default: 0 })
   reportCount: number;
