@@ -73,10 +73,15 @@ function isFullyApplied() {
   });
 }
 
+function ensureGroq() {
+  require('./ensure-groq-provider.cjs');
+}
+
 repairAppliedCompatibility();
 
 if (isFullyApplied()) {
   console.log('Hugging Face provider integration already applied.');
+  ensureGroq();
   process.exit(0);
 }
 
@@ -93,6 +98,7 @@ try {
     throw new Error('Hugging Face patch finished without covering every required AI surface.');
   }
   console.log('Hugging Face provider integration verified.');
+  ensureGroq();
 } catch (error) {
   for (const [file, contents] of backup) {
     fs.writeFileSync(file, contents);
