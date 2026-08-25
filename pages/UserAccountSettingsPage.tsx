@@ -1,8 +1,15 @@
 import React, { useEffect, useState } from "react";
-import { CheckCircle2, Loader2, Mail, Phone, Settings2, ShieldCheck, User } from "lucide-react";
+import { CheckCircle2, Loader2, Mail, MessageCircle, Phone, Settings2, ShieldCheck, User } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { FileUpload } from "../components/FileUpload";
 import { api } from "../lib/api";
+
+type WhatsAppVerification = {
+  verified: boolean;
+  phoneE164?: string | null;
+  whatsappId?: string | null;
+  verifiedAt?: string | null;
+};
 
 export function UserAccountSettingsPage() {
   const { user, profile, refreshProfile } = useAuth();
@@ -13,6 +20,11 @@ export function UserAccountSettingsPage() {
   const [photoURL, setPhotoURL] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [waStatus, setWaStatus] = useState<WhatsAppVerification | null>(null);
+  const [waBusy, setWaBusy] = useState<"request" | "verify" | null>(null);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [waNotice, setWaNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!profile) return;
@@ -22,6 +34,61 @@ export function UserAccountSettingsPage() {
     setPhone(profile.phone || "");
     setPhotoURL(profile.photoURL || "");
   }, [profile]);
+
+  const loadWhatsAppStatus = async () => {
+    try {
+      const response = await api.get("/whatsapp/phone/status");
+      setWaStatus(response.data || { verified: false });
+    } catch {
+      setWaStatus({ verified: false });
+    }
+  };
+
+  useEffect(() => { void loadWhatsAppStatus(); }, []);
+
+  const normalizedPhone = (value: string) => String(value || "").replace(/\D+/g, "");
+  const verifiedMatchesCurrent = Boolean(
+    waStatus?.verified &&
+    waStatus.phoneE164 &&
+    (() => {
+      const current = normalizedPhone(phone);
+      const verified = normalizedPhone(waStatus.phoneE164 || "");
+      return current === verified || `55${current}` === verified || current === verified.replace(/^55/, "");
+    })(),
+  );
+
+  const requestOtp = async () => {
+    if (!phone.trim()) return;
+    setWaBusy("request");
+    setWaNotice(null);
+    try {
+      const response = await api.post("/whatsapp/phone/request-otp", { phone: phone.trim() });
+      setOtpSent(true);
+      setOtpCode("");
+      setWaNotice(response.data?.message || "Código enviado pelo WhatsApp.");
+    } catch (error: any) {
+      setWaNotice(error?.response?.data?.message || "Não foi possível enviar o código agora.");
+    } finally {
+      setWaBusy(null);
+    }
+  };
+
+  const verifyOtp = async () => {
+    if (!phone.trim() || otpCode.replace(/\D/g, "").length !== 6) return;
+    setWaBusy("verify");
+    setWaNotice(null);
+    try {
+      await api.post("/whatsapp/phone/verify-otp", { phone: phone.trim(), code: otpCode });
+      await Promise.all([loadWhatsAppStatus(), refreshProfile()]);
+      setOtpSent(false);
+      setOtpCode("");
+      setWaNotice("WhatsApp confirmado e vinculado à sua conta.");
+    } catch (error: any) {
+      setWaNotice(error?.response?.data?.message || "Não foi possível confirmar o código.");
+    } finally {
+      setWaBusy(null);
+    }
+  };
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -86,7 +153,14 @@ export function UserAccountSettingsPage() {
               <input value={treatment} onChange={(event) => setTreatment(event.target.value)} className="account-field" placeholder="Ex.: Sra., Sr., Dra." />
             </Field>
             <Field label="Telefone / WhatsApp *" icon={<Phone className="h-4 w-4" />}>
-              <input required value={phone} onChange={(event) => setPhone(event.target.value)} className="account-field" placeholder="(19) 99999-9999" />
+              <input required value={phone} onChange={(event) => { setPhone(event.target.value); setOtpSent(false); setOtpCode(""); setWaNotice(null); }} className="account-field" placeholder="(19) 99999-9999" />
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {verifiedMatchesCurrent ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> WhatsApp verificado</span>
+                ) : (
+                  <button type="button" disabled={!phone.trim() || waBusy !== null} onClick={() => void requestOtp()} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[10px] font-black text-emerald-800 disabled:opacity-50">{waBusy === "request" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageCircle className="h-3.5 w-3.5" />} Enviar código pelo WhatsApp</button>
+                )}
+              </div>
             </Field>
             <Field label="E-mail da conta" icon={<Mail className="h-4 w-4" />} full>
               <input disabled value={profile?.email || user?.email || ""} className="account-field cursor-not-allowed bg-stone-50 text-stone-400" />
@@ -94,6 +168,12 @@ export function UserAccountSettingsPage() {
             </Field>
           </div>
         </div>
+
+        {(otpSent || waNotice) && !verifiedMatchesCurrent && (
+          <div className="mx-4 mb-5 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 sm:mx-6">
+            <div className="flex items-start gap-3"><MessageCircle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" /><div className="min-w-0 flex-1"><p className="text-sm font-black text-emerald-950">Confirmar WhatsApp</p>{waNotice && <p className="mt-1 text-xs leading-5 text-emerald-800">{waNotice}</p>}{otpSent && <div className="mt-3 flex flex-col gap-2 sm:flex-row"><input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otpCode} onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="Código de 6 dígitos" className="account-field max-w-[230px]" /><button type="button" disabled={otpCode.length !== 6 || waBusy !== null} onClick={() => void verifyOtp()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-800 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">{waBusy === "verify" && <Loader2 className="h-4 w-4 animate-spin" />} Confirmar código</button></div>}</div></div>
+          </div>
+        )}
 
         <div className="flex items-center justify-end gap-3 border-t border-[#eadfd6] bg-[#fbf7f2] px-4 py-4 sm:px-6">
           {saved && <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Salvo</span>}
