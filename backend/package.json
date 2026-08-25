@@ -6,12 +6,12 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "prebuild": "node ../.github/scripts/ensure-huggingface-provider.cjs && node ../.github/scripts/ensure-company-plans.cjs && node ../.github/scripts/ensure-company-subscription-trial.cjs",
+    "prebuild": "node ../.github/scripts/ensure-huggingface-provider.cjs && node ../.github/scripts/ensure-company-plans.cjs && node ../.github/scripts/ensure-company-subscription-trial-v2.cjs",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "prestart": "node ../.github/scripts/ensure-huggingface-provider.cjs && node ../.github/scripts/ensure-company-plans.cjs && node ../.github/scripts/ensure-company-subscription-trial.cjs",
+    "prestart": "node ../.github/scripts/ensure-huggingface-provider.cjs && node ../.github/scripts/ensure-company-plans.cjs && node ../.github/scripts/ensure-company-subscription-trial-v2.cjs",
     "start": "nest start",
-    "prestart:dev": "node ../.github/scripts/ensure-huggingface-provider.cjs && node ../.github/scripts/ensure-company-plans.cjs && node ../.github/scripts/ensure-company-subscription-trial.cjs",
+    "prestart:dev": "node ../.github/scripts/ensure-huggingface-provider.cjs && node ../.github/scripts/ensure-company-plans.cjs && node ../.github/scripts/ensure-company-subscription-trial-v2.cjs",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
@@ -96,7 +96,7 @@
     "rootDir": "src",
     "testRegex": ".*\\.(t|j)s$",
     "transform": {"^.+\\.(t|j)s$": "ts-jest"},
-    "collectCoverageFrom": ["**/*.(t|j)s$"],
+    "collectCoverageFrom": ["**/*.(t|j)s"],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
   }
