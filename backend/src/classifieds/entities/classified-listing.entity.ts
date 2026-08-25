@@ -15,8 +15,37 @@ export type ClassifiedListingStatus =
   | 'ARCHIVED'
   | 'PENDING_REVIEW';
 
-export type ClassifiedPriceType = 'FIXED' | 'NEGOTIABLE' | 'CONTACT';
+export type ClassifiedPriceType = 'FIXED' | 'NEGOTIABLE' | 'STARTING_AT' | 'CONTACT';
 export type ClassifiedCondition = 'NEW' | 'USED' | 'REFURBISHED' | 'NOT_APPLICABLE';
+export type ClassifiedListingType = 'PRODUCT' | 'SERVICE';
+export type ClassifiedPublicationChannel = 'CLASSIFIEDS' | 'COMPANY_PAGE';
+export type ClassifiedCatalogPricingStrategy = 'BASE' | 'SUM' | 'HIGHEST_SELECTION' | 'LOWEST_SELECTION' | 'AVERAGE_SELECTION';
+
+export type ClassifiedCatalogOption = {
+  id: string;
+  label: string;
+  priceDelta?: number;
+  price?: number;
+  active?: boolean;
+  sku?: string;
+  imageUrl?: string;
+};
+
+export type ClassifiedCatalogOptionGroup = {
+  id: string;
+  name: string;
+  kind: 'VARIANT' | 'MODIFIER';
+  selectionType: 'SINGLE' | 'MULTIPLE';
+  minSelections?: number;
+  maxSelections?: number;
+  pricingStrategy?: ClassifiedCatalogPricingStrategy;
+  options: ClassifiedCatalogOption[];
+};
+
+export type ClassifiedCatalogConfig = {
+  optionGroups?: ClassifiedCatalogOptionGroup[];
+  pricingStrategy?: ClassifiedCatalogPricingStrategy;
+};
 
 @Entity('classified_listings')
 export class ClassifiedListing {
@@ -38,6 +67,9 @@ export class ClassifiedListing {
   @Index()
   @Column({ type: 'varchar', length: 80 })
   categorySlug: string;
+
+  @Column({ type: 'varchar', length: 20, default: 'PRODUCT' })
+  listingType: ClassifiedListingType;
 
   @Column({ type: 'varchar', length: 160 })
   title: string;
@@ -90,6 +122,12 @@ export class ClassifiedListing {
 
   @Column({ type: 'jsonb', nullable: true })
   attributes: Record<string, string | number | boolean | null> | null;
+
+  @Column({ type: 'jsonb', default: () => "'[\"CLASSIFIEDS\"]'::jsonb" })
+  publicationChannels: ClassifiedPublicationChannel[];
+
+  @Column({ type: 'jsonb', nullable: true })
+  catalogConfig: ClassifiedCatalogConfig | null;
 
   @Column({ type: 'varchar', length: 40, nullable: true })
   contactPhone: string | null;
