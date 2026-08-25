@@ -49,6 +49,13 @@ export default function ClassifiedListingPage() {
     return () => { active = false; };
   }, [slug]);
 
+  useEffect(() => {
+    const state = location.state as { classifiedConversationError?: string } | null;
+    if (!state?.classifiedConversationError) return;
+    setConversationError(state.classifiedConversationError);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate]);
+
   const images = listing?.images || [];
   const whatsapp = useMemo(() => digits(listing?.contactWhatsapp || ''), [listing?.contactWhatsapp]);
   const phone = listing?.contactPhone || '';
@@ -83,7 +90,13 @@ export default function ClassifiedListingPage() {
       if (!response.data?.id) throw new Error('Conversa não identificada.');
       navigate(`/classificados/conversas/${response.data.id}`);
     } catch (requestError: any) {
-      setConversationError(requestError?.response?.data?.message || requestError?.message || 'Não foi possível abrir a conversa.');
+      const message = requestError?.response?.data?.message || requestError?.message || 'Não foi possível abrir a conversa.';
+      if (needsClassifiedsOnboarding(message)) {
+        const params = new URLSearchParams({ startConversation: listing.id, returnTo: location.pathname });
+        navigate(`/classificados/painel?${params.toString()}`);
+        return;
+      }
+      setConversationError(message);
     } finally {
       setStartingConversation(false);
     }
@@ -156,6 +169,9 @@ function SellerPanel({ listing, whatsapp, phone, starting, error, onConversation
   return <div className="sticky top-[96px] space-y-4"><div className="rounded-[26px] bg-white p-6 shadow-[0_18px_50px_rgba(45,33,28,.08)] ring-1 ring-[#4b3328]/10"><p className="text-3xl font-black tracking-[-.035em]">{classifiedPrice(listing)}</p><div className="mt-6 border-t border-[#4b3328]/10 pt-5"><p className="text-[10px] font-black uppercase tracking-[.15em] text-[#9b8275]">Anunciante</p><div className="mt-3 flex items-center gap-3">{seller?.photoURL ? <img src={seller.photoURL} alt="" className="h-12 w-12 rounded-2xl object-contain ring-1 ring-[#4b3328]/10" /> : <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#f2e8df] font-serif text-xl font-bold">{seller?.name?.charAt(0) || '?'}</div>}<div className="min-w-0"><div className="flex items-center gap-1.5"><p className="truncate font-bold">{seller?.name || 'Anunciante'}</p>{seller?.verified && <BadgeCheck className="h-4 w-4 shrink-0 text-emerald-600" aria-label="Anunciante verificado" />}</div><p className="mt-0.5 text-xs text-[#8b756a]">{seller?.type === 'COMPANY' ? 'Empresa' : 'Particular'}{seller?.city ? ` · ${seller.city}${seller.state ? ` - ${seller.state}` : ''}` : ''}</p>{seller?.type === 'COMPANY' && seller.companySlug && <Link to={`/${seller.companySlug}`} className="mt-1 inline-block text-[10px] font-black text-[#a84f34] hover:underline">Ver página da empresa</Link>}</div></div></div><div className="mt-6 grid gap-2"><button onClick={onConversation} disabled={starting} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#2d211c] text-sm font-black text-white disabled:opacity-60">{starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />} Conversar pelo PiraNegócios</button>{error && <p className="rounded-xl bg-red-50 px-3 py-2 text-center text-[10px] font-bold text-red-700">{error}</p>}{(whatsapp || phone) && <div className="mt-1 grid grid-cols-2 gap-2">{whatsapp ? <a href={`https://wa.me/${whatsapp}?text=${encodeURIComponent(`Olá! Vi seu anúncio “${listing.title}” no PiraNegócios.`)}`} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-emerald-50 text-[11px] font-black text-emerald-700"><Smartphone className="h-3.5 w-3.5" /> WhatsApp</a> : <span />}{phone ? <a href={`tel:${digits(phone)}`} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-stone-100 text-[11px] font-black text-stone-700"><Phone className="h-3.5 w-3.5" /> Ligar</a> : null}</div>}<p className="mt-1 text-center text-[10px] leading-4 text-[#9b8275]">O chat interno mantém a negociação ligada a este anúncio.</p></div></div><div className="rounded-[22px] bg-[#fffaf5] p-5 ring-1 ring-[#4b3328]/10"><p className="text-[10px] font-black uppercase tracking-[.16em] text-[#b06448]">Código do anúncio</p><p className="mt-2 font-mono text-xs text-[#806b60]">{listing.id.slice(0, 8).toUpperCase()}</p></div></div>;
 }
 
+function needsClassifiedsOnboarding(message: string) {
+  return /(escolha.*personal.*business|termos de uso|ades[aã]o|precisa estar verificada|identidade empresarial|ativar o piranegócios personal)/i.test(message);
+}
 function selectionLabel(group: ClassifiedCatalogOptionGroup) { const max = group.maxSelections || 1; if (group.selectionType === 'MULTIPLE') return max > 1 ? `Escolha até ${max}` : 'Múltipla escolha'; return 'Escolha uma opção'; }
 function pricingStrategyLabel(value: string) { const labels: Record<string, string> = { SUM: 'Soma das escolhas', HIGHEST_SELECTION: 'Vale a opção de maior valor', LOWEST_SELECTION: 'Vale a opção de menor valor', AVERAGE_SELECTION: 'Média das escolhas' }; return labels[value] || 'Preço base'; }
 function formatMoney(value: number) { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value); }
