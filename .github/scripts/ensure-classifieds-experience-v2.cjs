@@ -24,13 +24,13 @@ patch('components/classifieds/ClassifiedsWorkspaceLayout.tsx', (input) => {
   source = replace(
     source,
     "import { BadgeCheck, Building2, ChevronDown, Compass, Home, LogOut, Menu, MessageCircle, Plus, Settings2, Store, User, X } from 'lucide-react';",
-    "import { BadgeCheck, BadgeDollarSign, BarChart3, Briefcase, Building2, ChevronDown, Compass, Home, LogOut, Menu, MessageCircle, Plus, Settings2, Store, User, Wrench, X } from 'lucide-react';",
+    "import { BadgeCheck, BadgeDollarSign, BarChart3, Briefcase, Building2, ChevronDown, Compass, Gavel, Home, LogOut, Menu, MessageCircle, Plus, Settings2, Store, User, Wrench, X } from 'lucide-react';",
     'workspace icon imports',
   );
   source = replace(
     source,
     `  const nav = [\n    { to: '/classificados/painel', label: 'Painel', icon: <Home className=\"h-5 w-5\" /> },\n    { to: '/classificados', label: 'Explorar', icon: <Compass className=\"h-5 w-5\" />, publicLink: true },\n    { to: '/classificados/publicar', label: 'Novo anúncio', icon: <Plus className=\"h-5 w-5\" /> },\n    { to: '/classificados/conversas', label: 'Conversas', icon: <MessageCircle className=\"h-5 w-5\" /> },\n    { to: '/classificados/configuracoes', label: 'Configurações', icon: <Settings2 className=\"h-5 w-5\" /> },\n  ];`,
-    `  const nav = [\n    { to: '/classificados/painel', label: 'Painel', icon: <Home className=\"h-5 w-5\" /> },\n    { to: '/classificados/explorar', label: 'Explorar', icon: <Compass className=\"h-5 w-5\" /> },\n    ...(!business || data.company?.canSellProducts !== false ? [{ to: '/classificados/anuncios', label: 'Meus anúncios', icon: <Store className=\"h-5 w-5\" /> }] : []),\n    ...(!business || data.company?.canOfferServices !== false ? [{ to: '/classificados/servicos', label: 'Meus serviços', icon: <Wrench className=\"h-5 w-5\" /> }] : []),\n    { to: '/classificados/ofertas', label: 'Ofertas', icon: <BadgeDollarSign className=\"h-5 w-5\" /> },\n    { to: '/classificados/conversas', label: 'Conversas', icon: <MessageCircle className=\"h-5 w-5\" /> },\n    { to: '/classificados/analytics', label: 'Analytics', icon: <BarChart3 className=\"h-5 w-5\" /> },\n    { to: '/classificados/publicar', label: 'Novo anúncio', icon: <Plus className=\"h-5 w-5\" /> },\n    { to: '/classificados/configuracoes', label: 'Configurações', icon: <Settings2 className=\"h-5 w-5\" /> },\n  ];`,
+    `  const nav = [\n    { to: '/classificados/painel', label: 'Painel', icon: <Home className=\"h-5 w-5\" /> },\n    { to: '/classificados/explorar', label: 'Explorar', icon: <Compass className=\"h-5 w-5\" /> },\n    ...(!business || data.company?.canSellProducts !== false ? [{ to: '/classificados/anuncios', label: 'Meus anúncios', icon: <Store className=\"h-5 w-5\" /> }] : []),\n    ...(!business || data.company?.canOfferServices !== false ? [{ to: '/classificados/servicos', label: 'Meus serviços', icon: <Wrench className=\"h-5 w-5\" /> }] : []),\n    { to: '/classificados/ofertas', label: 'Ofertas', icon: <BadgeDollarSign className=\"h-5 w-5\" /> },\n    { to: '/classificados/leiloes', label: 'Leilões', icon: <Gavel className=\"h-5 w-5\" /> },\n    { to: '/classificados/conversas', label: 'Conversas', icon: <MessageCircle className=\"h-5 w-5\" /> },\n    { to: '/classificados/analytics', label: 'Analytics', icon: <BarChart3 className=\"h-5 w-5\" /> },\n    { to: '/classificados/publicar', label: 'Novo anúncio', icon: <Plus className=\"h-5 w-5\" /> },\n    { to: '/classificados/configuracoes', label: 'Configurações', icon: <Settings2 className=\"h-5 w-5\" /> },\n  ];`,
     'workspace internal nav',
   );
   source = replace(
@@ -77,19 +77,19 @@ patch('pages/ClassifiedPublishPage.tsx', (input) => {
   source = replace(
     source,
     `  const [channelsTouched, setChannelsTouched] = useState(false);`,
-    `  const [channelsTouched, setChannelsTouched] = useState(false);\n  const [photoLimit, setPhotoLimit] = useState(1);\n  const [previewOpen, setPreviewOpen] = useState(false);`,
+    `  const [channelsTouched, setChannelsTouched] = useState(false);\n  const [photoLimit, setPhotoLimit] = useState(3);\n  const [previewOpen, setPreviewOpen] = useState(false);`,
     'publish preview state',
   );
   source = replace(
     source,
     `  useEffect(() => {\n    api.get('/classifieds/categories').then((response) => setCategories(Array.isArray(response.data) ? response.data : [])).catch(() => setCategories([]));\n  }, []);`,
-    `  useEffect(() => {\n    api.get('/classifieds/categories').then((response) => setCategories(Array.isArray(response.data) ? response.data : [])).catch(() => setCategories([]));\n    api.get('/classifieds/me/limits').then((response) => setPhotoLimit(Math.max(1, Math.min(6, Number(response.data?.photoLimit) || 1)))).catch(() => setPhotoLimit(1));\n  }, [data?.activeIdentity, data?.company?.id]);`,
+    `  useEffect(() => {\n    api.get('/classifieds/categories').then((response) => setCategories(Array.isArray(response.data) ? response.data : [])).catch(() => setCategories([]));\n    api.get('/classifieds/me/limits').then((response) => setPhotoLimit(Math.max(3, Math.min(10, Number(response.data?.photoLimit) || 3)))).catch(() => setPhotoLimit(3));\n  }, [data?.activeIdentity, data?.company?.id]);`,
     'publish limits load',
   );
   source = replace(
     source,
     `    const available = 12 - form.images.length;\n    const selected = Array.from(files).slice(0, available);\n    if (!selected.length) { setError('Você pode enviar até 12 fotos.'); return; }`,
-    `    const available = photoLimit - form.images.length;\n    const selected = Array.from(files).slice(0, Math.max(0, available));\n    if (!selected.length) { setError(photoLimit === 1 ? 'O plano Free permite 1 foto por anúncio. Planos pagos permitem até 6.' : \`Você pode enviar até \${photoLimit} fotos.\`); return; }`,
+    `    const available = photoLimit - form.images.length;\n    const selected = Array.from(files).slice(0, Math.max(0, available));\n    if (!selected.length) { setError(photoLimit <= 3 ? 'O plano Free permite até 3 fotos por anúncio. Empresas podem usar até 10.' : \`Você pode enviar até \${photoLimit} fotos.\`); return; }`,
     'publish photo limit',
   );
   source = replace(
@@ -107,7 +107,7 @@ patch('pages/ClassifiedPublishPage.tsx', (input) => {
   source = replace(
     source,
     `      <div className=\"mt-5 flex items-center justify-between gap-3\">`,
-    `      <div className=\"mt-3 text-[10px] font-bold text-stone-400\">Fotos permitidas neste workspace: {photoLimit}. {photoLimit === 1 ? 'Planos pagos Business liberam até 6 fotos.' : \`Seu plano permite até \${photoLimit} fotos.\`}</div>\n      <div className=\"mt-5 flex items-center justify-between gap-3\">`,
+    `      <div className=\"mt-3 text-[10px] font-bold text-stone-400\">Fotos permitidas neste workspace: {photoLimit}. {photoLimit <= 3 ? 'Empresas podem publicar até 10 fotos por anúncio.' : \`Este workspace permite até \${photoLimit} fotos.\`}</div>\n      <div className=\"mt-5 flex items-center justify-between gap-3\">`,
     'photo entitlement copy',
   );
   source = replace(
