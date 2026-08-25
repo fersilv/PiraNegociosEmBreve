@@ -16,6 +16,7 @@ import { Repository } from 'typeorm';
 import { AdminGuard } from '../admin/admin.guard';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { WhatsAppApiKey } from './entities/whatsapp-api-key.entity';
+import { WHATSAPP_CAPABILITIES } from './whatsapp.scopes';
 import { WhatsAppService } from './whatsapp.service';
 
 @Controller('admin/whatsapp')
@@ -26,6 +27,10 @@ export class WhatsAppAdminController {
     @InjectRepository(WhatsAppApiKey)
     private readonly keysRepository: Repository<WhatsAppApiKey>,
   ) {}
+
+  @Get('capabilities') capabilities() {
+    return WHATSAPP_CAPABILITIES;
+  }
 
   @Get('instances') listInstances() {
     return this.whatsapp.listInstances();
