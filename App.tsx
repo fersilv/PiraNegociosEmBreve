@@ -31,6 +31,9 @@ const MobileUploadPage = lazy(() => import("./pages/MobileUploadPage"));
 const PublicResumeBuilderPage = lazy(() => import("./pages/PublicResumeBuilderPage"));
 const TalentInvitePage = lazy(() => import("./pages/TalentInvitePage"));
 const HelpCenterPage = lazy(() => import("./pages/HelpCenterPage"));
+const ClassifiedsHomePage = lazy(() => import("./pages/ClassifiedsHomePage"));
+const ClassifiedsSearchPage = lazy(() => import("./pages/ClassifiedsSearchPage"));
+const ClassifiedListingPage = lazy(() => import("./pages/ClassifiedListingPage"));
 
 function RouteLoader() {
   return (
@@ -68,6 +71,10 @@ export default function App() {
               <Route path="/vagas" element={<JobsEntryPage />} />
               <Route path="/vagas-em/:citySlug" element={<CityJobsPage />} />
               <Route path="/vagas/:slug" element={<PublicJobPage />} />
+              <Route path="/classificados" element={<ClassifiedsHomePage />} />
+              <Route path="/classificados/busca" element={<ClassifiedsSearchPage />} />
+              <Route path="/classificados/categoria/:categorySlug" element={<ClassifiedsSearchPage />} />
+              <Route path="/classificados/anuncio/:slug" element={<ClassifiedListingPage />} />
               <Route path="/criador-de-curriculo" element={<PublicResumeBuilderPage />} />
               <Route path="/criar-curriculo" element={<Navigate to="/criador-de-curriculo" replace />} />
               <Route path="/curriculo-online" element={<Navigate to="/criador-de-curriculo" replace />} />
