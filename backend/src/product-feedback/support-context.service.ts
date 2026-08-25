@@ -219,7 +219,7 @@ export class SupportContextService {
            LEFT JOIN payment_products pp ON pp.code = p."productCode"
            WHERE p."userId" = $1
            ORDER BY p."createdAt" DESC
-           LIMIT 5`,
+           LIMIT 3`,
           [user.id],
         );
         facts.recentPayments = rows;
@@ -256,21 +256,21 @@ export class SupportContextService {
       const lines = [
         `\n[${topic.id}] ${topic.title}`,
         `Resumo: ${topic.summary}`,
-        `Funções: ${topic.functions.slice(0, 7).join(' | ')}`,
+        `Funções: ${topic.functions.slice(0, 6).join(' | ')}`,
       ];
       for (const { procedure } of procedures) {
         lines.push(`Passo a passo — ${procedure.title}: ${procedure.steps.map((step, index) => `${index + 1}) ${step}`).join(' ')}`);
-        if (procedure.notes?.length) lines.push(`Observações: ${procedure.notes.slice(0, 2).join(' | ')}`);
+        if (procedure.notes?.length) lines.push(`Observações: ${procedure.notes.slice(0, 1).join(' | ')}`);
       }
       if (topic.consults?.length) {
-        lines.push(`Onde consultar: ${topic.consults.slice(0, 3).map((item) => `${item.label} -> ${item.source}. Regra: ${item.rule}`).join(' | ')}`);
+        lines.push(`Onde consultar: ${topic.consults.slice(0, 2).map((item) => `${item.label} -> ${item.source}. Regra: ${item.rule}`).join(' | ')}`);
       }
-      if (topic.boundaries?.length) lines.push(`Limites: ${topic.boundaries.slice(0, 5).join(' | ')}`);
+      if (topic.boundaries?.length) lines.push(`Limites: ${topic.boundaries.slice(0, 3).join(' | ')}`);
       chunks.push(lines.join('\n'));
     }
 
     const text = chunks.join('\n');
-    return text.length <= 3400 ? text : `${text.slice(0, 3380)}\n[contexto truncado com segurança]`;
+    return text.length <= 2600 ? text : `${text.slice(0, 2580)}\n[contexto truncado com segurança]`;
   }
 }
 
