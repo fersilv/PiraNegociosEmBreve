@@ -6,8 +6,10 @@ import { Company } from '../companies/entities/company.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { User } from '../users/entities/user.entity';
 import { ClassifiedsAiReviewService } from './classifieds-ai-review.service';
+import { ClassifiedsAuctionService } from './classifieds-auction.service';
 import { ClassifiedsChatService } from './classifieds-chat.service';
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
+import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
 import { ClassifiedsPrivateController } from './classifieds-private.controller';
 import { ClassifiedsPublicController } from './classifieds-public.controller';
@@ -46,7 +48,15 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsChatService,
     ClassifiedsAiReviewService,
     ClassifiedsCommerceService,
+    ClassifiedsEntitlementsService,
+    ClassifiedsAuctionService,
   ],
-  exports: [ClassifiedsService, ClassifiedsIdentityService, ClassifiedsCommerceService],
+  exports: [
+    ClassifiedsService,
+    ClassifiedsIdentityService,
+    ClassifiedsCommerceService,
+    ClassifiedsEntitlementsService,
+    ClassifiedsAuctionService,
+  ],
 })
 export class ClassifiedsModule {}
