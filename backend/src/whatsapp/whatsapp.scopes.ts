@@ -12,6 +12,7 @@ export type WhatsAppCapability = {
   method?: string;
   signature?: string;
   legacy?: boolean;
+  event?: boolean;
 };
 
 const LEGACY_WHATSAPP_CAPABILITIES: WhatsAppCapability[] = [
@@ -62,6 +63,16 @@ const CUSTOM_WHATSAPP_CAPABILITIES: WhatsAppCapability[] = [
     risk: 'destructive',
     signature: 'deleteGroupMessage(groupId, messageId, onlyLocal?)',
     legacy: false,
+  },
+  {
+    scope: 'channels:search',
+    category: 'Canais · Consulta',
+    label: 'Pesquisar canais',
+    description: 'Pesquisa canais/newsletters no diretório do WhatsApp pelo nome e retorna os IDs @newsletter encontrados.',
+    risk: 'read',
+    signature: 'searchChannels(query, limit?)',
+    legacy: false,
+    experimental: true,
   },
 ];
 
