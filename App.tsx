@@ -14,12 +14,8 @@ import { CompanyLegalPage } from "./pages/CompanyLegalPage";
 import { ProductFeedbackWidget } from "./components/ProductFeedbackWidget";
 
 const Home = lazy(() => import("./pages/Home"));
-const Login = lazy(() =>
-  import("./pages/Login").then((module) => ({ default: module.Login })),
-);
-const Dashboard = lazy(() =>
-  import("./pages/Dashboard").then((module) => ({ default: module.Dashboard })),
-);
+const Login = lazy(() => import("./pages/Login").then((module) => ({ default: module.Login })));
+const Dashboard = lazy(() => import("./pages/Dashboard").then((module) => ({ default: module.Dashboard })));
 const Terms = lazy(() => import("./pages/Terms"));
 const JobsEntryPage = lazy(() => import("./pages/JobsEntryPage"));
 const PublicJobPage = lazy(() => import("./pages/PublicJobPage"));
@@ -34,13 +30,10 @@ const HelpCenterPage = lazy(() => import("./pages/HelpCenterPage"));
 const ClassifiedsHomePage = lazy(() => import("./pages/ClassifiedsHomePage"));
 const ClassifiedsSearchPage = lazy(() => import("./pages/ClassifiedsSearchPage"));
 const ClassifiedListingPage = lazy(() => import("./pages/ClassifiedListingPage"));
+const ClassifiedsWorkspacePage = lazy(() => import("./pages/ClassifiedsWorkspacePage"));
 
 function RouteLoader() {
-  return (
-    <div className="min-h-screen flex items-center justify-center text-stone-500">
-      Carregando...
-    </div>
-  );
+  return <div className="min-h-screen flex items-center justify-center text-stone-500">Carregando...</div>;
 }
 
 export default function App() {
@@ -71,10 +64,17 @@ export default function App() {
               <Route path="/vagas" element={<JobsEntryPage />} />
               <Route path="/vagas-em/:citySlug" element={<CityJobsPage />} />
               <Route path="/vagas/:slug" element={<PublicJobPage />} />
+
               <Route path="/classificados" element={<ClassifiedsHomePage />} />
               <Route path="/classificados/busca" element={<ClassifiedsSearchPage />} />
               <Route path="/classificados/categoria/:categorySlug" element={<ClassifiedsSearchPage />} />
               <Route path="/classificados/anuncio/:slug" element={<ClassifiedListingPage />} />
+              <Route path="/classificados/painel" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/publicar" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/conversas" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/conversas/:conversationId" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/configuracoes" element={<ClassifiedsWorkspacePage />} />
+
               <Route path="/criador-de-curriculo" element={<PublicResumeBuilderPage />} />
               <Route path="/criar-curriculo" element={<Navigate to="/criador-de-curriculo" replace />} />
               <Route path="/curriculo-online" element={<Navigate to="/criador-de-curriculo" replace />} />
@@ -88,8 +88,6 @@ export default function App() {
               <Route path="/company/*" element={<Dashboard />} />
               <Route path="/admin/*" element={<Dashboard />} />
 
-              {/* Compatibilidade: links antigos continuam funcionando e são
-                  redirecionados internamente para os workspaces canônicos. */}
               <Route path="/dashboard/*" element={<Dashboard />} />
 
               <Route path="/:companySlug/termos" element={<CompanyLegalPage type="terms" />} />
