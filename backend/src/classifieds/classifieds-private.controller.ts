@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { ChatGateway } from '../chat/chat.gateway';
+import { ClassifiedsAuctionService } from './classifieds-auction.service';
 import { ClassifiedsChatService } from './classifieds-chat.service';
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
+import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
 import { ClassifiedsService } from './classifieds.service';
 
@@ -14,6 +16,8 @@ export class ClassifiedsPrivateController {
     private readonly identities: ClassifiedsIdentityService,
     private readonly chats: ClassifiedsChatService,
     private readonly commerce: ClassifiedsCommerceService,
+    private readonly entitlements: ClassifiedsEntitlementsService,
+    private readonly auctions: ClassifiedsAuctionService,
     private readonly chatGateway: ChatGateway,
   ) {}
 
@@ -24,7 +28,7 @@ export class ClassifiedsPrivateController {
 
   @Get('me/limits')
   limits(@Req() req: any) {
-    return this.commerce.limits(req.user.uid);
+    return this.entitlements.limits(req.user.uid);
   }
 
   @Post('me/context/select')
@@ -68,7 +72,8 @@ export class ClassifiedsPrivateController {
   }
 
   @Post('listings/:listingId/offers')
-  createOffer(@Req() req: any, @Param('listingId') listingId: string, @Body() body: any) {
+  async createOffer(@Req() req: any, @Param('listingId') listingId: string, @Body() body: any) {
+    await this.auctions.assertOffersAllowed(listingId);
     return this.commerce.createOffer(req.user.uid, listingId, body?.amount);
   }
 
@@ -82,15 +87,40 @@ export class ClassifiedsPrivateController {
     return this.commerce.withdrawOffer(req.user.uid, offerId);
   }
 
+  @Get('auctions')
+  auctionsList(@Req() req: any) {
+    return this.auctions.list(req.user.uid);
+  }
+
+  @Get('auctions/:auctionId')
+  auctionDetail(@Req() req: any, @Param('auctionId') auctionId: string) {
+    return this.auctions.detail(req.user.uid, auctionId);
+  }
+
+  @Post('me/auctions')
+  createAuction(@Req() req: any, @Body() body: Record<string, unknown>) {
+    return this.auctions.create(req.user.uid, body || {});
+  }
+
+  @Post('auctions/:auctionId/bids')
+  bidAuction(@Req() req: any, @Param('auctionId') auctionId: string, @Body() body: any) {
+    return this.auctions.bid(req.user.uid, auctionId, body?.amount);
+  }
+
+  @Post('me/auctions/:auctionId/cancel')
+  cancelAuction(@Req() req: any, @Param('auctionId') auctionId: string) {
+    return this.auctions.cancel(req.user.uid, auctionId);
+  }
+
   @Post('me/listings')
   async create(@Req() req: any, @Body() body: Record<string, unknown>) {
-    await this.commerce.assertImageLimit(req.user.uid, body.images);
+    await this.entitlements.assertImageLimit(req.user.uid, body.images);
     return this.classifieds.create(req.user.uid, normalizeOptionalPublicContacts(body));
   }
 
   @Patch('me/listings/:id')
   async update(@Req() req: any, @Param('id') id: string, @Body() body: Record<string, unknown>) {
-    if (Array.isArray(body.images)) await this.commerce.assertImageLimit(req.user.uid, body.images);
+    if (Array.isArray(body.images)) await this.entitlements.assertImageLimit(req.user.uid, body.images);
     return this.classifieds.update(req.user.uid, id, body);
   }
 
