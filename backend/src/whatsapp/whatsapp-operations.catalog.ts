@@ -277,7 +277,7 @@ function descriptionFor(method: string, risk: WppCapabilityRisk, event: boolean)
 }
 
 function buildCapabilities(): WppOperationCapability[] {
-  const capabilities = collectPublicMethods()
+  const capabilities: WppOperationCapability[] = collectPublicMethods()
     .filter(({ method }) => !DEPRECATED_WPP_METHODS.has(method))
     .filter(({ method }) => !isSensitiveOrInternal(method))
     .map(({ method, fn }) => {
@@ -295,8 +295,6 @@ function buildCapabilities(): WppOperationCapability[] {
       } satisfies WppOperationCapability;
     });
 
-  // A busca existe no WA-JS usado pelo WPPConnect 2.3.1, mas não como método
-  // público do client. O wrapper é fechado e não dá acesso genérico à page.
   capabilities.push({
     scope: 'channels:search',
     method: 'searchChannels',
