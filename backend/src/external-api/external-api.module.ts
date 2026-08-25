@@ -46,5 +46,6 @@ import { JobsOAuthService } from './jobs-oauth.service';
     JobsOAuthGuard,
     JobsOAuthService,
   ],
+  exports: [JobsOAuthService],
 })
 export class ExternalApiModule {}
