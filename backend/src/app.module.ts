@@ -21,6 +21,7 @@ import { JobMatchModule } from './job-match/job-match.module';
 import { AiModule } from './ai/ai.module';
 import { PublicResumeModule } from './public-resume/public-resume.module';
 import { ProductFeedbackModule } from './product-feedback/product-feedback.module';
+import { ClassifiedsModule } from './classifieds/classifieds.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { ProductFeedbackModule } from './product-feedback/product-feedback.modul
     ExternalApiModule,
     AdminModule,
     ProductFeedbackModule,
+    ClassifiedsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
