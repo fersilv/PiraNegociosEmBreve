@@ -3,7 +3,9 @@ name: Classificados CI
 on:
   push:
     branches:
+      - main
       - classificados
+      - leiloes
   pull_request:
     branches:
       - pagamentos
@@ -13,13 +15,25 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Clone branch
-        run: git clone --depth=1 --branch classificados https://github.com/fersilv/PiraNegociosEmBreve.git repo
-      - name: Environment
-        run: node --version && npm --version
+      - name: Checkout commit
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Frontend dependencies
+        run: npm install
+
       - name: Frontend build
-        working-directory: repo
-        run: npm install && npm run build
+        run: npm run build
+
+      - name: Backend dependencies
+        working-directory: backend
+        run: npm install
+
       - name: Backend build
-        working-directory: repo/backend
-        run: npm install && npm run build
+        working-directory: backend
+        run: npm run build
