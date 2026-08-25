@@ -11,6 +11,7 @@ import {
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { AiService } from '../ai/ai.service';
 import { ProductFeedbackService } from './product-feedback.service';
+import { SupportAssistantService } from './support-assistant.service';
 
 @Controller('product-feedback')
 @UseGuards(FirebaseAuthGuard)
@@ -18,6 +19,7 @@ export class ProductFeedbackController {
   constructor(
     private readonly feedback: ProductFeedbackService,
     private readonly ai: AiService,
+    private readonly supportAssistant: SupportAssistantService,
   ) {}
 
   @Get('status')
@@ -48,7 +50,7 @@ export class ProductFeedbackController {
 
   @Post('support/chat')
   supportChat(@Req() req: any, @Body() body: any) {
-    return this.feedback.supportChat(req.user.uid, body);
+    return this.supportAssistant.chat(req.user.uid, body);
   }
 
   @Post('support/:id/escalate')
