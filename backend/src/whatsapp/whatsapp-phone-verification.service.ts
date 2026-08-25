@@ -56,7 +56,10 @@ export class WhatsAppPhoneVerificationService {
     if (recent >= 3) throw new TooManyRequestsException('Aguarde alguns minutos antes de solicitar outro código.');
 
     const instance = await this.primaryInstance();
-    const check = await this.whatsapp.checkNumberStatus(instance.id, phoneE164);
+    const check: any = await this.whatsapp.checkNumberStatus(instance.id, phoneE164);
+    if (!check?.numberExists || !check?.canReceiveMessage) {
+      throw new BadRequestException('Este número não foi localizado como uma conta do WhatsApp apta a receber mensagens. Confira o DDD e o telefone.');
+    }
     const whatsappId = this.extractWhatsappId(check) || `${phoneE164}@c.us`;
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
     const codeHash = this.hashCode(userId, phoneE164, code);
