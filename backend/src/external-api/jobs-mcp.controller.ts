@@ -13,7 +13,9 @@ import {
 } from '../job-match/job-match.service';
 import { ExternalJobsService } from './external-jobs.service';
 import type { ExternalJobInput, JobCatalogQuery } from './external-jobs.service';
+import { hasJobsScope } from './jobs-mcp.scopes';
 import { JobsOAuthGuard } from './jobs-oauth.guard';
+import { JobsOperationsService } from './jobs-operations.service';
 
 type ExternalJobWithMatchInput = ExternalJobInput & { matchProfile?: unknown };
 
@@ -22,6 +24,7 @@ type ExternalJobWithMatchInput = ExternalJobInput & { matchProfile?: unknown };
 export class JobsMcpController {
   constructor(
     private readonly jobs: ExternalJobsService,
+    private readonly operations: JobsOperationsService,
     private readonly jobMatch: JobMatchService,
     private readonly dataSource: DataSource,
   ) {}
@@ -36,6 +39,8 @@ export class JobsMcpController {
       ]);
     const scopes = new Set<string>(req.jobsOAuth?.scopes || []);
     const apiClient = req.jobsOAuth?.apiClient;
+    const allowed = (scope: string) => hasJobsScope(scopes, scope);
+    const actor = `mcp:${apiClient?.id || 'unknown'}:${apiClient?.name || 'integration'}`.slice(0, 160);
 
     const externalJobFields = {
       title: z.string().min(1).max(180).optional(),
@@ -77,15 +82,14 @@ export class JobsMcpController {
     const handler = createMcpHandler(() => {
       const server = new McpServer({
         name: 'PiraNegócios Vagas',
-        version: '1.0.0',
+        version: '2.0.0',
       });
 
-      if (scopes.has('jobs:read')) {
+      if (allowed('jobs:list')) {
         server.registerTool(
           'piranegocios_jobs_list',
           {
-            description:
-              'Lista e pesquisa vagas do catálogo externo do PiraNegócios. Suporta busca textual, filtros e cursor de paginação.',
+            description: 'Lista e pesquisa vagas com filtros, estado ativo e paginação por cursor.',
             inputSchema: z.object({
               q: z.string().max(300).optional(),
               limit: z.number().int().min(1).max(100).optional(),
@@ -104,20 +108,65 @@ export class JobsMcpController {
             const query: JobCatalogQuery = {
               ...args,
               limit: args.limit === undefined ? undefined : String(args.limit),
-              active:
-                args.active === undefined ? undefined : String(args.active),
-              external:
-                args.external === undefined ? undefined : String(args.external),
+              active: args.active === undefined ? undefined : String(args.active),
+              external: args.external === undefined ? undefined : String(args.external),
             };
             return this.result(await this.jobs.list(query, apiClient));
           },
         );
+      }
 
+      if (allowed('jobs:detail')) {
+        server.registerTool(
+          'piranegocios_jobs_get',
+          {
+            description: 'Consulta uma vaga específica por ID, incluindo moderação, revisão operacional e estado ativo.',
+            inputSchema: z.object({ id: z.string().uuid() }),
+          },
+          async ({ id }: { id: string }) => this.result(await this.operations.get(id)),
+        );
+      }
+
+      if (allowed('jobs:stats:read')) {
+        server.registerTool(
+          'piranegocios_jobs_stats',
+          {
+            description: 'Consulta totais de vagas ativas/inativas, alertas, moderação e cada estado da fila operacional.',
+            inputSchema: z.object({}),
+          },
+          async () => this.result(await this.operations.stats()),
+        );
+      }
+
+      if (allowed('jobs:review:read')) {
+        server.registerTool(
+          'piranegocios_jobs_review_queue',
+          {
+            description: 'Consulta a fila operacional sem misturar vagas novas com vagas já analisadas que precisam de rechecagem ou desativação.',
+            inputSchema: z.object({
+              status: z.enum([
+                'PENDING_REVIEW',
+                'REVIEWED_OK',
+                'RECHECK_REQUIRED',
+                'DEACTIVATION_REQUIRED',
+                'RESOLVED',
+              ]).optional(),
+              active: z.boolean().optional(),
+              city: z.string().max(120).optional(),
+              state: z.string().max(2).optional(),
+              page: z.number().int().min(1).optional(),
+              pageSize: z.number().int().min(1).max(100).optional(),
+            }),
+          },
+          async (args: any) => this.result(await this.operations.reviewQueue(args)),
+        );
+      }
+
+      if (allowed('jobs:match:read')) {
         server.registerTool(
           'piranegocios_jobs_match_profile_schema',
           {
-            description:
-              'Retorna o formato aceito no campo matchProfile para uma IA enviar a ficha estruturada da vaga junto do cadastro ou atualização.',
+            description: 'Retorna o formato aceito em matchProfile para uma IA enviar a ficha estruturada da vaga.',
             inputSchema: z.object({}),
           },
           async () => this.result(this.matchProfileSchema()),
@@ -126,8 +175,7 @@ export class JobsMcpController {
         server.registerTool(
           'piranegocios_jobs_match_profile_status',
           {
-            description:
-              'Lista o estado das fichas de matching das vagas e permite localizar vagas com perfil ausente ou desatualizado.',
+            description: 'Lista o estado das fichas de matching e localiza vagas com perfil ausente ou desatualizado.',
             inputSchema: z.object({
               ready: z.enum(['true', 'false', 'all']).optional(),
               active: z.enum(['true', 'false', 'all']).optional(),
@@ -140,12 +188,11 @@ export class JobsMcpController {
         );
       }
 
-      if (scopes.has('jobs:write')) {
+      if (allowed('jobs:duplicates:check')) {
         server.registerTool(
           'piranegocios_jobs_check_duplicate',
           {
-            description:
-              'Verifica se uma vaga externa já existe antes do cadastro. Use antes de criar quando estiver coletando vagas de fontes públicas.',
+            description: 'Verifica se uma vaga já existe antes do cadastro.',
             inputSchema: z.object({
               ...externalJobFields,
               title: z.string().min(1).max(180),
@@ -153,15 +200,15 @@ export class JobsMcpController {
               allowSimilarDuplicate: z.boolean().optional(),
             }),
           },
-          async (args: any) =>
-            this.result(await this.jobs.check(args, apiClient)),
+          async (args: any) => this.result(await this.jobs.check(args, apiClient)),
         );
+      }
 
+      if (allowed('jobs:create')) {
         server.registerTool(
           'piranegocios_jobs_create_external',
           {
-            description:
-              'Cadastra uma vaga externa. A vaga nasce com moderação PENDING e active=false; duplicidades exatas não são recriadas.',
+            description: 'Cadastra uma vaga externa com deduplicação e fluxo normal de moderação.',
             inputSchema: z.object({
               ...externalJobFields,
               title: z.string().min(1).max(180),
@@ -169,44 +216,114 @@ export class JobsMcpController {
               allowSimilarDuplicate: z.boolean().optional(),
             }),
           },
-          async (args: ExternalJobWithMatchInput) =>
-            this.result(await this.createExternal(args, apiClient)),
+          async (args: ExternalJobWithMatchInput) => this.result(await this.createExternal(args, apiClient)),
         );
+      }
 
+      if (allowed('jobs:update')) {
         server.registerTool(
           'piranegocios_jobs_update_external',
           {
-            description:
-              'Atualiza uma vaga externa gerida pela mesma credencial de ingestão. Não permite alterar active ou moderationStatus diretamente.',
-            inputSchema: z.object({
-              id: z.string().uuid(),
-              ...externalJobFields,
-            }),
+            description: 'Atualiza o conteúdo de uma vaga externa gerida pela credencial de ingestão.',
+            inputSchema: z.object({ id: z.string().uuid(), ...externalJobFields }),
           },
-          async ({ id, ...input }: any) =>
-            this.result(await this.updateExternal(id, input, apiClient)),
+          async ({ id, ...input }: any) => this.result(await this.updateExternal(id, input, apiClient)),
         );
+      }
 
+      if (allowed('jobs:verify')) {
         server.registerTool(
           'piranegocios_jobs_verify_external',
           {
-            description:
-              'Registra uma nova verificação de disponibilidade da vaga. AVAILABLE reativa; CLOSED e EXPIRED desativam e sinalizam; NOT_FOUND e UNCERTAIN sinalizam para revisão.',
+            description: 'Registra uma verificação da fonte. O novo reviewStatus é atualizado sem devolver vagas revisadas para a fila de novas.',
             inputSchema: z.object({
               id: z.string().uuid(),
-              status: z.enum([
-                'AVAILABLE',
-                'NOT_FOUND',
-                'CLOSED',
-                'EXPIRED',
-                'UNCERTAIN',
-              ]),
+              status: z.enum(['AVAILABLE', 'NOT_FOUND', 'CLOSED', 'EXPIRED', 'UNCERTAIN']),
               observation: z.string().max(1000).optional(),
               matchProfile: z.any().optional(),
             }),
           },
-          async ({ id, ...input }: any) =>
-            this.result(await this.verifyExternal(id, input, apiClient)),
+          async ({ id, ...input }: any) => this.result(await this.verifyExternal(id, input, apiClient)),
+        );
+      }
+
+      if (allowed('jobs:activate')) {
+        server.registerTool(
+          'piranegocios_jobs_activate',
+          {
+            description: 'Ativa uma vaga e registra a decisão de revisão. Requer autorização jobs:activate.',
+            inputSchema: z.object({ id: z.string().uuid(), note: z.string().max(4000).optional() }),
+          },
+          async ({ id, note }: { id: string; note?: string }) => this.result(await this.operations.setActive(id, true, actor, note)),
+        );
+      }
+
+      if (allowed('jobs:deactivate')) {
+        server.registerTool(
+          'piranegocios_jobs_deactivate',
+          {
+            description: 'Desativa uma vaga e marca a ação operacional como resolvida. AÇÃO SENSÍVEL.',
+            inputSchema: z.object({ id: z.string().uuid(), note: z.string().max(4000).optional() }),
+          },
+          async ({ id, note }: { id: string; note?: string }) => this.result(await this.operations.setActive(id, false, actor, note)),
+        );
+      }
+
+      if (allowed('jobs:review:write')) {
+        server.registerTool(
+          'piranegocios_jobs_set_review_status',
+          {
+            description: 'Altera o estado operacional da revisão de uma vaga sem confundir revisão, moderação e publicação.',
+            inputSchema: z.object({
+              id: z.string().uuid(),
+              status: z.enum([
+                'PENDING_REVIEW',
+                'REVIEWED_OK',
+                'RECHECK_REQUIRED',
+                'DEACTIVATION_REQUIRED',
+                'RESOLVED',
+              ]),
+              note: z.string().max(4000).optional(),
+            }),
+          },
+          async ({ id, status, note }: { id: string; status: string; note?: string }) => this.result(await this.operations.setReview(id, status, actor, note)),
+        );
+      }
+
+      if (allowed('jobs:flag')) {
+        server.registerTool(
+          'piranegocios_jobs_flag',
+          {
+            description: 'Sinaliza uma vaga para ação ou rechecagem.',
+            inputSchema: z.object({
+              id: z.string().uuid(),
+              reason: z.string().max(120).optional(),
+              observation: z.string().max(4000).optional(),
+            }),
+          },
+          async ({ id, ...data }: any) => this.result(await this.operations.flag(id, actor, data)),
+        );
+      }
+
+      if (allowed('jobs:unflag')) {
+        server.registerTool(
+          'piranegocios_jobs_unflag',
+          {
+            description: 'Limpa um alerta preservando o estado de revisão para a vaga não voltar à fila de vagas novas.',
+            inputSchema: z.object({ id: z.string().uuid(), note: z.string().max(4000).optional() }),
+          },
+          async ({ id, note }: { id: string; note?: string }) => this.result(await this.operations.clearFlag(id, actor, note)),
+        );
+      }
+
+      if (allowed('jobs:delete')) {
+        server.registerTool(
+          'piranegocios_jobs_delete',
+          {
+            description: 'Exclui definitivamente uma vaga. AÇÃO DESTRUTIVA, conceda este escopo somente a integrações administrativas.',
+            inputSchema: z.object({ id: z.string().uuid() }),
+          },
+          async ({ id }: { id: string }) => this.result(await this.operations.remove(id)),
         );
       }
 
@@ -219,35 +336,19 @@ export class JobsMcpController {
 
   private async createExternal(input: ExternalJobWithMatchInput, apiClient: any) {
     const result: any = await this.jobs.create(input, apiClient);
-    if (
-      input?.matchProfile !== undefined &&
-      result?.created &&
-      result?.job?.id
-    ) {
-      const matchProfile = await this.jobMatch.acceptProvidedProfile(
-        result.job.id,
-        input.matchProfile,
-      );
+    if (input?.matchProfile !== undefined && result?.created && result?.job?.id) {
+      const matchProfile = await this.jobMatch.acceptProvidedProfile(result.job.id, input.matchProfile);
       return { ...result, matchProfile };
     }
     return result;
   }
 
-  private async updateExternal(
-    id: string,
-    input: ExternalJobWithMatchInput,
-    apiClient: any,
-  ) {
-    if (input?.matchProfile !== undefined) {
-      this.jobMatch.stageProvidedProfile(id, input.matchProfile);
-    }
+  private async updateExternal(id: string, input: ExternalJobWithMatchInput, apiClient: any) {
+    if (input?.matchProfile !== undefined) this.jobMatch.stageProvidedProfile(id, input.matchProfile);
     try {
       const result: any = await this.jobs.update(id, input, apiClient);
       if (input?.matchProfile !== undefined && result?.job?.id) {
-        const matchProfile = await this.jobMatch.acceptProvidedProfile(
-          result.job.id,
-          input.matchProfile,
-        );
+        const matchProfile = await this.jobMatch.acceptProvidedProfile(result.job.id, input.matchProfile);
         return { ...result, matchProfile };
       }
       return result;
@@ -257,16 +358,11 @@ export class JobsMcpController {
   }
 
   private async verifyExternal(id: string, input: any, apiClient: any) {
-    if (input?.matchProfile !== undefined) {
-      this.jobMatch.stageProvidedProfile(id, input.matchProfile);
-    }
+    if (input?.matchProfile !== undefined) this.jobMatch.stageProvidedProfile(id, input.matchProfile);
     try {
       const result: any = await this.jobs.verify(id, input, apiClient);
       if (input?.matchProfile !== undefined && result?.job?.id) {
-        const matchProfile = await this.jobMatch.acceptProvidedProfile(
-          result.job.id,
-          input.matchProfile,
-        );
+        const matchProfile = await this.jobMatch.acceptProvidedProfile(result.job.id, input.matchProfile);
         return { ...result, matchProfile };
       }
       return result;
@@ -279,62 +375,32 @@ export class JobsMcpController {
     return {
       field: 'matchProfile',
       optional: true,
-      purpose:
-        'Permite que uma IA de ingestão envie a ficha estruturada da vaga e evite uma segunda chamada de IA interna quando a ficha for aceita.',
+      purpose: 'Permite que uma IA de ingestão envie a ficha estruturada da vaga e evite uma segunda chamada de IA interna quando a ficha for aceita.',
       requiredFields: ['canonicalRole', 'occupationalFamily'],
-      requirementTypes: [
-        'SKILL',
-        'EXPERIENCE',
-        'EDUCATION',
-        'CERTIFICATION',
-        'LICENSE',
-        'OTHER',
-      ],
+      requirementTypes: ['SKILL', 'EXPERIENCE', 'EDUCATION', 'CERTIFICATION', 'LICENSE', 'OTHER'],
       schema: {
         canonicalRole: 'string',
         occupationalFamily: 'string',
         occupationKeywords: ['string'],
-        technicalSkills: [
-          {
-            name: 'string',
-            required: 'boolean',
-            weight: 'number 0.1..5',
-            evidenceTerms: ['string'],
-          },
-        ],
-        requirements: [
-          {
-            label: 'string',
-            type: 'SKILL|EXPERIENCE|EDUCATION|CERTIFICATION|LICENSE|OTHER',
-            required: 'boolean',
-            weight: 'number 0.1..5',
-            evidenceTerms: ['string'],
-          },
-        ],
+        technicalSkills: [{ name: 'string', required: 'boolean', weight: 'number 0.1..5', evidenceTerms: ['string'] }],
+        requirements: [{ label: 'string', type: 'SKILL|EXPERIENCE|EDUCATION|CERTIFICATION|LICENSE|OTHER', required: 'boolean', weight: 'number 0.1..5', evidenceTerms: ['string'] }],
         softSkills: ['string'],
         summary: 'string',
       },
-      note:
-        'A ficha descreve a vaga. Ela nunca define score de candidato; a compatibilidade continua sendo calculada internamente contra cada currículo.',
+      note: 'A ficha descreve a vaga. Ela nunca define score de candidato; a compatibilidade continua sendo calculada internamente contra cada currículo.',
     };
   }
 
   private async matchProfileStatus(args: any) {
     const normalizedReady = String(args.ready || 'all').trim().toLowerCase();
     const normalizedActive = String(args.active || 'true').trim().toLowerCase();
-    if (!['true', 'false', 'all'].includes(normalizedReady)) {
-      throw new BadRequestException('ready deve ser true, false ou all.');
-    }
-    if (!['true', 'false', 'all'].includes(normalizedActive)) {
-      throw new BadRequestException('active deve ser true, false ou all.');
-    }
+    if (!['true', 'false', 'all'].includes(normalizedReady)) throw new BadRequestException('ready deve ser true, false ou all.');
+    if (!['true', 'false', 'all'].includes(normalizedActive)) throw new BadRequestException('active deve ser true, false ou all.');
 
     const safeLimit = Math.min(500, Math.max(1, Number(args.limit || 500)));
     const cleanCity = String(args.city || '').trim();
     const cleanState = String(args.state || '').trim().toUpperCase();
-    if (cleanState && !/^[A-Z]{2}$/.test(cleanState)) {
-      throw new BadRequestException('state deve ser uma UF com 2 letras.');
-    }
+    if (cleanState && !/^[A-Z]{2}$/.test(cleanState)) throw new BadRequestException('state deve ser uma UF com 2 letras.');
 
     const params: unknown[] = [JOB_MATCH_ALGORITHM_VERSION];
     const where: string[] = [];
@@ -369,6 +435,8 @@ export class JobsMcpController {
          j.state,
          j.active,
          j."moderationStatus",
+         j."reviewStatus",
+         j."reviewedAt",
          j."createdAt",
          j."updatedAt",
          p.status AS "matchProfileStatus",
@@ -404,9 +472,7 @@ export class JobsMcpController {
   }
 
   private result(value: unknown) {
-    return {
-      content: [{ type: 'text' as const, text: this.safeStringify(value) }],
-    };
+    return { content: [{ type: 'text' as const, text: this.safeStringify(value) }] };
   }
 
   private safeStringify(value: unknown) {
@@ -415,9 +481,7 @@ export class JobsMcpController {
       value,
       (_key, nested) => {
         if (typeof nested === 'bigint') return nested.toString();
-        if (Buffer.isBuffer(nested)) {
-          return { type: 'buffer', base64: nested.toString('base64') };
-        }
+        if (Buffer.isBuffer(nested)) return { type: 'buffer', base64: nested.toString('base64') };
         if (nested && typeof nested === 'object') {
           if (seen.has(nested)) return '[circular]';
           seen.add(nested);
