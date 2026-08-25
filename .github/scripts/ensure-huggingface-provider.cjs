@@ -36,6 +36,33 @@ const patchTargets = [
   '.env.example',
 ];
 
+function repairAppliedCompatibility() {
+  const file = 'backend/src/ai/photo-ai.service.ts';
+  if (!fs.existsSync(file)) return;
+
+  const before = fs.readFileSync(file, 'utf8');
+  const marker = 'private async professionalizeWithHuggingFace';
+  const methodIndex = before.indexOf(marker);
+  if (methodIndex < 0) return;
+
+  const head = before.slice(0, methodIndex);
+  let tail = before.slice(methodIndex);
+  tail = tail.replace(
+    "    const generated = await client.imageToImage(\n      {\n        model: config.model,",
+    "    const generated = await client.imageToImage(\n      {\n        provider: 'auto',\n        model: config.model,",
+  );
+  tail = tail.replace(
+    "      },\n      { provider: 'auto' },\n    );",
+    "      },\n    );",
+  );
+
+  const after = `${head}${tail}`;
+  if (after !== before) {
+    fs.writeFileSync(file, after);
+    console.log('Repaired Hugging Face image provider call for current SDK.');
+  }
+}
+
 function isFullyApplied() {
   return sentinels.every(([file, marker]) => {
     try {
@@ -45,6 +72,8 @@ function isFullyApplied() {
     }
   });
 }
+
+repairAppliedCompatibility();
 
 if (isFullyApplied()) {
   console.log('Hugging Face provider integration already applied.');
@@ -59,6 +88,7 @@ for (const file of patchTargets) {
 console.log('Applying Hugging Face provider integration before build...');
 try {
   require('./apply-huggingface-provider.cjs');
+  repairAppliedCompatibility();
   if (!isFullyApplied()) {
     throw new Error('Hugging Face patch finished without covering every required AI surface.');
   }
