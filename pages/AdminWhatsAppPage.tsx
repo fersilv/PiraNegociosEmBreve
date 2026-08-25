@@ -68,6 +68,12 @@ type Capability = {
 
 const defaultScopes = ["connection:read", "messages:read", "contacts:read", "groups:read"];
 
+function toggleMany(current: string[], scopes: string[], enabled: boolean) {
+  if (enabled) return Array.from(new Set([...current, ...scopes]));
+  const removing = new Set(scopes);
+  return current.filter((scope) => !removing.has(scope));
+}
+
 export function AdminWhatsAppPage() {
   const [instances, setInstances] = useState<Instance[]>([]);
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
@@ -81,6 +87,9 @@ export function AdminWhatsAppPage() {
   const [newNumber, setNewNumber] = useState({ name: "", purpose: "", phoneNumber: "" });
   const [keyName, setKeyName] = useState("Integração MCP");
   const [keyScopes, setKeyScopes] = useState<string[]>(defaultScopes);
+  const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
+  const [editingKeyName, setEditingKeyName] = useState("");
+  const [editingKeyScopes, setEditingKeyScopes] = useState<string[]>([]);
   const [capabilitySearch, setCapabilitySearch] = useState("");
   const [showLegacy, setShowLegacy] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
@@ -148,7 +157,11 @@ export function AdminWhatsAppPage() {
   };
 
   useEffect(() => { void load(); }, []);
-  useEffect(() => { if (selectedId) void loadKeys(selectedId); else setKeys([]); }, [selectedId]);
+  useEffect(() => {
+    if (selectedId) void loadKeys(selectedId);
+    else setKeys([]);
+    setEditingKeyId(null);
+  }, [selectedId]);
   useEffect(() => {
     if (!selectedId) return;
     const timer = window.setInterval(() => void load(true), 5000);
@@ -158,6 +171,7 @@ export function AdminWhatsAppPage() {
   useEffect(() => {
     if (!selected) return;
     setKeyScopes((current) => current.filter((scope) => selected.allowedScopes.includes(scope)));
+    setEditingKeyScopes((current) => current.filter((scope) => selected.allowedScopes.includes(scope)));
   }, [selected?.id, selected?.allowedScopes.join("|")]);
 
   const run = async (name: string, action: () => Promise<unknown>, success?: string) => {
@@ -189,10 +203,19 @@ export function AdminWhatsAppPage() {
 
   const updateAllowedScope = async (scope: string, enabled: boolean) => {
     if (!selected) return;
-    const next = enabled
-      ? Array.from(new Set([...selected.allowedScopes, scope]))
-      : selected.allowedScopes.filter((item) => item !== scope);
+    const next = toggleMany(selected.allowedScopes, [scope], enabled);
     await run(`scope:${scope}`, () => api.put(`/admin/whatsapp/instances/${selected.id}`, { allowedScopes: next }));
+  };
+
+  const updateAllowedGroup = async (category: string, items: Capability[], enabled: boolean) => {
+    if (!selected) return;
+    const scopes = items.map((item) => item.scope);
+    const next = toggleMany(selected.allowedScopes, scopes, enabled);
+    await run(
+      `scope-group:${category}`,
+      () => api.put(`/admin/whatsapp/instances/${selected.id}`, { allowedScopes: next }),
+      enabled ? `Todas as permissões de “${category}” foram habilitadas.` : `As permissões de “${category}” foram desabilitadas.`,
+    );
   };
 
   const createKey = async () => {
@@ -210,6 +233,31 @@ export function AdminWhatsAppPage() {
       await load(true);
     } catch (error: any) {
       setNotice(error?.response?.data?.message || "Não foi possível criar a chave.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const beginEditKey = (key: ApiKeyRow) => {
+    setEditingKeyId(key.id);
+    setEditingKeyName(key.name);
+    setEditingKeyScopes(selected ? key.scopes.filter((scope) => selected.allowedScopes.includes(scope)) : [...key.scopes]);
+  };
+
+  const saveEditedKey = async () => {
+    if (!editingKeyId || !editingKeyName.trim() || !editingKeyScopes.length) return;
+    setBusy(`edit-key:${editingKeyId}`);
+    setNotice(null);
+    try {
+      await api.put(`/admin/whatsapp/keys/${editingKeyId}`, {
+        name: editingKeyName,
+        scopes: editingKeyScopes,
+      });
+      setNotice("Permissões da chave atualizadas. Reconecte/reautorize o MCP para ele refazer o catálogo de tools.");
+      setEditingKeyId(null);
+      if (selectedId) await loadKeys(selectedId);
+    } catch (error: any) {
+      setNotice(error?.response?.data?.message || "Não foi possível atualizar a chave.");
     } finally {
       setBusy(null);
     }
@@ -304,30 +352,14 @@ export function AdminWhatsAppPage() {
               <div className="mt-5 grid gap-3 sm:grid-cols-3"><Metric icon={<Wifi className="h-4 w-4" />} label="Sessão" value={selected.connected ? "Online" : "Offline"} /><Metric icon={<KeyRound className="h-4 w-4" />} label="Chaves ativas" value={String(selected.keyCount || 0)} /><Metric icon={<MessageCircle className="h-4 w-4" />} label="Mensagens registradas" value={String(selected.messageCount || 0)} /></div>
 
               <div className="mt-5 grid gap-3 lg:grid-cols-2">
-                <RuntimeToggle
-                  icon={<Star className="h-4 w-4" />}
-                  title="Número oficial do PiraNegócios"
-                  description="Usado para OTP de telefone e como referência do atendimento oficial. Apenas uma conexão pode ser oficial por vez."
-                  checked={Boolean(selected.isPrimarySupport)}
-                  disabled={busy === "primary"}
-                  tone="amber"
-                  onChange={(enabled) => void run("primary", () => api.put(`/admin/whatsapp/instances/${selected.id}`, { isPrimarySupport: enabled }), enabled ? "Número definido como atendimento oficial." : "Número deixou de ser o atendimento oficial.")}
-                />
-                <RuntimeToggle
-                  icon={<Bot className="h-4 w-4" />}
-                  title="Concierge automático por IA"
-                  description="Quando ligado, somente mensagens diretas de pessoas entram no buffer de 30s e podem receber atendimento integrado ao site. Grupos, canais, status e notificações ficam fora."
-                  checked={Boolean(selected.conciergeEnabled)}
-                  disabled={busy === "concierge"}
-                  tone="violet"
-                  onChange={(enabled) => void run("concierge", () => api.put(`/admin/whatsapp/instances/${selected.id}`, { conciergeEnabled: enabled }), enabled ? "Atendimento automático ativado." : "Atendimento automático pausado.")}
-                />
+                <RuntimeToggle icon={<Star className="h-4 w-4" />} title="Número oficial do PiraNegócios" description="Usado para OTP de telefone e como referência do atendimento oficial. Apenas uma conexão pode ser oficial por vez." checked={Boolean(selected.isPrimarySupport)} disabled={busy === "primary"} tone="amber" onChange={(enabled) => void run("primary", () => api.put(`/admin/whatsapp/instances/${selected.id}`, { isPrimarySupport: enabled }), enabled ? "Número definido como atendimento oficial." : "Número deixou de ser o atendimento oficial.")} />
+                <RuntimeToggle icon={<Bot className="h-4 w-4" />} title="Concierge automático por IA" description="Quando ligado, somente mensagens diretas de pessoas entram no buffer de 15s e podem receber atendimento integrado ao site. Grupos, canais, status e notificações ficam fora." checked={Boolean(selected.conciergeEnabled)} disabled={busy === "concierge"} tone="violet" onChange={(enabled) => void run("concierge", () => api.put(`/admin/whatsapp/instances/${selected.id}`, { conciergeEnabled: enabled }), enabled ? "Atendimento automático ativado." : "Atendimento automático pausado.")} />
               </div>
             </section>
 
             <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <div className="flex items-start gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-700"><ShieldCheck className="h-5 w-5" /></span><div><h2 className="font-black text-stone-950">Matriz de capacidades</h2><p className="mt-1 max-w-3xl text-sm text-stone-500">Cada chave só consegue receber funções habilitadas aqui. Funções internas de autenticação, token, QR, browser/page e controle de sessão não entram neste catálogo.</p></div></div>
+                <div className="flex items-start gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-700"><ShieldCheck className="h-5 w-5" /></span><div><h2 className="font-black text-stone-950">Matriz de capacidades</h2><p className="mt-1 max-w-3xl text-sm text-stone-500">Cada chave só consegue receber funções habilitadas aqui. O checkbox “Tudo” liga ou desliga a categoria inteira de uma vez.</p></div></div>
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="relative min-w-[260px] flex-1 xl:w-[360px]"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" /><input value={capabilitySearch} onChange={(e) => setCapabilitySearch(e.target.value)} placeholder="Buscar função, método, scope..." className="w-full rounded-xl border border-stone-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-violet-300" /></label>
                   <label className="flex items-center gap-2 rounded-xl border border-stone-200 px-3 py-2.5 text-xs font-bold text-stone-600"><input type="checkbox" checked={showLegacy} onChange={(e) => setShowLegacy(e.target.checked)} className="accent-violet-700" /> Compatibilidade antiga</label>
@@ -340,9 +372,20 @@ export function AdminWhatsAppPage() {
                 {capabilityGroups.map(([category, items]) => {
                   const isOpen = capabilitySearch.trim() ? true : expandedCategories[category] ?? category.startsWith("Grupos");
                   const enabledCount = items.filter((item) => selected.allowedScopes.includes(item.scope)).length;
+                  const allEnabled = items.length > 0 && enabledCount === items.length;
+                  const groupBusy = busy === `scope-group:${category}`;
                   return <div key={category} className="overflow-hidden rounded-2xl border border-stone-200">
-                    <button type="button" onClick={() => setExpandedCategories((current) => ({ ...current, [category]: !isOpen }))} className="flex w-full items-center justify-between gap-3 bg-stone-50/80 px-4 py-3 text-left"><div><p className="text-sm font-black text-stone-900">{category}</p><p className="mt-0.5 text-[10px] font-bold text-stone-400">{enabledCount}/{items.length} habilitadas</p></div>{isOpen ? <ChevronDown className="h-4 w-4 text-stone-400" /> : <ChevronRight className="h-4 w-4 text-stone-400" />}</button>
-                    {isOpen && <div className="grid gap-2 border-t border-stone-200 p-3 lg:grid-cols-2">{items.map((capability) => <CapabilityToggle key={capability.scope} capability={capability} checked={selected.allowedScopes.includes(capability.scope)} disabled={busy === `scope:${capability.scope}`} onChange={(enabled) => void updateAllowedScope(capability.scope, enabled)} />)}</div>}
+                    <div className="flex items-center gap-3 bg-stone-50/80 px-4 py-3">
+                      <button type="button" onClick={() => setExpandedCategories((current) => ({ ...current, [category]: !isOpen }))} className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left">
+                        <div><p className="text-sm font-black text-stone-900">{category}</p><p className="mt-0.5 text-[10px] font-bold text-stone-400">{enabledCount}/{items.length} habilitadas</p></div>
+                        {isOpen ? <ChevronDown className="h-4 w-4 text-stone-400" /> : <ChevronRight className="h-4 w-4 text-stone-400" />}
+                      </button>
+                      <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[10px] font-black uppercase text-stone-600">
+                        <input type="checkbox" checked={allEnabled} disabled={groupBusy} onChange={(e) => void updateAllowedGroup(category, items, e.target.checked)} className="accent-violet-700" />
+                        {groupBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : "Tudo"}
+                      </label>
+                    </div>
+                    {isOpen && <div className="grid gap-2 border-t border-stone-200 p-3 lg:grid-cols-2">{items.map((capability) => <CapabilityToggle key={capability.scope} capability={capability} checked={selected.allowedScopes.includes(capability.scope)} disabled={busy === `scope:${capability.scope}` || groupBusy} onChange={(enabled) => void updateAllowedScope(capability.scope, enabled)} />)}</div>}
                   </div>;
                 })}
                 {capabilityGroups.length === 0 && <div className="rounded-2xl border border-dashed border-stone-300 p-8 text-center text-sm text-stone-400">Nenhuma função corresponde à busca.</div>}
@@ -350,7 +393,7 @@ export function AdminWhatsAppPage() {
             </section>
 
             <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
-              <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.14em] text-stone-400">MCP + API</p><h2 className="mt-1 text-lg font-black text-stone-950">Credenciais desta instância</h2><p className="mt-1 text-sm text-stone-500">Ao criar uma chave você escolhe novamente, função por função, o subconjunto que aquele cliente poderá receber via OAuth.</p></div><KeyRound className="h-5 w-5 text-stone-300" /></div>
+              <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.14em] text-stone-400">MCP + API</p><h2 className="mt-1 text-lg font-black text-stone-950">Credenciais desta instância</h2><p className="mt-1 text-sm text-stone-500">Você pode criar ou editar uma chave e marcar categorias inteiras. Scopes novos não entram automaticamente em chaves antigas.</p></div><KeyRound className="h-5 w-5 text-stone-300" /></div>
               <div className="mt-4 grid gap-3 rounded-2xl bg-stone-950 p-4 text-white md:grid-cols-2"><Endpoint label="MCP Streamable HTTP" value={mcpUrl} copy={() => void copy(mcpUrl)} /><Endpoint label="REST v1" value={restUrl} copy={() => void copy(restUrl)} /></div>
               {revealedKey && <div className="mt-4 rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-4"><div className="flex items-center justify-between gap-2"><p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-800">Copie agora · não será exibida novamente</p><button onClick={() => void copy(revealedKey)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-800 px-2.5 py-1.5 text-xs font-black text-white"><Copy className="h-3.5 w-3.5" /> Copiar</button></div><code className="mt-3 block break-all rounded-xl bg-white p-3 text-xs text-stone-800">{revealedKey}</code></div>}
 
@@ -362,13 +405,54 @@ export function AdminWhatsAppPage() {
                     {capabilityGroups.map(([category, items]) => {
                       const available = items.filter((item) => selected.allowedScopes.includes(item.scope));
                       if (!available.length) return null;
-                      return <div key={category} className="rounded-xl border border-stone-100 p-3"><p className="text-[10px] font-black uppercase tracking-wide text-stone-400">{category}</p><div className="mt-2 space-y-1">{available.map((capability) => <label key={capability.scope} className="flex cursor-pointer items-start gap-2 rounded-lg p-1.5 hover:bg-stone-50"><input type="checkbox" checked={keyScopes.includes(capability.scope)} onChange={(e) => setKeyScopes((current) => e.target.checked ? Array.from(new Set([...current, capability.scope])) : current.filter((item) => item !== capability.scope))} className="mt-0.5 accent-stone-900" /><span><span className="block text-xs font-bold text-stone-700">{capability.label}</span><span className="block text-[10px] text-stone-400">{capability.scope}</span></span></label>)}</div></div>;
+                      const groupScopes = available.map((item) => item.scope);
+                      const allChecked = groupScopes.every((scope) => keyScopes.includes(scope));
+                      return <div key={category} className="rounded-xl border border-stone-100 p-3">
+                        <div className="flex items-center justify-between gap-3"><p className="text-[10px] font-black uppercase tracking-wide text-stone-400">{category}</p><label className="flex cursor-pointer items-center gap-1.5 text-[10px] font-black uppercase text-stone-500"><input type="checkbox" checked={allChecked} onChange={(e) => setKeyScopes((current) => toggleMany(current, groupScopes, e.target.checked))} className="accent-stone-900" /> Tudo</label></div>
+                        <div className="mt-2 space-y-1">{available.map((capability) => <label key={capability.scope} className="flex cursor-pointer items-start gap-2 rounded-lg p-1.5 hover:bg-stone-50"><input type="checkbox" checked={keyScopes.includes(capability.scope)} onChange={(e) => setKeyScopes((current) => toggleMany(current, [capability.scope], e.target.checked))} className="mt-0.5 accent-stone-900" /><span><span className="block text-xs font-bold text-stone-700">{capability.label}</span><span className="block text-[10px] text-stone-400">{capability.scope}</span></span></label>)}</div>
+                      </div>;
                     })}
                   </div>
                   <button disabled={!keyName.trim() || keyScopes.length === 0 || busy === "key:create"} onClick={() => void createKey()} className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-stone-950 px-3 py-2.5 text-sm font-black text-white disabled:opacity-40">{busy === "key:create" && <Loader2 className="h-4 w-4 animate-spin" />} Gerar chave com {keyScopes.length} permissões</button>
                 </div>
 
-                <div className="space-y-2">{keys.length === 0 ? <div className="flex min-h-36 items-center justify-center rounded-2xl border border-dashed border-stone-300 text-sm text-stone-400">Nenhuma chave criada para este número.</div> : keys.map((key) => <div key={key.id} className="rounded-2xl border border-stone-200 p-4"><div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><p className="text-sm font-black text-stone-900">{key.name}</p><span className={`h-2 w-2 rounded-full ${key.active ? "bg-emerald-500" : "bg-stone-300"}`} /></div><code className="mt-1 block text-[11px] text-stone-400">{key.keyPrefix}••••••••</code></div><div className="flex gap-1"><button title="Rotacionar chave" onClick={() => void rotateKey(key)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-stone-200 text-stone-500"><RotateCw className={`h-3.5 w-3.5 ${busy === `rotate:${key.id}` ? "animate-spin" : ""}`} /></button><button title={key.active ? "Desativar chave" : "Ativar chave"} onClick={() => void run(`key:${key.id}`, () => api.put(`/admin/whatsapp/keys/${key.id}`, { active: !key.active }))} className="flex h-8 w-8 items-center justify-center rounded-lg border border-stone-200 text-stone-500">{key.active ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}</button><button title="Excluir chave" disabled={busy === `delete-key:${key.id}`} onClick={() => void deleteKey(key)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-100 text-red-600 hover:bg-red-50 disabled:opacity-50">{busy === `delete-key:${key.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}</button></div></div><div className="mt-3 flex flex-wrap gap-1">{key.scopes.slice(0, 18).map((scope) => <span key={scope} className="rounded-full bg-stone-100 px-2 py-1 text-[9px] font-bold text-stone-500">{scope}</span>)}{key.scopes.length > 18 && <span className="rounded-full bg-violet-50 px-2 py-1 text-[9px] font-bold text-violet-600">+{key.scopes.length - 18}</span>}</div><p className="mt-3 text-[10px] text-stone-400">Último uso: {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString("pt-BR") : "ainda não utilizada"}</p></div>)}</div>
+                <div className="space-y-2">
+                  {keys.length === 0 ? <div className="flex min-h-36 items-center justify-center rounded-2xl border border-dashed border-stone-300 text-sm text-stone-400">Nenhuma chave criada para este número.</div> : keys.map((key) => {
+                    const editing = editingKeyId === key.id;
+                    return <div key={key.id} className={`rounded-2xl border p-4 ${editing ? "border-violet-200 bg-violet-50/30" : "border-stone-200"}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          {editing ? <input value={editingKeyName} onChange={(e) => setEditingKeyName(e.target.value)} className="w-full rounded-lg border border-violet-200 bg-white px-2.5 py-2 text-sm font-bold text-stone-800" /> : <div className="flex items-center gap-2"><p className="text-sm font-black text-stone-900">{key.name}</p><span className={`h-2 w-2 rounded-full ${key.active ? "bg-emerald-500" : "bg-stone-300"}`} /></div>}
+                          <code className="mt-1 block text-[11px] text-stone-400">{key.keyPrefix}••••••••</code>
+                        </div>
+                        {!editing && <div className="flex flex-wrap justify-end gap-1">
+                          <button title="Editar nome e permissões" onClick={() => beginEditKey(key)} className="rounded-lg border border-violet-200 px-2.5 py-1.5 text-[10px] font-black text-violet-700">Editar</button>
+                          <button title="Rotacionar chave" onClick={() => void rotateKey(key)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-stone-200 text-stone-500"><RotateCw className={`h-3.5 w-3.5 ${busy === `rotate:${key.id}` ? "animate-spin" : ""}`} /></button>
+                          <button title={key.active ? "Desativar chave" : "Ativar chave"} onClick={() => void run(`key:${key.id}`, () => api.put(`/admin/whatsapp/keys/${key.id}`, { active: !key.active }))} className="flex h-8 w-8 items-center justify-center rounded-lg border border-stone-200 text-stone-500">{key.active ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}</button>
+                          <button title="Excluir chave" disabled={busy === `delete-key:${key.id}`} onClick={() => void deleteKey(key)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-100 text-red-600 hover:bg-red-50 disabled:opacity-50">{busy === `delete-key:${key.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}</button>
+                        </div>}
+                      </div>
+
+                      {editing ? <div className="mt-4 space-y-2">
+                        <p className="text-[10px] font-black uppercase tracking-wide text-violet-700">Permissões da chave</p>
+                        <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">{capabilityGroups.map(([category, items]) => {
+                          const available = items.filter((item) => selected.allowedScopes.includes(item.scope));
+                          if (!available.length) return null;
+                          const groupScopes = available.map((item) => item.scope);
+                          const allChecked = groupScopes.every((scope) => editingKeyScopes.includes(scope));
+                          return <div key={category} className="rounded-xl border border-violet-100 bg-white p-3">
+                            <div className="flex items-center justify-between gap-3"><p className="text-[10px] font-black uppercase tracking-wide text-stone-500">{category}</p><label className="flex cursor-pointer items-center gap-1.5 text-[10px] font-black uppercase text-violet-700"><input type="checkbox" checked={allChecked} onChange={(e) => setEditingKeyScopes((current) => toggleMany(current, groupScopes, e.target.checked))} className="accent-violet-700" /> Tudo</label></div>
+                            <div className="mt-2 grid gap-1 sm:grid-cols-2">{available.map((capability) => <label key={capability.scope} className="flex cursor-pointer items-start gap-2 rounded-lg p-1.5 hover:bg-violet-50"><input type="checkbox" checked={editingKeyScopes.includes(capability.scope)} onChange={(e) => setEditingKeyScopes((current) => toggleMany(current, [capability.scope], e.target.checked))} className="mt-0.5 accent-violet-700" /><span className="text-xs font-bold text-stone-700">{capability.label}</span></label>)}</div>
+                          </div>;
+                        })}</div>
+                        <div className="flex gap-2 pt-2"><button disabled={!editingKeyName.trim() || !editingKeyScopes.length || busy === `edit-key:${key.id}`} onClick={() => void saveEditedKey()} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-violet-700 px-3 py-2 text-xs font-black text-white disabled:opacity-40">{busy === `edit-key:${key.id}` && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Salvar {editingKeyScopes.length} permissões</button><button onClick={() => setEditingKeyId(null)} className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-black text-stone-600">Cancelar</button></div>
+                      </div> : <>
+                        <div className="mt-3 flex flex-wrap gap-1">{key.scopes.slice(0, 18).map((scope) => <span key={scope} className="rounded-full bg-stone-100 px-2 py-1 text-[9px] font-bold text-stone-500">{scope}</span>)}{key.scopes.length > 18 && <span className="rounded-full bg-violet-50 px-2 py-1 text-[9px] font-bold text-violet-600">+{key.scopes.length - 18}</span>}</div>
+                        <p className="mt-3 text-[10px] text-stone-400">Último uso: {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString("pt-BR") : "ainda não utilizada"}</p>
+                      </>}
+                    </div>;
+                  })}
+                </div>
               </div>
             </section>
 
