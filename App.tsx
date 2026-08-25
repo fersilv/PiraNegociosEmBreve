@@ -30,6 +30,7 @@ const HelpCenterPage = lazy(() => import("./pages/HelpCenterPage"));
 const ClassifiedsHomePage = lazy(() => import("./pages/ClassifiedsHomePage"));
 const ClassifiedsSearchPage = lazy(() => import("./pages/ClassifiedsSearchPage"));
 const ClassifiedListingPage = lazy(() => import("./pages/ClassifiedListingPage"));
+const ClassifiedsTermsPage = lazy(() => import("./pages/ClassifiedsTermsPage"));
 const ClassifiedsWorkspacePage = lazy(() => import("./pages/ClassifiedsWorkspacePage"));
 
 function RouteLoader() {
@@ -66,6 +67,7 @@ export default function App() {
               <Route path="/vagas/:slug" element={<PublicJobPage />} />
 
               <Route path="/classificados" element={<ClassifiedsHomePage />} />
+              <Route path="/classificados/termos" element={<ClassifiedsTermsPage />} />
               <Route path="/classificados/busca" element={<ClassifiedsSearchPage />} />
               <Route path="/classificados/categoria/:categorySlug" element={<ClassifiedsSearchPage />} />
               <Route path="/classificados/anuncio/:slug" element={<ClassifiedListingPage />} />
@@ -87,7 +89,6 @@ export default function App() {
               <Route path="/user/*" element={<Dashboard />} />
               <Route path="/company/*" element={<Dashboard />} />
               <Route path="/admin/*" element={<Dashboard />} />
-
               <Route path="/dashboard/*" element={<Dashboard />} />
 
               <Route path="/:companySlug/termos" element={<CompanyLegalPage type="terms" />} />
