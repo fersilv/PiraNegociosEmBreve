@@ -14,7 +14,7 @@ export class WhatsAppOAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const response = context.switchToHttp().getResponse();
     const instanceId = String(request.params?.instanceId || '').trim();
-    const resourceMetadata = `${this.oauth.publicBaseUrl()}/.well-known/oauth-protected-resource/api/whatsapp/mcp/${encodeURIComponent(instanceId)}`;
+    const resourceMetadata = this.oauth.resourceMetadataUrl(instanceId);
     const challenge = [
       'Bearer error="invalid_token"',
       'error_description="Authentication required"',
