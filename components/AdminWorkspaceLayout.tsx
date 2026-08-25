@@ -17,6 +17,7 @@ import {
   MessageCircleMore,
   MoreHorizontal,
   ShieldCheck,
+  Smartphone,
   User,
   UserPlus,
   Users,
@@ -70,6 +71,7 @@ const groups: AdminNavGroup[] = [
       { to: "/admin/cadastros", label: "Novos cadastros", icon: <UserPlus className="h-4 w-4" /> },
       { to: "/admin/criador-publico", label: "Criador público", icon: <FileText className="h-4 w-4" /> },
       { to: "/admin/notificacoes", label: "Notificações", icon: <BellRing className="h-4 w-4" /> },
+      { to: "/admin/whatsapp", label: "WhatsApp", icon: <Smartphone className="h-4 w-4" /> },
       { to: "/admin/solicitacoes", label: "Solicitações", icon: <MessageCircleMore className="h-4 w-4" /> },
       { to: "/admin/publicidade", label: "Publicidade", icon: <Megaphone className="h-4 w-4" /> },
       { to: "/admin/api", label: "API v1", icon: <KeyRound className="h-4 w-4" /> },
@@ -209,6 +211,7 @@ export function AdminWorkspaceLayout({ children }: { children: React.ReactNode }
               <MoreLink to="/admin/criador-publico" icon={<FileText className="h-4 w-4" />} label="Criador público" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/cadastros" icon={<UserPlus className="h-4 w-4" />} label="Novos cadastros" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/notificacoes" icon={<BellRing className="h-4 w-4" />} label="Notificações" close={() => setMoreOpen(false)} />
+              <MoreLink to="/admin/whatsapp" icon={<Smartphone className="h-4 w-4" />} label="WhatsApp" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/solicitacoes" icon={<MessageCircleMore className="h-4 w-4" />} label="Solicitações" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/vagas/sinalizadas" icon={<AlertTriangle className="h-4 w-4" />} label="Vagas sinalizadas" close={() => setMoreOpen(false)} />
               <MoreLink to="/admin/vinculos" icon={<Link2 className="h-4 w-4" />} label="Vínculos" close={() => setMoreOpen(false)} />
