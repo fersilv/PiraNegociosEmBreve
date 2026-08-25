@@ -53,6 +53,15 @@ export class User {
   @Column({ nullable: true })
   phone: string;
 
+  @Column({ type: 'varchar', length: 20, nullable: true, unique: true })
+  whatsappPhoneE164: string | null;
+
+  @Column({ type: 'varchar', length: 80, nullable: true, unique: true })
+  whatsappId: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  whatsappVerifiedAt: Date | null;
+
   @Column({ default: true })
   isOpenToWork: boolean;
 
