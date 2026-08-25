@@ -239,8 +239,20 @@ export class WhatsAppMcpController {
       if (scopes.has('channels:read')) {
         server.registerTool(
           'whatsapp_list_channels',
-          { description: 'Lista canais/newsletters visíveis para esta sessão.', inputSchema: z.object({}) },
+          { description: 'Lista canais/newsletters já carregados nesta sessão do WhatsApp.', inputSchema: z.object({}) },
           async () => this.result(await this.whatsapp.listChannels(instanceId)),
+        );
+        server.registerTool(
+          'whatsapp_search_channels',
+          {
+            description: 'Pesquisa canais/newsletters no diretório do WhatsApp pelo nome e devolve os IDs @newsletter encontrados.',
+            inputSchema: z.object({
+              query: z.string().min(1),
+              limit: z.number().int().min(1).max(50).optional(),
+            }),
+          },
+          async ({ query, limit }: { query: string; limit?: number }) =>
+            this.result(await executeWppOperation(this.whatsapp, instanceId, 'channels:search', [query, limit || 20])),
         );
       }
 
