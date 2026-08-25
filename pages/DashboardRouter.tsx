@@ -39,6 +39,8 @@ import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
 import { CandidateJobViewPage } from "./CandidateJobViewPage";
 import { ResumeWorkspace } from "./ResumeWorkspace";
 import { AdminProductFeedbackPage } from "./AdminProductFeedbackPage";
+import UserClassifiedsPage from "./UserClassifiedsPage";
+import ClassifiedPublishPage from "./ClassifiedPublishPage";
 
 function AdminPage({ children }: { children: React.ReactNode }) {
   return <div className="admin-page-shell">{children}</div>;
@@ -77,6 +79,8 @@ function UserRoutes() {
       <Route path="onboarding" element={<Onboarding />} />
       <Route index element={<CandidateDashboard />} />
       <Route path="vagas" element={<UserJobsPage />} />
+      <Route path="classificados" element={<UserClassifiedsPage />} />
+      <Route path="classificados/novo" element={<ClassifiedPublishPage />} />
       <Route path="curriculo" element={<ResumeWorkspace />} />
       <Route path="curriculo/evolucao" element={<ResumeEvolutionPage />} />
       <Route path="pagamentos" element={<UserPaymentsPage />} />
