@@ -10,6 +10,15 @@ import { ExternalApiController } from './external-api.controller';
 import { ExternalJobsService } from './external-jobs.service';
 import { ExternalApiClient } from './entities/external-api-client.entity';
 import { ExternalApiRequest } from './entities/external-api-request.entity';
+import {
+  JobsOAuthClient,
+  JobsOAuthCode,
+  JobsOAuthToken,
+} from './entities/jobs-oauth.entity';
+import { JobsMcpController } from './jobs-mcp.controller';
+import { JobsOAuthController } from './jobs-oauth.controller';
+import { JobsOAuthGuard } from './jobs-oauth.guard';
+import { JobsOAuthService } from './jobs-oauth.service';
 
 @Module({
   imports: [
@@ -17,11 +26,25 @@ import { ExternalApiRequest } from './entities/external-api-request.entity';
     TypeOrmModule.forFeature([
       ExternalApiClient,
       ExternalApiRequest,
+      JobsOAuthClient,
+      JobsOAuthCode,
+      JobsOAuthToken,
       Job,
       User,
     ]),
   ],
-  controllers: [ExternalApiController, ExternalApiAdminController],
-  providers: [ApiKeyGuard, AdminGuard, ExternalJobsService],
+  controllers: [
+    JobsOAuthController,
+    JobsMcpController,
+    ExternalApiController,
+    ExternalApiAdminController,
+  ],
+  providers: [
+    ApiKeyGuard,
+    AdminGuard,
+    ExternalJobsService,
+    JobsOAuthGuard,
+    JobsOAuthService,
+  ],
 })
 export class ExternalApiModule {}
