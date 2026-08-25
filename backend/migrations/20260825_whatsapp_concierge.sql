@@ -12,7 +12,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS "IDX_users_whatsappId_unique"
   WHERE "whatsappId" IS NOT NULL;
 
 ALTER TABLE whatsapp_instances
-  ADD COLUMN IF NOT EXISTS "isPrimarySupport" boolean NOT NULL DEFAULT false;
+  ADD COLUMN IF NOT EXISTS "isPrimarySupport" boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "conciergeEnabled" boolean NOT NULL DEFAULT false;
 
 CREATE UNIQUE INDEX IF NOT EXISTS "IDX_whatsapp_instances_primary_support"
   ON whatsapp_instances ("isPrimarySupport")
