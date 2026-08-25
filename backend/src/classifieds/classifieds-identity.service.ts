@@ -36,8 +36,12 @@ export class ClassifiedsIdentityService {
       company?.id ? this.companyProfiles.findOne({ where: { companyId: company.id } }) : Promise.resolve(null),
     ]);
 
-    const personalTermsAccepted = Boolean(preference?.personalTermsAcceptedAt);
-    const companyTermsAccepted = Boolean(companyProfile?.termsAcceptedAt);
+    const personalTermsAccepted = Boolean(
+      preference?.personalTermsAcceptedAt && preference.personalTermsVersion === CLASSIFIEDS_TERMS_VERSION,
+    );
+    const companyTermsAccepted = Boolean(
+      companyProfile?.termsAcceptedAt && companyProfile.termsVersion === CLASSIFIEDS_TERMS_VERSION,
+    );
     const hasTwoFaces = Boolean(company && companyEligible);
     const remembered = preference?.lastIdentityType || null;
     let activeIdentity: ClassifiedIdentityType | null = remembered;
@@ -52,7 +56,7 @@ export class ClassifiedsIdentityService {
       personal: {
         available: true,
         termsAccepted: personalTermsAccepted,
-        termsAcceptedAt: preference?.personalTermsAcceptedAt || null,
+        termsAcceptedAt: personalTermsAccepted ? preference?.personalTermsAcceptedAt || null : null,
         name: user.socialName || user.displayName || user.fullName || 'Meu perfil',
         photoURL: user.photoURL || null,
       },
@@ -105,11 +109,14 @@ export class ClassifiedsIdentityService {
     const { company, companyEligible, companyVerified } = await this.baseContext(uid);
     if (!company || !companyEligible) throw new ForbiddenException('Você não pode configurar esta empresa.');
     if (!companyVerified) throw new ForbiddenException('A empresa precisa estar verificada para aderir aos Classificados.');
-    if (body.acceptedTerms !== true && !(await this.companyProfiles.findOne({ where: { companyId: company.id } }))?.termsAcceptedAt) {
-      throw new BadRequestException('É necessário aceitar os Termos de Uso dos Classificados em nome da empresa.');
-    }
 
     let profile = await this.companyProfiles.findOne({ where: { companyId: company.id } });
+    const hasCurrentTerms = Boolean(
+      profile?.termsAcceptedAt && profile.termsVersion === CLASSIFIEDS_TERMS_VERSION,
+    );
+    if (body.acceptedTerms !== true && !hasCurrentTerms) {
+      throw new BadRequestException('É necessário aceitar os Termos de Uso dos Classificados em nome da empresa.');
+    }
     if (!profile) profile = this.companyProfiles.create({ companyId: company.id });
 
     const canSellProducts = body.canSellProducts !== undefined ? Boolean(body.canSellProducts) : profile.canSellProducts;
@@ -121,9 +128,19 @@ export class ClassifiedsIdentityService {
     profile.status = 'ACTIVE';
     profile.canSellProducts = canSellProducts;
     profile.canOfferServices = canOfferServices;
-    profile.businessSegments = cleanSegments(body.businessSegments);
-    profile.defaultPublicationChannels = cleanChannels(body.defaultPublicationChannels, ['CLASSIFIEDS', 'COMPANY_PAGE']);
-    profile.pageSectionLabel = cleanNullable(body.pageSectionLabel, 80);
+    if (body.businessSegments !== undefined) {
+      profile.businessSegments = cleanSegments(body.businessSegments);
+    } else if (!Array.isArray(profile.businessSegments)) {
+      profile.businessSegments = [];
+    }
+    if (body.defaultPublicationChannels !== undefined) {
+      profile.defaultPublicationChannels = cleanChannels(body.defaultPublicationChannels, profile.defaultPublicationChannels || ['CLASSIFIEDS', 'COMPANY_PAGE']);
+    } else if (!profile.defaultPublicationChannels?.length) {
+      profile.defaultPublicationChannels = ['CLASSIFIEDS', 'COMPANY_PAGE'];
+    }
+    if (body.pageSectionLabel !== undefined) {
+      profile.pageSectionLabel = cleanNullable(body.pageSectionLabel, 80);
+    }
     if (body.acceptedTerms === true) {
       profile.termsVersion = CLASSIFIEDS_TERMS_VERSION;
       profile.termsAcceptedAt = new Date();
@@ -147,7 +164,10 @@ export class ClassifiedsIdentityService {
     if (!type) throw new BadRequestException('Escolha se deseja entrar nos Classificados como Personal ou Business.');
 
     if (type === 'PERSONAL') {
-      if (requireReady && !preference?.personalTermsAcceptedAt) {
+      const personalTermsCurrent = Boolean(
+        preference?.personalTermsAcceptedAt && preference.personalTermsVersion === CLASSIFIEDS_TERMS_VERSION,
+      );
+      if (requireReady && !personalTermsCurrent) {
         throw new ForbiddenException('Aceite os Termos de Uso para ativar o PiraNegócios Personal.');
       }
       return { type, user, company: null, companyProfile: null };
@@ -156,7 +176,10 @@ export class ClassifiedsIdentityService {
     if (!company || !companyEligible) throw new ForbiddenException('A identidade empresarial não está mais disponível para esta conta.');
     if (!companyVerified) throw new ForbiddenException('A empresa precisa estar verificada para usar os Classificados.');
     const companyProfile = await this.companyProfiles.findOne({ where: { companyId: company.id } });
-    if (requireReady && (!companyProfile?.termsAcceptedAt || companyProfile.status !== 'ACTIVE')) {
+    const companyTermsCurrent = Boolean(
+      companyProfile?.termsAcceptedAt && companyProfile.termsVersion === CLASSIFIEDS_TERMS_VERSION,
+    );
+    if (requireReady && (!companyTermsCurrent || companyProfile?.status !== 'ACTIVE')) {
       throw new ForbiddenException('Conclua a adesão da empresa aos Classificados.');
     }
     return { type, user, company, companyProfile };
@@ -174,8 +197,10 @@ export class ClassifiedsIdentityService {
   private async baseContext(uid: string) {
     const user = await this.users.findOne({ where: { id: uid } });
     if (!user) throw new ForbiddenException('Usuário não encontrado.');
-    const company = user.companyId ? await this.companies.findOne({ where: { id: user.companyId } }) : null;
-    const companyEligible = Boolean(company && (company.ownerId === uid || user.isCompanyAdmin));
+    const company = user.companyId
+      ? await this.companies.findOne({ where: { id: user.companyId } })
+      : await this.companies.findOne({ where: { ownerId: uid } });
+    const companyEligible = Boolean(company && (company.ownerId === uid || (user.companyId === company.id && user.isCompanyAdmin)));
     const companyVerified = Boolean(company && (company.verificationStatus === CompanyStatus.VERIFIED || company.isVerified));
     return { user, company, companyEligible, companyVerified };
   }
