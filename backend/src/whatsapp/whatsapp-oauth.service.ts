@@ -144,7 +144,7 @@ body{font-family:Inter,system-ui,-apple-system,sans-serif;background:#f6f7f9;col
 <div class="badge">${this.escapeHtml(instance.name)}</div>
 <p><strong>${this.escapeHtml(client.clientName || 'ChatGPT')}</strong> está solicitando acesso a este número do PiraNegócios.</p>
 <ul>${permissions || '<li>Acesso básico à conexão</li>'}</ul>
-<p class="warn">Use uma chave criada para este número. As permissões OAuth nunca ultrapassam os escopos dessa chave.</p>
+<p class="warn">O ChatGPT pode solicitar mais permissões do que esta chave possui. O vínculo continuará somente com as permissões autorizadas pela chave; as demais não serão concedidas.</p>
 <form method="post" action="${this.publicBaseUrl()}/api/whatsapp/oauth/authorize">
 ${hidden('response_type', request.responseType)}
 ${hidden('client_id', client.clientId)}
@@ -168,13 +168,15 @@ ${hidden('resource', request.resource)}
     const rawKey = String(body.api_key || '').trim();
     const key = await this.validateApiKey(instance.id, rawKey);
     const requested = this.requestedScopes(request.scope, instance.allowedScopes);
-    const oauthScopes = requested.filter((scope) => scope !== 'offline_access');
-
-    const forbidden = oauthScopes.filter(
-      (scope) => !instance.allowedScopes.includes(scope) || !key.scopes.includes(scope),
+    const oauthScopes = requested.filter(
+      (scope) =>
+        scope !== 'offline_access' &&
+        instance.allowedScopes.includes(scope) &&
+        key.scopes.includes(scope),
     );
-    if (forbidden.length) {
-      throw new UnauthorizedException(`A chave não autoriza os escopos: ${forbidden.join(', ')}`);
+
+    if (!oauthScopes.length) {
+      throw new UnauthorizedException('A chave não autoriza nenhuma das permissões solicitadas.');
     }
 
     const rawCode = `pn_oauth_code_${randomBytes(32).toString('hex')}`;
