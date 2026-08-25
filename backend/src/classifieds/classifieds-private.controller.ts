@@ -52,7 +52,7 @@ export class ClassifiedsPrivateController {
 
   @Post('me/listings')
   create(@Req() req: any, @Body() body: Record<string, unknown>) {
-    return this.classifieds.create(req.user.uid, body);
+    return this.classifieds.create(req.user.uid, normalizeOptionalPublicContacts(body));
   }
 
   @Patch('me/listings/:id')
@@ -101,4 +101,14 @@ export class ClassifiedsPrivateController {
   readConversation(@Req() req: any, @Param('conversationId') conversationId: string) {
     return this.chats.markRead(conversationId, req.user.uid);
   }
+}
+
+function normalizeOptionalPublicContacts(body: Record<string, unknown>) {
+  const payload = { ...body };
+  // The service historically falls back to profile/company contacts on create.
+  // A truthy whitespace sentinel prevents that fallback, and cleanNullable()
+  // then stores null. Public contacts are therefore opt-in, not inherited.
+  if (!String(body.contactPhone ?? '').trim()) payload.contactPhone = ' ';
+  if (!String(body.contactWhatsapp ?? '').trim()) payload.contactWhatsapp = ' ';
+  return payload;
 }
