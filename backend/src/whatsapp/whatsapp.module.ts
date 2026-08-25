@@ -6,6 +6,7 @@ import { AiModule } from '../ai/ai.module';
 import { Application } from '../applications/entities/application.entity';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { AuthModule } from '../auth/auth.module';
+import { CompanyPlansModule } from '../company-plans/company-plans.module';
 import { Company } from '../companies/entities/company.entity';
 import { JobsOAuthClient } from '../external-api/entities/jobs-oauth.entity';
 import { ExternalApiModule } from '../external-api/external-api.module';
@@ -65,6 +66,7 @@ import { WhatsAppService } from './whatsapp.service';
     JobsModule,
     JobMatchModule,
     ExternalApiModule,
+    CompanyPlansModule,
   ],
   controllers: [
     WhatsAppAdminController,
