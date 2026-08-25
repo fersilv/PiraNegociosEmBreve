@@ -9,8 +9,8 @@ export class WhatsAppApiController {
 
   @Get('status')
   @RequireWhatsAppScope('connection:read')
-  status(@Param('instanceId') id: string) {
-    return this.whatsapp.status(id);
+  async status(@Param('instanceId') id: string) {
+    return this.publicStatus(await this.whatsapp.status(id));
   }
 
   @Get('messages')
@@ -89,5 +89,22 @@ export class WhatsAppApiController {
     @Body() body: { text?: string; media?: string; caption?: string },
   ) {
     return this.whatsapp.publishStatus(id, body);
+  }
+
+  private publicStatus(value: any) {
+    return {
+      id: value.id,
+      name: value.name,
+      purpose: value.purpose,
+      phoneNumber: value.phoneNumber,
+      provider: value.provider,
+      status: value.status,
+      active: value.active,
+      connected: value.connected,
+      lastConnectedAt: value.lastConnectedAt,
+      lastSeenAt: value.lastSeenAt,
+      runtimeDetail: value.runtimeDetail,
+      capabilities: value.capabilities,
+    };
   }
 }
