@@ -32,6 +32,7 @@ export class WhatsAppInstance {
   @Column({ type: 'jsonb', default: () => "'[]'::jsonb" }) allowedScopes: string[];
   @Column({ default: true }) active: boolean;
   @Column({ default: false }) isPrimarySupport: boolean;
+  @Column({ default: false }) conciergeEnabled: boolean;
   @Column({ type: 'text', nullable: true }) lastError: string | null;
   @Column({ type: 'timestamptz', nullable: true }) lastConnectedAt: Date | null;
   @Column({ type: 'timestamptz', nullable: true }) lastSeenAt: Date | null;
