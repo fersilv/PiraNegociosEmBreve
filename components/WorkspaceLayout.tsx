@@ -14,6 +14,7 @@ import {
   Settings2,
   SlidersHorizontal,
   Sparkles,
+  Tags,
   User,
   UserRoundSearch,
   UsersRound,
@@ -30,13 +31,14 @@ type NavItem = { to: string; label: string; icon: React.ReactNode; end?: boolean
 const userNavigation: NavItem[] = [
   { to: "/user", label: "Início", icon: <Home className="h-5 w-5" />, end: true },
   { to: "/user/vagas", label: "Encontrar vagas", icon: <Briefcase className="h-5 w-5" /> },
+  { to: "/user/classificados", label: "Classificados", icon: <Tags className="h-5 w-5" /> },
   { to: "/user/curriculo", label: "Meu currículo", icon: <FileText className="h-5 w-5" /> },
   { to: "/user/perfil", label: "Perfil profissional", icon: <User className="h-5 w-5" /> },
   { to: "/user/preferencias", label: "Preferências", icon: <SlidersHorizontal className="h-5 w-5" /> },
   { to: "/user/configuracoes", label: "Configurações", icon: <Settings2 className="h-5 w-5" /> },
 ];
 
-const userMobileNavigation = userNavigation.filter((item) => ["/user", "/user/vagas", "/user/curriculo", "/user/perfil"].includes(item.to));
+const userMobileNavigation = userNavigation.filter((item) => ["/user", "/user/vagas", "/user/classificados", "/user/curriculo", "/user/perfil"].includes(item.to));
 
 const companyNavigation: NavItem[] = [
   { to: "/company", label: "Visão geral", icon: <Home className="h-5 w-5" />, end: true },
@@ -69,6 +71,10 @@ export function WorkspaceLayout({ workspace, children }: { workspace: Workspace;
     window.location.replace("/");
   };
   const switchWorkspace = (target: Workspace) => { setWorkspaceOpen(false); setMobileOpen(false); navigate(target === "company" ? "/company" : "/user"); };
+
+  if (!isCompany && location.pathname === "/user/classificados/novo") {
+    return <>{children}</>;
+  }
 
   return (
     <div className={`min-h-screen ${isCompany ? "bg-[#f3f2ee]" : "user-workspace bg-[#f5efe8] text-[#201813]"}`}>
@@ -142,4 +148,4 @@ function CompanyJobsNav({ open, onToggle, onNavigate }: { open: boolean; onToggl
     {open && <div className="ml-4 mt-2 space-y-1.5 border-l border-white/10 pl-3">{children.map((item) => <NavLink key={item.to} to={item.to} end={item.end} onClick={onNavigate} className={({ isActive }) => `group/sub flex items-center gap-3 rounded-2xl border px-3 py-2.5 transition ${isActive ? "border-white/10 bg-white/[0.11] text-white shadow-sm" : "border-transparent text-white/42 hover:border-white/[0.06] hover:bg-white/[0.055] hover:text-white/85"}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/[0.06] text-[#efb89c] transition group-hover/sub:bg-white/[0.09]">{item.icon}</span><span className="min-w-0"><span className="block truncate text-xs font-bold">{item.label}</span><span className="mt-0.5 block truncate text-[9px] font-medium text-white/28">{item.description}</span></span></NavLink>)}</div>}
   </div>;
 }
-function MobileNavLink({ to, label, icon, end = false, company }: NavItem & { company: boolean; key?: React.Key }) { return <NavLink to={to} end={end} className={({ isActive }) => `flex min-w-14 flex-col items-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-semibold transition ${company ? isActive ? "text-terracotta-700" : "text-stone-400" : isActive ? "bg-white/[0.08] text-[#f2c5ad]" : "text-white/38"}`}>{icon}<span>{label.replace("Banco de talentos", "Talentos").replace("Encontrar vagas", "Vagas").replace("Meu currículo", "Currículo").replace("Perfil profissional", "Perfil")}</span></NavLink>; }
+function MobileNavLink({ to, label, icon, end = false, company }: NavItem & { company: boolean; key?: React.Key }) { return <NavLink to={to} end={end} className={({ isActive }) => `flex min-w-12 flex-col items-center gap-0.5 rounded-xl px-1.5 py-1 text-[9px] font-semibold transition ${company ? isActive ? "text-terracotta-700" : "text-stone-400" : isActive ? "bg-white/[0.08] text-[#f2c5ad]" : "text-white/38"}`}>{icon}<span>{label.replace("Banco de talentos", "Talentos").replace("Encontrar vagas", "Vagas").replace("Meu currículo", "Currículo").replace("Perfil profissional", "Perfil")}</span></NavLink>; }
