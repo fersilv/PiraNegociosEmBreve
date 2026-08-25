@@ -1,10 +1,11 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
-  TooManyRequestsException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomInt, timingSafeEqual } from 'crypto';
@@ -53,7 +54,12 @@ export class WhatsAppPhoneVerificationService {
         createdAt: MoreThan(new Date(Date.now() - 10 * 60 * 1000)),
       },
     });
-    if (recent >= 3) throw new TooManyRequestsException('Aguarde alguns minutos antes de solicitar outro código.');
+    if (recent >= 3) {
+      throw new HttpException(
+        'Aguarde alguns minutos antes de solicitar outro código.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
 
     const instance = await this.primaryInstance();
     const check: any = await this.whatsapp.checkNumberStatus(instance.id, phoneE164);
@@ -103,7 +109,12 @@ export class WhatsAppPhoneVerificationService {
     if (!otp || otp.expiresAt.getTime() <= Date.now()) {
       throw new BadRequestException('O código expirou. Solicite um novo código.');
     }
-    if (otp.attempts >= 5) throw new TooManyRequestsException('Este código foi bloqueado após muitas tentativas. Solicite outro.');
+    if (otp.attempts >= 5) {
+      throw new HttpException(
+        'Este código foi bloqueado após muitas tentativas. Solicite outro.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
 
     otp.attempts += 1;
     const supplied = Buffer.from(this.hashCode(userId, phoneE164, code));
