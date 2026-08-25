@@ -135,8 +135,6 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       });
     this.connecting.set(id, task);
 
-    // O navegador continua abrindo no servidor. A API responde agora para que
-    // o painel consiga consultar /status e mostrar o QR Code assim que chegar.
     return this.status(id);
   }
 
@@ -237,12 +235,98 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   async listGroups(id: string) {
     const client = this.requireClient(id);
-    const chats = await client.listChats();
+    const chats = await client.listChats({ onlyGroups: true });
     if (!Array.isArray(chats)) return [];
     return chats.filter((chat: any) => {
       const serialized = String(chat?.id?._serialized || chat?.id || '');
       return serialized.endsWith('@g.us');
     });
+  }
+
+  async getGroupHistory(
+    id: string,
+    groupId: string,
+    options: { count?: number; beforeMessageId?: string; media?: 'all' | 'image' | 'document' | 'url' },
+  ) {
+    const client = this.requireClient(id);
+    const target = this.normalizeGroupId(groupId);
+    const count = Math.min(500, Math.max(1, Number(options?.count || 100)));
+    const params: Record<string, unknown> = { count };
+    if (options?.beforeMessageId) {
+      params.id = String(options.beforeMessageId);
+      params.direction = 'before';
+    }
+    if (options?.media) params.media = options.media;
+    const rows = await client.getMessages(target, params);
+    return Array.isArray(rows) ? rows.map((message: any) => this.publicMessage(message)) : [];
+  }
+
+  async getGroupMedia(id: string, messageId: string) {
+    const client = this.requireClient(id);
+    const message = await client.getMessageById(String(messageId || '').trim());
+    if (!message) throw new NotFoundException('Mensagem não encontrada no WhatsApp.');
+    const data = await client.downloadMedia(message);
+    const mimeType = String(message?.mimetype || message?.mimeType || 'application/octet-stream');
+    return {
+      message: this.publicMessage(message),
+      mimeType,
+      data: typeof data === 'string' ? data.replace(/^data:[^;]+;base64,/, '') : '',
+    };
+  }
+
+  async listGroupMembers(id: string, groupId: string) {
+    const client = this.requireClient(id);
+    const target = this.normalizeGroupId(groupId);
+    const members = await client.getGroupMembers(target);
+    return Array.isArray(members) ? members : [];
+  }
+
+  async joinGroup(id: string, inviteCodeOrLink: string) {
+    const client = this.requireClient(id);
+    const invite = String(inviteCodeOrLink || '').trim();
+    if (!invite) throw new BadRequestException('Informe o link ou código de convite do grupo.');
+    const info = await client.getGroupInfoFromInviteLink(invite).catch(() => null);
+    const result = await client.joinGroup(invite);
+    return { ok: true, info, result };
+  }
+
+  async addGroupParticipant(id: string, groupId: string, participantId: string) {
+    const client = this.requireClient(id);
+    const target = this.normalizeGroupId(groupId);
+    const participant = this.normalizeParticipantId(participantId);
+    const result = await client.addParticipant(target, participant);
+    return { ok: true, groupId: target, participantId: participant, result };
+  }
+
+  async removeGroupParticipant(id: string, groupId: string, participantId: string) {
+    const client = this.requireClient(id);
+    const target = this.normalizeGroupId(groupId);
+    const participant = this.normalizeParticipantId(participantId);
+    await client.removeParticipant(target, participant);
+    return { ok: true, groupId: target, participantId: participant };
+  }
+
+  async listGroupMembershipRequests(id: string, groupId: string) {
+    const client = this.requireClient(id);
+    const target = this.normalizeGroupId(groupId);
+    const requests = await client.getGroupMembershipRequests(target);
+    return Array.isArray(requests) ? requests : [];
+  }
+
+  async approveGroupMembershipRequest(id: string, groupId: string, participantId: string) {
+    const client = this.requireClient(id);
+    const target = this.normalizeGroupId(groupId);
+    const participant = this.normalizeParticipantId(participantId);
+    const result = await client.approveGroupMembershipRequest(target, participant);
+    return { ok: true, groupId: target, participantId: participant, result };
+  }
+
+  async rejectGroupMembershipRequest(id: string, groupId: string, participantId: string) {
+    const client = this.requireClient(id);
+    const target = this.normalizeGroupId(groupId);
+    const participant = this.normalizeParticipantId(participantId);
+    const result = await client.rejectGroupMembershipRequest(target, participant);
+    return { ok: true, groupId: target, participantId: participant, result };
   }
 
   async listChannels(id: string) {
@@ -419,6 +503,9 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         messages: true,
         contacts: true,
         groups: true,
+        groupHistory: true,
+        groupMedia: true,
+        groupModeration: true,
         channels: 'experimental',
         status: true,
         multiSession: true,
@@ -474,6 +561,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             isGroupMsg: Boolean(message?.isGroupMsg),
             isMedia: Boolean(message?.isMedia),
             fromMe: Boolean(message?.fromMe),
+            mimetype: message?.mimetype || message?.mimeType || null,
+            caption: message?.caption || null,
           },
           providerTimestamp: message?.timestamp ? new Date(Number(message.timestamp) * 1000) : null,
         }),
@@ -497,6 +586,40 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         providerTimestamp: new Date(),
       }),
     );
+  }
+
+  private publicMessage(message: any) {
+    return {
+      id: String(message?.id?._serialized || message?.id || ''),
+      from: String(message?.from || ''),
+      to: String(message?.to || ''),
+      author: String(message?.author || message?.sender?.id?._serialized || message?.sender?.id || ''),
+      body: typeof message?.body === 'string' ? message.body : null,
+      caption: typeof message?.caption === 'string' ? message.caption : null,
+      type: String(message?.type || 'message'),
+      timestamp: message?.timestamp || message?.t || null,
+      fromMe: Boolean(message?.fromMe),
+      isGroupMsg: Boolean(message?.isGroupMsg),
+      isMedia: Boolean(message?.isMedia || message?.mimetype || message?.mimeType),
+      mimetype: message?.mimetype || message?.mimeType || null,
+      quotedMsgId: String(message?.quotedMsgId?._serialized || message?.quotedMsgId || '') || null,
+      mentionedJidList: Array.isArray(message?.mentionedJidList) ? message.mentionedJidList : [],
+    };
+  }
+
+  private normalizeGroupId(groupId: string) {
+    const value = String(groupId || '').trim();
+    if (!value.endsWith('@g.us')) throw new BadRequestException('Informe um groupId válido terminado em @g.us.');
+    return value;
+  }
+
+  private normalizeParticipantId(participantId: string) {
+    const value = String(participantId || '').trim();
+    if (!value) throw new BadRequestException('Participante não informado.');
+    if (/@(?:c\.us|lid)$/.test(value)) return value;
+    const digits = this.onlyDigits(value);
+    if (!digits) throw new BadRequestException('Participante inválido.');
+    return `${digits}@c.us`;
   }
 
   private normalizeChatId(target: string) {
