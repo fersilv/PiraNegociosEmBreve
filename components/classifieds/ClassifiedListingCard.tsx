@@ -23,10 +23,12 @@ export function ClassifiedListingCard({
   listing,
   compact = false,
   onFavoriteChange,
+  detailBasePath = '/classificados/anuncio',
 }: {
   listing: ClassifiedListing;
   compact?: boolean;
   onFavoriteChange?: (listingId: string, favorited: boolean) => void;
+  detailBasePath?: string;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -56,7 +58,7 @@ export function ClassifiedListingCard({
 
   return (
     <Link
-      to={`/classificados/anuncio/${encodeURIComponent(listing.slug)}`}
+      to={`${detailBasePath}/${encodeURIComponent(listing.slug)}`}
       className="group min-w-0 overflow-hidden rounded-[18px] bg-white shadow-[0_8px_26px_rgba(45,33,28,.055)] ring-1 ring-[#4b3328]/10 transition hover:-translate-y-0.5 hover:shadow-[0_16px_42px_rgba(45,33,28,.10)] sm:rounded-[22px]"
     >
       <div className={`relative overflow-hidden bg-[#eee8e2] ${compact ? 'aspect-[1.12/1]' : 'aspect-square sm:aspect-[4/3]'}`}>
