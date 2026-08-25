@@ -15,6 +15,11 @@ dist-ssr
 backend/.env
 backend/serviceAccountKey.json
 
+# WhatsApp Web session tokens are credentials and must live on persistent storage,
+# never in Git.
+whatsapp-sessions/
+backend/whatsapp-sessions/
+
 # Payment/API certificates and private keys must never be committed.
 *.p12
 *.pfx
