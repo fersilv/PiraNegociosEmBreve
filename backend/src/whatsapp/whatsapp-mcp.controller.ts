@@ -21,7 +21,7 @@ export class WhatsAppMcpController {
     const handler = createMcpHandler(() => {
       const server = new McpServer({
         name: `PiraNegocios WhatsApp - ${instanceId}`,
-        version: '2.1.0',
+        version: '2.2.0',
       });
 
       // Ferramentas semânticas antigas permanecem para não quebrar integrações já criadas.
@@ -256,11 +256,29 @@ export class WhatsAppMcpController {
         );
       }
 
+      // Tool de primeira classe para publicação em newsletter. Mantemos também
+      // a versão whatsapp_wpp_publishChannelText gerada pelo catálogo abaixo,
+      // mas esta forma explícita é muito mais fácil de descobrir e consumir.
+      if (scopes.has('channels:publish:text')) {
+        server.registerTool(
+          'whatsapp_publish_channel_text',
+          {
+            description: 'Publica uma mensagem de texto diretamente em um canal/newsletter administrado por esta sessão. Use o ID terminado em @newsletter.',
+            inputSchema: z.object({
+              newsletterId: z.string().min(1),
+              text: z.string().min(1).max(4096),
+            }),
+          },
+          async ({ newsletterId, text }: { newsletterId: string; text: string }) =>
+            this.result(await executeWppOperation(this.whatsapp, instanceId, 'channels:publish:text', [newsletterId, text])),
+        );
+      }
+
       if (scopes.has('channels:publish')) {
         server.registerTool(
           'whatsapp_publish_channel',
           {
-            description: 'EXPERIMENTAL: publica texto em um canal administrado pelo número.',
+            description: 'EXPERIMENTAL/LEGADO: publica texto em um canal usando o envio genérico. Prefira whatsapp_publish_channel_text quando disponível.',
             inputSchema: z.object({ channelId: z.string().min(1), text: z.string().min(1) }),
           },
           async ({ channelId, text }: { channelId: string; text: string }) => this.result(await this.whatsapp.publishChannel(instanceId, channelId, text)),
