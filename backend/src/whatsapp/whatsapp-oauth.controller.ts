@@ -8,7 +8,7 @@ import {
   Query,
   Res,
 } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { WhatsAppOAuthService } from './whatsapp-oauth.service';
 
 @Controller()
