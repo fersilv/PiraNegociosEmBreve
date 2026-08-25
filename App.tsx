@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useState } from "react";
+import React, { Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { FeedbackProvider } from "./contexts/FeedbackContext";
@@ -9,6 +9,7 @@ import { PublishedResumeCompanyBridge } from "./components/PublishedResumeCompan
 import { PublicResumeAccountBridge } from "./components/PublicResumeAccountBridge";
 import { PublicResumeExitIntent } from "./components/PublicResumeExitIntent";
 import { PublicResumeResponsiveStyles } from "./components/PublicResumeResponsiveStyles";
+import { AuthenticatedProductFeedbackWidget } from "./components/AuthenticatedProductFeedbackWidget";
 
 const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() => import("./pages/Login").then((module) => ({ default: module.Login })));
@@ -31,22 +32,9 @@ const ClassifiedsTermsPage = lazy(() => import("./pages/ClassifiedsTermsPage"));
 const ClassifiedsWorkspacePage = lazy(() => import("./pages/ClassifiedsWorkspacePage"));
 const CompanyLegalPage = lazy(() => import("./pages/CompanyLegalPage").then((module) => ({ default: module.CompanyLegalPage })));
 const ResumeQualificationWidget = lazy(() => import("./components/ResumeQualificationWidget").then((module) => ({ default: module.ResumeQualificationWidget })));
-const ProductFeedbackWidget = lazy(() => import("./components/ProductFeedbackWidget").then((module) => ({ default: module.ProductFeedbackWidget })));
 
 function RouteLoader() {
   return <div className="min-h-screen flex items-center justify-center text-stone-500">Carregando...</div>;
-}
-
-function DeferredProductFeedbackWidget() {
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setReady(true), 2500);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  if (!ready) return null;
-  return <Suspense fallback={null}><ProductFeedbackWidget /></Suspense>;
 }
 
 export default function App() {
@@ -86,6 +74,12 @@ export default function App() {
               <Route path="/classificados/categoria/:categorySlug" element={<ClassifiedsSearchPage />} />
               <Route path="/classificados/anuncio/:slug" element={<ClassifiedListingPage />} />
               <Route path="/classificados/painel" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/explorar" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/explorar/:listingSlug" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/anuncios" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/servicos" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/ofertas" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/analytics" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/publicar" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/conversas" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/conversas/:conversationId" element={<ClassifiedsWorkspacePage />} />
@@ -111,7 +105,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </Suspense>
-          {!isEmbed && !isMobileTransfer && !isCompanyPreview && <DeferredProductFeedbackWidget />}
+          {!isMinimalShell && <AuthenticatedProductFeedbackWidget />}
         </BrowserRouter>
       </AuthProvider>
     </FeedbackProvider>
