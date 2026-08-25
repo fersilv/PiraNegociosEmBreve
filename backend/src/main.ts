@@ -68,6 +68,10 @@ async function bootstrap() {
   app.setGlobalPrefix('api', {
     exclude: [
       { path: '.well-known/oauth-authorization-server', method: RequestMethod.GET },
+      {
+        path: '.well-known/oauth-protected-resource/api/whatsapp/mcp/:instanceId',
+        method: RequestMethod.GET,
+      },
     ],
   });
   app.enableCors();
