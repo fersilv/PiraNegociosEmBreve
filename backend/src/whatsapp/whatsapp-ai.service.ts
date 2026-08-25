@@ -29,6 +29,14 @@ export class WhatsAppAiService {
     availableContext?: Record<string, unknown>;
   }): Promise<WhatsAppConciergeDecision> {
     const runtime = await this.runtime();
+
+    // O administrador não precisa passar pelo classificador de intents para
+    // consultas de leitura. Responder diretamente evita que modelos retornem
+    // apenas uma classificação/meta-resposta com reply vazio.
+    if (String(input.contextMode || '').toUpperCase() === 'ADMIN') {
+      return this.answerAdmin(runtime, input);
+    }
+
     const system = `Você é o atendimento oficial do PiraNegócios pelo WhatsApp. Fale em português brasileiro de forma natural, objetiva, útil e humana.
 Você NÃO executa ações por conta própria: classifique a intenção para que o backend execute apenas ações autorizadas. Nunca invente resultado de consulta, cadastro, envio, pagamento, publicação ou alteração.
 Use intensamente os dados reais enviados em ATOR, CONTEXTO DISPONÍVEL, HISTÓRICO e ESTADO DO FLUXO. Se uma informação estiver disponível ali, não peça novamente ao usuário.
@@ -39,13 +47,9 @@ INTENTS DE CANDIDATO:
 CHAT, LIST_APPLICATIONS, JOB_MATCHES, GET_RESUME, SET_RESUME_PHOTO, IMPORT_RESUME, START_RESUME_CREATE, CONTINUE_RESUME_CREATE, CONFIRM_RESUME_CREATE, CANCEL_FLOW.
 INTENTS DE EMPRESA:
 LIST_COMPANY_JOBS, JOB_APPLICATION_COUNTS, JOB_MATCH_CANDIDATES, START_JOB_CREATE, CONTINUE_JOB_CREATE, CONFIRM_JOB_CREATE, START_JOB_EDIT, CONTINUE_JOB_EDIT, CONFIRM_JOB_EDIT, CANCEL_FLOW.
-INTENTS ADMINISTRATIVOS:
-ADMIN_STATUS, CHAT.
 
 REGRAS DE CONTEXTO:
 - CONTEXTO DISPONÍVEL contém somente dados que o backend decidiu disponibilizar para esta conversa. Você pode usá-los para personalizar e responder perguntas.
-- No modo ADMIN, responda perguntas de leitura diretamente quando a resposta estiver no CONTEXTO DISPONÍVEL, inclusive totais, usuários, empresas, vagas, candidaturas e dados operacionais recentes. Não diga que consultou algo que não esteja no contexto.
-- No modo ADMIN, ADMIN_STATUS é apropriado para perguntas sobre a instância/sessão do WhatsApp e saúde operacional. Use CHAT para perguntas administrativas que possam ser respondidas exclusivamente com o snapshot fornecido.
 - Em CANDIDATE e COMPANY, use o contexto para evitar perguntas repetidas, mas mantenha intents específicas quando o pedido exigir uma consulta/ação do backend.
 - Nunca revele tokens, chaves, credenciais, cookies, segredos, conteúdo de arquivos privados ou campos que não tenham sido fornecidos no contexto.
 
@@ -74,9 +78,43 @@ REGRAS DE MÍDIA:
 - SET_RESUME_PHOTO somente quando a pessoa disser que a imagem enviada deve ser a foto do currículo.
 - IMPORT_RESUME somente quando houver documento/foto profissional e a pessoa pedir para extrair, organizar ou montar o currículo a partir dele.
 - Não confunda imagem comum com foto de currículo ou documento.`;
-    const prompt = `ATOR\n${JSON.stringify(input.actor).slice(0, 14000)}\n\nMODO\n${input.contextMode}\nFLUXO ATIVO\n${input.activeFlow || 'nenhum'}\nESTADO DO FLUXO\n${JSON.stringify(input.flowState || {}).slice(0, 16000)}\n\nCONTEXTO DISPONÍVEL\n${JSON.stringify(input.availableContext || {}).slice(0, 40000)}\n\nHISTÓRICO RECENTE\n${JSON.stringify(input.history.slice(-24)).slice(0, 22000)}\n\nNOVO BLOCO DE MENSAGENS\n${input.messages.join('\n').slice(0, 14000)}\n\nClassifique a intenção e escreva uma resposta apropriada. Para consultas com intent específico, reconheça o pedido sem inventar o resultado que o backend ainda executará. No modo ADMIN, você pode responder diretamente quando a informação pedida já estiver presente no CONTEXTO DISPONÍVEL. Se houver fluxo ativo, preserve-o salvo se a pessoa cancelar ou mudar claramente de assunto.`;
+    const prompt = `ATOR\n${JSON.stringify(input.actor).slice(0, 14000)}\n\nMODO\n${input.contextMode}\nFLUXO ATIVO\n${input.activeFlow || 'nenhum'}\nESTADO DO FLUXO\n${JSON.stringify(input.flowState || {}).slice(0, 16000)}\n\nCONTEXTO DISPONÍVEL\n${JSON.stringify(input.availableContext || {}).slice(0, 40000)}\n\nHISTÓRICO RECENTE\n${JSON.stringify(input.history.slice(-24)).slice(0, 22000)}\n\nNOVO BLOCO DE MENSAGENS\n${input.messages.join('\n').slice(0, 14000)}\n\nClassifique a intenção e escreva uma resposta apropriada. Para consultas com intent específico, reconheça o pedido sem inventar o resultado que o backend ainda executará. Se houver fluxo ativo, preserve-o salvo se a pessoa cancelar ou mudar claramente de assunto.`;
     const text = await this.generate(runtime, prompt, system, true, 2200);
     return this.parseDecision(text);
+  }
+
+  private async answerAdmin(
+    runtime: Runtime,
+    input: {
+      actor: Record<string, unknown>;
+      messages: string[];
+      history: Array<{ direction: string; body: string | null; createdAt?: unknown }>;
+      availableContext?: Record<string, unknown>;
+    },
+  ): Promise<WhatsAppConciergeDecision> {
+    const system = `Você é a assistente administrativa do PiraNegócios no WhatsApp.
+Responda DIRETAMENTE à pergunta do administrador usando os dados reais fornecidos em PANORAMA OPERACIONAL, ESTADO DA INSTÂNCIA e HISTÓRICO.
+A primeira frase já deve responder ao que foi perguntado. Não explique que recebeu contexto, que reconheceu um administrador ou que pode consultar dados.
+É PROIBIDO responder com frases meta como "identifiquei você como administrador", "posso usar o panorama", "panorama operacional carregado", "contexto disponível" ou equivalentes.
+Quando houver números, nomes, cidades, vagas, empresas, usuários ou candidaturas relevantes no panorama, cite os dados concretos.
+Se o pedido exigir informação que não está no panorama fornecido, diga exatamente qual dado não está disponível neste snapshot. Não invente e não finja ter feito uma consulta adicional.
+Não execute nem prometa alterações, exclusões, publicações ou outras ações administrativas. Para pedido de alteração, explique objetivamente que este canal está em modo de consulta administrativa de leitura.
+Nunca revele tokens, chaves, credenciais, cookies ou segredos.
+Fale em português brasileiro, de forma natural, direta e informativa. Não use JSON.`;
+
+    const request = input.messages.join('\n').trim();
+    const prompt = `ADMINISTRADOR / ESTADO DA INSTÂNCIA\n${JSON.stringify(input.actor).slice(0, 18000)}\n\nPANORAMA OPERACIONAL\n${JSON.stringify(input.availableContext || {}).slice(0, 52000)}\n\nHISTÓRICO RECENTE\n${JSON.stringify(input.history.slice(-24)).slice(0, 18000)}\n\nPERGUNTA ATUAL\n${request.slice(0, 14000)}\n\nResponda agora à PERGUNTA ATUAL com os dados concretos disponíveis.`;
+
+    const reply = (await this.generate(runtime, prompt, system, false, 2200)).trim();
+    return {
+      intent: 'CHAT',
+      reply:
+        reply ||
+        'Não consegui montar uma resposta administrativa com os dados disponíveis neste snapshot. Reformule a consulta indicando o dado que você quer localizar.',
+      args: {},
+      statePatch: {},
+      requiresConfirmation: false,
+    };
   }
 
   async composeReply(input: {
