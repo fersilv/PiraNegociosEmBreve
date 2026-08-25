@@ -78,9 +78,11 @@ export async function publishChannelMedia(
           throw new Error('O pipeline de mídia do WA-JS não está disponível nesta sessão.');
         }
 
-        // WA-JS 4.6 prepara mídia corretamente, mas assertFindChat resolve apenas
-        // ChatStore. Durante esta chamada desviamos somente este newsletterId para
-        // a NewsletterStore e delegamos todos os demais IDs ao find original.
+        // WA-JS resolve sendFileMessage via assertFindChat -> Chat.find(). O bundle
+        // expõe `find` como accessor configurável em algumas versões. Um descriptor
+        // accessor não pode ser redefinido espalhando get/set junto com value,
+        // portanto instalamos temporariamente um descriptor de dados puro e depois
+        // restauramos exatamente o descriptor original.
         const originalFind = wpp.chat.find;
         const bridgedFind = async (...args: any[]) => {
           const requested = args[0]?.toString?.() || String(args[0] || '');
@@ -90,15 +92,47 @@ export async function publishChannelMedia(
 
         let restoreFind: (() => void) | null = null;
         const descriptor = Object.getOwnPropertyDescriptor(wpp.chat, 'find');
+        const descriptorKind = descriptor
+          ? ('value' in descriptor ? 'data' : 'accessor')
+          : 'missing';
+
         try {
-          if (!descriptor || descriptor.writable) {
+          if (!descriptor) {
+            Object.defineProperty(wpp.chat, 'find', {
+              configurable: true,
+              enumerable: true,
+              writable: true,
+              value: bridgedFind,
+            });
+            restoreFind = () => {
+              delete wpp.chat.find;
+            };
+          } else if ('value' in descriptor && descriptor.writable) {
             wpp.chat.find = bridgedFind;
-            restoreFind = () => { wpp.chat.find = originalFind; };
+            restoreFind = () => Object.defineProperty(wpp.chat, 'find', descriptor);
           } else if (descriptor.configurable) {
-            Object.defineProperty(wpp.chat, 'find', { ...descriptor, value: bridgedFind });
+            Object.defineProperty(wpp.chat, 'find', {
+              configurable: true,
+              enumerable: Boolean(descriptor.enumerable),
+              writable: true,
+              value: bridgedFind,
+            });
             restoreFind = () => Object.defineProperty(wpp.chat, 'find', descriptor);
           } else {
-            throw new Error('WPP.chat.find não pode ser temporariamente adaptado nesta versão do WA-JS.');
+            throw new Error(
+              `WPP.chat.find não pode ser temporariamente adaptado nesta versão do WA-JS (descriptor=${descriptorKind}, configurable=false).`,
+            );
+          }
+
+          // Falha cedo com diagnóstico claro caso o export interno usado por
+          // assertFindChat não esteja observando a propriedade que acabamos de
+          // adaptar. Isso evita devolver um genérico "Chat not found" sem contexto.
+          const probe = await wpp.chat.find(newsletterId);
+          const probeId = probe?.id?.toString?.() || '';
+          if (!probe || (probe !== newsletter && probeId !== newsletterId)) {
+            throw new Error(
+              `O bridge de newsletter não foi observado por WPP.chat.find (descriptor=${descriptorKind}).`,
+            );
           }
 
           const sendOptions: Record<string, unknown> = {
@@ -118,10 +152,15 @@ export async function publishChannelMedia(
             caption: caption ?? null,
             filename,
             mimetype,
+            bridgeDescriptor: descriptorKind,
             result,
           };
         } finally {
-          restoreFind?.();
+          try {
+            restoreFind?.();
+          } catch (restoreError) {
+            console.warn('PiraNegócios: não foi possível restaurar WPP.chat.find após publicação no canal.', restoreError);
+          }
         }
       },
       {
@@ -138,7 +177,7 @@ export async function publishChannelMedia(
     return {
       operation: `publishChannel${type.charAt(0).toUpperCase()}${type.slice(1)}`,
       scope: `channels:publish:${type === 'document' ? 'file' : type}`,
-      mode: 'newsletter-media-bridge',
+      mode: 'newsletter-media-bridge-v2',
       result: value,
     };
   } catch (error) {
