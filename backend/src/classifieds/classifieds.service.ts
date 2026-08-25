@@ -186,8 +186,11 @@ export class ClassifiedsService {
     const categorySlug = cleanText(body.categorySlug, 80);
     await this.assertCategory(categorySlug);
 
-    const company = user.companyId
+    const linkedCompany = user.companyId
       ? await this.companiesRepo.findOne({ where: { id: user.companyId } })
+      : null;
+    const company = linkedCompany && (linkedCompany.ownerId === uid || user.isCompanyAdmin)
+      ? linkedCompany
       : null;
 
     const title = requiredText(body.title, 160, 'Informe o título do anúncio.');
