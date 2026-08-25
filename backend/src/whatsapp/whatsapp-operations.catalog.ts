@@ -306,6 +306,17 @@ function buildCapabilities(): WppOperationCapability[] {
     experimental: true,
   });
 
+  capabilities.push({
+    scope: 'channels:publish:text',
+    method: 'publishChannelText',
+    category: 'Canais',
+    label: 'Publicar texto em canal',
+    description: 'Publica texto diretamente em uma newsletter administrada pela sessão usando o pipeline interno específico de canais do WA-JS, sem passar pelo ChatStore.',
+    risk: 'write',
+    signature: 'publishChannelText(newsletterId, text)',
+    experimental: true,
+  });
+
   return capabilities.sort(
     (a, b) =>
       a.category.localeCompare(b.category, 'pt-BR') ||
