@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "predev": "node .github/scripts/ensure-huggingface-provider.cjs && node .github/scripts/ensure-company-plans.cjs && node .github/scripts/ensure-company-plan-trial.cjs",
+    "predev": "node .github/scripts/ensure-huggingface-provider.cjs && node .github/scripts/ensure-company-plans.cjs && node .github/scripts/ensure-company-subscription-trial.cjs",
     "dev": "tsx server.ts",
-    "prebuild": "node .github/scripts/ensure-huggingface-provider.cjs && node .github/scripts/ensure-company-plans.cjs && node .github/scripts/ensure-company-plan-trial.cjs",
+    "prebuild": "node .github/scripts/ensure-huggingface-provider.cjs && node .github/scripts/ensure-company-plans.cjs && node .github/scripts/ensure-company-subscription-trial.cjs",
     "build": "npm run typecheck && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "typecheck": "tsc --noEmit",
     "start": "node dist/server.cjs"
