@@ -9,10 +9,12 @@ import {
   PublicFaqController,
 } from './product-feedback.controller';
 import { ProductFeedbackService } from './product-feedback.service';
+import { SupportAssistantService } from './support-assistant.service';
+import { SupportContextService } from './support-context.service';
 
 @Module({
   imports: [AiModule, NotificationsModule, TypeOrmModule.forFeature([User])],
   controllers: [ProductFeedbackController, AdminProductFeedbackController, PublicFaqController],
-  providers: [ProductFeedbackService],
+  providers: [ProductFeedbackService, SupportContextService, SupportAssistantService],
 })
 export class ProductFeedbackModule {}
