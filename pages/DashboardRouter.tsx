@@ -41,8 +41,6 @@ import { CandidateJobViewPage } from "./CandidateJobViewPage";
 import { ResumeWorkspace } from "./ResumeWorkspace";
 import { AdminProductFeedbackPage } from "./AdminProductFeedbackPage";
 import { AdminWhatsAppPage } from "./AdminWhatsAppPage";
-import UserClassifiedsPage from "./UserClassifiedsPage";
-import ClassifiedPublishPage from "./ClassifiedPublishPage";
 
 function AdminPage({ children }: { children: React.ReactNode }) {
   return <div className="admin-page-shell">{children}</div>;
@@ -82,8 +80,8 @@ function UserRoutes() {
       <Route path="onboarding" element={<Onboarding />} />
       <Route index element={<CandidateDashboard />} />
       <Route path="vagas" element={<UserJobsPage />} />
-      <Route path="classificados" element={<UserClassifiedsPage />} />
-      <Route path="classificados/novo" element={<ClassifiedPublishPage />} />
+      <Route path="classificados" element={<Navigate to="/classificados/painel" replace />} />
+      <Route path="classificados/novo" element={<Navigate to="/classificados/publicar" replace />} />
       <Route path="curriculo" element={<ResumeWorkspace />} />
       <Route path="curriculo/evolucao" element={<ResumeEvolutionPage />} />
       <Route path="pagamentos" element={<UserPaymentsPage />} />
@@ -123,17 +121,13 @@ function VerifiedCompanyPageRoute({ companyId }: { companyId: string }) {
     return () => { active = false; };
   }, [companyId]);
 
-  if (loading) {
-    return <div className="min-h-[50vh] flex items-center justify-center text-stone-500">Verificando acesso à Minha Página...</div>;
-  }
+  if (loading) return <div className="min-h-[50vh] flex items-center justify-center text-stone-500">Verificando acesso à Minha Página...</div>;
   if (!verified) {
     return (
       <div className="mx-auto max-w-3xl rounded-3xl border border-amber-200 bg-amber-50 p-7 text-amber-950 shadow-sm">
         <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">Minha Página</p>
         <h1 className="mt-2 font-serif text-3xl font-black">Disponível após a verificação da empresa</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-amber-900/80">
-          Apenas empresas verificadas podem criar e publicar uma página própria no PiraNegócios. Conclua ou acompanhe a verificação no Perfil da empresa.
-        </p>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-amber-900/80">Apenas empresas verificadas podem criar e publicar uma página própria no PiraNegócios. Conclua ou acompanhe a verificação no Perfil da empresa.</p>
         {failed && <p className="mt-3 text-xs font-semibold text-amber-800">Não foi possível confirmar o status da empresa agora.</p>}
         <Link to="/company/perfil" className="mt-5 inline-flex rounded-2xl bg-stone-900 px-4 py-3 text-xs font-black text-white">Ir para o Perfil da empresa</Link>
       </div>
@@ -191,9 +185,7 @@ function LegacyDashboardRedirect() {
   if (path === "/dashboard/empresa/inicio") return <Navigate to="/company" replace />;
   if (path === "/dashboard/empresa/painel") return <Navigate to="/company/vagas" replace />;
   if (path.startsWith("/dashboard/vaga/")) {
-    const target = profile?.type === "ADMIN"
-      ? path.replace("/dashboard/vaga/", "/admin/vagas/")
-      : path.replace("/dashboard/vaga/", "/company/vagas/");
+    const target = profile?.type === "ADMIN" ? path.replace("/dashboard/vaga/", "/admin/vagas/") : path.replace("/dashboard/vaga/", "/company/vagas/");
     return <Navigate to={target} replace />;
   }
   if (path === "/dashboard/curriculos") return <Navigate to="/company/talentos" replace />;
