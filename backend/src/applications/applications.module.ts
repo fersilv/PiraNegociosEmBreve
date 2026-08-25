@@ -15,5 +15,6 @@ import { CompanyTalentInvite } from '../companies/entities/company-talent-invite
   ],
   providers: [ApplicationsService],
   controllers: [ApplicationsController],
+  exports: [ApplicationsService],
 })
 export class ApplicationsModule {}
