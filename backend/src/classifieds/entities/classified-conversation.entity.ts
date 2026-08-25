@@ -1,7 +1,6 @@
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity('classified_conversations')
-@Index(['listingId', 'buyerUserId'], { unique: true })
 export class ClassifiedConversation {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -13,6 +12,10 @@ export class ClassifiedConversation {
   @Index()
   @Column({ type: 'varchar' })
   buyerUserId: string;
+
+  @Index()
+  @Column({ type: 'uuid', nullable: true })
+  buyerCompanyId: string | null;
 
   @Index()
   @Column({ type: 'varchar' })
