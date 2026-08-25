@@ -7,7 +7,6 @@ import { WorkspaceLayout } from "../components/WorkspaceLayout";
 import { AdminWorkspaceLayout } from "../components/AdminWorkspaceLayout";
 import { BoostVisibilityBanner } from "../components/BoostVisibilityBanner";
 import { ResumeImportEntitlementOrchestrator } from "../components/ResumeImportEntitlementOrchestrator";
-import { JobsMcpDocumentation } from "../components/JobsMcpDocumentation";
 import { CompanyJobsManagementPage } from "./CompanyJobsManagementPage";
 import { CompanyHomePage } from "./CompanyHomePage";
 import { CompanyNewJobPage } from "./CompanyNewJobPage";
@@ -20,7 +19,7 @@ import { UserAccountSettingsPage } from "./UserAccountSettingsPage";
 import { UserPaymentsPage } from "./UserPaymentsPage";
 import { ResumeEvolutionPage } from "./ResumeEvolutionPage";
 import { NotificationPreferencesPage } from "./NotificationPreferencesPage";
-import { AdminDashboard, ApiV1Panel } from "./AdminDashboard";
+import { AdminDashboard } from "./AdminDashboard";
 import { AdminOverview } from "./AdminOverview";
 import { AdminAccountPage } from "./AdminAccountPage";
 import { AdminJobDetailsPage } from "./AdminJobDetailsPage";
@@ -29,6 +28,7 @@ import { AdminRegistrationPage } from "./AdminRegistrationPage";
 import { AdminPaymentsPage } from "./AdminPaymentsPage";
 import { AdminBillingSupportPage } from "./AdminBillingSupportPage";
 import { AdminPublicResumeBuilderPage } from "./AdminPublicResumeBuilderPage";
+import { AdminJobIntegrationsPage } from "./AdminJobIntegrationsPage";
 import { PaymentMethodsPage } from "./PaymentMethodsPage";
 import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
 import { CompanyProfilePage } from "./CompanyProfilePage";
@@ -66,7 +66,7 @@ function AdminRoutes() {
       <Route path="pagamentos/formas" element={<AdminPage><PaymentMethodsPage /></AdminPage>} />
       <Route path="pagamentos/suporte" element={<AdminPage><AdminBillingSupportPage /></AdminPage>} />
       <Route path="whatsapp" element={<AdminPage><AdminWhatsAppPage /></AdminPage>} />
-      <Route path="api" element={<AdminPage><div className="mx-auto max-w-7xl space-y-6 admin-standalone-page"><header><p className="text-xs font-bold uppercase tracking-[0.18em] text-terracotta-600">Infraestrutura · Integrações</p><h1 className="mt-1 text-3xl font-serif font-bold text-stone-900">API v1</h1><p className="mt-1 max-w-3xl text-stone-500">Gerencie chaves, origens, auditoria e a documentação da API de vagas e do MCP.</p></header><JobsMcpDocumentation /><section className="rounded-2xl border border-stone-200 bg-white shadow-sm admin-primary-surface"><ApiV1Panel /></section></div></AdminPage>} />
+      <Route path="api" element={<AdminPage><AdminJobIntegrationsPage /></AdminPage>} />
       <Route path="ai" element={<AdminPage><div className="mx-auto max-w-7xl space-y-6 admin-standalone-page admin-ai-page"><AiIntegrationsPanel /></div></AdminPage>} />
       <Route path="notificacoes" element={<AdminPage><NotificationPreferencesPage /></AdminPage>} />
       <Route path="solicitacoes" element={<AdminPage><AdminProductFeedbackPage /></AdminPage>} />
