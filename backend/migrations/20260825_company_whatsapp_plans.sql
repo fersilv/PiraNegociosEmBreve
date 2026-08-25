@@ -80,6 +80,7 @@ DECLARE
   period_end timestamptz;
   existing_plan varchar(16);
   provider_subscription_id varchar(180);
+  parent_payment_id uuid;
 BEGIN
   IF NEW.status <> 'PAID' OR OLD.status = 'PAID' THEN
     RETURN NEW;
@@ -89,11 +90,46 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  provider_subscription_id := COALESCE(
+    NULLIF(NEW.metadata->>'efiRecurrenceId', ''),
+    NULLIF(NEW.metadata->>'subscriptionId', ''),
+    NULLIF(NEW.metadata->>'preapprovalId', '')
+  );
+
   BEGIN
     company_id := NULLIF(NEW.metadata->>'companyId', '')::uuid;
   EXCEPTION WHEN others THEN
     company_id := NULL;
   END;
+
+  -- As cobranças mensais seguintes do Pix Automático carregam o idRec e o
+  -- parentPaymentId, mas não necessariamente repetem companyId. Reaproveita
+  -- a assinatura já vinculada ou o pagamento original para manter a renovação.
+  IF company_id IS NULL AND provider_subscription_id IS NOT NULL THEN
+    SELECT "companyId" INTO company_id
+    FROM company_plan_subscriptions
+    WHERE "providerSubscriptionId" = provider_subscription_id
+    LIMIT 1;
+  END IF;
+
+  IF company_id IS NULL THEN
+    BEGIN
+      parent_payment_id := NULLIF(NEW.metadata->>'parentPaymentId', '')::uuid;
+    EXCEPTION WHEN others THEN
+      parent_payment_id := NULL;
+    END;
+    IF parent_payment_id IS NOT NULL THEN
+      BEGIN
+        SELECT NULLIF(metadata->>'companyId', '')::uuid INTO company_id
+        FROM payments
+        WHERE id = parent_payment_id
+        LIMIT 1;
+      EXCEPTION WHEN others THEN
+        company_id := NULL;
+      END;
+    END IF;
+  END IF;
+
   IF company_id IS NULL THEN
     RETURN NEW;
   END IF;
@@ -117,12 +153,6 @@ BEGIN
     period_end := now() + make_interval(days => duration_days);
   END IF;
   period_end := COALESCE(period_end, now() + make_interval(days => duration_days));
-
-  provider_subscription_id := COALESCE(
-    NULLIF(NEW.metadata->>'efiRecurrenceId', ''),
-    NULLIF(NEW.metadata->>'subscriptionId', ''),
-    NULLIF(NEW.metadata->>'preapprovalId', '')
-  );
 
   INSERT INTO company_plan_subscriptions
     ("companyId", "payerUserId", plan, status, "productCode", provider,
