@@ -28,7 +28,7 @@ export class WhatsAppMcpController {
         server.registerTool(
           'whatsapp_connection_status',
           { description: 'Consulta o estado da conexão deste número do WhatsApp.', inputSchema: z.object({}) },
-          async () => this.result(await this.whatsapp.status(instanceId)),
+          async () => this.result(await this.safeConnectionStatus(instanceId)),
         );
       }
       if (scopes.has('messages:read')) {
@@ -117,6 +117,24 @@ export class WhatsAppMcpController {
 
     const nodeHandler = toNodeHandler(handler);
     await nodeHandler(req, res, req.body);
+  }
+
+  private async safeConnectionStatus(instanceId: string) {
+    const value: any = await this.whatsapp.status(instanceId);
+    return {
+      id: value.id,
+      name: value.name,
+      purpose: value.purpose,
+      phoneNumber: value.phoneNumber,
+      provider: value.provider,
+      status: value.status,
+      active: value.active,
+      connected: value.connected,
+      lastConnectedAt: value.lastConnectedAt,
+      lastSeenAt: value.lastSeenAt,
+      runtimeDetail: value.runtimeDetail,
+      capabilities: value.capabilities,
+    };
   }
 
   private result(value: unknown) {
