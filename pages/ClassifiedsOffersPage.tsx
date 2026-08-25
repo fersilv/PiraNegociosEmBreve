@@ -56,9 +56,10 @@ export default function ClassifiedsOffersPage() {
       <header>
         <p className="text-[10px] font-black uppercase tracking-[.18em] text-[#b06448]">Negociação sem precisar abrir conversa</p>
         <h1 className="mt-1 font-serif text-3xl font-black">Ofertas</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Cada oferta fica disponível por 48 horas. Sem resposta, ela expira automaticamente.</p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Cada oferta fica disponível por 48 horas. Sem resposta, ela expira automaticamente. Uma oferta aceita fixa o preço combinado, mas pagamento e entrega continuam diretos nesta versão.</p>
       </header>
 
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900"><strong>Pagamento protegido ainda não está ativo.</strong> Aceitar uma oferta não movimenta dinheiro pelo PiraNegócios; comprador e anunciante combinam pagamento e entrega diretamente.</div>
       {error && <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
 
       <div className="flex gap-2 border-b border-stone-200">
@@ -87,6 +88,7 @@ function OfferCard({ offer, working, respond, withdraw }: { offer: ClassifiedOff
           {remaining && <p className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-amber-700"><Clock3 className="h-3.5 w-3.5" /> {remaining}</p>}
         </div>
       </div>
+      {offer.status === 'ACCEPTED' && <div className="border-t border-emerald-100 bg-emerald-50/70 p-3 text-xs leading-5 text-emerald-900"><strong>Preço acordado.</strong> Agora comprador e anunciante combinam pagamento, retirada ou entrega diretamente. <Link to={`/classificados/explorar/${encodeURIComponent(offer.slug)}`} className="font-black underline">Abrir anúncio</Link></div>}
       {offer.status === 'PENDING' && <div className="border-t border-stone-100 bg-stone-50/70 p-3">{offer.role === 'SELLER' ? <div className="grid grid-cols-2 gap-2"><button disabled={working} onClick={() => respond(offer, 'REJECTED')} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white text-xs font-black text-stone-600 ring-1 ring-stone-200 disabled:opacity-50"><X className="h-4 w-4" /> Recusar</button><button disabled={working} onClick={() => respond(offer, 'ACCEPTED')} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 text-xs font-black text-white disabled:opacity-50">{working ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Aceitar</button></div> : <button disabled={working} onClick={() => withdraw(offer)} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-white text-xs font-black text-stone-600 ring-1 ring-stone-200 disabled:opacity-50">{working ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Retirar oferta</button>}</div>}
     </article>
   );
