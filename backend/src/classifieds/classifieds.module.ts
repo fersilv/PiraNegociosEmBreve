@@ -1,9 +1,13 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AdminModule } from '../admin/admin.module';
 import { ChatModule } from '../chat/chat.module';
 import { Company } from '../companies/entities/company.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { User } from '../users/entities/user.entity';
+import { ClassifiedsAiReviewService } from './classifieds-ai-review.service';
 import { ClassifiedsChatService } from './classifieds-chat.service';
+import { ClassifiedsCommerceService } from './classifieds-commerce.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
 import { ClassifiedsPrivateController } from './classifieds-private.controller';
 import { ClassifiedsPublicController } from './classifieds-public.controller';
@@ -19,7 +23,9 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
 
 @Module({
   imports: [
+    AdminModule,
     ChatModule,
+    NotificationsModule,
     TypeOrmModule.forFeature([
       ClassifiedCategory,
       ClassifiedListing,
@@ -34,7 +40,13 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ]),
   ],
   controllers: [ClassifiedsPublicController, ClassifiedsPrivateController],
-  providers: [ClassifiedsService, ClassifiedsIdentityService, ClassifiedsChatService],
-  exports: [ClassifiedsService, ClassifiedsIdentityService],
+  providers: [
+    ClassifiedsService,
+    ClassifiedsIdentityService,
+    ClassifiedsChatService,
+    ClassifiedsAiReviewService,
+    ClassifiedsCommerceService,
+  ],
+  exports: [ClassifiedsService, ClassifiedsIdentityService, ClassifiedsCommerceService],
 })
 export class ClassifiedsModule {}
