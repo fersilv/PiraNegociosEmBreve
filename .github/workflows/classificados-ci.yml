@@ -10,28 +10,16 @@ on:
       - main
 
 jobs:
-  frontend:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm install
-      - run: npm run build
-
-  backend:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-      - run: npm install
-      - run: npm run build
+      - name: Clone branch
+        run: git clone --depth=1 --branch classificados https://github.com/fersilv/PiraNegociosEmBreve.git repo
+      - name: Environment
+        run: node --version && npm --version
+      - name: Frontend build
+        working-directory: repo
+        run: npm install && npm run build
+      - name: Backend build
+        working-directory: repo/backend
+        run: npm install && npm run build
