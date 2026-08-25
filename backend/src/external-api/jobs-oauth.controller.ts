@@ -14,24 +14,43 @@ import { JobsOAuthService } from './jobs-oauth.service';
 export class JobsOAuthController {
   constructor(private readonly oauth: JobsOAuthService) {}
 
+  private sharedAuthorizationServerMetadata() {
+    const base = this.oauth.publicBaseUrl();
+    return {
+      ...this.oauth.authorizationServerMetadata(),
+      issuer: base,
+      authorization_endpoint: `${base}/api/oauth/authorize`,
+      token_endpoint: `${base}/api/oauth/token`,
+      registration_endpoint: `${base}/api/oauth/register`,
+      service_documentation: `${base}/admin/api`,
+    };
+  }
+
+  private sharedResourceMetadata() {
+    return {
+      ...this.oauth.resourceMetadata(),
+      authorization_servers: [this.oauth.publicBaseUrl()],
+    };
+  }
+
   @Get('.well-known/oauth-authorization-server/jobs')
   authorizationServerMetadata() {
-    return this.oauth.authorizationServerMetadata();
+    return this.sharedAuthorizationServerMetadata();
   }
 
   @Get('.well-known/openid-configuration/jobs')
   openIdConfiguration() {
-    return this.oauth.authorizationServerMetadata();
+    return this.sharedAuthorizationServerMetadata();
   }
 
   @Get('.well-known/oauth-protected-resource/api/jobs/mcp')
   standardResourceMetadata() {
-    return this.oauth.resourceMetadata();
+    return this.sharedResourceMetadata();
   }
 
   @Get('jobs/oauth/resource')
   resourceMetadata() {
-    return this.oauth.resourceMetadata();
+    return this.sharedResourceMetadata();
   }
 
   @Post('jobs/oauth/register')
@@ -54,8 +73,9 @@ export class JobsOAuthController {
     @Body() body: Record<string, unknown>,
     @Res() res: Response,
   ) {
-    const redirect = await this.oauth.approveAuthorization(body);
-    res.redirect(302, redirect);
+    const redirect = new URL(await this.oauth.approveAuthorization(body));
+    redirect.searchParams.set('iss', this.oauth.publicBaseUrl());
+    res.redirect(302, redirect.toString());
   }
 
   @Post('jobs/oauth/token')
