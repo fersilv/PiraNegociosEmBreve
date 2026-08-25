@@ -6,6 +6,20 @@ import { join } from 'path';
 import { Client } from 'pg';
 import { attachSpaFallback } from './spa-fallback';
 
+function configureChromiumSandboxForWhatsApp() {
+  const runningAsRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+
+  if (runningAsRoot) {
+    // Chromium/Puppeteer refuses to start as root while its sandbox is enabled.
+    // The WhatsApp service already translates this flag into --no-sandbox and
+    // --disable-setuid-sandbox for WPPConnect's browser process.
+    process.env.WHATSAPP_NO_SANDBOX = 'true';
+    console.warn(
+      '[WhatsApp] Backend executando como root; Chromium será iniciado com --no-sandbox.',
+    );
+  }
+}
+
 async function ensureDatabaseExists() {
   const dbName = process.env.DB_NAME || 'piranegocios';
   const client = new Client({
@@ -37,6 +51,7 @@ async function ensureDatabaseExists() {
 }
 
 async function bootstrap() {
+  configureChromiumSandboxForWhatsApp();
   await ensureDatabaseExists();
 
   // Um arquivo binário de 20 MB ocupa aproximadamente 27 MB depois de virar
