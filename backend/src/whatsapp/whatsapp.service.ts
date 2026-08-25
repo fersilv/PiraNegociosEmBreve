@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
   OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
@@ -29,7 +30,7 @@ type RuntimeState = {
 };
 
 @Injectable()
-export class WhatsAppService implements OnModuleDestroy {
+export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WhatsAppService.name);
   private readonly clients = new Map<string, any>();
   private readonly states = new Map<string, RuntimeState>();
@@ -41,6 +42,18 @@ export class WhatsAppService implements OnModuleDestroy {
     @InjectRepository(WhatsAppMessage) private readonly messages: Repository<WhatsAppMessage>,
     @InjectRepository(WhatsAppSavedContact) private readonly savedContacts: Repository<WhatsAppSavedContact>,
   ) {}
+
+  async onModuleInit() {
+    const recoverable = await this.instances.find({ where: { active: true } });
+    for (const instance of recoverable) {
+      if (!instance.lastConnectedAt) continue;
+      void this.connect(instance.id).catch((error) =>
+        this.logger.warn(
+          `Não foi possível restaurar automaticamente a sessão ${instance.id}: ${this.errorMessage(error)}`,
+        ),
+      );
+    }
+  }
 
   async onModuleDestroy() {
     await Promise.allSettled(
@@ -104,28 +117,32 @@ export class WhatsAppService implements OnModuleDestroy {
   }
 
   async connect(id: string) {
-    const existing = this.connecting.get(id);
-    if (existing) {
-      await existing;
-      return this.status(id);
-    }
-    const task = this.connectInternal(id);
-    this.connecting.set(id, task);
-    try {
-      await task;
-    } finally {
-      this.connecting.delete(id);
-    }
-    return this.status(id);
-  }
-
-  private async connectInternal(id: string) {
     const instance = await this.getInstance(id);
     if (!instance.active) throw new BadRequestException('Ative o número antes de conectar.');
-    if (this.clients.has(id)) return;
+    if (this.clients.has(id) || this.connecting.has(id)) return this.status(id);
 
     await this.setStatus(instance, WhatsAppConnectionStatus.CONNECTING, null);
     this.setRuntime(id, { qrCode: null, detail: 'Abrindo sessão do WhatsApp Web...' });
+
+    const task = this.connectInternal(instance)
+      .catch((error) => {
+        this.logger.error(
+          `Falha ao abrir sessão WhatsApp ${id}: ${this.errorMessage(error)}`,
+        );
+      })
+      .finally(() => {
+        this.connecting.delete(id);
+      });
+    this.connecting.set(id, task);
+
+    // O navegador continua abrindo no servidor. A API responde agora para que
+    // o painel consiga consultar /status e mostrar o QR Code assim que chegar.
+    return this.status(id);
+  }
+
+  private async connectInternal(instance: WhatsAppInstance) {
+    const id = instance.id;
+    if (this.clients.has(id)) return;
 
     const sessionDir = process.env.WHATSAPP_SESSION_DIR || join(process.cwd(), 'whatsapp-sessions');
     try {
@@ -188,7 +205,6 @@ export class WhatsAppService implements OnModuleDestroy {
       this.logger.error(`Falha ao conectar WhatsApp ${id}: ${detail}`);
       this.setRuntime(id, { qrCode: null, detail });
       await this.setStatusById(id, WhatsAppConnectionStatus.ERROR, detail);
-      throw new BadRequestException(`Não foi possível abrir a sessão do WhatsApp: ${detail}`);
     }
   }
 
