@@ -13,11 +13,6 @@ export class CompanyPlansController {
     return this.plans.getForUser(req.user.uid);
   }
 
-  @Post('trial')
-  startTrial(@Req() req: any) {
-    return this.plans.startEliteTrial(req.user.uid);
-  }
-
   @Get('checkout/latest')
   latestCheckout(@Req() req: any) {
     return this.plans.latestCheckout(req.user.uid);
