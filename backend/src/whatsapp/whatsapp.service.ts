@@ -94,6 +94,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         allowedScopes,
         active: true,
         isPrimarySupport: false,
+        conciergeEnabled: false,
         lastError: null,
         lastConnectedAt: null,
         lastSeenAt: null,
@@ -109,6 +110,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     if (typeof data.purpose === 'string') instance.purpose = data.purpose.trim().slice(0, 180) || null;
     if (typeof data.phoneNumber === 'string') instance.phoneNumber = this.onlyDigits(data.phoneNumber) || null;
     if (typeof data.active === 'boolean') instance.active = data.active;
+    if (typeof data.conciergeEnabled === 'boolean') instance.conciergeEnabled = data.conciergeEnabled;
     if (typeof data.isPrimarySupport === 'boolean') {
       if (data.isPrimarySupport) {
         await this.instances.createQueryBuilder()
@@ -206,7 +208,10 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       client.onMessage?.((message: any) => {
         void (async () => {
           await this.storeInbound(instance.id, message);
-          await this.concierge.handleInbound(instance, message, client);
+          const currentInstance = await this.getInstance(instance.id);
+          if (currentInstance.conciergeEnabled) {
+            await this.concierge.handleInbound(currentInstance, message, client);
+          }
         })().catch(async (error) => {
           this.logger.error(`Falha ao processar mensagem WhatsApp ${instance.id}: ${this.errorMessage(error)}`);
           await this.alerts.send({
