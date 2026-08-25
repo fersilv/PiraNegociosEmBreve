@@ -14,8 +14,8 @@ export type WppOperationCapability = {
   experimental?: boolean;
 };
 
-// Métodos marcados oficialmente como @deprecated no WPPConnect 2.3.1.
-// Não entram no painel nem no MCP. Quando há substituto moderno, só ele aparece.
+// Métodos oficialmente @deprecated no WPPConnect 2.3.1. Só o substituto
+// moderno é exposto no painel/MCP.
 const DEPRECATED_WPP_METHODS = new Set<string>([
   'getAllChats',
   'getAllChatsWithMessages',
@@ -37,8 +37,8 @@ const DEPRECATED_WPP_METHODS = new Set<string>([
   'onStreamChange',
 ]);
 
-// Única outra exclusão permitida pela regra do produto: sessão, autenticação,
-// QR, browser/token e helpers internos/servidor que não são gestão do WhatsApp.
+// Única outra exclusão: sessão/autenticação/QR/browser/token e helpers
+// internos ou de filesystem do servidor. Gestão operacional fica liberável.
 const SENSITIVE_OR_INTERNAL_WPP_METHODS = new Set<string>([
   'start',
   'getQrCode',
@@ -69,7 +69,7 @@ const SENSITIVE_OR_INTERNAL_WPP_METHODS = new Set<string>([
   'onBackendEvent',
 ]);
 
-const LABELS: Record<string, string> = {
+const FRIENDLY_LABELS: Record<string, string> = {
   getBlockList: 'Listar contatos bloqueados',
   blockContact: 'Bloquear contato',
   unblockContact: 'Desbloquear contato',
@@ -94,7 +94,6 @@ const LABELS: Record<string, string> = {
   forwardMessagesV2: 'Encaminhar mensagens',
   sendReactionToMessage: 'Reagir a mensagem',
   starMessage: 'Favoritar mensagem',
-  listChats: 'Listar conversas',
   archiveChat: 'Arquivar ou desarquivar conversa',
   pinChat: 'Fixar ou desafixar conversa',
   clearChat: 'Limpar conversa',
@@ -105,7 +104,6 @@ const LABELS: Record<string, string> = {
   getProfilePicFromServer: 'Consultar foto de perfil',
   getCommonGroups: 'Listar grupos em comum',
   getGroupMembers: 'Listar participantes do grupo',
-  getGroupMembersIds: 'Listar IDs dos participantes',
   getGroupAdmins: 'Listar administradores do grupo',
   getGroupInviteLink: 'Obter link de convite',
   getGroupMembershipRequests: 'Listar solicitações de entrada',
@@ -151,28 +149,13 @@ const LABELS: Record<string, string> = {
   getBatteryLevel: 'Consultar bateria do aparelho',
 };
 
-const DESCRIPTIONS: Record<string, string> = {
-  listChats: 'Consulta as conversas com os filtros modernos do WPPConnect, incluindo usuários, grupos, newsletters, etiquetas e paginação.',
-  getMessages: 'Busca mensagens diretamente no WhatsApp com paginação, direção, mensagem de referência e filtros de mídia.',
-  sendText: 'Envia texto para qualquer destino suportado pelo WPPConnect usando as opções modernas de envio.',
-  sendFile: 'Envia arquivo ou mídia usando caminho, URL ou Base64 e as opções suportadas pelo WPPConnect.',
-  downloadMedia: 'Obtém a mídia original vinculada a uma mensagem e a devolve em Base64.',
-  checkNumberStatus: 'Verifica se o identificador corresponde a um número disponível no WhatsApp.',
-  addOrRemoveLabels: 'Aplica ou remove etiquetas do WhatsApp Business em conversas/contatos.',
-  removeParticipant: 'Remove um participante quando o número possui permissão administrativa no grupo.',
-  approveGroupMembershipRequest: 'Aprova uma solicitação pendente para entrar em um grupo administrado pelo número.',
-  rejectGroupMembershipRequest: 'Rejeita uma solicitação pendente para entrar em um grupo administrado pelo número.',
-  createNewsletter: 'Cria um canal/newsletter quando o recurso está disponível para a conta.',
-  editNewsletter: 'Altera um canal/newsletter administrado pelo número conectado.',
-  deleteNewsletter: 'Exclui um canal/newsletter administrado pelo número conectado.',
-};
-
 const DESTRUCTIVE_PREFIXES = ['delete', 'remove', 'leave', 'block', 'reject', 'clear', 'revoke', 'demote', 'cancel'];
 const READ_PREFIXES = ['get', 'list', 'check', 'is', 'has', 'are', 'download', 'decrypt', 'query', 'find'];
 
 function collectPublicMethods(): Array<{ method: string; fn: Function }> {
   const methods = new Map<string, Function>();
   let prototype: object | null = Whatsapp.prototype;
+
   while (prototype && prototype !== Object.prototype) {
     for (const method of Object.getOwnPropertyNames(prototype)) {
       if (method === 'constructor' || methods.has(method)) continue;
@@ -181,6 +164,7 @@ function collectPublicMethods(): Array<{ method: string; fn: Function }> {
     }
     prototype = Object.getPrototypeOf(prototype);
   }
+
   return [...methods.entries()].map(([method, fn]) => ({ method, fn }));
 }
 
@@ -219,22 +203,48 @@ function categoryFor(method: string, event: boolean): string {
 }
 
 function splitCamelCase(method: string) {
-  return method.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z])([A-Z][a-z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim();
+  return method
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim();
 }
 
 function labelFor(method: string, event: boolean) {
-  if (LABELS[method]) return LABELS[method];
+  if (FRIENDLY_LABELS[method]) return FRIENDLY_LABELS[method];
   const words = splitCamelCase(method);
   if (event) return `Monitorar ${words.replace(/^on\s+/i, '')}`;
+
   const verbs: Array<[RegExp, string]> = [
-    [/^get\s+/i, 'Consultar '], [/^list\s+/i, 'Listar '], [/^send\s+/i, 'Enviar '], [/^set\s+/i, 'Definir '],
-    [/^create\s+/i, 'Criar '], [/^delete\s+/i, 'Excluir '], [/^remove\s+/i, 'Remover '], [/^add\s+/i, 'Adicionar '],
-    [/^edit\s+/i, 'Editar '], [/^update\s+/i, 'Atualizar '], [/^check\s+/i, 'Verificar '], [/^mark\s+/i, 'Marcar '],
-    [/^start\s+/i, 'Iniciar '], [/^stop\s+/i, 'Parar '], [/^join\s+/i, 'Entrar em '], [/^leave\s+/i, 'Sair de '],
-    [/^approve\s+/i, 'Aprovar '], [/^reject\s+/i, 'Rejeitar '], [/^block\s+/i, 'Bloquear '], [/^unblock\s+/i, 'Desbloquear '],
-    [/^archive\s+/i, 'Arquivar '], [/^pin\s+/i, 'Fixar '], [/^download\s+/i, 'Baixar '], [/^decrypt\s+/i, 'Descriptografar '],
+    [/^get\s+/i, 'Consultar '],
+    [/^list\s+/i, 'Listar '],
+    [/^send\s+/i, 'Enviar '],
+    [/^set\s+/i, 'Definir '],
+    [/^create\s+/i, 'Criar '],
+    [/^delete\s+/i, 'Excluir '],
+    [/^remove\s+/i, 'Remover '],
+    [/^add\s+/i, 'Adicionar '],
+    [/^edit\s+/i, 'Editar '],
+    [/^update\s+/i, 'Atualizar '],
+    [/^check\s+/i, 'Verificar '],
+    [/^mark\s+/i, 'Marcar '],
+    [/^start\s+/i, 'Iniciar '],
+    [/^stop\s+/i, 'Parar '],
+    [/^join\s+/i, 'Entrar em '],
+    [/^leave\s+/i, 'Sair de '],
+    [/^approve\s+/i, 'Aprovar '],
+    [/^reject\s+/i, 'Rejeitar '],
+    [/^block\s+/i, 'Bloquear '],
+    [/^unblock\s+/i, 'Desbloquear '],
+    [/^archive\s+/i, 'Arquivar '],
+    [/^pin\s+/i, 'Fixar '],
+    [/^download\s+/i, 'Baixar '],
+    [/^decrypt\s+/i, 'Descriptografar '],
   ];
-  for (const [pattern, replacement] of verbs) if (pattern.test(words)) return words.replace(pattern, replacement);
+
+  for (const [pattern, replacement] of verbs) {
+    if (pattern.test(words)) return words.replace(pattern, replacement);
+  }
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
@@ -250,15 +260,24 @@ function signatureFor(method: string, fn: Function, event: boolean) {
 }
 
 function descriptionFor(method: string, risk: WppCapabilityRisk, event: boolean) {
-  if (DESCRIPTIONS[method]) return DESCRIPTIONS[method];
-  if (event) return `Monitora o evento público ${method} do WPPConnect. O backend registra as ocorrências e o MCP consulta os eventos recentes sem receber callbacks executáveis.`;
+  if (event) {
+    return `Monitora o evento público ${method} do WPPConnect. O backend registra as ocorrências e o MCP consulta os eventos recentes sem receber callbacks executáveis.`;
+  }
+  if (method === 'listChats') return 'Consulta conversas com filtros modernos do WPPConnect, incluindo usuários, grupos, newsletters, etiquetas e paginação.';
+  if (method === 'getMessages') return 'Busca mensagens diretamente no WhatsApp com paginação, direção, mensagem de referência e filtros de mídia.';
+  if (method === 'sendText') return 'Envia texto para qualquer destino suportado pelo WPPConnect usando as opções modernas de envio.';
+  if (method === 'sendFile') return 'Envia arquivo ou mídia usando caminho, URL ou Base64 e as opções suportadas pelo WPPConnect.';
+  if (method === 'downloadMedia') return 'Obtém a mídia original vinculada a uma mensagem e a devolve em Base64.';
+  if (method === 'checkNumberStatus') return 'Verifica se o identificador corresponde a um número disponível no WhatsApp.';
+  if (method === 'addOrRemoveLabels') return 'Aplica ou remove etiquetas do WhatsApp Business em conversas ou contatos.';
+  if (method === 'removeParticipant') return 'Remove um participante quando o número possui permissão administrativa no grupo.';
   if (risk === 'read') return `Executa ${method}, método público de consulta do WPPConnect, sem alterar o conteúdo da conta.`;
   if (risk === 'destructive') return `Executa ${method}, método público do WPPConnect que pode remover, rejeitar ou apagar dados. Exige autorização explícita.`;
   return `Executa ${method}, método público do WPPConnect para enviar, alterar ou administrar dados do WhatsApp.`;
 }
 
 function buildCapabilities(): WppOperationCapability[] {
-  const discovered = collectPublicMethods()
+  const capabilities = collectPublicMethods()
     .filter(({ method }) => !DEPRECATED_WPP_METHODS.has(method))
     .filter(({ method }) => !isSensitiveOrInternal(method))
     .map(({ method, fn }) => {
@@ -276,10 +295,9 @@ function buildCapabilities(): WppOperationCapability[] {
       } satisfies WppOperationCapability;
     });
 
-  // WA-JS possui busca de newsletters, mas o client WPPConnect 2.3.1 não a
-  // publica como método próprio. Mantemos um wrapper fechado porque é uma
-  // capacidade operacional necessária e não expõe page/browser genericamente.
-  discovered.push({
+  // A busca existe no WA-JS usado pelo WPPConnect 2.3.1, mas não como método
+  // público do client. O wrapper é fechado e não dá acesso genérico à page.
+  capabilities.push({
     scope: 'channels:search',
     method: 'searchChannels',
     category: 'Canais',
@@ -290,7 +308,11 @@ function buildCapabilities(): WppOperationCapability[] {
     experimental: true,
   });
 
-  return discovered.sort((a, b) => a.category.localeCompare(b.category, 'pt-BR') || a.label.localeCompare(b.label, 'pt-BR'));
+  return capabilities.sort(
+    (a, b) =>
+      a.category.localeCompare(b.category, 'pt-BR') ||
+      a.label.localeCompare(b.label, 'pt-BR'),
+  );
 }
 
 export const WPP_OPERATION_CAPABILITIES: WppOperationCapability[] = buildCapabilities();
