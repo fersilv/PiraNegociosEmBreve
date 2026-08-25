@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AiService } from '../ai/ai.service';
+import { WhatsAppAiService } from './whatsapp-ai.service';
 
 export type WhatsAppAlertSeverity = 'INFO' | 'ATTENTION' | 'CRITICAL';
 
@@ -8,7 +8,7 @@ export class WhatsAppAlertService {
   private readonly logger = new Logger(WhatsAppAlertService.name);
   private readonly apiUrl = 'https://api.resend.com/emails';
 
-  constructor(private readonly ai: AiService) {}
+  constructor(private readonly ai: WhatsAppAiService) {}
 
   async send(input: {
     severity: WhatsAppAlertSeverity;
@@ -30,7 +30,7 @@ export class WhatsAppAlertService {
     let diagnosis = '';
     if (rawError) {
       try {
-        diagnosis = await this.ai.explainWhatsAppOperationalError({
+        diagnosis = await this.ai.explainOperationalError({
           title: input.title,
           error: rawError,
           context: input.context || {},
