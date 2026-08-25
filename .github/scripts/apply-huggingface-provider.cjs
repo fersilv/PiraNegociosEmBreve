@@ -317,6 +317,7 @@ for (const file of ['backend/.env.example', '.env.example']) {
 // Guardrail: nenhum serviço de IA pode continuar limitado ao trio antigo.
 const scanRoots = ['backend/src/ai', 'backend/src/job-match', 'backend/src/whatsapp', 'backend/src/admin'];
 const stale = [];
+const staleProviderUnion = /'GEMINI'\s*\|\s*'OPENAI'\s*\|\s*'ANTHROPIC'(?!\s*\|\s*'HUGGINGFACE')/;
 function walk(dir) {
   for (const name of fs.readdirSync(dir)) {
     const full = `${dir}/${name}`;
@@ -324,7 +325,7 @@ function walk(dir) {
     if (stat.isDirectory()) walk(full);
     else if (/\.ts$/.test(name)) {
       const text = read(full);
-      if (text.includes("'GEMINI' | 'OPENAI' | 'ANTHROPIC'") || text.includes("['GEMINI', 'OPENAI', 'ANTHROPIC']")) stale.push(full);
+      if (staleProviderUnion.test(text) || text.includes("['GEMINI', 'OPENAI', 'ANTHROPIC']")) stale.push(full);
     }
   }
 }
