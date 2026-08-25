@@ -11,6 +11,7 @@ export type ClassifiedCondition = 'NEW' | 'USED' | 'REFURBISHED' | 'NOT_APPLICAB
 export type ClassifiedListingType = 'PRODUCT' | 'SERVICE';
 export type ClassifiedPublicationChannel = 'CLASSIFIEDS' | 'COMPANY_PAGE';
 export type ClassifiedIdentityType = 'PERSONAL' | 'COMPANY';
+export type ClassifiedConversationSide = 'BUYER' | 'SELLER';
 export type ClassifiedCatalogPricingStrategy = 'BASE' | 'SUM' | 'HIGHEST_SELECTION' | 'LOWEST_SELECTION' | 'AVERAGE_SELECTION';
 
 export interface ClassifiedCategory {
@@ -146,13 +147,22 @@ export interface ClassifiedWorkspaceContextData {
   };
 }
 
+export interface ClassifiedConversationParty {
+  id: string;
+  type: 'COMPANY' | 'PERSON';
+  name: string;
+  photoURL?: string | null;
+  verified?: boolean;
+}
+
 export interface ClassifiedConversation {
   id: string;
   listingId: string;
   buyerUserId: string;
+  buyerCompanyId?: string | null;
   sellerUserId: string;
   sellerCompanyId?: string | null;
-  role: 'BUYER' | 'SELLER';
+  role: ClassifiedConversationSide;
   unreadCount: number;
   lastMessageAt?: string | null;
   listing: null | {
@@ -164,9 +174,15 @@ export interface ClassifiedConversation {
     status: ClassifiedListingStatus;
     image?: string | null;
   };
-  buyer: { id: string; name: string; photoURL?: string | null };
-  seller: { id: string; type: 'COMPANY' | 'PERSON'; name: string; photoURL?: string | null; verified?: boolean };
-  lastMessage?: null | { id: string; senderId: string; body: string; createdAt: string };
+  buyer: ClassifiedConversationParty;
+  seller: ClassifiedConversationParty;
+  lastMessage?: null | {
+    id: string;
+    senderId: string;
+    senderRole: ClassifiedConversationSide;
+    body: string;
+    createdAt: string;
+  };
 }
 
 export interface ClassifiedConversationMessage {
@@ -174,6 +190,7 @@ export interface ClassifiedConversationMessage {
   conversationId: string;
   senderId: string;
   senderName: string;
+  senderRole: ClassifiedConversationSide;
   body: string;
   messageType: 'TEXT' | 'OFFER' | 'SYSTEM';
   metadata?: Record<string, unknown> | null;
