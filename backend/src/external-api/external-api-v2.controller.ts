@@ -14,9 +14,9 @@ import {
 import { JobMatchService } from '../job-match/job-match.service';
 import { ApiKeyGuard } from './api-key.guard';
 import { ExternalApiClient } from './entities/external-api-client.entity';
-import {
+import { ExternalJobsService } from './external-jobs.service';
+import type {
   ExternalJobInput,
-  ExternalJobsService,
   JobCatalogQuery,
 } from './external-jobs.service';
 import { hasJobsScope } from './jobs-mcp.scopes';
