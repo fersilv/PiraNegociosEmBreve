@@ -73,6 +73,18 @@ async function bootstrap() {
         path: '.well-known/oauth-protected-resource/api/whatsapp/mcp/:instanceId',
         method: RequestMethod.GET,
       },
+      {
+        path: '.well-known/oauth-authorization-server/jobs',
+        method: RequestMethod.GET,
+      },
+      {
+        path: '.well-known/openid-configuration/jobs',
+        method: RequestMethod.GET,
+      },
+      {
+        path: '.well-known/oauth-protected-resource/api/jobs/mcp',
+        method: RequestMethod.GET,
+      },
     ],
   });
   app.enableCors();
