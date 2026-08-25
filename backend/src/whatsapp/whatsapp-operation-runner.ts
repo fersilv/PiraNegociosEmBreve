@@ -170,7 +170,10 @@ async function ensureEventSubscription(client: any, instanceId: string, event: s
 
     eventSubscriptions.set(key, {
       client,
-      disposable: disposable && typeof disposable === 'object' ? disposable : null,
+      disposable:
+        disposable && typeof disposable === 'object'
+          ? (disposable as { dispose?: () => void })
+          : null,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
