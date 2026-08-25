@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param, Put, UseGuards } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, Put, Req, UseGuards } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
@@ -53,17 +53,33 @@ export class AdminJobFlagsController {
   }
 
   @Put(':id/clear')
-  async clear(@Param('id') id: string) {
+  async clear(@Param('id') id: string, @Req() req: any) {
     const job = await this.jobs.findOne({ where: { id } });
     if (!job) throw new NotFoundException('Vaga não encontrada.');
 
+    const previousReviewStatus = job.reviewStatus;
     job.isFlagged = false;
     job.flagObservation = null;
     job.flagReason = null;
     job.flaggedAt = null;
     job.flaggedBy = null;
     job.reportCount = 0;
-    if (job.moderationStatus === 'FLAGGED') job.moderationStatus = 'APPROVED';
+
+    // Limpar um alerta é uma decisão de revisão humana. A vaga não pode voltar
+    // a aparecer como se fosse nova só porque o alerta da IA foi removido.
+    if (job.moderationStatus === 'FLAGGED' || job.moderationStatus === 'PENDING') {
+      job.moderationStatus = 'APPROVED';
+    }
+    if (previousReviewStatus === 'DEACTIVATION_REQUIRED' && job.active) {
+      job.reviewStatus = 'DEACTIVATION_REQUIRED';
+    } else {
+      job.reviewStatus = job.active ? 'REVIEWED_OK' : 'RESOLVED';
+    }
+    job.reviewedAt = new Date();
+    job.reviewedBy = String(req.user?.uid || req.user?.email || 'admin').slice(0, 160);
+    job.reviewNote = previousReviewStatus === 'DEACTIVATION_REQUIRED' && job.active
+      ? 'Alerta limpo pelo administrador. A vaga continua exigindo desativação.'
+      : 'Alerta revisado e limpo pelo administrador.';
 
     await this.jobs.save(job);
     return { success: true, job };
