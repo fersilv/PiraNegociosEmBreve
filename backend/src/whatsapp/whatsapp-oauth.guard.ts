@@ -14,20 +14,24 @@ export class WhatsAppOAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const response = context.switchToHttp().getResponse();
     const instanceId = String(request.params?.instanceId || '').trim();
-    const resourceMetadata = this.oauth.resourceMetadataUrl(instanceId);
-    response.setHeader(
-      'WWW-Authenticate',
-      `Bearer resource_metadata="${resourceMetadata}"`,
-    );
+    const challenge = `Bearer resource_metadata="${this.oauth.resourceMetadataUrl(instanceId)}"`;
 
     const authorization = String(request.headers.authorization || '');
     const rawToken = authorization.startsWith('Bearer ')
       ? authorization.slice(7).trim()
       : '';
-    if (!rawToken) throw new UnauthorizedException('OAuth access token não fornecido.');
+    if (!rawToken) {
+      response.setHeader('WWW-Authenticate', challenge);
+      throw new UnauthorizedException('OAuth access token não fornecido.');
+    }
 
-    const auth = await this.oauth.verifyAccessToken(instanceId, rawToken);
-    request.whatsappOAuth = auth;
-    return true;
+    try {
+      const auth = await this.oauth.verifyAccessToken(instanceId, rawToken);
+      request.whatsappOAuth = auth;
+      return true;
+    } catch (error) {
+      response.setHeader('WWW-Authenticate', challenge);
+      throw error;
+    }
   }
 }
