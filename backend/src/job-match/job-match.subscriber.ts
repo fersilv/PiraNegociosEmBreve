@@ -4,6 +4,16 @@ import { Job } from '../jobs/entities/job.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { JobMatchService } from './job-match.service';
 
+const MATCH_RELEVANT_COLUMNS = new Set([
+  'title',
+  'description',
+  'requirements',
+  'skills',
+  'type',
+  'workModel',
+  'active',
+]);
+
 @Injectable()
 @EventSubscriber()
 export class JobMatchSubscriber implements EntitySubscriberInterface<Job> {
@@ -49,13 +59,32 @@ export class JobMatchSubscriber implements EntitySubscriberInterface<Job> {
     }
   }
 
+  private changedColumns(event: UpdateEvent<Job>) {
+    const fromMetadata = event.updatedColumns
+      .flatMap((column) => [column.propertyName, column.databaseName])
+      .filter(Boolean);
+    const fromEntity = event.entity && typeof event.entity === 'object'
+      ? Object.keys(event.entity)
+      : [];
+    return new Set([...fromMetadata, ...fromEntity]);
+  }
+
   async afterInsert(event: InsertEvent<Job>) {
     await this.safelyAnalyze(event.entity, event.entity?.active === true);
   }
 
   async afterUpdate(event: UpdateEvent<Job>) {
-    const job = event.entity as Job | undefined;
-    const becameActive = job?.active === true && event.databaseEntity?.active !== true;
-    await this.safelyAnalyze(job, becameActive);
+    const changed = this.changedColumns(event);
+    if (![...changed].some((column) => MATCH_RELEVANT_COLUMNS.has(column))) return;
+
+    const partial = event.entity as Partial<Job> | undefined;
+    const becameActive = partial?.active === true && event.databaseEntity?.active !== true;
+    const id = partial?.id || event.databaseEntity?.id;
+    if (!id) return;
+
+    // UpdateEvent pode trazer somente os campos alterados. Recarregamos a vaga
+    // antes de calcular o fingerprint para nunca analisar um objeto parcial.
+    const job = await event.manager.getRepository(Job).findOne({ where: { id } });
+    await this.safelyAnalyze(job || undefined, becameActive);
   }
 }
