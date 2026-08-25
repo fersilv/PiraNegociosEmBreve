@@ -1,17 +1,14 @@
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { FeedbackProvider } from "./contexts/FeedbackContext";
 import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
 import { CookieConsent } from "./components/CookieConsent";
 import { AnalyticsTracker } from "./components/AnalyticsTracker";
-import { ResumeQualificationWidget } from "./components/ResumeQualificationWidget";
 import { PublishedResumeCompanyBridge } from "./components/PublishedResumeCompanyBridge";
 import { PublicResumeAccountBridge } from "./components/PublicResumeAccountBridge";
 import { PublicResumeExitIntent } from "./components/PublicResumeExitIntent";
 import { PublicResumeResponsiveStyles } from "./components/PublicResumeResponsiveStyles";
-import { CompanyLegalPage } from "./pages/CompanyLegalPage";
-import { ProductFeedbackWidget } from "./components/ProductFeedbackWidget";
 
 const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() => import("./pages/Login").then((module) => ({ default: module.Login })));
@@ -32,16 +29,33 @@ const ClassifiedsSearchPage = lazy(() => import("./pages/ClassifiedsSearchPage")
 const ClassifiedListingPage = lazy(() => import("./pages/ClassifiedListingPage"));
 const ClassifiedsTermsPage = lazy(() => import("./pages/ClassifiedsTermsPage"));
 const ClassifiedsWorkspacePage = lazy(() => import("./pages/ClassifiedsWorkspacePage"));
+const CompanyLegalPage = lazy(() => import("./pages/CompanyLegalPage").then((module) => ({ default: module.CompanyLegalPage })));
+const ResumeQualificationWidget = lazy(() => import("./components/ResumeQualificationWidget").then((module) => ({ default: module.ResumeQualificationWidget })));
+const ProductFeedbackWidget = lazy(() => import("./components/ProductFeedbackWidget").then((module) => ({ default: module.ProductFeedbackWidget })));
 
 function RouteLoader() {
   return <div className="min-h-screen flex items-center justify-center text-stone-500">Carregando...</div>;
 }
 
+function DeferredProductFeedbackWidget() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setReady(true), 2500);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  if (!ready) return null;
+  return <Suspense fallback={null}><ProductFeedbackWidget /></Suspense>;
+}
+
 export default function App() {
-  const isEmbed = window.location.pathname.startsWith("/embed");
-  const isMobileTransfer = window.location.pathname.startsWith("/transferir/");
-  const isCompanyPreview = window.location.pathname.startsWith("/preview/empresa/");
-  const isTalentInvite = window.location.pathname.startsWith("/convites/vaga/");
+  const pathname = window.location.pathname;
+  const isEmbed = pathname.startsWith("/embed");
+  const isMobileTransfer = pathname.startsWith("/transferir/");
+  const isCompanyPreview = pathname.startsWith("/preview/empresa/");
+  const isTalentInvite = pathname.startsWith("/convites/vaga/");
+  const isResumeWorkspace = pathname === "/user/curriculo";
   const isMinimalShell = isEmbed || isMobileTransfer || isCompanyPreview || isTalentInvite;
 
   return (
@@ -54,7 +68,7 @@ export default function App() {
           {!isMobileTransfer && !isCompanyPreview && !isTalentInvite && <AnalyticsTracker />}
           <PublicResumeResponsiveStyles />
           <PublicResumeExitIntent />
-          {!isMinimalShell && <ResumeQualificationWidget />}
+          {!isMinimalShell && isResumeWorkspace && <Suspense fallback={null}><ResumeQualificationWidget /></Suspense>}
           {!isMinimalShell && <PublishedResumeCompanyBridge />}
           <Suspense fallback={<RouteLoader />}>
             <Routes>
@@ -97,7 +111,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </Suspense>
-          {!isEmbed && !isMobileTransfer && !isCompanyPreview && <ProductFeedbackWidget />}
+          {!isEmbed && !isMobileTransfer && !isCompanyPreview && <DeferredProductFeedbackWidget />}
         </BrowserRouter>
       </AuthProvider>
     </FeedbackProvider>
