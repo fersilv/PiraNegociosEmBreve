@@ -25,6 +25,7 @@ export class WhatsAppInstance {
   @Column({
     type: 'enum',
     enum: WhatsAppConnectionStatus,
+    enumName: 'whatsapp_connection_status_enum',
     default: WhatsAppConnectionStatus.DISCONNECTED,
   })
   status: WhatsAppConnectionStatus;
