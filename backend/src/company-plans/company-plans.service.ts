@@ -27,9 +27,12 @@ export type CompanyPlanFeature =
   | 'CANDIDATE_WHATSAPP'
   | 'RECENT_APPLICATIONS'
   | 'ADVANCED_JOB_STATS'
+  | 'JOB_HIGHLIGHT'
   | 'AD_HIGHLIGHTS';
 
 const RANK: Record<CompanyPlan, number> = { FREE: 0, PLUS: 1, ELITE: 2 };
+const ELITE_TRIAL_DAYS = 15;
+const TRIAL_BLOCKED_FEATURES = new Set<CompanyPlanFeature>(['JOB_HIGHLIGHT', 'AD_HIGHLIGHTS']);
 
 export const COMPANY_PLAN_CATALOG = [
   {
@@ -68,7 +71,7 @@ export const COMPANY_PLAN_CATALOG = [
     priceCents: 4990,
     monthly: true,
     productCode: 'COMPANY_ELITE_MONTHLY',
-    description: 'Gestão completa do recrutamento pelo WhatsApp e participação nos destaques publicitários.',
+    description: 'Gestão completa do recrutamento pelo WhatsApp e benefícios promocionais exclusivos do plano pago.',
     features: [
       'Tudo dos planos Free e Plus',
       'Mudar status da candidatura',
@@ -78,6 +81,7 @@ export const COMPANY_PLAN_CATALOG = [
       'Responder e gerenciar candidatos pelo WhatsApp',
       'Consultar novas candidaturas por período',
       'Estatísticas avançadas das vagas',
+      'Elegibilidade para destaque das vagas no PiraNegócios',
       'Elegibilidade aos destaques de anúncios do PiraNegócios na Meta e Google',
     ],
   },
@@ -98,6 +102,7 @@ const FEATURE_PLAN: Record<CompanyPlanFeature, CompanyPlan> = {
   CANDIDATE_WHATSAPP: 'ELITE',
   RECENT_APPLICATIONS: 'ELITE',
   ADVANCED_JOB_STATS: 'ELITE',
+  JOB_HIGHLIGHT: 'ELITE',
   AD_HIGHLIGHTS: 'ELITE',
 };
 
@@ -131,6 +136,20 @@ export class CompanyPlansService {
     return rows[0];
   }
 
+  private async trialForCompany(companyId: string) {
+    await this.dataSource.query(
+      `UPDATE company_plan_trials
+       SET status = 'EXPIRED', "updatedAt" = now()
+       WHERE "companyId" = $1 AND status = 'ACTIVE' AND "endsAt" <= now()`,
+      [companyId],
+    ).catch(() => undefined);
+    const rows = await this.dataSource.query(
+      `SELECT * FROM company_plan_trials WHERE "companyId" = $1 LIMIT 1`,
+      [companyId],
+    ).catch(() => []);
+    return rows[0] || null;
+  }
+
   async getCompanyPlan(companyId: string) {
     await this.dataSource.query(
       `UPDATE company_plan_subscriptions
@@ -139,38 +158,68 @@ export class CompanyPlansService {
       [companyId],
     ).catch(() => undefined);
 
-    const rows = await this.dataSource.query(
-      `SELECT * FROM company_plan_subscriptions
-       WHERE "companyId" = $1 AND status IN ('ACTIVE','PAST_DUE') AND "currentPeriodEnd" > now()
-       LIMIT 1`,
-      [companyId],
-    );
-    const subscription = rows[0] || null;
-    const plan = subscription ? this.normalizePlan(subscription.plan) : 'FREE';
+    const [subscriptionRows, trial] = await Promise.all([
+      this.dataSource.query(
+        `SELECT * FROM company_plan_subscriptions
+         WHERE "companyId" = $1 AND status IN ('ACTIVE','PAST_DUE') AND "currentPeriodEnd" > now()
+         LIMIT 1`,
+        [companyId],
+      ),
+      this.trialForCompany(companyId),
+    ]);
+    const subscription = subscriptionRows[0] || null;
+    const basePlan = subscription ? this.normalizePlan(subscription.plan) : 'FREE';
+    const trialActive = Boolean(trial?.status === 'ACTIVE' && new Date(trial.endsAt).getTime() > Date.now());
+    const plan: CompanyPlan = trialActive ? 'ELITE' : basePlan;
+
     return {
       plan,
+      basePlan,
       rank: RANK[plan],
-      active: plan !== 'FREE',
-      status: subscription?.status || 'FREE',
-      currentPeriodStart: subscription?.currentPeriodStart || null,
-      currentPeriodEnd: subscription?.currentPeriodEnd || null,
-      cancelAtPeriodEnd: Boolean(subscription?.cancelAtPeriodEnd),
+      active: trialActive || basePlan !== 'FREE',
+      status: trialActive ? 'TRIAL' : subscription?.status || 'FREE',
+      currentPeriodStart: trialActive ? trial.startedAt : subscription?.currentPeriodStart || null,
+      currentPeriodEnd: trialActive ? trial.endsAt : subscription?.currentPeriodEnd || null,
+      paidCurrentPeriodEnd: subscription?.currentPeriodEnd || null,
+      cancelAtPeriodEnd: trialActive ? false : Boolean(subscription?.cancelAtPeriodEnd),
       provider: subscription?.provider || null,
       isSimulation: Boolean(subscription?.isSimulation),
-      advertisingEligible: plan === 'ELITE',
+      isTrial: trialActive,
+      trialEndsAt: trialActive ? trial.endsAt : null,
+      hasPaidSubscription: Boolean(subscription),
+      advertisingEligible: !trialActive && basePlan === 'ELITE',
+      jobHighlightEligible: !trialActive && basePlan === 'ELITE',
     };
   }
 
   async getForUser(userId: string) {
     const company = await this.managedCompany(userId);
-    const current = await this.getCompanyPlan(company.id);
+    const [current, trialRecord] = await Promise.all([
+      this.getCompanyPlan(company.id),
+      this.trialForCompany(company.id),
+    ]);
+    const trialUsed = Boolean(trialRecord);
+    const trialEligible = !trialUsed && !(current.basePlan === 'ELITE' && current.hasPaidSubscription);
     return {
       company: { id: company.id, name: company.name },
       current,
+      trial: {
+        days: ELITE_TRIAL_DAYS,
+        active: current.isTrial,
+        eligible: trialEligible,
+        used: trialUsed,
+        startedAt: trialRecord?.startedAt || null,
+        endsAt: trialRecord?.endsAt || null,
+        restrictions: [
+          'Sem elegibilidade para destaques na Meta e Google durante o período gratuito',
+          'Sem destaque ou impulsionamento de vagas durante o período gratuito',
+        ],
+      },
       plans: COMPANY_PLAN_CATALOG.map((plan) => ({
         ...plan,
-        current: current.plan === plan.id,
-        available: RANK[plan.id] >= RANK[current.plan] || plan.id === current.plan,
+        current: !current.isTrial && current.basePlan === plan.id,
+        available: RANK[plan.id] >= RANK[current.basePlan] || plan.id === current.basePlan,
+        trialEligible: plan.id !== 'FREE' && trialEligible,
       })),
     };
   }
@@ -181,11 +230,25 @@ export class CompanyPlansService {
 
   async hasFeature(companyId: string, feature: CompanyPlanFeature) {
     const current = await this.getCompanyPlan(companyId);
+    if (current.isTrial && TRIAL_BLOCKED_FEATURES.has(feature)) return false;
     return RANK[current.plan] >= RANK[FEATURE_PLAN[feature]];
   }
 
   async assertFeature(companyId: string, feature: CompanyPlanFeature) {
     const current = await this.getCompanyPlan(companyId);
+    if (current.isTrial && TRIAL_BLOCKED_FEATURES.has(feature)) {
+      throw new ForbiddenException({
+        code: 'COMPANY_TRIAL_RESTRICTED',
+        message: feature === 'AD_HIGHLIGHTS'
+          ? 'O período gratuito do Elite não inclui elegibilidade para destaques na Meta e Google.'
+          : 'O período gratuito do Elite não inclui destaque ou impulsionamento de vagas.',
+        feature,
+        currentPlan: 'ELITE',
+        isTrial: true,
+        trialEndsAt: current.trialEndsAt,
+        paidEliteUrl: 'https://piranegocios.com.br/company/planos',
+      });
+    }
     const requiredPlan = FEATURE_PLAN[feature];
     if (RANK[current.plan] < RANK[requiredPlan]) {
       throw new ForbiddenException({
@@ -200,6 +263,45 @@ export class CompanyPlansService {
     return current;
   }
 
+  async startEliteTrial(userId: string) {
+    const company = await this.managedCompany(userId);
+    const current = await this.getCompanyPlan(company.id);
+    if (current.isTrial) {
+      throw new BadRequestException('O Elite gratuito já está ativo para esta empresa.');
+    }
+    if (current.basePlan === 'ELITE' && current.hasPaidSubscription) {
+      throw new BadRequestException('A empresa já possui o Elite pago ativo.');
+    }
+
+    try {
+      await this.dataSource.query(
+        `INSERT INTO company_plan_trials
+          ("companyId", "startedBy", status, "startedAt", "endsAt", "createdAt", "updatedAt")
+         VALUES ($1, $2, 'ACTIVE', now(), now() + interval '15 days', now(), now())`,
+        [company.id, userId],
+      );
+    } catch (error: any) {
+      if (String(error?.code || '') === '23505') {
+        throw new BadRequestException('O teste gratuito de 15 dias já foi utilizado por esta empresa.');
+      }
+      throw error;
+    }
+
+    await this.dataSource.query(
+      `INSERT INTO company_ad_highlight_eligibility
+        ("companyId", eligible, channels, "eligibleUntil", source, "updatedAt")
+       VALUES ($1, false, '["META","GOOGLE"]'::jsonb, NULL, 'ELITE_TRIAL', now())
+       ON CONFLICT ("companyId") DO UPDATE SET
+         eligible = false,
+         "eligibleUntil" = NULL,
+         source = 'ELITE_TRIAL',
+         "updatedAt" = now()`,
+      [company.id],
+    ).catch(() => undefined);
+
+    return this.getForUser(userId);
+  }
+
   async createCheckout(
     userId: string,
     requestedPlan: unknown,
@@ -211,7 +313,7 @@ export class CompanyPlansService {
     }
     const company = await this.managedCompany(userId);
     const current = await this.getCompanyPlan(company.id);
-    if (current.plan === plan && current.active) {
+    if (!current.isTrial && current.basePlan === plan && current.hasPaidSubscription) {
       throw new BadRequestException(`A empresa já possui o plano ${plan} ativo.`);
     }
 
@@ -290,7 +392,7 @@ export class CompanyPlansService {
        RETURNING *`,
       [company.id, enabled],
     );
-    if (!rows[0]) throw new NotFoundException('A empresa não possui uma assinatura ativa.');
+    if (!rows[0]) throw new NotFoundException('A empresa não possui uma assinatura paga ativa.');
     return rows[0];
   }
 }
