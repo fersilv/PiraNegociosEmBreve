@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { huggingFacePreparePdf } from './huggingface.provider';
+import { preparePdfForAi } from './document-ai-utils';
 
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 
@@ -65,7 +65,7 @@ export class GroqCompat {
           if (block?.type === 'document' && block?.source?.type === 'base64') {
             const data = String(block.source.data || '');
             if (!data) continue;
-            const prepared = await huggingFacePreparePdf(data, 8);
+            const prepared = await preparePdfForAi(data, 8);
             if (prepared.text) {
               content.push({
                 type: 'input_text',
