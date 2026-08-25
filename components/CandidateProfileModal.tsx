@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   User,
@@ -10,9 +10,9 @@ import {
   FileText,
   PhoneCall,
   Linkedin,
-  Target,
   CheckCircle2,
   AlertTriangle,
+  Star,
   Zap,
 } from 'lucide-react';
 import { openBase64InNewTab } from '../lib/fileViewer';
@@ -113,6 +113,15 @@ function MatchMetric({ label, value }: { label: string; value?: number }) {
   );
 }
 
+function MatchBadge({ label, value }: { label: string; value?: number }) {
+  if (value === undefined || value === null) return null;
+  return (
+    <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-violet-50 px-2 py-1 text-[9px] font-black normal-case tracking-normal text-violet-700 ring-1 ring-inset ring-violet-100">
+      {label} {Math.round(Math.max(0, Math.min(100, Number(value || 0))))}%
+    </span>
+  );
+}
+
 function isRealFileUrl(value?: string) {
   if (!value) return false;
   return value.startsWith('data:') || value.startsWith('http://') || value.startsWith('https://') || value.startsWith('blob:');
@@ -120,6 +129,12 @@ function isRealFileUrl(value?: string) {
 
 export function CandidateProfileModal({ candidate, compatibility, compatibilityJobTitle, isOpen, onClose }: CandidateProfileModalProps) {
   const [publishedResumeOpen, setPublishedResumeOpen] = useState(false);
+  const [showCompatibility, setShowCompatibility] = useState(false);
+
+  useEffect(() => {
+    setShowCompatibility(false);
+  }, [candidate?.email, compatibilityJobTitle, isOpen]);
+
   if (!isOpen || !candidate) return null;
 
   const hasPublishedSnapshot = Boolean(candidate.publishedResumeSnapshot);
@@ -158,6 +173,18 @@ export function CandidateProfileModal({ candidate, compatibility, compatibilityJ
                       <Zap className="h-3 w-3" /> Em destaque
                     </span>
                   )}
+                  {compatibility && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCompatibility((value) => !value)}
+                      className={`inline-flex h-8 w-8 items-center justify-center rounded-full border transition ${showCompatibility ? 'border-violet-300 bg-violet-600 text-white shadow-sm' : 'border-violet-200 bg-violet-50 text-violet-600 hover:bg-violet-100'}`}
+                      title={showCompatibility ? 'Ocultar compatibilidade com a vaga' : `Ver compatibilidade${compatibilityJobTitle ? ` com ${compatibilityJobTitle}` : ' com a vaga'}`}
+                      aria-label={showCompatibility ? 'Ocultar compatibilidade com a vaga' : 'Ver compatibilidade com a vaga'}
+                      aria-pressed={showCompatibility}
+                    >
+                      <Star className={`h-4 w-4 ${showCompatibility ? 'fill-current' : ''}`} />
+                    </button>
+                  )}
                 </div>
                 <span className="inline-block text-xs font-bold uppercase bg-stone-100 text-stone-600 px-2.5 py-1 rounded-full tracking-wider">
                   Candidato Cadastrado
@@ -166,16 +193,55 @@ export function CandidateProfileModal({ candidate, compatibility, compatibilityJ
             </div>
 
             <div className="space-y-2.5">
-              <h4 className="text-xs font-bold text-stone-400 uppercase tracking-widest">Resumo Profissional</h4>
+              <h4 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-stone-400">
+                Resumo Profissional
+                {showCompatibility && <MatchBadge label="Ocupacional" value={compatibility?.occupationalScore} />}
+              </h4>
               <p className="text-sm text-stone-700 leading-relaxed font-sans">
                 {candidate.bio || 'Nenhum resumo profissional inserido pelo candidato.'}
               </p>
             </div>
 
+            {showCompatibility && compatibility && (
+              <div className="rounded-2xl border border-violet-200 bg-violet-50/60 p-5 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[.13em] text-violet-700"><Star className="h-3.5 w-3.5 fill-current" /> Compatibilidade com a vaga</p>
+                    {compatibilityJobTitle && <p className="mt-1 text-xs font-bold text-violet-950">{compatibilityJobTitle}</p>}
+                  </div>
+                  <div className="text-right"><strong className="text-2xl font-black text-violet-800">{Math.round(Number(compatibility.score || 0))}%</strong><p className="text-[9px] font-bold text-violet-700">{scoreLabel(Number(compatibility.score || 0))}</p></div>
+                </div>
+                {compatibility.reason && <p className="mt-3 text-[11px] leading-5 text-violet-950/75">{compatibility.reason}</p>}
+                <div className="mt-4 grid gap-2.5 rounded-xl bg-white/80 p-3 sm:grid-cols-2">
+                  <MatchMetric label="Aderência ocupacional" value={compatibility.occupationalScore} />
+                  <MatchMetric label="Competências técnicas" value={compatibility.technicalScore} />
+                  <MatchMetric label="Experiência" value={compatibility.experienceScore} />
+                  <MatchMetric label="Formação / certificações" value={compatibility.educationScore} />
+                  <MatchMetric label="Localização / preferência" value={compatibility.preferenceScore} />
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {compatibility.evidence && compatibility.evidence.length > 0 && (
+                    <div>
+                      <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> Pontos de aderência</p>
+                      <div className="mt-2 space-y-1.5">{compatibility.evidence.slice(0, 6).map((item) => <p key={item} className="text-[10px] leading-4 text-stone-700">✓ {item}</p>)}</div>
+                    </div>
+                  )}
+                  {compatibility.missingRequirements && compatibility.missingRequirements.length > 0 && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-amber-700"><AlertTriangle className="h-3.5 w-3.5" /> Pontos a validar</p>
+                      <div className="mt-2 space-y-1.5">{compatibility.missingRequirements.slice(0, 6).map((item) => <p key={item} className="text-[10px] leading-4 text-amber-900">• {item}</p>)}</div>
+                    </div>
+                  )}
+                </div>
+                <p className="mt-3 text-[9px] leading-4 text-stone-500">Indicador auxiliar baseado no currículo e nos requisitos da vaga. Não substitui a análise humana.</p>
+              </div>
+            )}
+
             <div className="space-y-4">
               <h4 className="text-xs font-bold text-stone-400 uppercase tracking-widest flex items-center gap-1.5 border-b border-stone-100 pb-2">
                 <Briefcase className="w-4 h-4 text-terracotta-600" />
                 Histórico Profissional
+                {showCompatibility && <MatchBadge label="Experiência" value={compatibility?.experienceScore} />}
               </h4>
               {candidate.experiences && candidate.experiences.length > 0 ? (
                 <div className="space-y-4">
@@ -200,6 +266,7 @@ export function CandidateProfileModal({ candidate, compatibility, compatibilityJ
               <h4 className="text-xs font-bold text-stone-400 uppercase tracking-widest flex items-center gap-1.5 border-b border-stone-100 pb-2">
                 <GraduationCap className="w-4 h-4 text-terracotta-600" />
                 Escolaridade e Formação Acadêmica
+                {showCompatibility && <MatchBadge label="Formação" value={compatibility?.educationScore} />}
               </h4>
               {candidate.education && candidate.education.length > 0 ? (
                 <div className="space-y-3">
@@ -241,46 +308,8 @@ export function CandidateProfileModal({ candidate, compatibility, compatibilityJ
           </div>
 
           <div className="w-full md:w-80 space-y-6">
-            {compatibility && (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[.13em] text-emerald-700"><Target className="h-3.5 w-3.5" /> Compatibilidade</p>
-                    {compatibilityJobTitle && <p className="mt-1 text-[10px] text-emerald-800/70">com {compatibilityJobTitle}</p>}
-                  </div>
-                  <div className="text-right"><strong className="text-2xl font-black text-emerald-800">{Math.round(Number(compatibility.score || 0))}%</strong><p className="text-[9px] font-bold text-emerald-700">{scoreLabel(Number(compatibility.score || 0))}</p></div>
-                </div>
-
-                {compatibility.reason && <p className="mt-3 text-[11px] leading-5 text-emerald-900/80">{compatibility.reason}</p>}
-
-                <div className="mt-4 space-y-2.5 rounded-xl bg-white/80 p-3">
-                  <MatchMetric label="Aderência ocupacional" value={compatibility.occupationalScore} />
-                  <MatchMetric label="Competências técnicas" value={compatibility.technicalScore} />
-                  <MatchMetric label="Experiência" value={compatibility.experienceScore} />
-                  <MatchMetric label="Formação / certificações" value={compatibility.educationScore} />
-                  <MatchMetric label="Localização / preferência" value={compatibility.preferenceScore} />
-                </div>
-
-                {compatibility.evidence && compatibility.evidence.length > 0 && (
-                  <div className="mt-4">
-                    <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> Evidências de aderência</p>
-                    <div className="mt-2 space-y-1.5">{compatibility.evidence.slice(0, 6).map((item) => <p key={item} className="text-[10px] leading-4 text-stone-700">✓ {item}</p>)}</div>
-                  </div>
-                )}
-
-                {compatibility.missingRequirements && compatibility.missingRequirements.length > 0 && (
-                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-                    <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-amber-700"><AlertTriangle className="h-3.5 w-3.5" /> Pontos a validar</p>
-                    <div className="mt-2 space-y-1.5">{compatibility.missingRequirements.slice(0, 6).map((item) => <p key={item} className="text-[10px] leading-4 text-amber-900">• {item}</p>)}</div>
-                  </div>
-                )}
-
-                <p className="mt-3 text-[9px] leading-4 text-stone-500">Indicador auxiliar baseado no currículo e nos requisitos da vaga. Não substitui análise humana do processo seletivo.</p>
-              </div>
-            )}
-
             <div className="bg-stone-50 rounded-2xl p-5 border border-stone-200/80 space-y-4">
-              <h4 className="text-xs font-bold text-stone-400 uppercase tracking-widest">Informações de Contato</h4>
+              <h4 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-stone-400">Informações de Contato {showCompatibility && <MatchBadge label="Preferências" value={compatibility?.preferenceScore} />}</h4>
               <div className="space-y-3 font-sans text-stone-700 text-xs">
                 <div className="flex items-center gap-2.5"><Phone className="w-4 h-4 text-stone-400 shrink-0" /><span className="font-bold">{candidate.phone || 'Não informado'}</span></div>
                 <div className="flex items-center gap-2.5"><Mail className="w-4 h-4 text-stone-400 shrink-0" /><a href={`mailto:${candidate.email}`} className="font-medium hover:underline text-stone-800 break-all">{candidate.email}</a></div>
@@ -300,7 +329,7 @@ export function CandidateProfileModal({ candidate, compatibility, compatibilityJ
             </div>
 
             <div className="space-y-3">
-              <h4 className="text-xs font-bold text-stone-400 uppercase tracking-widest">Habilidades e Competências</h4>
+              <h4 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-stone-400">Habilidades e Competências {showCompatibility && <MatchBadge label="Técnica" value={compatibility?.technicalScore} />}</h4>
               {candidate.skills && candidate.skills.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">{candidate.skills.map((skill, idx) => <span key={idx} className="px-2.5 py-1 bg-terracotta-50 text-terracotta-800 text-[10px] font-bold rounded-lg border border-terracotta-100/60">{skill}</span>)}</div>
               ) : <p className="text-xs text-stone-400 italic">Nenhuma competência cadastrada.</p>}
