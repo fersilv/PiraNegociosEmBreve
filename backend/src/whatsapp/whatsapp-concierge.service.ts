@@ -91,6 +91,7 @@ export class WhatsAppConciergeService {
     }
 
     buffer.client = client;
+    buffer.instance = instance;
     buffer.lastAt = now;
     buffer.senderWhatsAppId = identity.whatsappId;
     buffer.phoneE164 = identity.phoneE164 || buffer.phoneE164;
@@ -135,15 +136,10 @@ export class WhatsAppConciergeService {
       if (resolved.user.type === UserType.ADMIN) {
         conversation.contextMode = 'ADMIN';
       } else if (resolved.company && conversation.contextMode === 'UNRESOLVED') {
-        const choice = this.readContextChoice(buffer.messages, resolved.company);
-        if (!choice) {
-          conversation.state = { ...(conversation.state || {}), awaitingContextChoice: true };
-          await this.conversations.save(conversation);
-          await this.sendText(buffer, `${firstName}, encontrei também a empresa ${resolved.company.name} vinculada à sua conta. Este atendimento é para você ou para a empresa ${resolved.company.name}?`);
-          return;
-        }
-        conversation.contextMode = choice;
-        conversation.state = { ...(conversation.state || {}), awaitingContextChoice: false };
+        conversation.state = { ...(conversation.state || {}), awaitingContextChoice: true };
+        await this.conversations.save(conversation);
+        await this.sendText(buffer, `${firstName}, encontrei também a empresa ${resolved.company.name} vinculada à sua conta. Este atendimento é para você ou para a empresa ${resolved.company.name}?`);
+        return;
       } else if (resolved.company && (conversation.state as any)?.awaitingContextChoice) {
         const choice = this.readContextChoice(buffer.messages, resolved.company);
         if (!choice) {
@@ -152,6 +148,11 @@ export class WhatsAppConciergeService {
         }
         conversation.contextMode = choice;
         conversation.state = { ...(conversation.state || {}), awaitingContextChoice: false };
+      } else if (resolved.company && !conversation.activeFlow) {
+        const explicitChoice = this.readContextChoice(buffer.messages, resolved.company);
+        if (explicitChoice && explicitChoice !== conversation.contextMode) {
+          conversation.contextMode = explicitChoice;
+        }
       } else if (conversation.contextMode === 'UNRESOLVED') {
         conversation.contextMode = 'CANDIDATE';
       }
@@ -188,6 +189,14 @@ export class WhatsAppConciergeService {
       const reply = String(result?.reply || decision.reply || '').trim();
       if (reply) await this.sendText(buffer, reply);
     } catch (error) {
+      if (this.isPaymentRequired(error)) {
+        await this.sendText(
+          buffer,
+          'A primeira organização do currículo por IA já foi utilizada nesta conta. Para usar a IA novamente, adquira um novo uso na área de currículo do PiraNegócios: https://piranegocios.com.br/dashboard/curriculo',
+        ).catch(() => undefined);
+        return;
+      }
+
       this.logger.error(`Falha no concierge WhatsApp: ${this.errorText(error)}`);
       await this.alerts.send({
         severity: 'ATTENTION',
@@ -278,7 +287,7 @@ export class WhatsAppConciergeService {
         await this.users.save(user);
         return { reply: `${firstName}, organizei as informações dos documentos e salvei o rascunho do seu currículo. Revise no painel antes de publicar: https://piranegocios.com.br/dashboard/curriculo` };
       }
-      if (intent === 'START_RESUME_CREATE' || conversation.activeFlow === 'RESUME_CREATE') {
+      if (intent === 'START_RESUME_CREATE' || intent === 'CONTINUE_RESUME_CREATE' || intent === 'CONFIRM_RESUME_CREATE' || conversation.activeFlow === 'RESUME_CREATE') {
         return this.resumeCreationFlow(conversation, user, decision, requestText);
       }
       return { reply: decision.reply || `${firstName}, como posso ajudar com suas vagas, candidaturas ou currículo?` };
@@ -312,10 +321,10 @@ export class WhatsAppConciergeService {
         const result = await this.jobMatch.getCompanyCandidatesForJob(user.id, job.id);
         return { reply: await this.ai.composeReply({ firstName, request: requestText, result: { job: job.title, ...result }, contextMode: 'COMPANY' }) };
       }
-      if (intent === 'START_JOB_CREATE' || conversation.activeFlow === 'JOB_CREATE') {
+      if (intent === 'START_JOB_CREATE' || intent === 'CONTINUE_JOB_CREATE' || intent === 'CONFIRM_JOB_CREATE' || conversation.activeFlow === 'JOB_CREATE') {
         return this.jobCreationFlow(conversation, user, company, decision, requestText);
       }
-      if (intent === 'START_JOB_EDIT' || conversation.activeFlow === 'JOB_EDIT') {
+      if (intent === 'START_JOB_EDIT' || intent === 'CONTINUE_JOB_EDIT' || intent === 'CONFIRM_JOB_EDIT' || conversation.activeFlow === 'JOB_EDIT') {
         return this.jobEditFlow(conversation, user, company, companyJobs, decision, requestText);
       }
       return { reply: decision.reply || `${firstName}, posso consultar vagas e candidatos ou iniciar a criação/edição de uma vaga da ${company.name}.` };
@@ -326,20 +335,38 @@ export class WhatsAppConciergeService {
 
   private async resumeCreationFlow(conversation: WhatsAppConversation, user: User, decision: any, requestText: string) {
     const state = { ...(conversation.state || {}) } as any;
-    const draft = { ...(state.resumeDraft || {}), ...(decision.args?.patch && typeof decision.args.patch === 'object' ? decision.args.patch : {}), ...(decision.statePatch?.resumeDraft || {}) };
+    const seed = {
+      fullName: user.fullName || user.displayName || undefined,
+      city: user.city || undefined,
+      state: user.state || undefined,
+      bio: user.bio || undefined,
+      experiences: Array.isArray(user.experiences) ? user.experiences : undefined,
+      education: Array.isArray(user.education) ? user.education : undefined,
+      skills: Array.isArray(user.skills) ? user.skills : undefined,
+      courses: Array.isArray(user.courses) ? user.courses : undefined,
+      languages: Array.isArray(user.languages) ? user.languages : undefined,
+    };
+    const draft = {
+      ...seed,
+      ...(state.resumeDraft || {}),
+      ...(decision.args?.patch && typeof decision.args.patch === 'object' ? decision.args.patch : {}),
+      ...(decision.statePatch?.resumeDraft || {}),
+    };
     conversation.activeFlow = 'RESUME_CREATE';
     state.resumeDraft = draft;
     conversation.state = state;
 
-    const fields = [
+    const fields: Array<[string, string]> = [
       ['fullName', 'seu nome completo'],
-      ['city', 'sua cidade e estado'],
+      ['city', 'sua cidade'],
+      ['state', 'seu estado/UF'],
       ['experiences', 'suas experiências profissionais, com empresa, cargo e período'],
       ['education', 'sua formação/escolaridade'],
       ['skills', 'suas principais habilidades'],
     ];
     const missing = fields.find(([field]) => !draft[field] || (Array.isArray(draft[field]) && !draft[field].length));
-    if (String(requestText).trim().toUpperCase() === 'SALVAR CURRICULO' && !missing) {
+    const confirmed = String(decision.intent || '').toUpperCase() === 'CONFIRM_RESUME_CREATE' || /^\s*(SALVAR CURR[IÍ]CULO|FINALIZAR CURR[IÍ]CULO|PODE SALVAR|CONFIRMO)\s*[.!]?\s*$/i.test(requestText);
+    if (confirmed && !missing) {
       this.applyImportedResume(user, draft);
       await this.users.save(user);
       conversation.activeFlow = null;
@@ -349,8 +376,9 @@ export class WhatsAppConciergeService {
     }
 
     await this.conversations.save(conversation);
+    if (confirmed && missing) return { reply: `Ainda falta uma informação para eu fechar o rascunho: conte ${missing[1]}.` };
     if (missing) return { reply: `Vamos montar seu currículo. Me conte ${missing[1]}. Você também pode enviar currículo, Carteira de Trabalho ou certificados em PDF/foto a qualquer momento.` };
-    return { reply: 'Já tenho os dados essenciais do rascunho. Se estiver tudo certo, responda SALVAR CURRICULO. Se quiser corrigir algo, me diga a correção antes.' };
+    return { reply: 'Já tenho os dados essenciais do rascunho. Se estiver tudo certo, responda SALVAR CURRÍCULO. Se quiser corrigir algo, me diga a correção antes.' };
   }
 
   private async jobCreationFlow(conversation: WhatsAppConversation, user: User, company: Company, decision: any, requestText: string) {
@@ -487,8 +515,11 @@ export class WhatsAppConciergeService {
 
   private applyImportedResume(user: User, imported: any) {
     if (imported?.name && !user.fullName) user.fullName = String(imported.name);
+    if (imported?.fullName && !user.fullName) user.fullName = String(imported.fullName);
     if (imported?.treatment && !user.treatment) user.treatment = String(imported.treatment);
     if (imported?.phone && !user.phone) user.phone = String(imported.phone);
+    if (imported?.city) user.city = String(imported.city);
+    if (imported?.state) user.state = String(imported.state).trim().slice(0, 2).toUpperCase();
     if (imported?.bio !== undefined) user.bio = imported.bio ? String(imported.bio) : user.bio;
     if (Array.isArray(imported?.experiences)) user.experiences = imported.experiences;
     if (Array.isArray(imported?.education)) user.education = imported.education;
@@ -637,7 +668,7 @@ export class WhatsAppConciergeService {
     const text = messages.map((item) => item.text).join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     const companyName = String(company.name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     if (/\b(empresa|recrutamento|rh|vaga da empresa|candidatos)\b/.test(text) || (companyName && text.includes(companyName))) return 'COMPANY';
-    if (/\b(pessoal|meu curriculo|meu currículo|minhas vagas|minha candidatura|candidato)\b/.test(text)) return 'CANDIDATE';
+    if (/\b(pessoal|pra mim|para mim|meu curriculo|meu currículo|minhas vagas|minha candidatura|candidato)\b/.test(text)) return 'CANDIDATE';
     return null;
   }
 
@@ -678,6 +709,12 @@ export class WhatsAppConciergeService {
 
   private safeId(value: string) {
     return createHash('sha256').update(value).digest('hex').slice(0, 16);
+  }
+
+  private isPaymentRequired(error: unknown) {
+    if (!(error instanceof ForbiddenException)) return false;
+    const response = error.getResponse() as any;
+    return Boolean(response && typeof response === 'object' && response.code === 'PAYMENT_REQUIRED');
   }
 
   private errorText(error: unknown) {
