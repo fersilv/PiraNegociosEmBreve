@@ -89,11 +89,15 @@ export class ClassifiedsAiReviewService {
   }
 
   private async enrichPhotoSignals(input: ReviewInput) {
-    const currentHashes = await this.hashImages(input.listing.imageUrls);
-    const candidatePhotoHashes: Record<string, string[]> = {};
-    for (const candidate of input.candidates.slice(0, 20)) {
-      candidatePhotoHashes[candidate.id] = await this.hashImages(candidate.imageUrls);
-    }
+    // Foto é um sinal auxiliar, então o custo precisa ser estritamente limitado.
+    // Comparamos todas as fotos do anúncio novo com no máximo 2 fotos dos 8
+    // anúncios anteriores mais recentes, em paralelo e com timeout individual.
+    const photoCandidates = input.candidates.slice(0, 8);
+    const [currentHashes, candidatePairs] = await Promise.all([
+      this.hashImages(input.listing.imageUrls.slice(0, 6)),
+      Promise.all(photoCandidates.map(async (candidate) => [candidate.id, await this.hashImages(candidate.imageUrls.slice(0, 2))] as const)),
+    ]);
+    const candidatePhotoHashes: Record<string, string[]> = Object.fromEntries(candidatePairs);
     const currentSet = new Set(currentHashes);
     const photoHashMatches = Object.entries(candidatePhotoHashes)
       .filter(([, hashes]) => hashes.some((hash) => currentSet.has(hash)))
@@ -123,24 +127,25 @@ export class ClassifiedsAiReviewService {
   }
 
   private async hashImages(urls: string[]) {
-    const hashes: string[] = [];
-    for (const value of urls.slice(0, 6)) {
+    const results = await Promise.all(urls.map(async (value) => {
       const url = this.absoluteUrl(value);
-      if (!url) continue;
+      if (!url) return null;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3500);
       try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 4000);
         const response = await fetch(url, { signal: controller.signal });
-        clearTimeout(timer);
-        if (!response.ok) continue;
+        if (!response.ok) return null;
         const bytes = Buffer.from(await response.arrayBuffer());
-        if (!bytes.length || bytes.length > 12 * 1024 * 1024) continue;
-        hashes.push(createHash('sha256').update(bytes).digest('hex'));
+        if (!bytes.length || bytes.length > 12 * 1024 * 1024) return null;
+        return createHash('sha256').update(bytes).digest('hex');
       } catch {
-        // A foto é apenas um sinal adicional. Falha de download nunca bloqueia publicação.
+        // Falha de foto nunca bloqueia publicação.
+        return null;
+      } finally {
+        clearTimeout(timer);
       }
-    }
-    return hashes;
+    }));
+    return results.filter((hash): hash is string => Boolean(hash));
   }
 
   private absoluteUrl(value: string) {
