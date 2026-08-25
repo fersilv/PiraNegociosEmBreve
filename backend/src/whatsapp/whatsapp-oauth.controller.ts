@@ -20,6 +20,11 @@ export class WhatsAppOAuthController {
     return this.oauth.authorizationServerMetadata();
   }
 
+  @Get('.well-known/openid-configuration')
+  openIdConfiguration() {
+    return this.oauth.authorizationServerMetadata();
+  }
+
   @Get('.well-known/oauth-protected-resource/api/whatsapp/mcp/:instanceId')
   standardResourceMetadata(@Param('instanceId') instanceId: string) {
     return this.oauth.resourceMetadata(instanceId);
