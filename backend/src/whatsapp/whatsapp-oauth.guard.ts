@@ -5,7 +5,6 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { WhatsAppOAuthService } from './whatsapp-oauth.service';
-import { WHATSAPP_SCOPES } from './whatsapp.scopes';
 
 @Injectable()
 export class WhatsAppOAuthGuard implements CanActivate {
@@ -20,7 +19,6 @@ export class WhatsAppOAuthGuard implements CanActivate {
       'Bearer error="invalid_token"',
       'error_description="Authentication required"',
       `resource_metadata="${resourceMetadata}"`,
-      `scope="${WHATSAPP_SCOPES.join(' ')}"`,
     ].join(', ');
 
     const authorization = String(request.headers.authorization || '');
@@ -34,7 +32,10 @@ export class WhatsAppOAuthGuard implements CanActivate {
 
     try {
       const auth = await this.oauth.verifyAccessToken(instanceId, rawToken);
-      request.whatsappOAuth = auth;
+      const liveScopes = auth.scopes.filter((scope: string) =>
+        Array.isArray(auth.instance.allowedScopes) && auth.instance.allowedScopes.includes(scope),
+      );
+      request.whatsappOAuth = { ...auth, scopes: liveScopes };
       return true;
     } catch (error) {
       response.setHeader('WWW-Authenticate', challenge);
