@@ -6,9 +6,12 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "prebuild": "node ../.github/scripts/ensure-huggingface-provider.cjs",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "prestart": "node ../.github/scripts/ensure-huggingface-provider.cjs",
     "start": "nest start",
+    "prestart:dev": "node ../.github/scripts/ensure-huggingface-provider.cjs",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
@@ -35,6 +38,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
+    "@huggingface/inference": "^4.13.28",
     "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "@nestjs/common": "^11.0.1",
