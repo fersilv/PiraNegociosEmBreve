@@ -96,3 +96,26 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS classified_listings_duplicate_idx
   ON classified_listings ("duplicateOfListingId") WHERE "duplicateOfListingId" IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION settle_accepted_classified_offer()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.status = 'ACCEPTED' AND OLD.status IS DISTINCT FROM NEW.status THEN
+    INSERT INTO classified_conversations
+      ("listingId","buyerUserId","buyerCompanyId","sellerUserId","sellerCompanyId","buyerLastReadAt","sellerLastReadAt","lastMessageAt")
+    VALUES
+      (NEW."listingId", NEW."buyerUserId", NEW."buyerCompanyId", NEW."sellerUserId", NEW."sellerCompanyId", now(), NULL, NULL)
+    ON CONFLICT DO NOTHING;
+
+    UPDATE classified_listings
+    SET status = 'PAUSED', "updatedAt" = now()
+    WHERE id = NEW."listingId" AND status = 'PUBLISHED';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_settle_accepted_classified_offer ON classified_offers;
+CREATE TRIGGER trg_settle_accepted_classified_offer
+AFTER UPDATE OF status ON classified_offers
+FOR EACH ROW EXECUTE FUNCTION settle_accepted_classified_offer();
