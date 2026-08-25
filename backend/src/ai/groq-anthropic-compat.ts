@@ -96,12 +96,65 @@ export class GroqCompat {
         );
       }
 
+      let text = String(response?.output_text || '').trim();
+      let usage = {
+        input_tokens: response?.usage?.input_tokens,
+        output_tokens: response?.usage?.output_tokens,
+      };
+
+      if (!text) {
+        const chatMessages: any[] = [];
+        if (input?.system) {
+          chatMessages.push({ role: 'system', content: String(input.system) });
+        }
+
+        for (const message of convertedMessages) {
+          if (typeof message?.content === 'string') {
+            chatMessages.push({ role: message.role, content: message.content });
+            continue;
+          }
+
+          const content = (Array.isArray(message?.content) ? message.content : [])
+            .map((block: any) => {
+              if (block?.type === 'input_text') {
+                return { type: 'text', text: String(block.text || '') };
+              }
+              if (block?.type === 'input_image' && block?.image_url) {
+                return {
+                  type: 'image_url',
+                  image_url: { url: String(block.image_url) },
+                };
+              }
+              return null;
+            })
+            .filter(Boolean);
+
+          chatMessages.push({
+            role: message.role,
+            content: content.length ? content : '',
+          });
+        }
+
+        const completion: any = await this.client.chat.completions.create({
+          model: String(input?.model || ''),
+          messages: chatMessages.length
+            ? chatMessages
+            : [{ role: 'user', content: '' }],
+          max_tokens: Number(input?.max_tokens || 3500),
+        } as any);
+
+        text = String(completion?.choices?.[0]?.message?.content || '').trim();
+        usage = {
+          input_tokens:
+            completion?.usage?.prompt_tokens ?? response?.usage?.input_tokens,
+          output_tokens:
+            completion?.usage?.completion_tokens ?? response?.usage?.output_tokens,
+        };
+      }
+
       return {
-        content: [{ type: 'text', text: String(response?.output_text || '') }],
-        usage: {
-          input_tokens: response?.usage?.input_tokens,
-          output_tokens: response?.usage?.output_tokens,
-        },
+        content: [{ type: 'text', text }],
+        usage,
       };
     },
   };
