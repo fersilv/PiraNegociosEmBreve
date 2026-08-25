@@ -55,13 +55,17 @@ export class ClassifiedsChatService {
   async list(uid: string) {
     const user = await this.users.findOne({ where: { id: uid } });
     if (!user) throw new ForbiddenException('Usuário não encontrado.');
+    const ownedCompany = await this.companies.findOne({ where: { ownerId: uid } });
+    const managedCompanyId = user.companyId && user.isCompanyAdmin
+      ? user.companyId
+      : ownedCompany?.id || null;
 
     const query = this.conversations.createQueryBuilder('conversation')
       .where(new Brackets((where) => {
         where.where('conversation.buyerUserId = :uid', { uid })
           .orWhere('conversation.sellerUserId = :uid', { uid });
-        if (user.companyId && user.isCompanyAdmin) {
-          where.orWhere('conversation.sellerCompanyId = :companyId', { companyId: user.companyId });
+        if (managedCompanyId) {
+          where.orWhere('conversation.sellerCompanyId = :companyId', { companyId: managedCompanyId });
         }
       }))
       .orderBy('conversation.lastMessageAt', 'DESC', 'NULLS LAST')
@@ -128,7 +132,7 @@ export class ClassifiedsChatService {
     if (!conversation || !user) throw new NotFoundException('Conversa não encontrada.');
     if (conversation.buyerUserId === uid) return { conversation, user, role: 'BUYER' as const };
     if (conversation.sellerUserId === uid) return { conversation, user, role: 'SELLER' as const };
-    if (conversation.sellerCompanyId && user.companyId === conversation.sellerCompanyId && user.isCompanyAdmin) {
+    if (conversation.sellerCompanyId && await this.isCompanyOperator(conversation.sellerCompanyId, user)) {
       return { conversation, user, role: 'SELLER' as const };
     }
     if (user.type === UserType.ADMIN) return { conversation, user, role: 'SELLER' as const };
@@ -138,8 +142,12 @@ export class ClassifiedsChatService {
   private async isSeller(listing: ClassifiedListing, user: User) {
     if (listing.sellerUserId === user.id) return true;
     if (!listing.companyId) return false;
-    if (user.companyId === listing.companyId && user.isCompanyAdmin) return true;
-    const company = await this.companies.findOne({ where: { id: listing.companyId } });
+    return this.isCompanyOperator(listing.companyId, user);
+  }
+
+  private async isCompanyOperator(companyId: string, user: User) {
+    if (user.companyId === companyId && user.isCompanyAdmin) return true;
+    const company = await this.companies.findOne({ where: { id: companyId } });
     return company?.ownerId === user.id;
   }
 
@@ -167,11 +175,15 @@ export class ClassifiedsChatService {
     ]);
     const role = conversation.buyerUserId === uid ? 'BUYER' : 'SELLER';
     const readAt = role === 'BUYER' ? conversation.buyerLastReadAt : conversation.sellerLastReadAt;
-    const unreadCount = await this.messages.createQueryBuilder('message')
-      .where('message.conversationId = :conversationId', { conversationId: conversation.id })
-      .andWhere('message.senderId != :uid', { uid })
-      .andWhere(readAt ? 'message.createdAt > :readAt' : '1=1', readAt ? { readAt } : {})
-      .getCount();
+    const unreadQuery = this.messages.createQueryBuilder('message')
+      .where('message.conversationId = :conversationId', { conversationId: conversation.id });
+    if (role === 'BUYER') {
+      unreadQuery.andWhere('message.senderId != :buyerUserId', { buyerUserId: conversation.buyerUserId });
+    } else {
+      unreadQuery.andWhere('message.senderId = :buyerUserId', { buyerUserId: conversation.buyerUserId });
+    }
+    if (readAt) unreadQuery.andWhere('message.createdAt > :readAt', { readAt });
+    const unreadCount = await unreadQuery.getCount();
 
     return {
       ...conversation,
