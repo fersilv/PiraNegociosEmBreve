@@ -13,7 +13,12 @@ export class WhatsAppMessage {
   @Column({ length: 100, nullable: true }) providerMessageId: string | null;
   @Column({ length: 120 }) chatId: string;
   @Column({ length: 120, nullable: true }) senderId: string | null;
-  @Column({ type: 'enum', enum: WhatsAppMessageDirection }) direction: WhatsAppMessageDirection;
+  @Column({
+    type: 'enum',
+    enum: WhatsAppMessageDirection,
+    enumName: 'whatsapp_message_direction_enum',
+  })
+  direction: WhatsAppMessageDirection;
   @Column({ length: 40, default: 'text' }) type: string;
   @Column({ type: 'text', nullable: true }) body: string | null;
   @Column({ type: 'jsonb', nullable: true }) metadata: Record<string, unknown> | null;
