@@ -30,14 +30,7 @@ export function ClassifiedsWorkspaceGate({ children }: { children: React.ReactNo
   if (loading || !data) return <WorkspaceLoading error={error} />;
 
   if (data.needsIdentitySelection) {
-    return (
-      <FirstIdentityChoice
-        data={data}
-        working={working}
-        error={error}
-        choose={(identity) => run(() => selectIdentity(identity))}
-      />
-    );
+    return <FirstIdentityChoice data={data} working={working} error={error} choose={(identity) => run(() => selectIdentity(identity))} />;
   }
 
   if (data.activeIdentity === 'PERSONAL' && !data.personal.termsAccepted) {
@@ -45,11 +38,9 @@ export function ClassifiedsWorkspaceGate({ children }: { children: React.ReactNo
       <OnboardingFrame mode="PERSONAL" title="Ative seu PiraNegócios Personal" subtitle="Seu espaço pessoal para vender, comprar e negociar com segurança dentro da plataforma." error={error}>
         <div className="rounded-3xl border border-[#e6c8bd] bg-white p-5 text-sm leading-6 text-[#654a43]">
           Ao continuar, você concorda com os Termos de Uso dos Classificados. Seus anúncios pessoais aparecem como Particular e ficam separados de qualquer empresa vinculada à sua conta.
-          <Link to="/termos" className="ml-1 font-black text-[#a84f34] underline">Ler os termos</Link>
+          <Link to="/classificados/termos" target="_blank" className="ml-1 font-black text-[#a84f34] underline">Ler os Termos dos Classificados</Link>
         </div>
-        <button disabled={working} onClick={() => run(acceptPersonalTerms)} className="mt-5 w-full rounded-2xl bg-[#9f4e3d] px-5 py-3.5 text-sm font-black text-white disabled:opacity-60">
-          {working ? 'Ativando...' : 'Aceitar e entrar como Personal'}
-        </button>
+        <button disabled={working} onClick={() => run(acceptPersonalTerms)} className="mt-5 w-full rounded-2xl bg-[#9f4e3d] px-5 py-3.5 text-sm font-black text-white disabled:opacity-60">{working ? 'Ativando...' : 'Aceitar e entrar como Personal'}</button>
       </OnboardingFrame>
     );
   }
@@ -57,9 +48,7 @@ export function ClassifiedsWorkspaceGate({ children }: { children: React.ReactNo
   if (data.activeIdentity === 'COMPANY' && data.company && !data.company.verified) {
     return (
       <OnboardingFrame mode="BUSINESS" title={`${data.company.name} ainda precisa ser verificada`} subtitle="Empresas ganham identidade comercial, selo de verificação, vitrine na página e recursos próprios de catálogo." error={error}>
-        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-950">
-          Para proteger compradores e a reputação do marketplace, apenas empresas verificadas podem publicar como Business.
-        </div>
+        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-950">Para proteger compradores e a reputação do marketplace, apenas empresas verificadas podem publicar como Business.</div>
         <div className="mt-5 grid gap-2 sm:grid-cols-2">
           <Link to="/company/perfil" className="rounded-2xl bg-[#0d4542] px-5 py-3.5 text-center text-sm font-black text-white">Verificação da empresa</Link>
           <button disabled={working} onClick={() => run(() => selectIdentity('PERSONAL'))} className="rounded-2xl border border-[#b9d7d2] bg-white px-5 py-3.5 text-sm font-black text-[#155a55]">Entrar como Personal</button>
@@ -101,7 +90,9 @@ export function ClassifiedsWorkspaceGate({ children }: { children: React.ReactNo
             <div><span className="text-xs font-black uppercase tracking-[.14em] text-[#44736e]">Novos anúncios aparecem por padrão em</span><div className="mt-2 space-y-2"><ChannelCheck checked={channels.includes('CLASSIFIEDS')} onClick={() => toggleChannel('CLASSIFIEDS')} label="Classificados" /><ChannelCheck checked={channels.includes('COMPANY_PAGE')} onClick={() => toggleChannel('COMPANY_PAGE')} label="Página da empresa" /></div></div>
           </section>
 
-          <div className="rounded-3xl border border-[#c9dedb] bg-[#f4faf8] p-5 text-sm leading-6 text-[#315f5a]">Ao ativar o Business, você aceita os Termos de Uso dos Classificados em nome da empresa. Cada anúncio ainda poderá alterar discretamente onde será exibido.</div>
+          <div className="rounded-3xl border border-[#c9dedb] bg-[#f4faf8] p-5 text-sm leading-6 text-[#315f5a]">
+            Ao ativar o Business, você aceita os <Link to="/classificados/termos" target="_blank" className="font-black underline">Termos de Uso dos Classificados</Link> em nome da empresa. Cada anúncio ainda poderá alterar discretamente onde será exibido.
+          </div>
           <button disabled={working || (!canSellProducts && !canOfferServices) || channels.length === 0} onClick={() => run(() => configureCompany({ acceptedTerms: true, canSellProducts, canOfferServices, businessSegments: segments, defaultPublicationChannels: channels, pageSectionLabel: pageSectionLabel || null }))} className="w-full rounded-2xl bg-[#0d4542] px-5 py-3.5 text-sm font-black text-white disabled:opacity-50">{working ? 'Ativando Business...' : 'Aceitar e ativar PiraNegócios Business'}</button>
         </div>
       </OnboardingFrame>
