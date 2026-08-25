@@ -169,7 +169,11 @@ export class CompanyPlansService {
     ]);
     const subscription = subscriptionRows[0] || null;
     const basePlan = subscription ? this.normalizePlan(subscription.plan) : 'FREE';
-    const trialActive = Boolean(trial?.status === 'ACTIVE' && new Date(trial.endsAt).getTime() > Date.now());
+    const trialActive = Boolean(
+      basePlan !== 'ELITE' &&
+      trial?.status === 'ACTIVE' &&
+      new Date(trial.endsAt).getTime() > Date.now(),
+    );
     const plan: CompanyPlan = trialActive ? 'ELITE' : basePlan;
 
     return {
