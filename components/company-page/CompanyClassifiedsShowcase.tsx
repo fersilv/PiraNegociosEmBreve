@@ -7,6 +7,7 @@ import type { ClassifiedListing } from '../../types/classifieds';
 
 export function CompanyClassifiedsShowcase({ companyId, companyName }: { companyId?: string; companyName?: string }) {
   const [items, setItems] = useState<ClassifiedListing[]>([]);
+  const [pageSectionLabel, setPageSectionLabel] = useState('');
   const [loading, setLoading] = useState(Boolean(companyId));
 
   useEffect(() => {
@@ -14,15 +15,25 @@ export function CompanyClassifiedsShowcase({ companyId, companyName }: { company
     let active = true;
     setLoading(true);
     api.get(`/classifieds/company/${companyId}/listings`)
-      .then((response) => { if (active) setItems(Array.isArray(response.data) ? response.data : []); })
-      .catch(() => { if (active) setItems([]); })
+      .then((response) => {
+        if (!active) return;
+        const payload = response.data;
+        setItems(Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : []);
+        setPageSectionLabel(Array.isArray(payload) ? '' : String(payload?.pageSectionLabel || '').trim());
+      })
+      .catch(() => {
+        if (!active) return;
+        setItems([]);
+        setPageSectionLabel('');
+      })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [companyId]);
 
   const products = useMemo(() => items.filter((item) => item.listingType !== 'SERVICE'), [items]);
   const services = useMemo(() => items.filter((item) => item.listingType === 'SERVICE'), [items]);
-  const title = products.length && services.length ? 'Produtos e serviços' : services.length ? 'Serviços' : 'Produtos';
+  const automaticTitle = products.length && services.length ? 'Produtos e serviços' : services.length ? 'Serviços' : 'Produtos';
+  const title = pageSectionLabel || automaticTitle;
 
   if (!companyId || (!loading && !items.length)) return null;
 
@@ -35,7 +46,7 @@ export function CompanyClassifiedsShowcase({ companyId, companyName }: { company
             <h2 className="mt-2 font-serif text-3xl font-black tracking-[-.03em] sm:text-4xl">{title}</h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Itens que {companyName || 'esta empresa'} escolheu exibir na própria página. A negociação pode continuar pelo chat interno do anúncio.</p>
           </div>
-          <Link to={`/classificados/busca?sellerType=company`} className="inline-flex items-center gap-2 text-xs font-black text-stone-700 hover:text-stone-950">Explorar Classificados <ArrowRight className="h-4 w-4" /></Link>
+          <Link to="/classificados/busca?sellerType=company" className="inline-flex items-center gap-2 text-xs font-black text-stone-700 hover:text-stone-950">Explorar Classificados <ArrowRight className="h-4 w-4" /></Link>
         </div>
 
         {loading ? <div className="mt-8 flex min-h-40 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-stone-400" /></div> : <>
