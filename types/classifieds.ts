@@ -6,8 +6,12 @@ export type ClassifiedListingStatus =
   | 'ARCHIVED'
   | 'PENDING_REVIEW';
 
-export type ClassifiedPriceType = 'FIXED' | 'NEGOTIABLE' | 'CONTACT';
+export type ClassifiedPriceType = 'FIXED' | 'NEGOTIABLE' | 'STARTING_AT' | 'CONTACT';
 export type ClassifiedCondition = 'NEW' | 'USED' | 'REFURBISHED' | 'NOT_APPLICABLE';
+export type ClassifiedListingType = 'PRODUCT' | 'SERVICE';
+export type ClassifiedPublicationChannel = 'CLASSIFIEDS' | 'COMPANY_PAGE';
+export type ClassifiedIdentityType = 'PERSONAL' | 'COMPANY';
+export type ClassifiedCatalogPricingStrategy = 'BASE' | 'SUM' | 'HIGHEST_SELECTION' | 'LOWEST_SELECTION' | 'AVERAGE_SELECTION';
 
 export interface ClassifiedCategory {
   slug: string;
@@ -40,6 +44,33 @@ export interface ClassifiedSeller {
   memberSince?: string | null;
   city?: string | null;
   state?: string | null;
+  companySlug?: string | null;
+}
+
+export interface ClassifiedCatalogOption {
+  id: string;
+  label: string;
+  priceDelta?: number;
+  price?: number;
+  active?: boolean;
+  sku?: string;
+  imageUrl?: string;
+}
+
+export interface ClassifiedCatalogOptionGroup {
+  id: string;
+  name: string;
+  kind: 'VARIANT' | 'MODIFIER';
+  selectionType: 'SINGLE' | 'MULTIPLE';
+  minSelections?: number;
+  maxSelections?: number;
+  pricingStrategy?: ClassifiedCatalogPricingStrategy;
+  options: ClassifiedCatalogOption[];
+}
+
+export interface ClassifiedCatalogConfig {
+  optionGroups?: ClassifiedCatalogOptionGroup[];
+  pricingStrategy?: ClassifiedCatalogPricingStrategy;
 }
 
 export interface ClassifiedListing {
@@ -48,6 +79,7 @@ export interface ClassifiedListing {
   sellerUserId?: string;
   companyId?: string | null;
   categorySlug: string;
+  listingType?: ClassifiedListingType;
   title: string;
   description: string;
   price?: string | number | null;
@@ -65,6 +97,8 @@ export interface ClassifiedListing {
   viewsCount?: number;
   favoritesCount?: number;
   attributes?: Record<string, string | number | boolean | null> | null;
+  publicationChannels?: ClassifiedPublicationChannel[];
+  catalogConfig?: ClassifiedCatalogConfig | null;
   contactPhone?: string | null;
   contactWhatsapp?: string | null;
   publishedAt?: string | null;
@@ -83,4 +117,65 @@ export interface ClassifiedSearchResponse {
   page: number;
   limit: number;
   pages: number;
+}
+
+export interface ClassifiedWorkspaceContextData {
+  termsVersion: string;
+  needsIdentitySelection: boolean;
+  activeIdentity: ClassifiedIdentityType | null;
+  personal: {
+    available: boolean;
+    termsAccepted: boolean;
+    termsAcceptedAt?: string | null;
+    name: string;
+    photoURL?: string | null;
+  };
+  company: null | {
+    id: string;
+    name: string;
+    logoURL?: string | null;
+    available: boolean;
+    verified: boolean;
+    termsAccepted: boolean;
+    requiresOnboarding: boolean;
+    canSellProducts: boolean;
+    canOfferServices: boolean;
+    businessSegments: string[];
+    defaultPublicationChannels: ClassifiedPublicationChannel[];
+    pageSectionLabel?: string | null;
+  };
+}
+
+export interface ClassifiedConversation {
+  id: string;
+  listingId: string;
+  buyerUserId: string;
+  sellerUserId: string;
+  sellerCompanyId?: string | null;
+  role: 'BUYER' | 'SELLER';
+  unreadCount: number;
+  lastMessageAt?: string | null;
+  listing: null | {
+    id: string;
+    slug: string;
+    title: string;
+    price?: string | number | null;
+    priceType: ClassifiedPriceType;
+    status: ClassifiedListingStatus;
+    image?: string | null;
+  };
+  buyer: { id: string; name: string; photoURL?: string | null };
+  seller: { id: string; type: 'COMPANY' | 'PERSON'; name: string; photoURL?: string | null; verified?: boolean };
+  lastMessage?: null | { id: string; senderId: string; body: string; createdAt: string };
+}
+
+export interface ClassifiedConversationMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderName: string;
+  body: string;
+  messageType: 'TEXT' | 'OFFER' | 'SYSTEM';
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
 }
