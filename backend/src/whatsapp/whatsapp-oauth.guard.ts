@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { WhatsAppOAuthService } from './whatsapp-oauth.service';
+import { WHATSAPP_SCOPES } from './whatsapp.scopes';
 
 @Injectable()
 export class WhatsAppOAuthGuard implements CanActivate {
@@ -14,11 +15,12 @@ export class WhatsAppOAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const response = context.switchToHttp().getResponse();
     const instanceId = String(request.params?.instanceId || '').trim();
-    const resourceMetadata = this.oauth.resourceMetadataUrl(instanceId);
+    const resourceMetadata = `${this.oauth.publicBaseUrl()}/.well-known/oauth-protected-resource/api/whatsapp/mcp/${encodeURIComponent(instanceId)}`;
     const challenge = [
       'Bearer error="invalid_token"',
       'error_description="Authentication required"',
       `resource_metadata="${resourceMetadata}"`,
+      `scope="${WHATSAPP_SCOPES.join(' ')}"`,
     ].join(', ');
 
     const authorization = String(request.headers.authorization || '');
