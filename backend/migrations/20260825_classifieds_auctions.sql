@@ -54,4 +54,25 @@ BEGIN
   END IF;
 END $$;
 
+CREATE OR REPLACE FUNCTION ensure_classified_auction_winner_conversation()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.status = 'ENDED'
+     AND OLD.status IS DISTINCT FROM NEW.status
+     AND NEW."winnerUserId" IS NOT NULL THEN
+    INSERT INTO classified_conversations
+      ("listingId","buyerUserId","buyerCompanyId","sellerUserId","sellerCompanyId","buyerLastReadAt","sellerLastReadAt","lastMessageAt")
+    VALUES
+      (NEW."listingId", NEW."winnerUserId", NEW."winnerCompanyId", NEW."sellerUserId", NEW."companyId", now(), NULL, NULL)
+    ON CONFLICT DO NOTHING;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_classified_auction_winner_conversation ON classified_auctions;
+CREATE TRIGGER trg_classified_auction_winner_conversation
+AFTER UPDATE OF status, "winnerUserId", "winnerCompanyId" ON classified_auctions
+FOR EACH ROW EXECUTE FUNCTION ensure_classified_auction_winner_conversation();
+
 COMMENT ON TABLE classified_auctions IS 'Classificados V1 auctions. Payment/custody is intentionally off-platform; winner and seller negotiate settlement directly.';
