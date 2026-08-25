@@ -135,6 +135,15 @@ export class ClassifiedListing {
   @Column({ type: 'varchar', length: 40, nullable: true })
   contactWhatsapp: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  moderationReason: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  duplicateOfListingId: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  moderationReviewedAt: Date | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   publishedAt: Date | null;
 
