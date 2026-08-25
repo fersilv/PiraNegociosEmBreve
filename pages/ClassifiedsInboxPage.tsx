@@ -42,7 +42,11 @@ export default function ClassifiedsInboxPage() {
     let alive = true;
     setMessagesLoading(true);
     api.get(`/classifieds/me/conversations/${conversationId}/messages`)
-      .then((response) => { if (alive) setMessages(Array.isArray(response.data) ? response.data : []); })
+      .then((response) => {
+        if (!alive) return;
+        setMessages(Array.isArray(response.data) ? response.data : []);
+        setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, unreadCount: 0 } : conversation));
+      })
       .catch((requestError: any) => { if (alive) setError(requestError?.response?.data?.message || 'Não foi possível abrir a conversa.'); })
       .finally(() => { if (alive) setMessagesLoading(false); });
     return () => { alive = false; };
@@ -56,7 +60,19 @@ export default function ClassifiedsInboxPage() {
       const socket = io(API_URL, { path: SOCKET_PATH, auth: { token }, transports: ['websocket', 'polling'] });
       socket.on('chat:message', (message: ClassifiedConversationMessage) => {
         if (!message?.conversationId) return;
-        setConversations((current) => current.map((conversation) => conversation.id === message.conversationId ? { ...conversation, lastMessage: { id: message.id, senderId: message.senderId, body: message.body, createdAt: message.createdAt }, lastMessageAt: message.createdAt, unreadCount: message.conversationId === conversationId ? 0 : (conversation.unreadCount || 0) + 1 } : conversation));
+        setConversations((current) => current.map((conversation) => {
+          if (conversation.id !== message.conversationId) return conversation;
+          const incomingForIdentity = conversation.role === 'BUYER'
+            ? message.senderId !== conversation.buyerUserId
+            : message.senderId === conversation.buyerUserId;
+          const isOpen = message.conversationId === conversationId;
+          return {
+            ...conversation,
+            lastMessage: { id: message.id, senderId: message.senderId, body: message.body, createdAt: message.createdAt },
+            lastMessageAt: message.createdAt,
+            unreadCount: isOpen ? 0 : incomingForIdentity ? (conversation.unreadCount || 0) + 1 : conversation.unreadCount,
+          };
+        }));
         if (message.conversationId === conversationId) {
           setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
           void api.post(`/classifieds/me/conversations/${message.conversationId}/read`).catch(() => undefined);
@@ -77,7 +93,7 @@ export default function ClassifiedsInboxPage() {
       const response = await api.post(`/classifieds/me/conversations/${conversationId}/messages`, { body: text });
       const message = response.data as ClassifiedConversationMessage;
       setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
-      setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, lastMessage: { id: message.id, senderId: message.senderId, body: message.body, createdAt: message.createdAt }, lastMessageAt: message.createdAt } : conversation));
+      setConversations((current) => current.map((conversation) => conversation.id === conversationId ? { ...conversation, lastMessage: { id: message.id, senderId: message.senderId, body: message.body, createdAt: message.createdAt }, lastMessageAt: message.createdAt, unreadCount: 0 } : conversation));
       setBody('');
     } catch (requestError: any) {
       setError(requestError?.response?.data?.message || 'Não foi possível enviar a mensagem.');
