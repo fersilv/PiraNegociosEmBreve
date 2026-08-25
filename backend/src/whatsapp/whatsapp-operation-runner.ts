@@ -43,6 +43,40 @@ export async function executeWppOperation(
     return { operation: 'deleteGroupMessage', scope, result: normalizeWppResult(value) };
   }
 
+  // Busca explícita no diretório de canais. O WPPConnect 2.3.x não expõe
+  // searchNewsletter como método público do client, mas injeta WA-JS na página.
+  // Mantemos esse acesso fechado a esta operação, sem expor page/browser ao MCP.
+  if (scope === 'channels:search') {
+    const [queryRaw, limitRaw] = args;
+    const query = requireText(queryRaw, 'query');
+    const limit = Math.min(50, Math.max(1, Number(limitRaw || 20)));
+
+    if (!client.page?.evaluate) {
+      throw new BadRequestException('A sessão atual não expõe a página do WhatsApp para pesquisar canais.');
+    }
+
+    try {
+      const value = await client.page.evaluate(
+        async ({ query, limit }: { query: string; limit: number }) => {
+          const wpp = (globalThis as any).WPP;
+          if (!wpp?.newsletter?.search) {
+            throw new Error('WPP.newsletter.search não está disponível nesta versão do WhatsApp Web.');
+          }
+          return wpp.newsletter.search(query, { limit });
+        },
+        { query, limit },
+      );
+      return {
+        operation: 'searchChannels',
+        scope: 'channels:read',
+        result: normalizeWppResult(value),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(`Busca de canais falhou: ${message.slice(0, 2000)}`);
+    }
+  }
+
   const capability = WPP_OPERATION_CAPABILITIES.find((item) => item.scope === scope);
   if (!capability) throw new BadRequestException('Operação WPPConnect não autorizada pelo catálogo.');
 
