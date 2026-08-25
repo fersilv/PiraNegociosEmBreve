@@ -21,7 +21,7 @@ export class WhatsAppMcpController {
     const handler = createMcpHandler(() => {
       const server = new McpServer({
         name: `PiraNegocios WhatsApp - ${instanceId}`,
-        version: '2.0.0',
+        version: '2.1.0',
       });
 
       // Ferramentas semânticas antigas permanecem para não quebrar integrações já criadas.
@@ -196,6 +196,43 @@ export class WhatsAppMcpController {
             inputSchema: z.object({ groupId: z.string().min(1), text: z.string().min(1) }),
           },
           async ({ groupId, text }: { groupId: string; text: string }) => this.result(await this.whatsapp.sendText(instanceId, groupId, text)),
+        );
+      }
+
+      // Moderação granular: permite agir em contexto sem liberar mensagem avulsa.
+      if (scopes.has('groups:reply')) {
+        server.registerTool(
+          'whatsapp_reply_group_message',
+          {
+            description: 'Responde uma mensagem específica de um grupo sem conceder permissão para criar mensagem avulsa no grupo.',
+            inputSchema: z.object({ groupId: z.string().min(1), messageId: z.string().min(1), text: z.string().min(1) }),
+          },
+          async ({ groupId, messageId, text }: { groupId: string; messageId: string; text: string }) =>
+            this.result(await executeWppOperation(this.whatsapp, instanceId, 'groups:reply', [groupId, messageId, text])),
+        );
+      }
+
+      if (scopes.has('groups:reaction')) {
+        server.registerTool(
+          'whatsapp_react_group_message',
+          {
+            description: 'Reage a uma mensagem específica do grupo com emoji, ou remove a reação com reaction=false.',
+            inputSchema: z.object({ messageId: z.string().min(1), reaction: z.union([z.string().min(1), z.literal(false)]) }),
+          },
+          async ({ messageId, reaction }: { messageId: string; reaction: string | false }) =>
+            this.result(await executeWppOperation(this.whatsapp, instanceId, 'groups:reaction', [messageId, reaction])),
+        );
+      }
+
+      if (scopes.has('groups:message:delete')) {
+        server.registerTool(
+          'whatsapp_delete_group_message',
+          {
+            description: 'Remove uma mensagem específica do grupo quando o WhatsApp e as permissões administrativas permitirem. AÇÃO DESTRUTIVA.',
+            inputSchema: z.object({ groupId: z.string().min(1), messageId: z.string().min(1), onlyLocal: z.boolean().optional() }),
+          },
+          async ({ groupId, messageId, onlyLocal }: { groupId: string; messageId: string; onlyLocal?: boolean }) =>
+            this.result(await executeWppOperation(this.whatsapp, instanceId, 'groups:message:delete', [groupId, messageId, onlyLocal ?? false])),
         );
       }
 
