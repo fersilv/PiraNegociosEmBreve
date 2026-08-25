@@ -92,6 +92,94 @@ export async function executeWppOperation(
     }
   }
 
+  // O sendText público passa por chat.find/assertFindChat e pode falhar para
+  // newsletters que existem apenas na NewsletterStore. Este wrapper reproduz o
+  // pipeline oficial do WA-JS 4.6.x a partir da NewsletterStore, sem expor uma
+  // page.evaluate genérica ao MCP.
+  if (scope === 'channels:publish:text') {
+    const [newsletterIdRaw, textRaw] = args;
+    const newsletterId = requireNewsletterId(newsletterIdRaw);
+    const text = requireText(textRaw, 'text');
+    if (text.length > 4096) {
+      throw new BadRequestException('text deve ter no máximo 4096 caracteres para este teste de canal.');
+    }
+    if (!client.page?.evaluate) {
+      throw new BadRequestException('A sessão atual não expõe a página do WhatsApp para publicar no canal.');
+    }
+
+    try {
+      const value = await client.page.evaluate(
+        async ({ newsletterId, text }: { newsletterId: string; text: string }) => {
+          const wpp = (globalThis as any).WPP;
+          const wa = wpp?.whatsapp;
+          const fn = wa?.functions;
+          const chat = wa?.NewsletterStore?.get?.(newsletterId);
+
+          if (!chat) {
+            throw new Error(`Newsletter ${newsletterId} não foi encontrada na NewsletterStore da sessão.`);
+          }
+          if (!wpp?.chat?.prepareRawMessage) {
+            throw new Error('WPP.chat.prepareRawMessage não está disponível nesta versão do WA-JS.');
+          }
+          if (!wa?.MsgModel || !fn?.sendNewsletterMessageJob || !fn?.msgDataFromMsgModel) {
+            throw new Error('O pipeline interno de newsletter do WA-JS não está disponível nesta sessão.');
+          }
+
+          const rawMessage = await wpp.chat.prepareRawMessage(chat, {
+            type: 'chat',
+            body: text,
+          });
+          const msg = new wa.MsgModel(rawMessage);
+
+          if (fn.addNewsletterMsgsRecords) {
+            await fn.addNewsletterMsgsRecords([await fn.msgDataFromMsgModel(msg)]);
+          }
+
+          const resultNewsletter = await fn.sendNewsletterMessageJob({
+            type: 'text',
+            msgData: rawMessage,
+            msg,
+            newsletterJid: newsletterId,
+          });
+
+          chat.msgs?.add?.(msg);
+          if (resultNewsletter?.success) {
+            if (resultNewsletter.ack?.t) msg.t = resultNewsletter.ack.t;
+            if (resultNewsletter.serverId != null) msg.serverId = resultNewsletter.serverId;
+          }
+
+          const sentAck = wa?.enums?.ACK?.SENT;
+          if (sentAck != null && typeof msg.updateAck === 'function') {
+            msg.updateAck(sentAck, true);
+          }
+          if (fn.updateNewsletterMsgRecord) {
+            await fn.updateNewsletterMsgRecord(msg);
+          }
+
+          return {
+            success: Boolean(resultNewsletter?.success),
+            id: msg?.id?.toString?.() || rawMessage?.id?.toString?.() || null,
+            newsletterId,
+            ack: msg?.ack ?? null,
+            serverId: msg?.serverId ?? resultNewsletter?.serverId ?? null,
+            providerResult: resultNewsletter || null,
+          };
+        },
+        { newsletterId, text },
+      );
+
+      return {
+        operation: 'publishChannelText',
+        scope: 'channels:publish:text',
+        mode: 'newsletter-direct',
+        result: normalizeWppResult(value),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(`Publicação de texto no canal falhou: ${message.slice(0, 2000)}`);
+    }
+  }
+
   const capability = WPP_OPERATION_CAPABILITIES.find((item) => item.scope === scope);
   if (!capability) throw new BadRequestException('Operação WPPConnect não autorizada pelo catálogo.');
 
@@ -195,6 +283,14 @@ function requireGroupId(value: unknown) {
   const groupId = requireText(value, 'groupId');
   if (!groupId.endsWith('@g.us')) throw new BadRequestException('groupId deve terminar em @g.us.');
   return groupId;
+}
+
+function requireNewsletterId(value: unknown) {
+  const newsletterId = requireText(value, 'newsletterId');
+  if (!/^\d+@newsletter$/.test(newsletterId)) {
+    throw new BadRequestException('newsletterId deve ter o formato numérico ...@newsletter.');
+  }
+  return newsletterId;
 }
 
 function normalizeWppResult(value: unknown, depth = 0, seen = new WeakSet<object>()): unknown {
