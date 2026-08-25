@@ -8,17 +8,43 @@ export async function executeWppOperation(
   scope: string,
   args: unknown[] = [],
 ) {
-  const capability = WPP_OPERATION_CAPABILITIES.find((item) => item.scope === scope);
-  if (!capability) throw new BadRequestException('Operação WPPConnect não autorizada pelo catálogo.');
   if (!Array.isArray(args) || args.length > 20) {
     throw new BadRequestException('arguments deve ser um array com no máximo 20 parâmetros.');
   }
 
-  // A sessão é propriedade do WhatsAppService. O acesso permanece encapsulado
-  // neste runner allowlisted; o cliente MCP nunca escolhe um nome de método fora
-  // do catálogo WPP_OPERATION_CAPABILITIES.
+  // A sessão é propriedade do WhatsAppService. O acesso fica restrito a este
+  // runner; o cliente MCP nunca escolhe um método que não esteja allowlisted.
   const client = (whatsapp as any).clients?.get(instanceId);
   if (!client) throw new BadRequestException('Este número não está conectado ao WhatsApp.');
+
+  if (scope === 'groups:reply') {
+    const [groupIdRaw, messageIdRaw, textRaw] = args;
+    const groupId = requireGroupId(groupIdRaw);
+    const messageId = requireText(messageIdRaw, 'messageId');
+    const text = requireText(textRaw, 'text');
+    const value = await client.sendText(groupId, text, { quotedMsg: messageId });
+    return { operation: 'replyGroup', scope, result: normalizeWppResult(value) };
+  }
+
+  if (scope === 'groups:reaction') {
+    const [messageIdRaw, reactionRaw] = args;
+    const messageId = requireText(messageIdRaw, 'messageId');
+    const reaction = reactionRaw === false ? false : requireText(reactionRaw, 'reaction');
+    const value = await client.sendReactionToMessage(messageId, reaction);
+    return { operation: 'reactGroupMessage', scope, result: normalizeWppResult(value) };
+  }
+
+  if (scope === 'groups:message:delete') {
+    const [groupIdRaw, messageIdRaw, onlyLocalRaw] = args;
+    const groupId = requireGroupId(groupIdRaw);
+    const messageId = requireText(messageIdRaw, 'messageId');
+    const onlyLocal = typeof onlyLocalRaw === 'boolean' ? onlyLocalRaw : false;
+    const value = await client.deleteMessage(groupId, messageId, onlyLocal, true);
+    return { operation: 'deleteGroupMessage', scope, result: normalizeWppResult(value) };
+  }
+
+  const capability = WPP_OPERATION_CAPABILITIES.find((item) => item.scope === scope);
+  if (!capability) throw new BadRequestException('Operação WPPConnect não autorizada pelo catálogo.');
 
   const method = (client as any)[capability.method];
   if (typeof method !== 'function') {
@@ -37,6 +63,18 @@ export async function executeWppOperation(
     const message = error instanceof Error ? error.message : String(error);
     throw new BadRequestException(`${capability.method} falhou: ${message.slice(0, 2000)}`);
   }
+}
+
+function requireText(value: unknown, field: string) {
+  const text = String(value ?? '').trim();
+  if (!text) throw new BadRequestException(`${field} é obrigatório.`);
+  return text;
+}
+
+function requireGroupId(value: unknown) {
+  const groupId = requireText(value, 'groupId');
+  if (!groupId.endsWith('@g.us')) throw new BadRequestException('groupId deve terminar em @g.us.');
+  return groupId;
 }
 
 function normalizeWppResult(value: unknown, depth = 0, seen = new WeakSet<object>()): unknown {
