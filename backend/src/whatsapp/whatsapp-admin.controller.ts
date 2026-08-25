@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   Post,
   Put,
@@ -10,14 +11,21 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { AdminGuard } from '../admin/admin.guard';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
+import { WhatsAppApiKey } from './entities/whatsapp-api-key.entity';
 import { WhatsAppService } from './whatsapp.service';
 
 @Controller('admin/whatsapp')
 @UseGuards(FirebaseAuthGuard, AdminGuard)
 export class WhatsAppAdminController {
-  constructor(private readonly whatsapp: WhatsAppService) {}
+  constructor(
+    private readonly whatsapp: WhatsAppService,
+    @InjectRepository(WhatsAppApiKey)
+    private readonly keysRepository: Repository<WhatsAppApiKey>,
+  ) {}
 
   @Get('instances') listInstances() {
     return this.whatsapp.listInstances();
@@ -99,5 +107,13 @@ export class WhatsAppAdminController {
 
   @Post('keys/:keyId/rotate') rotateKey(@Param('keyId') keyId: string) {
     return this.whatsapp.rotateKey(keyId);
+  }
+
+  @Delete('keys/:keyId')
+  async removeKey(@Param('keyId') keyId: string) {
+    const key = await this.keysRepository.findOne({ where: { id: keyId } });
+    if (!key) throw new NotFoundException('Chave do WhatsApp não encontrada.');
+    await this.keysRepository.remove(key);
+    return { ok: true };
   }
 }
