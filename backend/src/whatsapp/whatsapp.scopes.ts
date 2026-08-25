@@ -37,7 +37,7 @@ const LEGACY_WHATSAPP_CAPABILITIES: WhatsAppCapability[] = [
 
 export const WHATSAPP_CAPABILITIES: WhatsAppCapability[] = [
   ...LEGACY_WHATSAPP_CAPABILITIES,
-  ...WPP_OPERATION_CAPABILITIES.map((capability) => ({ ...capability, legacy: false })) as WhatsAppCapability[],
+  ...(WPP_OPERATION_CAPABILITIES.map((capability) => ({ ...capability, legacy: false })) as WhatsAppCapability[]),
 ];
 
 export const WHATSAPP_SCOPES = WHATSAPP_CAPABILITIES.map((capability) => capability.scope);
