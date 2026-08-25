@@ -1,6 +1,7 @@
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 export type ClassifiedConversationMessageType = 'TEXT' | 'OFFER' | 'SYSTEM';
+export type ClassifiedConversationSide = 'BUYER' | 'SELLER';
 
 @Entity('classified_conversation_messages')
 @Index(['conversationId', 'createdAt'])
@@ -16,6 +17,9 @@ export class ClassifiedConversationMessage {
 
   @Column({ type: 'varchar', length: 160 })
   senderName: string;
+
+  @Column({ type: 'varchar', length: 10 })
+  senderRole: ClassifiedConversationSide;
 
   @Column({ type: 'text' })
   body: string;
