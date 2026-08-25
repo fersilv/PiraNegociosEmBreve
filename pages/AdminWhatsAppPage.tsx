@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Bot,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -17,6 +18,7 @@ import {
   Send,
   ShieldCheck,
   Smartphone,
+  Star,
   Trash2,
   Wifi,
   WifiOff,
@@ -32,6 +34,8 @@ type Instance = {
   status: "DISCONNECTED" | "CONNECTING" | "QR_REQUIRED" | "CONNECTED" | "ERROR";
   allowedScopes: string[];
   active: boolean;
+  isPrimarySupport?: boolean;
+  conciergeEnabled?: boolean;
   lastError?: string | null;
   lastConnectedAt?: string | null;
   connected: boolean;
@@ -253,7 +257,7 @@ export function AdminWhatsAppPage() {
         <div>
           <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">Comunicação · Integrações</p>
           <h1 className="mt-1 font-serif text-3xl font-black text-stone-950">Central WhatsApp</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Controle cada função do WPPConnect individualmente. O número define o teto de acesso; cada chave OAuth/MCP recebe apenas o subconjunto que você autorizar.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Controle atendimento automático e cada função do WPPConnect individualmente. O número define o teto de acesso; cada chave OAuth/MCP recebe apenas o subconjunto que você autorizar.</p>
         </div>
         <button type="button" onClick={() => setShowCreate((value) => !value)} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-stone-950 px-4 py-3 text-sm font-black text-white shadow-sm"><Plus className="h-4 w-4" /> Adicionar número</button>
       </header>
@@ -278,6 +282,7 @@ export function AdminWhatsAppPage() {
               <div className="flex items-start justify-between gap-3"><span className={`flex h-10 w-10 items-center justify-center rounded-xl ${selectedId === item.id ? "bg-white/10" : "bg-emerald-50 text-emerald-700"}`}><Smartphone className="h-5 w-5" /></span><ConnectionPill status={item.status} dark={selectedId === item.id} /></div>
               <p className="mt-3 font-black">{item.name}</p><p className={`mt-0.5 text-xs ${selectedId === item.id ? "text-white/50" : "text-stone-500"}`}>{item.phoneNumber ? `+${item.phoneNumber}` : "Número será identificado após conectar"}</p>
               {item.purpose && <p className={`mt-2 line-clamp-2 text-xs leading-5 ${selectedId === item.id ? "text-white/65" : "text-stone-500"}`}>{item.purpose}</p>}
+              <div className="mt-3 flex flex-wrap gap-1.5">{item.isPrimarySupport && <span className={`rounded-full px-2 py-1 text-[9px] font-black ${selectedId === item.id ? "bg-amber-400/15 text-amber-200" : "bg-amber-50 text-amber-700"}`}>OFICIAL</span>}{item.conciergeEnabled && <span className={`rounded-full px-2 py-1 text-[9px] font-black ${selectedId === item.id ? "bg-violet-400/15 text-violet-200" : "bg-violet-50 text-violet-700"}`}>IA ATIVA</span>}</div>
               <div className={`mt-3 flex gap-3 text-[10px] font-bold ${selectedId === item.id ? "text-white/40" : "text-stone-400"}`}><span>{item.keyCount || 0} chaves</span><span>{item.messageCount || 0} mensagens</span></div>
             </button>
           ))}
@@ -297,6 +302,27 @@ export function AdminWhatsAppPage() {
               {(selected.status === "QR_REQUIRED" || selected.qrCode) && <div className="mt-5 grid gap-5 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-5 md:grid-cols-[220px_1fr] md:items-center"><div className="rounded-2xl bg-white p-3 shadow-sm">{selected.qrCode ? <img src={selected.qrCode} alt="QR Code do WhatsApp" className="aspect-square w-full object-contain" /> : <div className="flex aspect-square items-center justify-center"><QrCode className="h-16 w-16 text-stone-300" /></div>}</div><div><p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-700">Pareamento</p><h3 className="mt-1 text-lg font-black text-stone-900">Leia o QR Code no WhatsApp</h3><p className="mt-2 max-w-xl text-sm leading-6 text-stone-600">No telefone: Aparelhos conectados → Conectar aparelho. O QR é mantido somente em memória e some da interface assim que a sessão autentica.</p><p className="mt-3 text-xs font-bold text-stone-500">{selected.runtimeDetail || "Aguardando QR..."}</p></div></div>}
               {selected.lastError && <div className="mt-4 flex gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{selected.lastError}</span></div>}
               <div className="mt-5 grid gap-3 sm:grid-cols-3"><Metric icon={<Wifi className="h-4 w-4" />} label="Sessão" value={selected.connected ? "Online" : "Offline"} /><Metric icon={<KeyRound className="h-4 w-4" />} label="Chaves ativas" value={String(selected.keyCount || 0)} /><Metric icon={<MessageCircle className="h-4 w-4" />} label="Mensagens registradas" value={String(selected.messageCount || 0)} /></div>
+
+              <div className="mt-5 grid gap-3 lg:grid-cols-2">
+                <RuntimeToggle
+                  icon={<Star className="h-4 w-4" />}
+                  title="Número oficial do PiraNegócios"
+                  description="Usado para OTP de telefone e como referência do atendimento oficial. Apenas uma conexão pode ser oficial por vez."
+                  checked={Boolean(selected.isPrimarySupport)}
+                  disabled={busy === "primary"}
+                  tone="amber"
+                  onChange={(enabled) => void run("primary", () => api.put(`/admin/whatsapp/instances/${selected.id}`, { isPrimarySupport: enabled }), enabled ? "Número definido como atendimento oficial." : "Número deixou de ser o atendimento oficial.")}
+                />
+                <RuntimeToggle
+                  icon={<Bot className="h-4 w-4" />}
+                  title="Concierge automático por IA"
+                  description="Quando ligado, somente mensagens diretas de pessoas entram no buffer de 30s e podem receber atendimento integrado ao site. Grupos, canais, status e notificações ficam fora."
+                  checked={Boolean(selected.conciergeEnabled)}
+                  disabled={busy === "concierge"}
+                  tone="violet"
+                  onChange={(enabled) => void run("concierge", () => api.put(`/admin/whatsapp/instances/${selected.id}`, { conciergeEnabled: enabled }), enabled ? "Atendimento automático ativado." : "Atendimento automático pausado.")}
+                />
+              </div>
             </section>
 
             <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
@@ -354,6 +380,12 @@ export function AdminWhatsAppPage() {
       </div>
     </div>
   );
+}
+
+function RuntimeToggle({ icon, title, description, checked, disabled, onChange, tone }: { icon: React.ReactNode; title: string; description: string; checked: boolean; disabled?: boolean; onChange: (enabled: boolean) => void; tone: "amber" | "violet" }) {
+  const activeClass = tone === "amber" ? "border-amber-200 bg-amber-50/60" : "border-violet-200 bg-violet-50/60";
+  const iconClass = tone === "amber" ? "bg-amber-100 text-amber-700" : "bg-violet-100 text-violet-700";
+  return <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 ${checked ? activeClass : "border-stone-200 bg-stone-50/50"}`}><input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-stone-900" /><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${iconClass}`}>{disabled ? <Loader2 className="h-4 w-4 animate-spin" /> : icon}</span><span><span className="text-sm font-black text-stone-900">{title}</span><span className="mt-1 block text-xs leading-5 text-stone-500">{description}</span></span></label>;
 }
 
 function CapabilityToggle({ capability, checked, disabled, onChange }: { capability: Capability; checked: boolean; disabled?: boolean; onChange: (enabled: boolean) => void }) {
