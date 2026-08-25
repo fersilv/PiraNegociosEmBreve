@@ -237,8 +237,12 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   async listGroups(id: string) {
     const client = this.requireClient(id);
-    const groups = await client.getAllGroups();
-    return Array.isArray(groups) ? groups : [];
+    const chats = await client.listChats();
+    if (!Array.isArray(chats)) return [];
+    return chats.filter((chat: any) => {
+      const serialized = String(chat?.id?._serialized || chat?.id || '');
+      return serialized.endsWith('@g.us');
+    });
   }
 
   async listChannels(id: string) {
