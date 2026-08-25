@@ -18,10 +18,12 @@ export class ApiKeyGuard implements CanActivate {
     string,
     { start: number; count: number }
   >();
+
   constructor(
     @InjectRepository(ExternalApiClient)
     private readonly clients: Repository<ExternalApiClient>,
   ) {}
+
   async canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest();
     const authorization = String(request.headers.authorization || '');
@@ -29,8 +31,11 @@ export class ApiKeyGuard implements CanActivate {
       request.headers['x-api-key'] ||
         (authorization.startsWith('Bearer ') ? authorization.slice(7) : ''),
     ).trim();
-    if (!rawKey.startsWith('pn_v1_') || rawKey.length < 40)
+
+    if (!/^pn_v[12]_/.test(rawKey) || rawKey.length < 40) {
       throw new UnauthorizedException('Chave de API ausente ou inválida.');
+    }
+
     const client = await this.clients.findOne({
       where: { keyPrefix: rawKey.slice(0, 20), active: true },
     });
@@ -42,22 +47,38 @@ export class ApiKeyGuard implements CanActivate {
       !client ||
       supplied.length !== expected.length ||
       !timingSafeEqual(supplied, expected)
-    )
+    ) {
       throw new UnauthorizedException('Chave de API inválida ou revogada.');
-    const requiredScope = request.method === 'GET' ? 'jobs:read' : 'jobs:write';
-    if (!client.scopes.includes(requiredScope))
-      throw new ForbiddenException(
-        `Esta chave não possui o escopo ${requiredScope}.`,
-      );
+    }
+
+    if (client.audience !== 'api') {
+      throw new ForbiddenException('Esta chave foi criada para MCP e não pode ser usada como chave REST.');
+    }
+
+    const url = String(request.originalUrl || request.url || '');
+    const isV1 = /\/v1\/jobs(?:\/|\?|$)/.test(url);
+    if (isV1) {
+      const requiredScope = request.method === 'GET' ? 'jobs:read' : 'jobs:write';
+      if (!client.scopes.includes(requiredScope)) {
+        throw new ForbiddenException(
+          `Esta chave não possui o escopo legado ${requiredScope}.`,
+        );
+      }
+    } else if (client.apiVersion !== 'v2') {
+      throw new ForbiddenException('Use uma chave API V2 para este endpoint.');
+    }
+
     const now = Date.now();
     const window = this.windows.get(client.id);
-    if (!window || now - window.start >= 60_000)
+    if (!window || now - window.start >= 60_000) {
       this.windows.set(client.id, { start: now, count: 1 });
-    else if (++window.count > 60)
+    } else if (++window.count > 60) {
       throw new HttpException(
         'Limite de 60 requisições por minuto excedido.',
         HttpStatus.TOO_MANY_REQUESTS,
       );
+    }
+
     client.lastUsedAt = new Date();
     void this.clients.save(client).catch(() => undefined);
     request.apiClient = client;
