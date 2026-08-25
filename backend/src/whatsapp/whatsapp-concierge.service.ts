@@ -99,11 +99,11 @@ export class WhatsAppConciergeService {
     if (buffer.messages.length > 30) buffer.messages = buffer.messages.slice(-30);
     if (buffer.timer) clearTimeout(buffer.timer);
 
-    // Primeira mensagem aguarda 30s. Cada fragmento adicional acrescenta 4s,
-    // com teto de 90s para que uma conversa muito fragmentada não fique presa.
-    const extension = Math.max(0, buffer.messages.length - 1) * 4000;
-    const absoluteDeadline = Math.min(buffer.firstAt + 90_000, buffer.firstAt + 30_000 + extension);
-    const deadline = Math.max(absoluteDeadline, now + 4000);
+    // Primeira mensagem aguarda 15s. Fragmentos adicionais acrescentam 2,5s,
+    // com teto de 45s para manter contexto sem deixar a IA parecer lenta.
+    const extension = Math.max(0, buffer.messages.length - 1) * 2500;
+    const absoluteDeadline = Math.min(buffer.firstAt + 45_000, buffer.firstAt + 15_000 + extension);
+    const deadline = Math.max(absoluteDeadline, now + 2500);
     buffer.timer = setTimeout(() => void this.flush(key), Math.max(1000, deadline - now));
 
     await this.touchConversation(buffer);
@@ -166,7 +166,28 @@ export class WhatsAppConciergeService {
           id: resolved.user.id,
           type: resolved.user.type,
           firstName,
-          company: resolved.company ? { id: resolved.company.id, name: resolved.company.name } : null,
+          displayName: resolved.user.displayName,
+          fullName: resolved.user.fullName,
+          socialName: resolved.user.socialName,
+          email: resolved.user.email,
+          phone: resolved.user.phone,
+          city: resolved.user.city,
+          state: resolved.user.state,
+          status: resolved.user.status,
+          isVerified: resolved.user.isVerified,
+          whatsappVerifiedAt: resolved.user.whatsappVerifiedAt,
+          company: resolved.company ? { id: resolved.company.id, name: resolved.company.name, slug: resolved.company.slug } : null,
+          whatsappInstance: {
+            id: buffer.instance.id,
+            name: buffer.instance.name,
+            purpose: buffer.instance.purpose,
+            phoneNumber: buffer.instance.phoneNumber,
+            status: buffer.instance.status,
+            isPrimarySupport: buffer.instance.isPrimarySupport,
+            conciergeEnabled: buffer.instance.conciergeEnabled,
+            lastConnectedAt: buffer.instance.lastConnectedAt,
+            lastSeenAt: buffer.instance.lastSeenAt,
+          },
         },
         contextMode: conversation.contextMode,
         activeFlow: conversation.activeFlow,
@@ -187,7 +208,10 @@ export class WhatsAppConciergeService {
 
       if (result?.handled) return;
       const reply = String(result?.reply || decision.reply || '').trim();
-      if (reply) await this.sendText(buffer, reply);
+      if (reply) {
+        const outgoing = conversation.contextMode === 'ADMIN' ? this.formatAdminReply(buffer, reply) : reply;
+        await this.sendText(buffer, outgoing);
+      }
     } catch (error) {
       if (this.isPaymentRequired(error)) {
         await this.sendText(
@@ -231,9 +255,9 @@ export class WhatsAppConciergeService {
 
     if (conversation.contextMode === 'ADMIN') {
       if (intent === 'ADMIN_STATUS') {
-        return { reply: `${firstName}, a instância ${buffer.instance.name} está conectada e recebendo mensagens. Posso consultar também os dados operacionais que você pedir.` };
+        return { reply: `${firstName}, a instância ${buffer.instance.name} está ${buffer.instance.status}. Última conexão: ${buffer.instance.lastConnectedAt || 'não registrada'}. Última atividade: ${buffer.instance.lastSeenAt || 'não registrada'}. O concierge está ${buffer.instance.conciergeEnabled ? 'ativado' : 'desativado'}.` };
       }
-      return { reply: decision.reply || `${firstName}, identifiquei você como administrador. O que precisa consultar ou executar?` };
+      return { reply: decision.reply || `${firstName}, identifiquei você como administrador. Posso usar o panorama operacional carregado nesta conversa para responder consultas administrativas de leitura.` };
     }
 
     if (conversation.contextMode === 'CANDIDATE') {
@@ -450,20 +474,241 @@ export class WhatsAppConciergeService {
   }
 
   private async contextSnapshot(user: User, company: Company | null, mode: string) {
+    const userProfile = {
+      id: user.id,
+      type: user.type,
+      email: user.email,
+      displayName: user.displayName,
+      fullName: user.fullName,
+      socialName: user.socialName,
+      treatment: user.treatment,
+      phone: user.phone,
+      additionalPhones: user.additionalPhones,
+      whatsappPhoneE164: user.whatsappPhoneE164,
+      whatsappVerifiedAt: user.whatsappVerifiedAt,
+      status: user.status,
+      isVerified: user.isVerified,
+      isCompanyAdmin: user.isCompanyAdmin,
+      companyId: user.companyId,
+      isOpenToWork: user.isOpenToWork,
+      bio: user.bio,
+      linkedinURL: user.linkedinURL,
+      city: user.city,
+      state: user.state,
+      address: user.address,
+      salaryExpectation: user.salaryExpectation,
+      jobPreferences: user.jobPreferences,
+      experiences: user.experiences,
+      education: user.education,
+      skills: user.skills,
+      courses: user.courses,
+      languages: user.languages,
+      resumeStatus: user.resumeStatus,
+      resumePublishedAt: user.resumePublishedAt,
+      hasResumeFile: Boolean(user.resumeURL),
+      hasResumePhoto: Boolean(user.resumePhotoURL),
+      publishedResumeSnapshot: user.publishedResumeSnapshot,
+      resumePreferences: user.resumePreferences,
+      aiAnalysis: user.aiAnalysis,
+      hasAiAnalyzed: user.hasAiAnalyzed,
+      resumeScoreUnlocked: user.resumeScoreUnlocked,
+      aiAnalysisCount: user.aiAnalysisCount,
+      aiAnalysisLimit: user.aiAnalysisLimit,
+      aiImportCount: user.aiImportCount,
+      aiImportLimit: user.aiImportLimit,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
+
     if (mode === 'CANDIDATE') {
-      const applications = await this.applications.find({ where: { candidateId: user.id }, order: { createdAt: 'DESC' }, take: 8 });
+      const applications = await this.applications.find({ where: { candidateId: user.id }, order: { createdAt: 'DESC' }, take: 20 });
       return {
-        resumeStatus: user.resumeStatus,
-        hasPublishedResume: Boolean(user.publishedResumeSnapshot || user.resumeURL),
-        aiImportCount: user.aiImportCount,
-        applications: applications.map((item) => ({ id: item.id, jobId: item.jobId, title: item.jobTitle, company: item.companyName, status: item.status })),
+        profile: userProfile,
+        applications: applications.map((item) => ({
+          id: item.id,
+          jobId: item.jobId,
+          title: item.jobTitle,
+          companyId: item.companyId,
+          company: item.companyName,
+          status: item.status,
+          priority: item.priority,
+          documentsRequested: item.documentsRequested,
+          submittedForReview: item.submittedForReview,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+        })),
       };
     }
+
     if (mode === 'COMPANY' && company) {
-      const jobs = await this.jobs.find({ where: { companyId: company.id }, order: { createdAt: 'DESC' }, take: 20 });
-      return { company: { id: company.id, name: company.name }, jobs: jobs.map((job) => ({ id: job.id, title: job.title, active: job.active, city: job.city, state: job.state })) };
+      const jobs = await this.jobs.find({ where: { companyId: company.id }, order: { createdAt: 'DESC' }, take: 30 });
+      const ids = jobs.map((job) => job.id);
+      const applications = ids.length
+        ? await this.applications.find({ where: { jobId: In(ids) }, order: { createdAt: 'DESC' }, take: 30 })
+        : [];
+      return {
+        user: userProfile,
+        company: {
+          id: company.id,
+          name: company.name,
+          slug: company.slug,
+          category: company.category,
+          description: company.description,
+          website: company.website,
+          address: company.address,
+          cityState: company.cityState,
+          city: company.city,
+          state: company.state,
+          phone: company.phone,
+          verificationStatus: company.verificationStatus,
+          isVerified: company.isVerified,
+          socialInstagram: company.socialInstagram,
+          socialLinkedin: company.socialLinkedin,
+          socialFacebook: company.socialFacebook,
+          logoURL: company.logoURL,
+          hiringConfig: company.hiringConfig,
+          createdAt: company.createdAt,
+          updatedAt: company.updatedAt,
+        },
+        jobs: jobs.map((job) => ({
+          id: job.id,
+          title: job.title,
+          slug: job.slug,
+          description: job.description,
+          requirements: job.requirements,
+          skills: job.skills,
+          location: job.location,
+          city: job.city,
+          state: job.state,
+          type: job.type,
+          workModel: job.workModel,
+          salary: job.salary,
+          estimatedSalary: job.estimatedSalary,
+          pcdMode: job.pcdMode,
+          active: job.active,
+          views: job.views,
+          acceptsPlatformApplications: job.acceptsPlatformApplications,
+          deadlineDate: job.deadlineDate,
+          isSponsored: job.isSponsored,
+          createdAt: job.createdAt,
+          updatedAt: job.updatedAt,
+        })),
+        recentApplications: applications.map((item) => ({
+          id: item.id,
+          candidateId: item.candidateId,
+          jobId: item.jobId,
+          jobTitle: item.jobTitle,
+          status: item.status,
+          priority: item.priority,
+          documentsRequested: item.documentsRequested,
+          submittedForReview: item.submittedForReview,
+          createdAt: item.createdAt,
+        })),
+      };
     }
-    return {};
+
+    if (mode === 'ADMIN') {
+      const [
+        totalUsers,
+        totalCompanies,
+        totalJobs,
+        activeJobs,
+        totalApplications,
+        recentUsers,
+        recentCompanies,
+        recentJobs,
+        recentApplications,
+      ] = await Promise.all([
+        this.users.count(),
+        this.companies.count(),
+        this.jobs.count(),
+        this.jobs.count({ where: { active: true } }),
+        this.applications.count(),
+        this.users.find({ order: { updatedAt: 'DESC' }, take: 25 }),
+        this.companies.find({ order: { updatedAt: 'DESC' }, take: 25 }),
+        this.jobs.find({ order: { updatedAt: 'DESC' }, take: 30 }),
+        this.applications.find({ order: { updatedAt: 'DESC' }, take: 30 }),
+      ]);
+      return {
+        admin: userProfile,
+        platformTotals: {
+          users: totalUsers,
+          companies: totalCompanies,
+          jobs: totalJobs,
+          activeJobs,
+          inactiveJobs: Math.max(0, totalJobs - activeJobs),
+          applications: totalApplications,
+        },
+        recentUsers: recentUsers.map((item) => ({
+          id: item.id,
+          type: item.type,
+          displayName: item.displayName,
+          fullName: item.fullName,
+          socialName: item.socialName,
+          email: item.email,
+          phone: item.phone,
+          city: item.city,
+          state: item.state,
+          status: item.status,
+          companyId: item.companyId,
+          isVerified: item.isVerified,
+          isOpenToWork: item.isOpenToWork,
+          resumeStatus: item.resumeStatus,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+        })),
+        recentCompanies: recentCompanies.map((item) => ({
+          id: item.id,
+          name: item.name,
+          slug: item.slug,
+          category: item.category,
+          city: item.city,
+          state: item.state,
+          verificationStatus: item.verificationStatus,
+          isVerified: item.isVerified,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+        })),
+        recentJobs: recentJobs.map((job) => ({
+          id: job.id,
+          companyId: job.companyId,
+          companyName: job.companyName,
+          title: job.title,
+          slug: job.slug,
+          city: job.city,
+          state: job.state,
+          type: job.type,
+          workModel: job.workModel,
+          salary: job.salary,
+          estimatedSalary: job.estimatedSalary,
+          pcdMode: job.pcdMode,
+          active: job.active,
+          moderationStatus: job.moderationStatus,
+          isExternalListing: job.isExternalListing,
+          sourceName: job.sourceName,
+          views: job.views,
+          deadlineDate: job.deadlineDate,
+          createdAt: job.createdAt,
+          updatedAt: job.updatedAt,
+        })),
+        recentApplications: recentApplications.map((item) => ({
+          id: item.id,
+          candidateId: item.candidateId,
+          jobId: item.jobId,
+          jobTitle: item.jobTitle,
+          companyId: item.companyId,
+          companyName: item.companyName,
+          status: item.status,
+          priority: item.priority,
+          documentsRequested: item.documentsRequested,
+          submittedForReview: item.submittedForReview,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+        })),
+      };
+    }
+
+    return { user: userProfile };
   }
 
   private async collectResumeDocuments(buffer: BufferState): Promise<ResumeSourceDocumentInput[]> {
@@ -662,6 +907,13 @@ export class WhatsAppConciergeService {
       metadata: { source: 'whatsapp_concierge' },
       providerTimestamp: new Date(),
     }));
+  }
+
+  private formatAdminReply(buffer: BufferState, text: string) {
+    const clean = String(text || '').trim();
+    if (!clean || clean.startsWith('🤖 *')) return clean;
+    const name = String(buffer.instance.name || 'PiraNegócios').trim() || 'PiraNegócios';
+    return `🤖 *${name}*:\n${clean}`;
   }
 
   private readContextChoice(messages: BufferedInbound[], company: Company): 'CANDIDATE' | 'COMPANY' | null {
