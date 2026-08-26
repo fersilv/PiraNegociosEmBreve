@@ -22,7 +22,9 @@ function emit() {
 export function subscribeInlinePayment(listener: Listener) {
   listeners.add(listener);
   listener(active);
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 export function getInlinePaymentRequirement() {
