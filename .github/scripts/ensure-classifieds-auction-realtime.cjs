@@ -33,7 +33,7 @@ replace(
 
 replace(
   "    this.timer = setInterval(() => void this.closeDue().catch(() => undefined), 60_000);",
-  "    this.timer = setInterval(() => void this.closeDue().catch(() => undefined), 5_000);",
+  "    this.timer = setInterval(() => void this.closeDue().catch(() => undefined), 1_000);",
   'realtime close timer',
 );
 
@@ -91,7 +91,7 @@ replace(
   'close broadcast',
 );
 
-if (!source.includes('softCloseExtended: result.extended') || !source.includes("publishAuctionChanged(auctionId, result.extended ? 'EXTENDED' : 'BID')") || !source.includes("publishAuctionChanged(auctionId, 'CANCELED')") || !source.includes('clockOpen') || !source.includes('clockDue') || !source.includes('5_000')) {
+if (!source.includes('softCloseExtended: result.extended') || !source.includes("publishAuctionChanged(auctionId, result.extended ? 'EXTENDED' : 'BID')") || !source.includes("publishAuctionChanged(auctionId, 'CANCELED')") || !source.includes('clockOpen') || !source.includes('clockDue') || !source.includes('1_000')) {
   throw new Error('Auction realtime/soft-close patch was not applied.');
 }
 
