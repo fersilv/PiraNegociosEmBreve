@@ -124,10 +124,10 @@ export class CompanyPlansService {
     const rows = await this.dataSource.query(
       `SELECT c.*, u."isCompanyAdmin", u.type AS "userType"
        FROM users u
-       JOIN companies c ON c.id = u."companyId" OR c."ownerId" = u.id
+       JOIN companies c ON c.id::text = u."companyId" OR c."ownerId" = u.id
        WHERE u.id = $1
          AND (c."ownerId" = u.id OR u."isCompanyAdmin" = true OR u.type = 'ADMIN')
-       ORDER BY CASE WHEN c.id = u."companyId" THEN 0 ELSE 1 END, c."createdAt" ASC
+       ORDER BY CASE WHEN c.id::text = u."companyId" THEN 0 ELSE 1 END, c."createdAt" ASC
        LIMIT 1`,
       [userId],
     );
@@ -192,7 +192,6 @@ export class CompanyPlansService {
       trialEndsAt: trialActive ? trial.endsAt : null,
       trialTargetPlan: trial?.targetPlan ? this.normalizePlan(trial.targetPlan) : null,
       hasPaidSubscription: Boolean(subscription),
-      // Trial unlocks WhatsApp operations only. Promotional benefits are paid-Elite-only.
       advertisingEligible: !trialActive && basePlan === 'ELITE',
       jobHighlightEligible: !trialActive && basePlan === 'ELITE',
     };
@@ -289,8 +288,6 @@ export class CompanyPlansService {
       throw new BadRequestException(`A empresa já possui o plano ${plan} ativo.`);
     }
 
-    // Trial is automatic only on the first successful subscription authorization.
-    // There is no standalone endpoint/button capable of granting it.
     const trialDays = !trialRecord && !current.hasPaidSubscription ? ELITE_TRIAL_DAYS : 0;
     const productCode = plan === 'ELITE' ? 'COMPANY_ELITE_MONTHLY' : 'COMPANY_PLUS_MONTHLY';
     const payment = await this.payments.createPixPayment(userId, productCode);
