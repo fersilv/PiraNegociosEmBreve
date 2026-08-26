@@ -8,10 +8,13 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { User } from '../users/entities/user.entity';
 import { ClassifiedsAiReviewService } from './classifieds-ai-review.service';
+import { ClassifiedsAuctionEngagementService } from './classifieds-auction-engagement.service';
+import { ClassifiedsAuctionExtrasController } from './classifieds-auction-extras.controller';
 import { ClassifiedsAuctionGateway } from './classifieds-auction.gateway';
 import { ClassifiedsAuctionPublicController } from './classifieds-auction-public.controller';
 import { ClassifiedsAuctionPublicService } from './classifieds-auction-public.service';
 import { ClassifiedsAuctionService } from './classifieds-auction.service';
+import { ClassifiedsAuctionSettlementService } from './classifieds-auction-settlement.service';
 import { ClassifiedsChatService } from './classifieds-chat.service';
 import { ClassifiedsCheckoutController } from './classifieds-checkout.controller';
 import { ClassifiedsCheckoutService } from './classifieds-checkout.service';
@@ -62,6 +65,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsSalesController,
     ClassifiedsCheckoutController,
     ClassifiedsCheckoutWebhookController,
+    ClassifiedsAuctionExtrasController,
     ClassifiedsCommerceAdminController,
   ],
   providers: [
@@ -75,6 +79,8 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsAuctionGateway,
     ClassifiedsAuctionService,
     ClassifiedsAuctionPublicService,
+    ClassifiedsAuctionEngagementService,
+    ClassifiedsAuctionSettlementService,
     ClassifiedsSalesService,
     ClassifiedsMarketplacePaymentsService,
     ClassifiedsMarketplaceTermsService,
@@ -87,6 +93,8 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsEntitlementsService,
     ClassifiedsAuctionService,
     ClassifiedsAuctionPublicService,
+    ClassifiedsAuctionEngagementService,
+    ClassifiedsAuctionSettlementService,
     ClassifiedsSalesService,
     ClassifiedsMarketplacePaymentsService,
     ClassifiedsMarketplaceTermsService,
