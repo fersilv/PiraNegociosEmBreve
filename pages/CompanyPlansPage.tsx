@@ -1,297 +1,269 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   BadgeCheck,
+  CalendarClock,
   Check,
-  Copy,
+  CircleDollarSign,
   Crown,
   Loader2,
+  ReceiptText,
   RefreshCw,
   ShieldCheck,
   Sparkles,
+  Store,
+  UsersRound,
+  WalletCards,
   Zap,
-} from "lucide-react";
-import { api } from "../lib/api";
+} from 'lucide-react';
+import { api } from '../lib/api';
 
-const money = (cents: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
-    Number(cents || 0) / 100,
-  );
-
-type PlanId = "FREE" | "PLUS" | "ELITE";
+type PlanId = 'FREE' | 'PLUS' | 'ELITE';
 type Plan = {
   id: PlanId;
   name: string;
   priceCents: number;
+  effectivePriceCents?: number;
+  originalPriceCents?: number;
+  promotionalPriceCents?: number | null;
+  promotionActive?: boolean;
   monthly: boolean;
   description: string;
   features: string[];
   current?: boolean;
+  available?: boolean;
   includesEliteTrial?: boolean;
   eliteTrialDays?: number;
 };
-
-type CurrentPlan = {
+type Billing = {
+  currency: 'BRL';
   plan: PlanId;
-  active: boolean;
+  planName: string;
   status: string;
-  currentPeriodEnd?: string | null;
-  cancelAtPeriodEnd?: boolean;
-  advertisingEligible?: boolean;
-  jobHighlightEligible?: boolean;
-  isTrial?: boolean;
+  statusLabel: string;
+  priceCents: number;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  nextChargeAt?: string | null;
+  nextChargeCents?: number | null;
+  cancelAtPeriodEnd: boolean;
+  renewalEnabled: boolean;
+  provider?: string | null;
+  isTrial: boolean;
   trialEndsAt?: string | null;
   trialTargetPlan?: PlanId | null;
-  basePlan?: PlanId;
-  hasPaidSubscription?: boolean;
+  hasPaidSubscription: boolean;
+  latestCheckout?: null | {
+    id?: string;
+    status?: string | null;
+    productName?: string | null;
+    createdAt?: string | null;
+    paidAt?: string | null;
+    provider?: string | null;
+  };
+};
+type PlansPayload = {
+  company?: { id: string; name: string };
+  current?: {
+    plan: PlanId;
+    basePlan?: PlanId;
+    status: string;
+    active: boolean;
+    currentPeriodStart?: string | null;
+    currentPeriodEnd?: string | null;
+    cancelAtPeriodEnd?: boolean;
+    isTrial?: boolean;
+    trialEndsAt?: string | null;
+    trialTargetPlan?: PlanId | null;
+    advertisingEligible?: boolean;
+    jobHighlightEligible?: boolean;
+  };
+  plans?: Plan[];
+  trial?: {
+    days: number;
+    active: boolean;
+    eligibleOnSubscription: boolean;
+    used: boolean;
+    restrictions?: string[];
+  };
+  billing?: Billing;
+  scopes?: {
+    recruitment?: { label: string; summary: string };
+    marketplace?: { label: string; summary: string; photoLimit?: number; onlineSales?: boolean; auctionCreation?: boolean };
+  };
+  degraded?: boolean;
+  warnings?: string[];
 };
 
 export function CompanyPlansPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [data, setData] = useState<{
-    company?: { id: string; name: string };
-    current?: CurrentPlan;
-    plans?: Plan[];
-    trial?: { days: number; active: boolean; eligibleOnSubscription: boolean; used: boolean; targetPlan?: PlanId | null; startedAt?: string | null; endsAt?: string | null; restrictions?: string[] };
-  }>({});
+  const [data, setData] = useState<PlansPayload>({});
   const [selected, setSelected] = useState<PlanId | null>(null);
-  const [payer, setPayer] = useState({ name: "", document: "", email: "" });
+  const [payer, setPayer] = useState({ name: '', document: '', email: '' });
   const [checkout, setCheckout] = useState<any>(null);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
 
   const load = async () => {
     setLoading(true);
+    setError('');
     try {
-      const response = await api.get("/company/plans");
+      const response = await api.get('/company/plans');
       setData(response.data || {});
-    } catch (error: any) {
-      setMessage(error?.response?.data?.message || "Não foi possível carregar os planos da empresa.");
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.message || 'Não foi possível carregar os dados de assinatura da empresa.');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    void load();
-  }, []);
+  useEffect(() => { void load(); }, []);
 
+  const billing = data.billing;
+  const currentPlanId = billing?.plan || data.current?.basePlan || data.current?.plan || 'FREE';
+  const currentPlan = useMemo(
+    () => (data.plans || []).find((plan) => plan.id === currentPlanId) || null,
+    [data.plans, currentPlanId],
+  );
   const chosen = useMemo(
     () => (data.plans || []).find((plan) => plan.id === selected) || null,
     [data.plans, selected],
   );
 
   const subscribe = async () => {
-    if (!selected || selected === "FREE") return;
+    if (!selected || selected === 'FREE' || submitting) return;
     setSubmitting(true);
-    setMessage("");
+    setMessage(''); setError('');
     try {
-      const response = await api.post("/company/plans/checkout", {
+      const response = await api.post('/company/plans/checkout', {
         plan: selected,
         payer: {
           name: payer.name.trim() || undefined,
-          document: payer.document.replace(/\D/g, "") || undefined,
+          document: payer.document.replace(/\D/g, '') || undefined,
           email: payer.email.trim() || undefined,
         },
       });
       setCheckout(response.data || null);
       if (response.data?.devSimulation) {
-        setMessage(response.data?.trialActivated ? `Assinatura ${selected} autorizada. Seus 15 dias de Elite grátis começaram agora.` : `Plano ${selected} ativado em modo DEV.`);
+        setMessage(response.data?.trialActivated
+          ? `Assinatura ${selected} autorizada. O período Elite gratuito começou agora.`
+          : `Plano ${selected} ativado em modo de desenvolvimento.`);
         await load();
       } else {
-        setMessage(response.data?.trialDays > 0 ? "Assinatura criada. Conclua a autorização da recorrência para começar seus 15 dias de Elite grátis. A primeira cobrança ocorre após o período gratuito." : "Checkout criado. Conclua a autorização/pagamento para ativar o plano da empresa.");
+        setMessage(response.data?.trialDays > 0
+          ? 'Assinatura criada. Conclua a autorização para iniciar o período gratuito e a recorrência.'
+          : 'Checkout criado. Conclua o pagamento ou autorização para ativar o plano.');
       }
-    } catch (error: any) {
-      const payload = error?.response?.data;
-      setMessage(payload?.message || payload?.error || error?.message || "Não foi possível iniciar a assinatura.");
+    } catch (requestError: any) {
+      const payload = requestError?.response?.data;
+      setError(payload?.message || payload?.error || requestError?.message || 'Não foi possível iniciar a assinatura.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const cancelRenewal = async () => {
-    setSubmitting(true);
-    setMessage("");
+  const setRenewal = async (renew: boolean) => {
+    if (submitting) return;
+    setSubmitting(true); setMessage(''); setError('');
     try {
-      await api.patch("/company/plans/cancel-at-period-end", { enabled: true });
-      setMessage("A renovação foi marcada para encerrar ao final do período atual.");
+      await api.patch('/company/plans/cancel-at-period-end', { enabled: !renew });
+      setMessage(renew ? 'Renovação automática mantida.' : 'A renovação será encerrada ao final do período atual.');
       await load();
-    } catch (error: any) {
-      setMessage(error?.response?.data?.message || "Não foi possível alterar a renovação.");
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.message || 'Não foi possível alterar a renovação.');
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const copyPix = async () => {
-    const value = String(checkout?.pixCopyPaste || "");
-    if (!value) return;
-    await navigator.clipboard.writeText(value);
-    setMessage("Código Pix copiado.");
   };
 
   if (loading) {
-    return (
-      <div className="flex min-h-[55vh] items-center justify-center text-stone-500">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Carregando planos...
-      </div>
-    );
+    return <div className="flex min-h-[55vh] items-center justify-center text-stone-500"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Carregando assinatura e planos...</div>;
   }
 
-  const current = data.current?.plan || "FREE";
-  const basePlan = data.current?.basePlan || current;
-  const subscriptionUrl = checkout?.metadata?.subscriptionCheckoutUrl || checkout?.metadata?.ticketUrl;
-
   return (
-    <div className="mx-auto max-w-7xl space-y-7">
-      <section className="overflow-hidden rounded-[32px] bg-[#1b1b18] p-7 text-white shadow-xl sm:p-9">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-white/70">
-              <Sparkles className="h-3.5 w-3.5" /> PiraNegócios Business
+    <div className="mx-auto max-w-7xl space-y-6 pb-10">
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[.18em] text-[#397c75]">Empresa · Financeiro</p>
+          <h1 className="mt-1 font-serif text-4xl font-black text-stone-950">Plano e cobrança</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Veja exatamente qual plano está ativo, quando acontece a próxima cobrança, quais recursos estão incluídos e o que muda ao trocar de plano.</p>
+        </div>
+        <button type="button" onClick={() => void load()} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-white px-4 text-xs font-black text-stone-600 ring-1 ring-stone-200"><RefreshCw className="h-4 w-4" /> Atualizar dados</button>
+      </header>
+
+      {(error || message) && <div className={`rounded-2xl px-4 py-3 text-sm font-bold ${error ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{error || message}</div>}
+      {data.warnings?.map((warning) => <div key={warning} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-800">{warning}</div>)}
+
+      <section className="overflow-hidden rounded-[30px] bg-[#172522] text-white shadow-xl">
+        <div className="grid lg:grid-cols-[1.15fr_.85fr]">
+          <div className="p-6 sm:p-8">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-white/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-[.14em] text-white/70">{billing?.statusLabel || 'Plano gratuito'}</span>
+              {billing?.isTrial && <span className="rounded-full bg-violet-400/20 px-3 py-1.5 text-[9px] font-black uppercase tracking-[.14em] text-violet-100">Elite temporário</span>}
             </div>
-            <h1 className="mt-4 font-serif text-4xl font-black sm:text-5xl">Planos da empresa</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/55">
-              Os planos ampliam o que a assistente pode fazer pelo WhatsApp. As funções já existentes no painel web da empresa continuam intactas.
-            </p>
+            <p className="mt-5 text-[10px] font-black uppercase tracking-[.16em] text-white/40">Plano atual</p>
+            <div className="mt-1 flex flex-wrap items-end gap-3"><h2 className="font-serif text-5xl font-black">{billing?.isTrial ? 'Elite' : currentPlan?.name || currentPlanId}</h2><p className="pb-1 text-sm font-bold text-white/50">{billing?.priceCents ? `${money(billing.priceCents)}/mês` : 'sem mensalidade'}</p></div>
+            {billing?.isTrial && <p className="mt-3 max-w-2xl text-sm leading-6 text-violet-100/80">Você está usando recursos Elite durante o período gratuito. A assinatura-base é {billing.trialTargetPlan || currentPlanId}.</p>}
+            {currentPlan?.description && <p className="mt-4 max-w-2xl text-sm leading-6 text-white/55">{currentPlan.description}</p>}
+            {data.company?.name && <p className="mt-5 text-xs font-bold text-white/40">Assinatura vinculada a {data.company.name}</p>}
           </div>
-          <div className="rounded-3xl border border-white/10 bg-white/[0.06] px-5 py-4">
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Plano atual</p>
-            <div className="mt-1 flex items-center gap-2 text-xl font-black">
-              <BadgeCheck className="h-5 w-5" /> {data.current?.isTrial ? "ELITE • 15 DIAS GRÁTIS" : current}
+          <div className="border-t border-white/10 bg-white/[.04] p-6 sm:p-8 lg:border-l lg:border-t-0">
+            <p className="text-[10px] font-black uppercase tracking-[.16em] text-white/40">Próxima cobrança</p>
+            <p className="mt-2 text-3xl font-black">{billing?.nextChargeAt ? money(billing.nextChargeCents || billing.priceCents) : 'Sem cobrança agendada'}</p>
+            <p className="mt-2 text-sm text-white/55">{billing?.nextChargeAt ? formatDateLong(billing.nextChargeAt) : billing?.cancelAtPeriodEnd ? 'A renovação foi cancelada.' : currentPlanId === 'FREE' ? 'O plano Free não gera cobrança.' : 'Nenhuma cobrança futura está registrada.'}</p>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+              <MiniInfo icon={<CalendarClock className="h-4 w-4" />} label="Período vigente" value={periodLabel(billing)} />
+              <MiniInfo icon={<RefreshCw className="h-4 w-4" />} label="Renovação" value={billing?.renewalEnabled ? 'Automática' : billing?.cancelAtPeriodEnd ? 'Cancelada' : 'Não aplicável'} />
+              <MiniInfo icon={<WalletCards className="h-4 w-4" />} label="Provedor" value={billing?.provider || 'Não aplicável'} />
+              <MiniInfo icon={<ReceiptText className="h-4 w-4" />} label="Status" value={billing?.statusLabel || 'Gratuito'} />
             </div>
-            {data.current?.currentPeriodEnd && (
-              <p className="mt-1 text-xs text-white/45">
-                {data.current?.isTrial ? "Teste gratuito até" : "Vigente até"} {new Date(data.current.currentPeriodEnd).toLocaleDateString("pt-BR")}
-              </p>
-            )}
           </div>
         </div>
       </section>
 
-      {data.current?.isTrial && (
-        <section className="rounded-[30px] border border-violet-200 bg-violet-950 p-6 text-white shadow-lg sm:p-7">
-          <div className="flex gap-4"><Crown className="mt-1 h-6 w-6 shrink-0 text-violet-200" /><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-violet-200">Elite gratuito da assinatura</p><h2 className="mt-2 font-serif text-3xl font-black">Seu teste de 15 dias está ativo</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-white/65">Todos os recursos operacionais do Elite ficam liberados pelo WhatsApp. O trial não inclui destaque/impulsionamento de vagas nem elegibilidade para Meta ou Google. O painel web continua funcionando normalmente.</p>{data.current.trialEndsAt && <p className="mt-3 text-xs font-bold text-violet-200">Termina em {new Date(data.current.trialEndsAt).toLocaleDateString("pt-BR")}.</p>}</div></div>
-        </section>
-      )}
+      {billing?.hasPaidSubscription && <section className="flex flex-col gap-4 rounded-[24px] bg-white p-5 ring-1 ring-stone-200 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-black text-stone-900">Renovação da assinatura</p><p className="mt-1 text-xs leading-5 text-stone-500">{billing.cancelAtPeriodEnd ? `Seu acesso pago permanece até ${formatDate(billing.periodEnd)} e depois volta ao Free.` : `A assinatura renova automaticamente em ${formatDate(billing.nextChargeAt || billing.periodEnd)}.`}</p></div><button disabled={submitting} onClick={() => void setRenewal(Boolean(billing.cancelAtPeriodEnd))} className={`shrink-0 rounded-xl px-4 py-2.5 text-xs font-black ${billing.cancelAtPeriodEnd ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-700'}`}>{billing.cancelAtPeriodEnd ? 'Manter renovação' : 'Cancelar renovação'}</button></section>}
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        {(data.plans || []).map((plan) => {
-          const active = !data.current?.isTrial && basePlan === plan.id;
-          const trialSubscription = Boolean(data.current?.isTrial && data.current?.trialTargetPlan === plan.id);
-          const elite = plan.id === "ELITE";
-          const plus = plan.id === "PLUS";
-          return (
-            <article
-              key={plan.id}
-              className={`relative flex min-h-[560px] flex-col rounded-[30px] border p-6 shadow-sm ${
-                elite
-                  ? "border-violet-200 bg-gradient-to-b from-violet-50 to-white"
-                  : plus
-                    ? "border-amber-200 bg-gradient-to-b from-amber-50 to-white"
-                    : "border-stone-200 bg-white"
-              }`}
-            >
-              {active && (
-                <span className="absolute right-5 top-5 rounded-full bg-stone-900 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.15em] text-white">
-                  Seu plano
-                </span>
-              )}
-              <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${elite ? "bg-violet-900 text-white" : plus ? "bg-amber-400 text-stone-950" : "bg-stone-100 text-stone-700"}`}>
-                {elite ? <Crown className="h-5 w-5" /> : plus ? <Zap className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}
-              </div>
-              <h2 className="mt-5 font-serif text-3xl font-black text-stone-950">{plan.name}</h2>
-              <div className="mt-2 flex items-end gap-1">
-                <span className="text-3xl font-black text-stone-950">{plan.priceCents ? money(plan.priceCents) : "Grátis"}</span>
-                {plan.monthly && <span className="pb-1 text-xs font-bold text-stone-400">/mês</span>}
-              </div>
-              <p className="mt-3 min-h-12 text-sm leading-6 text-stone-500">{plan.description}</p>
-              {plan.includesEliteTrial && <div className="mt-3 rounded-2xl border border-violet-200 bg-violet-50 px-3.5 py-3 text-xs font-black text-violet-800"><Sparkles className="mr-1.5 inline h-3.5 w-3.5" /> Assine e ganhe 15 dias do Elite no WhatsApp antes da primeira cobrança.</div>}
-              <div className="my-5 h-px bg-stone-200/80" />
-              <ul className="flex-1 space-y-3">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex gap-3 text-sm leading-5 text-stone-700">
-                    <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${elite ? "bg-violet-100 text-violet-700" : plus ? "bg-amber-100 text-amber-700" : "bg-stone-100 text-stone-600"}`}>
-                      <Check className="h-3 w-3" />
-                    </span>
-                    {feature}
-                  </li>
-                ))}
-              </ul>
-              <button
-                type="button"
-                disabled={active || trialSubscription || plan.id === "FREE"}
-                onClick={() => {
-                  setSelected(plan.id);
-                  setCheckout(null);
-                  setMessage("");
-                }}
-                className={`mt-6 w-full rounded-2xl px-4 py-3.5 text-xs font-black transition disabled:cursor-default ${
-                  active || trialSubscription || plan.id === "FREE"
-                    ? "bg-stone-100 text-stone-400"
-                    : elite
-                      ? "bg-violet-900 text-white hover:bg-violet-800"
-                      : "bg-stone-900 text-white hover:bg-black"
-                }`}
-              >
-                {trialSubscription ? "Assinatura em teste" : active ? "Plano atual" : plan.id === "FREE" ? "Incluído" : `Assinar ${plan.name}`}
-              </button>
-            </article>
-          );
-        })}
-      </div>
+      <section className="grid gap-4 lg:grid-cols-2">
+        <ScopeCard icon={<UsersRound className="h-5 w-5" />} eyebrow="Módulo" title="Recrutamento" description={data.scopes?.recruitment?.summary || 'Recursos empresariais para vagas, candidatos e operação pelo WhatsApp.'} items={currentPlan?.features || []} />
+        <ScopeCard icon={<Store className="h-5 w-5" />} eyebrow="Módulo" title="Marketplace" description={data.scopes?.marketplace?.summary || 'Recursos empresariais para anúncios e vendas.'} items={[
+          `Até ${data.scopes?.marketplace?.photoLimit || 10} fotos por anúncio empresarial`,
+          data.scopes?.marketplace?.onlineSales ? 'Recebimento online pode ser habilitado pela empresa' : 'Venda direta por chat e oferta',
+          data.scopes?.marketplace?.auctionCreation ? 'Criação de leilões liberada' : 'Leilões: criação disponível no Elite',
+          'Taxas de intermediação de vendas e leilões seguem a regra vigente do plano ou contrato da empresa',
+        ]} />
+      </section>
 
-      {chosen && chosen.id !== "FREE" && (
-        <section className="rounded-[30px] border border-stone-200 bg-white p-6 shadow-sm sm:p-8">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-stone-400">Assinatura mensal</p>
-              <h3 className="mt-2 font-serif text-3xl font-black text-stone-950">Ativar {chosen.name}</h3>
-              <p className="mt-2 text-sm text-stone-500">{money(chosen.priceCents)} por mês via método recorrente habilitado no PiraNegócios.</p>
-              {chosen.includesEliteTrial && <p className="mt-2 max-w-2xl text-xs font-bold leading-5 text-violet-700">Na primeira assinatura, a autorização inicia 15 dias de Elite grátis. A cobrança começa depois do período gratuito. Impulsos, destaque de vagas e elegibilidade Meta/Google não fazem parte do trial.</p>}
-            </div>
-            <button type="button" onClick={() => setSelected(null)} className="text-xs font-bold text-stone-400 hover:text-stone-700">Fechar</button>
-          </div>
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            <label className="text-xs font-bold text-stone-600">Nome do pagador<input value={payer.name} onChange={(e) => setPayer((v) => ({ ...v, name: e.target.value }))} className="mt-2 w-full rounded-2xl border border-stone-200 px-4 py-3 text-sm outline-none focus:border-stone-500" placeholder="Nome completo" /></label>
-            <label className="text-xs font-bold text-stone-600">CPF<input value={payer.document} onChange={(e) => setPayer((v) => ({ ...v, document: e.target.value }))} className="mt-2 w-full rounded-2xl border border-stone-200 px-4 py-3 text-sm outline-none focus:border-stone-500" placeholder="000.000.000-00" /></label>
-            <label className="text-xs font-bold text-stone-600">E-mail<input value={payer.email} onChange={(e) => setPayer((v) => ({ ...v, email: e.target.value }))} className="mt-2 w-full rounded-2xl border border-stone-200 px-4 py-3 text-sm outline-none focus:border-stone-500" placeholder="financeiro@empresa.com" /></label>
-          </div>
-          <button type="button" disabled={submitting} onClick={() => void subscribe()} className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-stone-950 px-5 py-3.5 text-xs font-black text-white disabled:opacity-50">
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />} Criar assinatura
-          </button>
-        </section>
-      )}
+      {billing?.latestCheckout && <section className="rounded-[24px] bg-white p-5 ring-1 ring-stone-200"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-stone-100 text-stone-500"><ReceiptText className="h-5 w-5" /></span><div><p className="text-[10px] font-black uppercase tracking-[.14em] text-stone-400">Último movimento de assinatura</p><p className="mt-1 text-sm font-black">{billing.latestCheckout.productName || 'Assinatura empresarial'} · {billing.latestCheckout.status || 'registrado'}</p><p className="mt-1 text-[10px] text-stone-400">Criado em {formatDateTime(billing.latestCheckout.createdAt)}{billing.latestCheckout.provider ? ` · ${billing.latestCheckout.provider}` : ''}</p></div></div></section>}
 
-      {checkout && !checkout.devSimulation && (
-        <section className="rounded-[30px] border border-emerald-200 bg-emerald-50 p-6 sm:p-8">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700">Checkout criado</p>
-          <h3 className="mt-2 font-serif text-2xl font-black text-emerald-950">Conclua a autorização para ativar o plano</h3>
-          {subscriptionUrl && <a href={subscriptionUrl} target="_blank" rel="noreferrer" className="mt-5 inline-flex rounded-2xl bg-emerald-900 px-5 py-3 text-xs font-black text-white">Abrir checkout recorrente</a>}
-          {checkout.qrCodeBase64 && <img src={checkout.qrCodeBase64.startsWith("data:") ? checkout.qrCodeBase64 : `data:image/png;base64,${checkout.qrCodeBase64}`} alt="QR Code Pix" className="mt-5 h-48 w-48 rounded-2xl bg-white p-2" />}
-          {checkout.pixCopyPaste && (
-            <div className="mt-5 flex max-w-2xl gap-2 rounded-2xl border border-emerald-200 bg-white p-2">
-              <code className="min-w-0 flex-1 truncate px-2 py-2 text-xs text-stone-600">{checkout.pixCopyPaste}</code>
-              <button type="button" onClick={() => void copyPix()} className="flex h-9 w-9 items-center justify-center rounded-xl bg-stone-900 text-white"><Copy className="h-4 w-4" /></button>
-            </div>
-          )}
-          <button type="button" onClick={() => void load()} className="mt-5 inline-flex items-center gap-2 text-xs font-black text-emerald-900"><RefreshCw className="h-4 w-4" /> Já paguei, atualizar plano</button>
-        </section>
-      )}
+      <section>
+        <div className="mb-4"><p className="text-[10px] font-black uppercase tracking-[.16em] text-stone-400">Comparar</p><h2 className="mt-1 font-serif text-3xl font-black">Todos os planos</h2><p className="mt-2 text-sm text-stone-500">Os preços abaixo são os valores vigentes configurados no PiraNegócios.</p></div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {(data.plans || []).map((plan) => <PlanCard key={plan.id} plan={plan} currentPlanId={currentPlanId} isTrial={Boolean(billing?.isTrial)} trialTargetPlan={billing?.trialTargetPlan || null} onChoose={(id) => { setSelected(id); setCheckout(null); setMessage(''); setError(''); }} />)}
+        </div>
+      </section>
 
-      {data.current?.hasPaidSubscription && !data.current.cancelAtPeriodEnd && (
-        <section className="flex flex-col gap-4 rounded-[26px] border border-stone-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div><p className="text-sm font-black text-stone-900">Renovação automática ativa</p><p className="mt-1 text-xs text-stone-500">Você pode solicitar o encerramento ao fim do período atual sem perder o acesso imediatamente.</p></div>
-          <button type="button" disabled={submitting} onClick={() => void cancelRenewal()} className="rounded-2xl border border-stone-200 px-4 py-3 text-xs font-bold text-stone-600 hover:bg-stone-50">Encerrar ao fim do período</button>
-        </section>
-      )}
+      {chosen && chosen.id !== 'FREE' && <section className="rounded-[28px] bg-white p-6 shadow-sm ring-1 ring-stone-200 sm:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[.16em] text-[#397c75]">Nova assinatura</p><h2 className="mt-1 font-serif text-3xl font-black">Assinar {chosen.name}</h2><p className="mt-2 text-sm text-stone-500">{money(chosen.effectivePriceCents ?? chosen.priceCents)} por mês{chosen.includesEliteTrial ? ` · primeiro acesso com ${chosen.eliteTrialDays || 15} dias de Elite conforme elegibilidade` : ''}.</p></div><button onClick={() => setSelected(null)} className="text-xs font-black text-stone-400">Fechar</button></div><div className="mt-5 grid gap-3 md:grid-cols-3"><Field label="Nome do pagador" value={payer.name} onChange={(value) => setPayer((current) => ({ ...current, name: value }))} placeholder="Nome completo" /><Field label="CPF" value={payer.document} onChange={(value) => setPayer((current) => ({ ...current, document: value }))} placeholder="000.000.000-00" /><Field label="E-mail financeiro" value={payer.email} onChange={(value) => setPayer((current) => ({ ...current, email: value }))} placeholder="financeiro@empresa.com" /></div><button disabled={submitting} onClick={() => void subscribe()} className="mt-5 inline-flex h-12 items-center gap-2 rounded-2xl bg-stone-950 px-5 text-xs font-black text-white disabled:opacity-50">{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CircleDollarSign className="h-4 w-4" />} Continuar assinatura</button></section>}
 
-      {data.current?.advertisingEligible && (
-        <section className="rounded-[26px] border border-violet-200 bg-violet-50 p-5 text-violet-950">
-          <div className="flex gap-3"><Crown className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="text-sm font-black">Elegível aos destaques Meta + Google</p><p className="mt-1 text-xs leading-5 text-violet-800/75">Enquanto o Elite estiver ativo, sua empresa integra a fila de elegibilidade dos destaques publicitários do PiraNegócios. A seleção e distribuição seguem a operação das campanhas ativas.</p></div></div>
-        </section>
-      )}
-
-      {message && <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-semibold text-stone-700">{message}</div>}
+      {checkout && !checkout.devSimulation && <section className="rounded-[28px] border border-emerald-200 bg-emerald-50 p-6"><p className="text-[10px] font-black uppercase tracking-[.16em] text-emerald-700">Checkout criado</p><h2 className="mt-1 font-serif text-2xl font-black text-emerald-950">Conclua a autorização do pagamento</h2>{checkout.metadata?.subscriptionCheckoutUrl && <a href={checkout.metadata.subscriptionCheckoutUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-black text-white">Abrir checkout</a>}</section>}
     </div>
   );
 }
+
+function PlanCard({ plan, currentPlanId, isTrial, trialTargetPlan, onChoose }: { plan: Plan; currentPlanId: PlanId; isTrial: boolean; trialTargetPlan: PlanId | null; onChoose: (id: PlanId) => void }) {
+  const current = !isTrial && currentPlanId === plan.id;
+  const trialBase = isTrial && trialTargetPlan === plan.id;
+  const elite = plan.id === 'ELITE';
+  return <article className={`flex min-h-[500px] flex-col rounded-[28px] border p-6 ${elite ? 'border-violet-200 bg-gradient-to-b from-violet-50 to-white' : plan.id === 'PLUS' ? 'border-amber-200 bg-gradient-to-b from-amber-50 to-white' : 'border-stone-200 bg-white'}`}><div className="flex items-start justify-between gap-3"><span className={`flex h-11 w-11 items-center justify-center rounded-2xl ${elite ? 'bg-violet-900 text-white' : plan.id === 'PLUS' ? 'bg-amber-400 text-stone-950' : 'bg-stone-100 text-stone-600'}`}>{elite ? <Crown className="h-5 w-5" /> : plan.id === 'PLUS' ? <Zap className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}</span>{(current || trialBase) && <span className="rounded-full bg-stone-900 px-3 py-1 text-[9px] font-black uppercase text-white">{trialBase ? 'Assinatura-base' : 'Seu plano'}</span>}</div><h3 className="mt-5 font-serif text-3xl font-black">{plan.name}</h3><div className="mt-2 flex items-end gap-1"><span className="text-3xl font-black">{plan.priceCents ? money(plan.effectivePriceCents ?? plan.priceCents) : 'Grátis'}</span>{plan.monthly && <span className="pb-1 text-xs font-bold text-stone-400">/mês</span>}</div>{plan.promotionActive && plan.originalPriceCents && <p className="mt-1 text-xs font-bold text-stone-400 line-through">de {money(plan.originalPriceCents)}</p>}<p className="mt-3 text-sm leading-6 text-stone-500">{plan.description}</p>{plan.includesEliteTrial && <div className="mt-3 rounded-xl bg-violet-50 px-3 py-2 text-xs font-black text-violet-700"><Sparkles className="mr-1 inline h-3.5 w-3.5" /> {plan.eliteTrialDays || 15} dias de Elite conforme elegibilidade</div>}<div className="my-5 h-px bg-stone-200" /><ul className="flex-1 space-y-2.5">{plan.features.map((feature) => <li key={feature} className="flex gap-2 text-xs leading-5 text-stone-600"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />{feature}</li>)}</ul><button disabled={current || trialBase || plan.id === 'FREE'} onClick={() => onChoose(plan.id)} className="mt-5 rounded-2xl bg-stone-950 px-4 py-3 text-xs font-black text-white disabled:bg-stone-100 disabled:text-stone-400">{current ? 'Plano atual' : trialBase ? 'Assinatura em período gratuito' : plan.id === 'FREE' ? 'Plano gratuito' : `Assinar ${plan.name}`}</button></article>;
+}
+
+function ScopeCard({ icon, eyebrow, title, description, items }: { icon: React.ReactNode; eyebrow: string; title: string; description: string; items: string[] }) {
+  return <article className="rounded-[26px] bg-white p-6 ring-1 ring-stone-200"><div className="flex items-start gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#eef8f6] text-[#397c75]">{icon}</span><div><p className="text-[9px] font-black uppercase tracking-[.14em] text-stone-400">{eyebrow}</p><h2 className="mt-1 font-serif text-2xl font-black">{title}</h2></div></div><p className="mt-4 text-sm leading-6 text-stone-500">{description}</p><ul className="mt-5 space-y-2.5">{items.map((item) => <li key={item} className="flex gap-2 text-xs leading-5 text-stone-600"><BadgeCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#397c75]" />{item}</li>)}</ul></article>;
+}
+
+function MiniInfo({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <div className="rounded-2xl bg-white/[.06] p-3"><div className="flex items-center gap-2 text-white/45">{icon}<span className="text-[9px] font-black uppercase tracking-[.1em]">{label}</span></div><p className="mt-2 text-xs font-black text-white/85">{value}</p></div>; }
+function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) { return <label className="text-xs font-black text-stone-500">{label}<input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="mt-2 h-12 w-full rounded-2xl border border-stone-200 px-4 text-sm font-semibold outline-none focus:border-stone-400" /></label>; }
+function money(cents: number) { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(cents || 0) / 100); }
+function formatDate(value?: string | null) { if (!value) return '—'; const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleDateString('pt-BR') : '—'; }
+function formatDateLong(value?: string | null) { if (!value) return '—'; const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'; }
+function formatDateTime(value?: string | null) { if (!value) return '—'; const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'; }
+function periodLabel(billing?: Billing) { if (!billing?.periodStart && !billing?.periodEnd) return billing?.isTrial ? 'Período gratuito' : 'Sem período'; return `${formatDate(billing.periodStart)} → ${formatDate(billing.periodEnd)}`; }
