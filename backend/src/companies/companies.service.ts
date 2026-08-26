@@ -14,51 +14,22 @@ const COMPANY_MUTABLE_FIELDS = [
   'name',
   'category',
   'description',
-  'documentType',
-  'cnpj',
-  'cpf',
   'website',
   'address',
   'cityState',
   'city',
   'state',
   'phone',
-  'verificationStatus',
   'socialInstagram',
   'socialLinkedin',
   'socialFacebook',
   'logoURL',
-  'documentURL',
 ] as const;
 
+const COMPANY_CREATE_ONLY_FIELDS = ['documentType', 'cnpj', 'cpf'] as const;
+
 const VALID_UFS = new Set([
-  'AC',
-  'AL',
-  'AP',
-  'AM',
-  'BA',
-  'CE',
-  'DF',
-  'ES',
-  'GO',
-  'MA',
-  'MT',
-  'MS',
-  'MG',
-  'PA',
-  'PB',
-  'PR',
-  'PE',
-  'PI',
-  'RJ',
-  'RN',
-  'RS',
-  'RO',
-  'RR',
-  'SC',
-  'SP',
-  'SE',
-  'TO',
+  'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO',
 ]);
 
 @Injectable()
@@ -103,9 +74,7 @@ export class CompaniesService {
   }
 
   findActiveSlugAlias(slug: string) {
-    return this.slugAliases.findOne({
-      where: { slug, expiresAt: MoreThan(new Date()) },
-    });
+    return this.slugAliases.findOne({ where: { slug, expiresAt: MoreThan(new Date()) } });
   }
 
   async isSlugAvailable(slug: string, companyId?: string) {
@@ -117,8 +86,7 @@ export class CompaniesService {
       return {
         slug: slugify(slug || ''),
         available: false,
-        message:
-          error instanceof Error ? error.message : 'Endereço indisponível.',
+        message: error instanceof Error ? error.message : 'Endereço indisponível.',
       };
     }
   }
@@ -126,8 +94,13 @@ export class CompaniesService {
   async create(ownerId: string, data: Partial<Company>): Promise<Company> {
     const slug = await this.generateAvailableSlug(data.name || 'empresa');
     const location = this.normalizeLocation(data);
+    const createOnly: Partial<Company> = {};
+    for (const field of COMPANY_CREATE_ONLY_FIELDS) {
+      if (data[field] !== undefined) (createOnly as Record<string, unknown>)[field] = data[field];
+    }
     const company = this.companiesRepository.create({
       ...this.pickMutableFields(data),
+      ...createOnly,
       ...location,
       ownerId,
       slug,
@@ -136,24 +109,15 @@ export class CompaniesService {
     return this.companiesRepository.save(company);
   }
 
-  async update(
-    ownerId: string,
-    id: string,
-    data: Partial<Company>,
-    alreadyAuthorized = false,
-  ): Promise<Company> {
+  async update(ownerId: string, id: string, data: Partial<Company>, alreadyAuthorized = false): Promise<Company> {
     const company = await this.findOne(id);
     if (!company) throw new NotFoundException('Empresa não encontrada');
-    if (!alreadyAuthorized && company.ownerId !== ownerId)
-      throw new ForbiddenException('Você só pode editar a sua própria empresa');
+    if (!alreadyAuthorized && company.ownerId !== ownerId) throw new ForbiddenException('Você só pode editar a sua própria empresa');
 
     const updates = this.pickMutableFields(data);
-    if (
-      data.city !== undefined ||
-      data.state !== undefined ||
-      data.cityState !== undefined
-    )
+    if (data.city !== undefined || data.state !== undefined || data.cityState !== undefined) {
       Object.assign(updates, this.normalizeLocation(data, company));
+    }
     Object.assign(company, updates);
     return this.companiesRepository.save(company);
   }
@@ -161,17 +125,15 @@ export class CompaniesService {
   async requestSlugChange(userId: string, id: string, value: string) {
     const company = await this.findOne(id);
     if (!company) throw new NotFoundException('Empresa não encontrada.');
-    if (company.verificationStatus !== 'VERIFIED' || !company.isVerified)
-      throw new ForbiddenException(
-        'A URL personalizada está disponível somente para empresas verificadas.',
-      );
+    if (company.verificationStatus !== 'VERIFIED' || !company.isVerified) {
+      throw new ForbiddenException('A URL personalizada está disponível somente para empresas verificadas.');
+    }
     const slug = this.normalizeRequestedSlug(value);
     if (slug === company.slug || slug === company.pendingSlug) return company;
     await this.assertSlugAvailable(slug, company.id);
 
     if (!company.slugIsCustom) {
-      if (company.slug)
-        await this.activateAlias(company, company.slug, slug, userId);
+      if (company.slug) await this.activateAlias(company, company.slug, slug, userId);
       company.slug = slug;
       company.slugIsCustom = true;
       company.pendingSlug = null;
@@ -207,18 +169,14 @@ export class CompaniesService {
       },
       order: { createdAt: 'DESC' },
     });
-    if (!alias)
-      throw new BadRequestException(
-        'Não existe uma URL anterior disponível para restauração.',
-      );
+    if (!alias) throw new BadRequestException('Não existe uma URL anterior disponível para restauração.');
     company.slug = alias.slug;
     company.pendingSlug = null;
     company.slugIsCustom = true;
     company.slugChangeStatus = 'ROLLED_BACK';
     company.slugChangeReviewedAt = new Date();
     company.slugChangeReviewedById = userId;
-    company.slugChangeReviewNote =
-      'Retorno único para a URL anterior solicitado pela empresa.';
+    company.slugChangeReviewNote = 'Retorno único para a URL anterior solicitado pela empresa.';
     alias.rollbackAvailable = false;
     alias.rollbackUsed = true;
     alias.rolledBackAt = new Date();
@@ -239,30 +197,21 @@ export class CompaniesService {
       },
       order: { createdAt: 'DESC' },
     });
-    return alias
-      ? { previousSlug: alias.slug, expiresAt: alias.expiresAt }
-      : null;
+    return alias ? { previousSlug: alias.slug, expiresAt: alias.expiresAt } : null;
   }
 
-  async activateAlias(
-    company: Company,
-    oldSlug: string,
-    newSlug: string,
-    actorId: string,
-  ) {
+  async activateAlias(company: Company, oldSlug: string, newSlug: string, actorId: string) {
     let alias = await this.slugAliases.findOne({ where: { slug: oldSlug } });
-    alias =
-      alias ||
-      this.slugAliases.create({
-        companyId: company.id,
-        slug: oldSlug,
-        replacedBySlug: newSlug,
-        expiresAt: new Date(),
-        rollbackAvailable: true,
-        rollbackUsed: false,
-        rolledBackAt: null,
-        createdById: actorId,
-      });
+    alias = alias || this.slugAliases.create({
+      companyId: company.id,
+      slug: oldSlug,
+      replacedBySlug: newSlug,
+      expiresAt: new Date(),
+      rollbackAvailable: true,
+      rollbackUsed: false,
+      rolledBackAt: null,
+      createdById: actorId,
+    });
     alias.companyId = company.id;
     alias.replacedBySlug = newSlug;
     alias.expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
@@ -276,28 +225,16 @@ export class CompaniesService {
   private pickMutableFields(data: Partial<Company>): Partial<Company> {
     const sanitized: Partial<Company> = {};
     for (const field of COMPANY_MUTABLE_FIELDS) {
-      if (data[field] !== undefined)
-        (sanitized as Record<string, unknown>)[field] = data[field];
+      if (data[field] !== undefined) (sanitized as Record<string, unknown>)[field] = data[field];
     }
     return sanitized;
   }
 
-  private async assertSlugAvailable(
-    slug: string,
-    companyId?: string,
-  ): Promise<string> {
-    const existing = await this.companiesRepository.findOne({
-      where: [{ slug }, { pendingSlug: slug }],
-    });
-    if (existing && existing.id !== companyId)
-      throw new BadRequestException(
-        'Este endereço público já está em uso. Escolha outro.',
-      );
+  private async assertSlugAvailable(slug: string, companyId?: string): Promise<string> {
+    const existing = await this.companiesRepository.findOne({ where: [{ slug }, { pendingSlug: slug }] });
+    if (existing && existing.id !== companyId) throw new BadRequestException('Este endereço público já está em uso. Escolha outro.');
     const alias = await this.findActiveSlugAlias(slug);
-    if (alias && alias.companyId !== companyId)
-      throw new BadRequestException(
-        'Este endereço está reservado temporariamente por uma URL anterior.',
-      );
+    if (alias && alias.companyId !== companyId) throw new BadRequestException('Este endereço está reservado temporariamente por uma URL anterior.');
     return slug;
   }
 
@@ -305,28 +242,16 @@ export class CompaniesService {
     try {
       return validateCompanySlug(value);
     } catch (error) {
-      throw new BadRequestException(
-        error instanceof Error ? error.message : 'Endereço público inválido.',
-      );
+      throw new BadRequestException(error instanceof Error ? error.message : 'Endereço público inválido.');
     }
   }
 
   private normalizeLocation(data: Partial<Company>, current?: Company) {
     const raw = typeof data.cityState === 'string' ? data.cityState.trim() : '';
     const parts = raw.split(/\s*(?:,|-)\s*/);
-    const city =
-      (typeof data.city === 'string' ? data.city.trim() : '') ||
-      parts[0] ||
-      current?.city ||
-      '';
-    const state = (
-      (typeof data.state === 'string' ? data.state.trim() : '') ||
-      parts[1] ||
-      current?.state ||
-      ''
-    ).toUpperCase();
-    if (state && !VALID_UFS.has(state))
-      throw new BadRequestException('Selecione um estado brasileiro válido.');
+    const city = (typeof data.city === 'string' ? data.city.trim() : '') || parts[0] || current?.city || '';
+    const state = ((typeof data.state === 'string' ? data.state.trim() : '') || parts[1] || current?.state || '').toUpperCase();
+    if (state && !VALID_UFS.has(state)) throw new BadRequestException('Selecione um estado brasileiro válido.');
     return {
       city: city || null,
       state: state || null,
@@ -338,13 +263,8 @@ export class CompaniesService {
     const base = slugify(value) || 'empresa';
     for (let suffix = 1; suffix < 10_000; suffix += 1) {
       const candidate = suffix === 1 ? base : `${base}-${suffix}`;
-      if (
-        !(await this.companiesRepository.exists({ where: { slug: candidate } }))
-      )
-        return candidate;
+      if (!(await this.companiesRepository.exists({ where: { slug: candidate } }))) return candidate;
     }
-    throw new BadRequestException(
-      'Não foi possível criar um endereço público. Tente outro nome.',
-    );
+    throw new BadRequestException('Não foi possível criar um endereço público. Tente outro nome.');
   }
 }
