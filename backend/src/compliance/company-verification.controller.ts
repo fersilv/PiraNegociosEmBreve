@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -29,7 +30,6 @@ export class CompanyVerificationController {
     private readonly authorizations: CompanyVerificationAuthorizationService,
   ) {}
 
-  // Permite consultar o CNPJ antes de existir uma empresa local, para preencher o cadastro automaticamente.
   @Get('cnpj-preview/:cnpj')
   preview(@Param('cnpj') cnpj: string) {
     return this.cnpj.lookup(cnpj);
@@ -41,6 +41,37 @@ export class CompanyVerificationController {
     const snapshot = await this.cnpj.lookup(cnpj);
     const applied = await this.cnpj.applyToCompany(companyId, snapshot);
     return { snapshot, changes: applied.changes };
+  }
+
+  @Patch('commercial-profile')
+  async commercialProfile(@Req() req: any, @Body() body: Record<string, unknown>) {
+    const companyId = await this.companyId(req.user.uid);
+    const memberships = await this.dataSource.query(
+      `SELECT role,permissions FROM company_memberships WHERE "companyId"=$1 AND "userId"=$2 AND status='ACTIVE' LIMIT 1`,
+      [companyId, req.user.uid],
+    ).catch(() => []);
+    const membership = memberships[0];
+    if (!membership || (membership.role !== 'PRIMARY_ADMIN' && membership.permissions?.companyProfile !== true)) {
+      throw new BadRequestException('Seu perfil não tem permissão para editar os dados comerciais da empresa.');
+    }
+    const companies = await this.dataSource.query(
+      `SELECT "legalAddress","legalCity","legalState" FROM companies WHERE id=$1 LIMIT 1`,
+      [companyId],
+    );
+    const company = companies[0];
+    const same = body.commercialAddressSameAsLegal !== false;
+    const name = String(body.name || '').trim().slice(0, 240);
+    if (!name) throw new BadRequestException('Informe o nome comercial da empresa.');
+    const address = same ? String(company?.legalAddress || '') : String(body.address || '').trim().slice(0, 500);
+    const city = same ? String(company?.legalCity || '') : String(body.city || '').trim().slice(0, 120);
+    const state = (same ? String(company?.legalState || '') : String(body.state || '')).trim().toUpperCase().slice(0, 2);
+    if (!address || !city || state.length !== 2) throw new BadRequestException('Informe o endereço comercial completo.');
+    const rows = await this.dataSource.query(
+      `UPDATE companies SET name=$2,"commercialAddressSameAsLegal"=$3,address=$4,city=$5,state=$6,"cityState"=concat_ws('/',NULLIF($5,''),NULLIF($6,'')),"updatedAt"=now()
+       WHERE id=$1 RETURNING id,name,address,city,state,"commercialAddressSameAsLegal"`,
+      [companyId, name, same, address, city, state],
+    );
+    return rows[0];
   }
 
   @Post('responsible-authorization')
