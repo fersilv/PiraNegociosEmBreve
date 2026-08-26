@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CheckCircle2,
   Clock3,
@@ -31,6 +32,7 @@ export type PaymentCheckoutModalProps = {
   title: string;
   description?: string;
   amountCents?: number | null;
+  productCode?: string | null;
   confirmLabel?: string;
   creatingLabel?: string;
   createCheckout: () => Promise<any>;
@@ -44,6 +46,7 @@ export function PaymentCheckoutModal({
   title,
   description,
   amountCents,
+  productCode,
   confirmLabel = 'Pagar com Pix',
   creatingLabel = 'Criando cobrança...',
   createCheckout,
@@ -53,6 +56,7 @@ export function PaymentCheckoutModal({
   const [creating, setCreating] = useState(false);
   const [checkout, setCheckout] = useState<any>(null);
   const [error, setError] = useState('');
+  const [pollError, setPollError] = useState('');
   const [copied, setCopied] = useState(false);
   const completedOnce = useRef(false);
 
@@ -61,9 +65,24 @@ export function PaymentCheckoutModal({
     setCreating(false);
     setCheckout(null);
     setError('');
+    setPollError('');
     setCopied(false);
     completedOnce.current = false;
   }, [open]);
+
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [onClose, open]);
 
   const completed = checkout?.completed === true || checkout?.status === 'PAID';
   const failed = ['CANCELED', 'EXPIRED', 'REFUNDED'].includes(String(checkout?.status || '').toUpperCase());
@@ -90,6 +109,7 @@ export function PaymentCheckoutModal({
     if (!open || !checkout?.id || completed || failed) return;
     let active = true;
     let busy = false;
+    let failures = 0;
 
     const refresh = async () => {
       if (busy) return;
@@ -97,6 +117,8 @@ export function PaymentCheckoutModal({
       try {
         const response = await api.get(`/payments/${checkout.id}/status`);
         if (!active) return;
+        failures = 0;
+        setPollError('');
         const next = response.data || {};
         setCheckout((current: any) => ({ ...current, ...next }));
         if (next.completed === true || next.status === 'PAID') {
@@ -105,8 +127,15 @@ export function PaymentCheckoutModal({
             await onCompleted?.(next);
           }
         }
-      } catch {
-        // O webhook e a próxima consulta continuam sendo a fonte de verdade.
+      } catch (requestError: any) {
+        failures += 1;
+        if (active && failures >= 3) {
+          const message = requestError?.response?.data?.message;
+          setPollError(
+            (Array.isArray(message) ? message.join(' · ') : message)
+            || 'Não conseguimos atualizar o Pix agora. A cobrança continua a mesma e vamos tentar novamente automaticamente.',
+          );
+        }
       } finally {
         busy = false;
       }
@@ -126,15 +155,42 @@ export function PaymentCheckoutModal({
     void onCompleted?.(checkout);
   }, [checkout, completed, onCompleted]);
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
+
+  const recoverCheckout = async (raw: any) => {
+    if (raw?.id || !productCode) return raw;
+    try {
+      const historyResponse = await api.get('/payments/me');
+      const rows = Array.isArray(historyResponse.data) ? historyResponse.data : [];
+      const candidate = rows.find((item: any) => (
+        String(item?.productCode || '') === String(productCode)
+        && ['PENDING', 'PAID'].includes(String(item?.status || '').toUpperCase())
+      ));
+      if (!candidate?.id) return raw;
+      return {
+        ...candidate,
+        ...raw,
+        id: candidate.id,
+        provider: raw?.provider || candidate.provider || null,
+        providerPaymentId: raw?.providerPaymentId || candidate.providerPaymentId || null,
+        pixCopyPaste: raw?.pixCopyPaste || candidate.pixCopyPaste || null,
+        qrCodeBase64: raw?.qrCodeBase64 || candidate.qrCodeBase64 || null,
+        metadata: { ...(candidate.metadata || {}), ...(raw?.metadata || {}) },
+      };
+    } catch {
+      return raw;
+    }
+  };
 
   const begin = async () => {
     if (creating) return;
     setCreating(true);
     setError('');
+    setPollError('');
     try {
       const result = await createCheckout();
-      const data = result?.data ?? result ?? {};
+      const raw = result?.data ?? result ?? {};
+      const data = await recoverCheckout(raw);
       if (data?.paymentRequired === false) {
         const done = { ...data, completed: true, status: data.status || 'PAID' };
         setCheckout(done);
@@ -144,10 +200,12 @@ export function PaymentCheckoutModal({
         }
         return;
       }
-      setCheckout(data);
       if (!data?.id && !data?.checkoutReady && !data?.metadata?.subscriptionCheckoutUrl) {
-        setError('O provedor criou a tentativa, mas não retornou um identificador que permita acompanhar a cobrança.');
+        setCheckout(null);
+        setError('A cobrança foi iniciada, mas não conseguimos recuperar o identificador para acompanhá-la. Nenhuma nova cobrança foi criada. Feche e atualize a página para consultar seu histórico antes de tentar novamente.');
+        return;
       }
+      setCheckout(data);
     } catch (requestError: any) {
       const raw = requestError?.response?.data?.message;
       setError(Array.isArray(raw) ? raw.join(' · ') : raw || requestError?.message || 'Não foi possível iniciar o pagamento agora.');
@@ -167,9 +225,9 @@ export function PaymentCheckoutModal({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-stone-950/55 p-0 backdrop-blur-sm sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-t-[30px] bg-[#fffdfa] shadow-2xl sm:rounded-[30px]">
+  const modal = (
+    <div className="fixed inset-0 z-[99999] flex h-[100dvh] w-screen items-stretch justify-center bg-stone-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-5" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="h-[100dvh] w-full max-w-2xl overflow-y-auto bg-[#fffdfa] shadow-2xl sm:h-auto sm:max-h-[calc(100dvh-2.5rem)] sm:rounded-[30px]">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-stone-200 bg-[#fffdfa]/95 px-5 py-4 backdrop-blur sm:px-6">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[.16em] text-emerald-700">Pagamento seguro</p>
@@ -250,6 +308,7 @@ export function PaymentCheckoutModal({
                 {recurring ? 'Aguardando autorização' : 'Aguardando confirmação do pagamento'}
               </div>
 
+              {pollError && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold leading-5 text-amber-800">{pollError}</div>}
               {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold leading-5 text-red-700">{error}</div>}
 
               <div className="mt-4 flex items-center justify-center gap-2 border-t border-stone-200 pt-4 text-[10px] font-semibold text-stone-500"><ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />Pagamento processado por <span className="font-black text-stone-700">{providerName(checkout.provider)}</span></div>
@@ -259,6 +318,8 @@ export function PaymentCheckoutModal({
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }
 
 export default PaymentCheckoutModal;
