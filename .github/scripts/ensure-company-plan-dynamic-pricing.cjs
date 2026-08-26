@@ -8,7 +8,10 @@ const file = 'backend/src/company-plans/company-plans.service.ts';
 let source = fs.readFileSync(file, 'utf8');
 const original = source;
 
-if (!source.includes('const planProducts = new Map<CompanyPlan, any>')) {
+const productsMarker = 'const planProducts = new Map<CompanyPlan, any>';
+const pricingMarker = "effectivePriceCents: plan.id === 'FREE' ? 0 : Number(product?.effectivePriceCents";
+
+if (!source.includes(productsMarker)) {
   const loadAnchor = `    const [current, trialRecord] = await Promise.all([\n      this.getCompanyPlan(company.id),\n      this.trialForCompany(company.id),\n    ]);\n    const trialUsed = Boolean(trialRecord);`;
   if (!source.includes(loadAnchor)) throw new Error('Company plan dynamic pricing load anchor not found.');
   source = source.replace(
@@ -17,7 +20,7 @@ if (!source.includes('const planProducts = new Map<CompanyPlan, any>')) {
   );
 }
 
-if (!source.includes('effectivePriceCents: product?.effectivePriceCents')) {
+if (!source.includes(pricingMarker)) {
   const plansAnchor = `      plans: COMPANY_PLAN_CATALOG.map((plan) => ({\n        ...plan,\n        current: !current.isTrial && current.basePlan === plan.id,\n        available: RANK[plan.id] >= RANK[current.basePlan] || plan.id === current.basePlan,\n        includesEliteTrial: plan.id !== 'FREE' && trialEligibleOnSubscription,\n        eliteTrialDays: plan.id !== 'FREE' && trialEligibleOnSubscription ? ELITE_TRIAL_DAYS : 0,\n      })),`;
   if (!source.includes(plansAnchor)) throw new Error('Company plan dynamic pricing catalog anchor not found.');
   source = source.replace(
@@ -26,8 +29,8 @@ if (!source.includes('effectivePriceCents: product?.effectivePriceCents')) {
   );
 }
 
-if (!source.includes('const planProducts = new Map<CompanyPlan, any>')) throw new Error('Company plan products were not loaded dynamically.');
-if (!source.includes('effectivePriceCents: product?.effectivePriceCents')) throw new Error('Company plan dynamic pricing was not applied.');
+if (!source.includes(productsMarker)) throw new Error('Company plan products were not loaded dynamically.');
+if (!source.includes(pricingMarker)) throw new Error('Company plan dynamic pricing was not applied.');
 
 if (source !== original) {
   fs.writeFileSync(file, source);
