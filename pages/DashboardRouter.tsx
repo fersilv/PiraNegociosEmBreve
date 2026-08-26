@@ -41,6 +41,8 @@ import { CandidateJobViewPage } from "./CandidateJobViewPage";
 import { ResumeWorkspace } from "./ResumeWorkspace";
 import { AdminProductFeedbackPage } from "./AdminProductFeedbackPage";
 import { AdminWhatsAppPage } from "./AdminWhatsAppPage";
+import IdentityVerificationPage from "./IdentityVerificationPage";
+import AdminIdentityVerificationsPage from "./AdminIdentityVerificationsPage";
 
 function AdminPage({ children }: { children: React.ReactNode }) {
   return <div className="admin-page-shell">{children}</div>;
@@ -52,6 +54,7 @@ function AdminRoutes() {
       <Route path="onboarding" element={<Onboarding />} />
       <Route index element={<AdminPage><AdminOverview /></AdminPage>} />
       <Route path="empresas" element={<AdminPage><AdminDashboard mode="moderation" section="companies" /></AdminPage>} />
+      <Route path="validacao-cadastral" element={<AdminPage><AdminIdentityVerificationsPage /></AdminPage>} />
       <Route path="vagas" element={<AdminPage><AdminDashboard mode="moderation" section="jobs" /></AdminPage>} />
       <Route path="vagas/sinalizadas" element={<AdminPage><AdminFlaggedJobsPage /></AdminPage>} />
       <Route path="vagas/:jobId" element={<AdminPage><AdminJobDetailsPage /></AdminPage>} />
@@ -82,6 +85,7 @@ function UserRoutes() {
       <Route path="vagas" element={<UserJobsPage />} />
       <Route path="classificados" element={<Navigate to="/classificados/painel" replace />} />
       <Route path="classificados/novo" element={<Navigate to="/classificados/publicar" replace />} />
+      <Route path="verificacao" element={<IdentityVerificationPage />} />
       <Route path="curriculo" element={<ResumeWorkspace />} />
       <Route path="curriculo/evolucao" element={<ResumeEvolutionPage />} />
       <Route path="pagamentos" element={<UserPaymentsPage />} />
@@ -127,9 +131,9 @@ function VerifiedCompanyPageRoute({ companyId }: { companyId: string }) {
       <div className="mx-auto max-w-3xl rounded-3xl border border-amber-200 bg-amber-50 p-7 text-amber-950 shadow-sm">
         <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">Minha Página</p>
         <h1 className="mt-2 font-serif text-3xl font-black">Disponível após a verificação da empresa</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-amber-900/80">Apenas empresas verificadas podem criar e publicar uma página própria no PiraNegócios. Conclua ou acompanhe a verificação no Perfil da empresa.</p>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-amber-900/80">Apenas empresas verificadas podem criar e publicar uma página própria no PiraNegócios. A validação é feita por consulta do CNPJ, responsável e selfie, sem documentação empresarial obrigatória.</p>
         {failed && <p className="mt-3 text-xs font-semibold text-amber-800">Não foi possível confirmar o status da empresa agora.</p>}
-        <Link to="/company/perfil" className="mt-5 inline-flex rounded-2xl bg-stone-900 px-4 py-3 text-xs font-black text-white">Ir para o Perfil da empresa</Link>
+        <Link to="/company/verificacao" className="mt-5 inline-flex rounded-2xl bg-stone-900 px-4 py-3 text-xs font-black text-white">Ir para Verificação</Link>
       </div>
     );
   }
@@ -150,6 +154,7 @@ function CompanyRoutes({ companyId }: { companyId?: string }) {
       <Route path="contratacao" element={companyOnly(<CompanyHiringConfig />)} />
       <Route path="pagina" element={companyOnly(companyId ? <VerifiedCompanyPageRoute companyId={companyId} /> : null)} />
       <Route path="notificacoes" element={companyOnly(<NotificationPreferencesPage />)} />
+      <Route path="verificacao" element={companyOnly(<IdentityVerificationPage />)} />
       <Route path="perfil" element={<CompanyProfilePage />} />
       <Route path="*" element={<Navigate to={hasCompany ? "/company" : "/company/perfil"} replace />} />
     </Routes>
