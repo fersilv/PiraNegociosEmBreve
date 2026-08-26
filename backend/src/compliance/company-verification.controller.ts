@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -28,6 +29,12 @@ export class CompanyVerificationController {
     private readonly authorizations: CompanyVerificationAuthorizationService,
   ) {}
 
+  // Permite consultar o CNPJ antes de existir uma empresa local, para preencher o cadastro automaticamente.
+  @Get('cnpj-preview/:cnpj')
+  preview(@Param('cnpj') cnpj: string) {
+    return this.cnpj.lookup(cnpj);
+  }
+
   @Get('cnpj/:cnpj')
   async lookup(@Req() req: any, @Param('cnpj') cnpj: string) {
     const companyId = await this.companyId(req.user.uid);
@@ -54,7 +61,7 @@ export class CompanyVerificationController {
   private async companyId(uid: string) {
     const users = await this.dataSource.query(`SELECT "companyId" FROM users WHERE id=$1 LIMIT 1`, [uid]);
     const companyId = users[0]?.companyId;
-    if (!companyId) throw new Error('Conta sem empresa vinculada.');
+    if (!companyId) throw new BadRequestException('Conta sem empresa vinculada.');
     return companyId as string;
   }
 }
