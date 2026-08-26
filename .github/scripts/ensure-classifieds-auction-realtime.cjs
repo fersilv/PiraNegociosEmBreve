@@ -56,12 +56,24 @@ replace(
 );
 
 replace(
+  "      return updated[0];\n    });\n  }\n\n  async assertOffersAllowed(listingId: string) {",
+  "      return updated[0];\n    });\n    if (canceled?.id) this.auctionGateway.publishAuctionChanged(auctionId, 'CANCELED');\n    return canceled;\n  }\n\n  async assertOffersAllowed(listingId: string) {",
+  'cancel broadcast tail',
+);
+
+replace(
+  "    return this.dataSource.transaction(async (manager) => {\n      const rows = await manager.query(\n        `SELECT * FROM classified_auctions WHERE id = $1 FOR UPDATE`,",
+  "    const canceled = await this.dataSource.transaction(async (manager) => {\n      const rows = await manager.query(\n        `SELECT * FROM classified_auctions WHERE id = $1 FOR UPDATE`,",
+  'cancel transaction binding',
+);
+
+replace(
   "    if (closed) {\n      await this.notifyClosed(closed).catch(() => undefined);\n      return true;\n    }",
   "    if (closed) {\n      await this.notifyClosed(closed).catch(() => undefined);\n      this.auctionGateway.publishAuctionChanged(auctionId, 'ENDED');\n      return true;\n    }",
   'close broadcast',
 );
 
-if (!source.includes('softCloseExtended: result.extended') || !source.includes("publishAuctionChanged(auctionId, result.extended ? 'EXTENDED' : 'BID')") || !source.includes('5_000')) {
+if (!source.includes('softCloseExtended: result.extended') || !source.includes("publishAuctionChanged(auctionId, result.extended ? 'EXTENDED' : 'BID')") || !source.includes("publishAuctionChanged(auctionId, 'CANCELED')") || !source.includes('5_000')) {
   throw new Error('Auction realtime/soft-close patch was not applied.');
 }
 
