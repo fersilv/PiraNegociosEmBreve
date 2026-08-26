@@ -26,11 +26,9 @@ const PublicResumeBuilderPage = lazy(() => import("./pages/PublicResumeBuilderPa
 const TalentInvitePage = lazy(() => import("./pages/TalentInvitePage"));
 const HelpCenterPage = lazy(() => import("./pages/HelpCenterPage"));
 const ClassifiedsEntryPage = lazy(() => import("./pages/ClassifiedsEntryPage"));
-const ClassifiedsSearchPage = lazy(() => import("./pages/ClassifiedsSearchPage"));
-const ClassifiedListingPage = lazy(() => import("./pages/ClassifiedListingPage"));
 const ClassifiedsTermsPage = lazy(() => import("./pages/ClassifiedsTermsPage"));
 const ClassifiedsWorkspacePage = lazy(() => import("./pages/ClassifiedsWorkspacePage"));
-const ClassifiedsAuctionsLivePage = lazy(() => import("./pages/ClassifiedsAuctionsLivePageV2"));
+const ClassifiedsPublicRouteGate = lazy(() => import("./pages/ClassifiedsPublicRouteGate"));
 const CompanyLegalPage = lazy(() => import("./pages/CompanyLegalPage").then((module) => ({ default: module.CompanyLegalPage })));
 const ResumeQualificationWidget = lazy(() => import("./components/ResumeQualificationWidget").then((module) => ({ default: module.ResumeQualificationWidget })));
 
@@ -71,14 +69,17 @@ export default function App() {
 
               <Route path="/classificados" element={<ClassifiedsEntryPage />} />
               <Route path="/classificados/termos" element={<ClassifiedsTermsPage />} />
-              <Route path="/classificados/busca" element={<ClassifiedsSearchPage />} />
-              <Route path="/classificados/categoria/:categorySlug" element={<ClassifiedsSearchPage />} />
-              <Route path="/classificados/anuncio/:slug" element={<ClassifiedListingPage />} />
-              <Route path="/classificados/leiloes" element={<ClassifiedsAuctionsLivePage />} />
-              <Route path="/classificados/leiloes/:auctionId" element={<ClassifiedsAuctionsLivePage />} />
+              <Route path="/classificados/busca" element={<ClassifiedsPublicRouteGate mode="SEARCH" />} />
+              <Route path="/classificados/categoria/:categorySlug" element={<ClassifiedsPublicRouteGate mode="SEARCH" />} />
+              <Route path="/classificados/anuncio/:slug" element={<ClassifiedsPublicRouteGate mode="LISTING" />} />
+              <Route path="/classificados/leiloes" element={<ClassifiedsPublicRouteGate mode="AUCTIONS" />} />
+              <Route path="/classificados/leiloes/:auctionId" element={<ClassifiedsPublicRouteGate mode="AUCTIONS" />} />
               <Route path="/classificados/painel" element={<Navigate to="/classificados/explorar" replace />} />
               <Route path="/classificados/explorar" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/explorar/:listingSlug" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/gestao/leiloes" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/gestao/leiloes/:auctionId" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/gestao/leiloes/:auctionId/ao-vivo" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/anuncios" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/servicos" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/ofertas" element={<ClassifiedsWorkspacePage />} />
