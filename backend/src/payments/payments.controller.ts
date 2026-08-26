@@ -18,6 +18,7 @@ import { BillingSupportService, type TimedFeature } from './billing-support.serv
 import { ProductDurationService } from './product-duration.service';
 import { EfiPixService } from './efi-pix.service';
 import { MercadoPagoService } from './mercado-pago.service';
+import { MercadoPagoTestLabService } from './mercado-pago-test-lab.service';
 import {
   PaymentProviderManagerService,
   type PaymentCheckoutPayer,
@@ -161,6 +162,7 @@ export class AdminPaymentsController {
     private readonly billingSupport: BillingSupportService,
     private readonly productDuration: ProductDurationService,
     private readonly providers: PaymentProviderManagerService,
+    private readonly mercadoPagoTests: MercadoPagoTestLabService,
   ) {}
 
   @Get('dev-mode')
@@ -172,6 +174,55 @@ export class AdminPaymentsController {
   setDevMode(@Body() body: { enabled?: boolean }) {
     if (typeof body?.enabled !== 'boolean') throw new BadRequestException('enabled deve ser true ou false.');
     return this.payments.setDevMode(body.enabled);
+  }
+
+  @Get('mercado-pago-tests')
+  mercadoPagoTestOverview() {
+    return this.mercadoPagoTests.overview();
+  }
+
+  @Patch('mercado-pago-tests/:profile')
+  saveMercadoPagoTestProfile(
+    @Req() req: any,
+    @Param('profile') profile: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.mercadoPagoTests.saveProfile(profile, body || {}, req.user.uid);
+  }
+
+  @Post('mercado-pago-tests/:profile/credentials')
+  testMercadoPagoCredentials(@Req() req: any, @Param('profile') profile: string) {
+    return this.mercadoPagoTests.testCredentials(profile, req.user.uid);
+  }
+
+  @Post('mercado-pago-tests/orders/create')
+  createMercadoPagoTestOrder(@Req() req: any) {
+    return this.mercadoPagoTests.createOrder(req.user.uid);
+  }
+
+  @Get('mercado-pago-tests/orders/:orderId')
+  getMercadoPagoTestOrder(@Req() req: any, @Param('orderId') orderId: string) {
+    return this.mercadoPagoTests.getOrder(orderId, req.user.uid);
+  }
+
+  @Post('mercado-pago-tests/subscriptions/create')
+  createMercadoPagoTestSubscription(@Req() req: any) {
+    return this.mercadoPagoTests.createSubscription(req.user.uid);
+  }
+
+  @Get('mercado-pago-tests/subscriptions/:preapprovalId')
+  getMercadoPagoTestSubscription(@Req() req: any, @Param('preapprovalId') preapprovalId: string) {
+    return this.mercadoPagoTests.getSubscription(preapprovalId, req.user.uid);
+  }
+
+  @Post('mercado-pago-tests/marketplace/create')
+  createMercadoPagoTestSplit(@Req() req: any) {
+    return this.mercadoPagoTests.createMarketplaceSplit(req.user.uid);
+  }
+
+  @Get('mercado-pago-tests/marketplace/:paymentId')
+  getMercadoPagoTestSplit(@Req() req: any, @Param('paymentId') paymentId: string) {
+    return this.mercadoPagoTests.getMarketplacePayment(paymentId, req.user.uid);
   }
 
   @Get('providers')
