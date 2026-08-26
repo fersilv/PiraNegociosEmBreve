@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BadgeCheck, Banknote, CalendarDays, CheckCircle2, CreditCard, Loader2, PackageCheck, PlugZap, RefreshCcw, ShoppingCart, TrendingUp, WalletCards } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ClassifiedMarketplaceTermsModal } from '../components/classifieds/ClassifiedMarketplaceTermsModal';
 import { useClassifiedsWorkspace } from '../contexts/ClassifiedsWorkspaceContext';
 import { api } from '../lib/api';
 import type { ClassifiedCommerceStatus, ClassifiedSalesDashboard } from '../types/classifieds';
@@ -41,6 +42,8 @@ export default function ClassifiedsSalesPage() {
   const [working, setWorking] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [sellerTermsOpen, setSellerTermsOpen] = useState(false);
+  const [sellerTermsWorking, setSellerTermsWorking] = useState(false);
 
   const load = async () => {
     if (!business) return;
@@ -86,8 +89,7 @@ export default function ClassifiedsSalesPage() {
   const mercadoPago = status?.paymentConnections?.find((item) => item.provider === 'MERCADO_PAGO');
   const connected = mercadoPago?.status === 'CONNECTED';
 
-  const connectMercadoPago = async () => {
-    if (working) return;
+  const startMercadoPagoOAuth = async () => {
     setWorking('connect'); setError(''); setNotice('');
     try {
       const response = await api.post('/classifieds/me/payments/mercado-pago/oauth/start');
@@ -98,6 +100,34 @@ export default function ClassifiedsSalesPage() {
       setError(requestError?.response?.data?.message || requestError?.message || 'Não foi possível iniciar a conexão com o Mercado Pago.');
       setWorking('');
     }
+  };
+
+  const connectMercadoPago = async () => {
+    if (working) return;
+    setError(''); setNotice('');
+    try {
+      const termsResponse = await api.get('/classifieds/me/marketplace-terms');
+      if (termsResponse.data?.sellerAccepted !== true) {
+        setSellerTermsOpen(true);
+        return;
+      }
+      await startMercadoPagoOAuth();
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.message || 'Não foi possível verificar os termos de recebimento online.');
+    }
+  };
+
+  const acceptSellerTerms = async () => {
+    if (sellerTermsWorking || working) return;
+    setSellerTermsWorking(true); setError('');
+    try {
+      await api.post('/classifieds/me/marketplace-terms/accept', { scope: 'ONLINE_PAYMENT_SELLER', surface: 'MERCADO_PAGO_CONNECT' });
+      setSellerTermsOpen(false);
+      setNotice('Termos de vendas e pagamentos online aceitos. Abrindo a autorização do Mercado Pago...');
+      await startMercadoPagoOAuth();
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.message || 'Não foi possível registrar o aceite dos termos.');
+    } finally { setSellerTermsWorking(false); }
   };
 
   const disconnectMercadoPago = async () => {
@@ -175,6 +205,15 @@ export default function ClassifiedsSalesPage() {
       </section>
 
       <div className="rounded-[24px] border border-[#b9d7d2] bg-[#eef8f6] p-5 text-sm leading-6 text-[#275f59]"><strong>Venda direta continua disponível.</strong> A empresa não é obrigada a conectar pagamento ou usar split. Ofertas, chat e negociação direta continuam funcionando sem taxa de venda online. Ao ativar checkout, a gestão de pedidos passa a ser liberada sem mensalidade adicional e a comissão é cobrada somente nas vendas online conforme a regra vigente.</div>
+
+      <ClassifiedMarketplaceTermsModal
+        open={sellerTermsOpen}
+        mode="SELLER"
+        working={sellerTermsWorking}
+        accepted={false}
+        onClose={() => !sellerTermsWorking && setSellerTermsOpen(false)}
+        onAccept={() => void acceptSellerTerms()}
+      />
     </div>
   );
 }
