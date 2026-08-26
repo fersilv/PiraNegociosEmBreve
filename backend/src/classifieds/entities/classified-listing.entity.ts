@@ -47,6 +47,35 @@ export type ClassifiedCatalogConfig = {
   pricingStrategy?: ClassifiedCatalogPricingStrategy;
 };
 
+export type ClassifiedCommerceConfig = {
+  promotion?: {
+    price: number;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    endAction?: 'REVERT' | 'PAUSE';
+  } | null;
+  paymentPricing?: {
+    pix?: {
+      enabled?: boolean;
+      discountType?: 'PERCENT' | 'FIXED';
+      discountValue?: number;
+    } | null;
+    card?: {
+      enabled?: boolean;
+      price?: number | null;
+      maxInstallments?: number;
+      interestFreeInstallments?: number;
+    } | null;
+  } | null;
+  onlineCheckout?: {
+    enabled?: boolean;
+    fulfillmentModes?: Array<'PICKUP' | 'DELIVERY'>;
+    stockQuantity?: number | null;
+    lowStockThreshold?: number | null;
+    orderWhatsappE164?: string | null;
+  } | null;
+};
+
 @Entity('classified_listings')
 export class ClassifiedListing {
   @PrimaryGeneratedColumn('uuid')
@@ -128,6 +157,9 @@ export class ClassifiedListing {
 
   @Column({ type: 'jsonb', nullable: true })
   catalogConfig: ClassifiedCatalogConfig | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  commerceConfig: ClassifiedCommerceConfig | null;
 
   @Column({ type: 'varchar', length: 40, nullable: true })
   contactPhone: string | null;
