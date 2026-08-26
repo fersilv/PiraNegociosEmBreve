@@ -11,6 +11,11 @@ export class ClassifiedsAuctionExtrasController {
     private readonly paymentPolicy: ClassifiedsAuctionPaymentPolicyService,
   ) {}
 
+  @Get('payment-defaults')
+  paymentDefaults(@Req() req: any) {
+    return this.paymentPolicy.defaults(req.user.uid);
+  }
+
   @Get(':auctionId/reminder')
   reminderStatus(@Req() req: any, @Param('auctionId') auctionId: string) {
     return this.engagement.reminderStatus(req.user.uid, auctionId);
