@@ -25,12 +25,12 @@ const MobileUploadPage = lazy(() => import("./pages/MobileUploadPage"));
 const PublicResumeBuilderPage = lazy(() => import("./pages/PublicResumeBuilderPage"));
 const TalentInvitePage = lazy(() => import("./pages/TalentInvitePage"));
 const HelpCenterPage = lazy(() => import("./pages/HelpCenterPage"));
-const ClassifiedsHomePage = lazy(() => import("./pages/ClassifiedsHomePage"));
+const ClassifiedsEntryPage = lazy(() => import("./pages/ClassifiedsEntryPage"));
 const ClassifiedsSearchPage = lazy(() => import("./pages/ClassifiedsSearchPage"));
 const ClassifiedListingPage = lazy(() => import("./pages/ClassifiedListingPage"));
 const ClassifiedsTermsPage = lazy(() => import("./pages/ClassifiedsTermsPage"));
 const ClassifiedsWorkspacePage = lazy(() => import("./pages/ClassifiedsWorkspacePage"));
-const ClassifiedsAuctionsLivePage = lazy(() => import("./pages/ClassifiedsAuctionsLivePage"));
+const ClassifiedsAuctionsLivePage = lazy(() => import("./pages/ClassifiedsAuctionsLivePageV2"));
 const CompanyLegalPage = lazy(() => import("./pages/CompanyLegalPage").then((module) => ({ default: module.CompanyLegalPage })));
 const ResumeQualificationWidget = lazy(() => import("./components/ResumeQualificationWidget").then((module) => ({ default: module.ResumeQualificationWidget })));
 
@@ -69,14 +69,14 @@ export default function App() {
               <Route path="/vagas-em/:citySlug" element={<CityJobsPage />} />
               <Route path="/vagas/:slug" element={<PublicJobPage />} />
 
-              <Route path="/classificados" element={<ClassifiedsHomePage />} />
+              <Route path="/classificados" element={<ClassifiedsEntryPage />} />
               <Route path="/classificados/termos" element={<ClassifiedsTermsPage />} />
               <Route path="/classificados/busca" element={<ClassifiedsSearchPage />} />
               <Route path="/classificados/categoria/:categorySlug" element={<ClassifiedsSearchPage />} />
               <Route path="/classificados/anuncio/:slug" element={<ClassifiedListingPage />} />
               <Route path="/classificados/leiloes" element={<ClassifiedsAuctionsLivePage />} />
               <Route path="/classificados/leiloes/:auctionId" element={<ClassifiedsAuctionsLivePage />} />
-              <Route path="/classificados/painel" element={<Navigate to="/classificados" replace />} />
+              <Route path="/classificados/painel" element={<Navigate to="/classificados/explorar" replace />} />
               <Route path="/classificados/explorar" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/explorar/:listingSlug" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/anuncios" element={<ClassifiedsWorkspacePage />} />
