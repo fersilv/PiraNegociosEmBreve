@@ -51,7 +51,9 @@ export function ResumeScorePaymentBridge() {
 
     setOpen(false);
     window.dispatchEvent(new Event('piranegocios:payment-completed'));
-    await new Promise((resolve) => window.setTimeout(resolve, 250));
+    // Os hooks da tela também atualizam pelo evento acima. Damos tempo para o
+    // React receber o novo crédito antes de devolver o clique ao fluxo original.
+    await new Promise((resolve) => window.setTimeout(resolve, 700));
     const button = scoreButton();
     if (button) {
       bypassNextClick.current = true;
