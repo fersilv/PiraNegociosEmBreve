@@ -38,6 +38,18 @@ replace(
 );
 
 replace(
+  "        `SELECT a.*, l.title FROM classified_auctions a\n         JOIN classified_listings l ON l.id = a.\"listingId\"",
+  "        `SELECT a.*, l.title, (a.\"endsAt\" > now()) AS \"clockOpen\" FROM classified_auctions a\n         JOIN classified_listings l ON l.id = a.\"listingId\"",
+  'database clock in bid lock',
+);
+
+replace(
+  "      if (new Date(auction.endsAt).getTime() <= Date.now()) {\n        throw new BadRequestException('O prazo deste leilão terminou.');\n      }",
+  "      if (!auction.clockOpen) {\n        throw new BadRequestException('O prazo deste leilão terminou.');\n      }",
+  'database clock bid validation',
+);
+
+replace(
   "      const bidRows = await manager.query(\n        `INSERT INTO classified_auction_bids (\"auctionId\",\"bidderUserId\",\"bidderCompanyId\",amount)\n         VALUES ($1,$2,$3,$4) RETURNING *`,\n        [auctionId, uid, bidderCompanyId, amount],\n      );\n      return { auction, bid: bidRows[0], previous };",
   "      const bidRows = await manager.query(\n        `INSERT INTO classified_auction_bids (\"auctionId\",\"bidderUserId\",\"bidderCompanyId\",amount)\n         VALUES ($1,$2,$3,$4) RETURNING *`,\n        [auctionId, uid, bidderCompanyId, amount],\n      );\n\n      const extensionRows = await manager.query(\n        `UPDATE classified_auctions\n         SET \"endsAt\" = now() + interval '${SOFT_CLOSE_SECONDS} seconds', \"updatedAt\" = now()\n         WHERE id = $1\n           AND status = 'OPEN'\n           AND \"endsAt\" <= now() + interval '${SOFT_CLOSE_SECONDS} seconds'\n         RETURNING \"endsAt\"`,\n        [auctionId],\n      );\n      return { auction, bid: bidRows[0], previous, extended: Boolean(extensionRows[0]), extendedEndsAt: extensionRows[0]?.endsAt || null };",
   'atomic soft close',
@@ -68,12 +80,18 @@ replace(
 );
 
 replace(
+  "      const rows = await manager.query(`SELECT * FROM classified_auctions WHERE id = $1 FOR UPDATE`, [auctionId]);\n      const auction = rows[0];\n      if (!auction || auction.status !== 'OPEN' || new Date(auction.endsAt).getTime() > Date.now()) return;",
+  "      const rows = await manager.query(`SELECT *, (\"endsAt\" <= now()) AS \"clockDue\" FROM classified_auctions WHERE id = $1 FOR UPDATE`, [auctionId]);\n      const auction = rows[0];\n      if (!auction || auction.status !== 'OPEN' || !auction.clockDue) return;",
+  'database clock close validation',
+);
+
+replace(
   "    if (closed) {\n      await this.notifyClosed(closed).catch(() => undefined);\n      return true;\n    }",
   "    if (closed) {\n      await this.notifyClosed(closed).catch(() => undefined);\n      this.auctionGateway.publishAuctionChanged(auctionId, 'ENDED');\n      return true;\n    }",
   'close broadcast',
 );
 
-if (!source.includes('softCloseExtended: result.extended') || !source.includes("publishAuctionChanged(auctionId, result.extended ? 'EXTENDED' : 'BID')") || !source.includes("publishAuctionChanged(auctionId, 'CANCELED')") || !source.includes('5_000')) {
+if (!source.includes('softCloseExtended: result.extended') || !source.includes("publishAuctionChanged(auctionId, result.extended ? 'EXTENDED' : 'BID')") || !source.includes("publishAuctionChanged(auctionId, 'CANCELED')") || !source.includes('clockOpen') || !source.includes('clockDue') || !source.includes('5_000')) {
   throw new Error('Auction realtime/soft-close patch was not applied.');
 }
 
