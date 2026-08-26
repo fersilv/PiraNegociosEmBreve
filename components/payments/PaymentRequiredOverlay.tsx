@@ -28,6 +28,7 @@ export function PaymentRequiredOverlay() {
       title={product?.name || 'Continuar com este recurso'}
       description={requirement?.message || product?.description || 'Conclua o pagamento e a ação que você tentou será retomada automaticamente.'}
       amountCents={amountCents}
+      productCode={requirement?.productCode || product?.code || null}
       confirmLabel="Gerar Pix e continuar"
       createCheckout={() => api.post('/payments/pix', { productCode: requirement?.productCode })}
       onCompleted={async () => {
