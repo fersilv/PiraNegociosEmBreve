@@ -6,7 +6,7 @@ import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { Notification } from './entities/notification.entity';
 import { User, UserType } from '../users/entities/user.entity';
 
-const ALLOWED_NOTIFICATION_PREFERENCES = new Set([
+const BOOLEAN_NOTIFICATION_PREFERENCES = new Set([
   'pushEnabled',
   'newJobs',
   'applicationUpdates',
@@ -19,8 +19,15 @@ const ALLOWED_NOTIFICATION_PREFERENCES = new Set([
   'moderation',
   'api',
   'companies',
+  'contactWindowEnabled',
 ]);
-
+const CHANNEL_PREFERENCES = new Set([
+  'classifiedSalesChannels',
+  'classifiedOffersChannels',
+  'classifiedMessagesChannels',
+  'auctionChannels',
+]);
+const ALLOWED_CHANNELS = new Set(['PUSH', 'EMAIL', 'WHATSAPP']);
 const ADMIN_AUDIENCES = new Set(['all', 'candidates', 'companies', 'admins', 'user']);
 const ADMIN_CATEGORIES = new Set(['announcement', 'system', 'maintenance', 'important']);
 
@@ -47,9 +54,20 @@ export class NotificationsController {
   async updatePreferences(@Req() req: any, @Body() body: Record<string, unknown>) {
     const user = await this.usersRepository.findOne({ where: { id: req.user.uid } });
     if (!user) throw new BadRequestException('Usuário não encontrado.');
-    const next: Record<string, boolean> = { ...(user.notificationPreferences || {}) };
+    const next: Record<string, unknown> = { ...(user.notificationPreferences || {}) };
     for (const [key, value] of Object.entries(body || {})) {
-      if (ALLOWED_NOTIFICATION_PREFERENCES.has(key) && typeof value === 'boolean') next[key] = value;
+      if (BOOLEAN_NOTIFICATION_PREFERENCES.has(key) && typeof value === 'boolean') next[key] = value;
+      if (CHANNEL_PREFERENCES.has(key) && Array.isArray(value)) {
+        next[key] = [...new Set(value.map((item) => String(item).toUpperCase()).filter((item) => ALLOWED_CHANNELS.has(item)))];
+      }
+    }
+    if (body.contactStart !== undefined) next.contactStart = this.time(body.contactStart, 'Horário inicial inválido.');
+    if (body.contactEnd !== undefined) next.contactEnd = this.time(body.contactEnd, 'Horário final inválido.');
+    if (body.contactTimezone !== undefined) {
+      const timezone = String(body.contactTimezone || '').trim();
+      try { new Intl.DateTimeFormat('pt-BR', { timeZone: timezone }).format(new Date()); }
+      catch { throw new BadRequestException('Fuso horário inválido.'); }
+      next.contactTimezone = timezone.slice(0, 80);
     }
     user.notificationPreferences = next;
     await this.usersRepository.save(user);
@@ -156,5 +174,11 @@ export class NotificationsController {
   @Delete(':id')
   remove(@Req() req: any, @Param('id') id: string) {
     return this.notifsService.remove(req.user.uid, id);
+  }
+
+  private time(value: unknown, message: string) {
+    const text = String(value || '').trim();
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(text)) throw new BadRequestException(message);
+    return text;
   }
 }
