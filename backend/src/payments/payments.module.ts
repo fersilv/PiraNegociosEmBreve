@@ -9,12 +9,14 @@ import {
   MercadoPagoPaymentsWebhookController,
 } from './payments.controller';
 import { PaymentProviderPublicController } from './payment-provider-public.controller';
+import { PaymentCheckoutStatusController } from './payment-checkout-status.controller';
 import { PaymentsService } from './payments.service';
 import { BillingSupportService } from './billing-support.service';
 import { ProductDurationService } from './product-duration.service';
 import { EfiPixService } from './efi-pix.service';
 import { MercadoPagoService } from './mercado-pago.service';
 import { MercadoPagoTestLabService } from './mercado-pago-test-lab.service';
+import { PaymentCheckoutStatusService } from './payment-checkout-status.service';
 import { PaymentProviderVaultService } from './payment-provider-vault.service';
 import { PaymentProviderConfigService } from './payment-provider-config.service';
 import { PaymentProviderManagerService } from './payment-provider-manager.service';
@@ -24,6 +26,7 @@ import { PaymentProviderManagerService } from './payment-provider-manager.servic
   controllers: [
     PaymentsController,
     PaymentProviderPublicController,
+    PaymentCheckoutStatusController,
     EfiPaymentsWebhookController,
     MercadoPagoPaymentsWebhookController,
     AdminPaymentsController,
@@ -37,6 +40,7 @@ import { PaymentProviderManagerService } from './payment-provider-manager.servic
     EfiPixService,
     MercadoPagoService,
     MercadoPagoTestLabService,
+    PaymentCheckoutStatusService,
     PaymentProviderManagerService,
     AdminGuard,
   ],
@@ -50,6 +54,7 @@ import { PaymentProviderManagerService } from './payment-provider-manager.servic
     EfiPixService,
     MercadoPagoService,
     MercadoPagoTestLabService,
+    PaymentCheckoutStatusService,
   ],
 })
 export class PaymentsModule {}
