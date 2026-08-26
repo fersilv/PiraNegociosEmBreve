@@ -18,7 +18,7 @@
     "migrate:classifieds": "npm --prefix backend run migrate:classifieds",
     "migrate:app": "npm run migrate:payments && npm run migrate:company-plans && npm run migrate:classifieds",
     "build:db-ready": "npm run migrate:app && npm run build:all",
-    "release:prod": "npm run build:all && npm run migrate:app",
+    "release:prod": "npm run build:db-ready",
     "typecheck": "tsc --noEmit",
     "start": "node dist/server.cjs"
   },
