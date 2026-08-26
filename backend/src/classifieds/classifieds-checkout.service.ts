@@ -14,6 +14,7 @@ import {
   PaymentProviderConfigService,
 } from '../payments/payment-provider-config.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
 import { ClassifiedsMarketplacePaymentsService } from './classifieds-marketplace-payments.service';
 import {
   CLASSIFIEDS_PAYMENT_TERMS_VERSION,
@@ -33,6 +34,7 @@ export class ClassifiedsCheckoutService implements OnModuleInit, OnModuleDestroy
     private readonly marketplacePayments: ClassifiedsMarketplacePaymentsService,
     private readonly providerConfig: PaymentProviderConfigService,
     private readonly sales: ClassifiedsSalesService,
+    private readonly entitlements: ClassifiedsEntitlementsService,
     private readonly terms: ClassifiedsMarketplaceTermsService,
     private readonly notifications: NotificationsService,
   ) {}
@@ -52,16 +54,18 @@ export class ClassifiedsCheckoutService implements OnModuleInit, OnModuleDestroy
   async config(uid: string, listingId: string) {
     const listing = await this.checkoutListing(listingId);
     this.assertNotSeller(uid, listing);
-    const credentials = await this.marketplacePayments.sellerMercadoPagoCredentials(listing.companyId);
-    if (!credentials.publicKey) {
-      throw new ServiceUnavailableException('A conexão Mercado Pago da empresa não retornou Public Key. Reconecte a conta em Vendas.');
+    // O Brick usa a Public Key da conta integradora. O token OAuth do seller fica no servidor.
+    await this.marketplacePayments.sellerMercadoPagoCredentials(listing.companyId);
+    const platform = await this.platformMercadoPagoConfig();
+    if (!platform.publicKey) {
+      throw new ServiceUnavailableException('A Public Key da aplicação Mercado Pago do PiraNegócios não está configurada em Admin → Pagamentos → Formas de pagamento.');
     }
     const pricing = this.sales.effectivePricing(listing.price, listing.commerceConfig);
     const terms = await this.terms.status(uid);
     const stockQuantity = this.stockQuantity(listing.commerceConfig);
     const fulfillmentModes = this.fulfillmentModes(listing);
     const buyer = await this.dataSource.query(
-      `SELECT email,"displayName","fullName","socialName" FROM users WHERE id=$1 LIMIT 1`,
+      `SELECT email,"displayName","fullName","socialName",address,city,state FROM users WHERE id=$1 LIMIT 1`,
       [uid],
     );
     return {
@@ -73,7 +77,7 @@ export class ClassifiedsCheckoutService implements OnModuleInit, OnModuleDestroy
         companyName: listing.companyName,
       },
       provider: 'MERCADO_PAGO',
-      publicKey: credentials.publicKey,
+      publicKey: platform.publicKey,
       pricing,
       paymentMethods: ['PIX', 'CARD'] as CheckoutMethod[],
       fulfillmentModes,
@@ -82,6 +86,9 @@ export class ClassifiedsCheckoutService implements OnModuleInit, OnModuleDestroy
       buyer: {
         email: buyer[0]?.email || '',
         name: buyer[0]?.socialName || buyer[0]?.displayName || buyer[0]?.fullName || '',
+        deliveryAddress: buyer[0]?.address || '',
+        city: buyer[0]?.city || '',
+        state: buyer[0]?.state || '',
       },
       terms: {
         version: CLASSIFIEDS_PAYMENT_TERMS_VERSION,
@@ -157,6 +164,10 @@ export class ClassifiedsCheckoutService implements OnModuleInit, OnModuleDestroy
       this.assertNotSeller(uid, listing);
 
       const fulfillmentMode = this.fulfillmentMode(body.fulfillmentMode, this.fulfillmentModes(listing));
+      const fulfillmentData = this.fulfillmentData(body.fulfillmentData);
+      if (fulfillmentMode === 'DELIVERY' && !fulfillmentData.address) {
+        throw new BadRequestException('Informe o endereço de entrega antes de pagar.');
+      }
       const pricing = this.sales.effectivePricing(listing.price, listing.commerceConfig);
       const unitPrice = method === 'PIX' ? pricing.pixPrice : pricing.cardPrice;
       if (unitPrice == null || !Number.isFinite(Number(unitPrice)) || Number(unitPrice) <= 0) {
@@ -174,7 +185,7 @@ export class ClassifiedsCheckoutService implements OnModuleInit, OnModuleDestroy
         listing.commerceConfig = nextConfig;
       }
 
-      const plan = await this.sales['entitlements'].companyPlan(listing.companyId);
+      const plan = await this.entitlements.companyPlan(listing.companyId);
       const feeRule = await this.sales.resolveFeeRule(listing.companyId, plan);
       if (!feeRule) throw new BadRequestException('A comissão de vendas online ainda não foi configurada para esta empresa.');
       const unitPriceCents = this.toCents(unitPrice);
@@ -204,7 +215,7 @@ export class ClassifiedsCheckoutService implements OnModuleInit, OnModuleDestroy
           sellerNetCents,
           method,
           fulfillmentMode,
-          JSON.stringify(this.fulfillmentData(body.fulfillmentData)),
+          JSON.stringify(fulfillmentData),
           idempotencyKey,
           CLASSIFIEDS_PAYMENT_TERMS_VERSION,
           stock != null,
@@ -221,7 +232,8 @@ export class ClassifiedsCheckoutService implements OnModuleInit, OnModuleDestroy
     });
 
     const credentials = await this.marketplacePayments.sellerMercadoPagoCredentials(prepared.order.companyId);
-    const providerRequest = this.paymentPayload(prepared.order, prepared.listing, buyer, method, body);
+    const platform = await this.platformMercadoPagoConfig();
+    const providerRequest = this.paymentPayload(prepared.order, prepared.listing, buyer, method, body, platform.publicApiBaseUrl);
     const providerResult = await this.callMercadoPagoPayment(credentials.accessToken, idempotencyKey, providerRequest)
       .catch(async (error) => {
         await this.dataSource.query(
@@ -407,10 +419,10 @@ export class ClassifiedsCheckoutService implements OnModuleInit, OnModuleDestroy
     return Math.round(number * 100);
   }
 
-  private paymentPayload(order: any, listing: any, buyer: any, method: CheckoutMethod, input: Record<string, any>) {
+  private paymentPayload(order: any, listing: any, buyer: any, method: CheckoutMethod, input: Record<string, any>, configuredApiBase?: string) {
     const amount = Number(order.totalCents) / 100;
     const fee = Number(order.platformFeeCents) / 100;
-    const publicApiBase = String(process.env.PUBLIC_API_ORIGIN || process.env.PUBLIC_API_URL || 'https://piranegocios.com.br/api').replace(/\/$/, '');
+    const publicApiBase = String(configuredApiBase || process.env.PUBLIC_API_ORIGIN || process.env.PUBLIC_API_URL || 'https://piranegocios.com.br/api').replace(/\/$/, '');
     const common: Record<string, any> = {
       transaction_amount: amount,
       application_fee: fee,
@@ -639,8 +651,12 @@ export class ClassifiedsCheckoutService implements OnModuleInit, OnModuleDestroy
     };
   }
 
+  private async platformMercadoPagoConfig() {
+    return this.providerConfig.getSecretConfig<MercadoPagoProviderConfig>('MERCADO_PAGO');
+  }
+
   private async verifyWebhook(headers: Record<string, any>, paymentId: string) {
-    const config = await this.providerConfig.getSecretConfig<MercadoPagoProviderConfig>('MERCADO_PAGO');
+    const config = await this.platformMercadoPagoConfig();
     const secret = String(config.webhookSecret || '').trim();
     if (!secret) throw new ServiceUnavailableException('Assinatura secreta do webhook Mercado Pago não configurada.');
     const signature = String(headers['x-signature'] || headers['X-Signature'] || '').trim();
