@@ -8,6 +8,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { User } from '../users/entities/user.entity';
 import { ClassifiedsAiReviewService } from './classifieds-ai-review.service';
+import { ClassifiedsAuctionGateway } from './classifieds-auction.gateway';
 import { ClassifiedsAuctionPublicController } from './classifieds-auction-public.controller';
 import { ClassifiedsAuctionPublicService } from './classifieds-auction-public.service';
 import { ClassifiedsAuctionService } from './classifieds-auction.service';
@@ -65,6 +66,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsAiReviewService,
     ClassifiedsCommerceService,
     ClassifiedsEntitlementsService,
+    ClassifiedsAuctionGateway,
     ClassifiedsAuctionService,
     ClassifiedsAuctionPublicService,
     ClassifiedsSalesService,
