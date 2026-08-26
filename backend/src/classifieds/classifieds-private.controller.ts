@@ -129,6 +129,7 @@ export class ClassifiedsPrivateController {
 
   @Post('me/listings/:id/publish')
   async publish(@Req() req: any, @Param('id') id: string) {
+    await this.identities.assertPublishingReady(req.user.uid);
     const listing = await this.classifieds.publish(req.user.uid, id);
     const moderation = await this.commerce.moderatePublishedListing(req.user.uid, id);
     if ((moderation as any)?.status === 'PAUSED') {
