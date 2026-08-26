@@ -32,6 +32,12 @@ replace(
 );
 
 replace(
+  "    this.timer = setInterval(() => void this.closeDue().catch(() => undefined), 60_000);",
+  "    this.timer = setInterval(() => void this.closeDue().catch(() => undefined), 5_000);",
+  'realtime close timer',
+);
+
+replace(
   "      const bidRows = await manager.query(\n        `INSERT INTO classified_auction_bids (\"auctionId\",\"bidderUserId\",\"bidderCompanyId\",amount)\n         VALUES ($1,$2,$3,$4) RETURNING *`,\n        [auctionId, uid, bidderCompanyId, amount],\n      );\n      return { auction, bid: bidRows[0], previous };",
   "      const bidRows = await manager.query(\n        `INSERT INTO classified_auction_bids (\"auctionId\",\"bidderUserId\",\"bidderCompanyId\",amount)\n         VALUES ($1,$2,$3,$4) RETURNING *`,\n        [auctionId, uid, bidderCompanyId, amount],\n      );\n\n      const extensionRows = await manager.query(\n        `UPDATE classified_auctions\n         SET \"endsAt\" = now() + interval '${SOFT_CLOSE_SECONDS} seconds', \"updatedAt\" = now()\n         WHERE id = $1\n           AND status = 'OPEN'\n           AND \"endsAt\" <= now() + interval '${SOFT_CLOSE_SECONDS} seconds'\n         RETURNING \"endsAt\"`,\n        [auctionId],\n      );\n      return { auction, bid: bidRows[0], previous, extended: Boolean(extensionRows[0]), extendedEndsAt: extensionRows[0]?.endsAt || null };",
   'atomic soft close',
@@ -55,7 +61,7 @@ replace(
   'close broadcast',
 );
 
-if (!source.includes('softCloseExtended: result.extended') || !source.includes("publishAuctionChanged(auctionId, result.extended ? 'EXTENDED' : 'BID')")) {
+if (!source.includes('softCloseExtended: result.extended') || !source.includes("publishAuctionChanged(auctionId, result.extended ? 'EXTENDED' : 'BID')") || !source.includes('5_000')) {
   throw new Error('Auction realtime/soft-close patch was not applied.');
 }
 
