@@ -87,18 +87,12 @@ export class ClassifiedsAuctionGateway implements OnGatewayConnection, OnGateway
     return { ok: true };
   }
 
-  @SubscribeMessage('auction:refresh')
-  refreshAuction(
-    @ConnectedSocket() _client: Socket,
-    @MessageBody() body: { auctionId?: unknown },
-  ) {
-    const auctionId = this.auctionId(body?.auctionId);
-    if (!auctionId) return { ok: false, message: 'Leilão inválido.' };
-
-    const payload = { auctionId, at: new Date().toISOString() };
-    this.server.to(`auction:${auctionId}`).emit('auction:update', payload);
+  publishAuctionChanged(auctionId: string, reason: 'BID' | 'EXTENDED' | 'ENDED' | 'CANCELED' | 'CREATED') {
+    const id = this.auctionId(auctionId);
+    if (!id || !this.server) return;
+    const payload = { auctionId: id, reason, at: new Date().toISOString() };
+    this.server.to(`auction:${id}`).emit('auction:update', payload);
     this.server.to('auction:lobby').emit('auction:update', payload);
-    return { ok: true };
   }
 
   private async emitPresence(room: string) {
