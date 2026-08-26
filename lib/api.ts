@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { getAuth } from 'firebase/auth';
+import { requestInlinePayment } from './paymentRequiredCoordinator';
 
 // Never ship a localhost fallback: in production it would target the visitor's own machine.
 // The production default is the same-origin reverse-proxy path, so a build cannot
@@ -39,3 +40,34 @@ api.interceptors.request.use(async (config) => {
 }, (error) => {
   return Promise.reject(error);
 });
+
+// Recursos pagos não devem expulsar o usuário para uma tela financeira genérica.
+// Quando o backend responde PAYMENT_REQUIRED, a requisição fica pausada enquanto
+// o workspace abre o checkout contextual. Após a confirmação, repetimos a mesma
+// operação uma única vez, já com o crédito/benefício liberado.
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const payload = error?.response?.data;
+    const config = error?.config as any;
+    if (
+      payload?.code === 'PAYMENT_REQUIRED'
+      && config
+      && config.__piraInlinePaymentRetried !== true
+      && !String(config.url || '').includes('/payments/pix')
+    ) {
+      try {
+        await requestInlinePayment({
+          productCode: String(payload.productCode || payload.product?.code || ''),
+          product: payload.product || null,
+          message: payload.message || undefined,
+        });
+        config.__piraInlinePaymentRetried = true;
+        return api.request(config);
+      } catch {
+        return Promise.reject(error);
+      }
+    }
+    return Promise.reject(error);
+  },
+);
