@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BadgeDollarSign, Check, Clock3, Loader2, RotateCcw, X } from 'lucide-react';
+import { BadgeDollarSign, Check, Clock3, Loader2, MessageCircle, RotateCcw, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { ClassifiedOffer } from '../types/classifieds';
 
-type Tab = 'received' | 'sent';
+type Tab = 'negotiating' | 'received' | 'sent' | 'history';
+type OfferWithConversation = ClassifiedOffer & { conversationId?: string | null };
 
 export default function ClassifiedsOffersPage() {
-  const [offers, setOffers] = useState<ClassifiedOffer[]>([]);
-  const [tab, setTab] = useState<Tab>('received');
+  const [offers, setOffers] = useState<OfferWithConversation[]>([]);
+  const [tab, setTab] = useState<Tab>('negotiating');
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -19,17 +20,21 @@ export default function ClassifiedsOffersPage() {
       const response = await api.get('/classifieds/me/offers');
       setOffers(Array.isArray(response.data) ? response.data : []);
     } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || 'Não foi possível carregar as ofertas.');
+      setError(requestError?.response?.data?.message || 'Não foi possível carregar as negociações.');
     } finally { setLoading(false); }
   };
 
   useEffect(() => { void load(); }, []);
 
-  const received = useMemo(() => offers.filter((offer) => offer.role === 'SELLER'), [offers]);
-  const sent = useMemo(() => offers.filter((offer) => offer.role === 'BUYER'), [offers]);
-  const visible = tab === 'received' ? received : sent;
+  const groups = useMemo(() => ({
+    negotiating: offers.filter((offer) => offer.role === 'BUYER' && ['PENDING','ACCEPTED'].includes(offer.status)),
+    received: offers.filter((offer) => offer.role === 'SELLER' && offer.status === 'PENDING'),
+    sent: offers.filter((offer) => offer.role === 'BUYER'),
+    history: offers.filter((offer) => offer.status !== 'PENDING'),
+  }), [offers]);
+  const visible = groups[tab];
 
-  const respond = async (offer: ClassifiedOffer, decision: 'ACCEPTED' | 'REJECTED') => {
+  const respond = async (offer: OfferWithConversation, decision: 'ACCEPTED' | 'REJECTED') => {
     if (workingId) return;
     setWorkingId(offer.id); setError('');
     try {
@@ -40,7 +45,7 @@ export default function ClassifiedsOffersPage() {
     } finally { setWorkingId(null); }
   };
 
-  const withdraw = async (offer: ClassifiedOffer) => {
+  const withdraw = async (offer: OfferWithConversation) => {
     if (workingId) return;
     setWorkingId(offer.id); setError('');
     try {
@@ -54,17 +59,19 @@ export default function ClassifiedsOffersPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <header>
-        <p className="text-[10px] font-black uppercase tracking-[.18em] text-[#b06448]">Negociação sem precisar abrir conversa</p>
-        <h1 className="mt-1 font-serif text-3xl font-black">Ofertas</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Cada oferta fica disponível por 48 horas. Sem resposta, ela expira automaticamente. Uma oferta aceita fixa o preço combinado, mas pagamento e entrega continuam diretos nesta versão.</p>
+        <p className="text-[10px] font-black uppercase tracking-[.18em] text-[#b06448]">Ofertas + chat + histórico</p>
+        <h1 className="mt-1 font-serif text-3xl font-black">Negociações</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Toda oferta agora cria ou reutiliza uma conversa. Valor, aceite, recusa e retirada entram no histórico do chat e continuam disponíveis aqui para acompanhamento.</p>
       </header>
 
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900"><strong>Pagamento protegido ainda não está ativo.</strong> Aceitar uma oferta não movimenta dinheiro pelo PiraNegócios; comprador e anunciante combinam pagamento e entrega diretamente.</div>
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900"><strong>Pagamento protegido ainda não está ativo.</strong> Uma oferta aceita registra o preço combinado e abre a negociação; pagamento e entrega continuam diretos nesta versão.</div>
       {error && <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
 
-      <div className="flex gap-2 border-b border-stone-200">
-        <TabButton active={tab === 'received'} onClick={() => setTab('received')} label={`Recebidas (${received.length})`} />
-        <TabButton active={tab === 'sent'} onClick={() => setTab('sent')} label={`Enviadas (${sent.length})`} />
+      <div className="flex flex-wrap gap-2 border-b border-stone-200 pb-3">
+        <TabButton active={tab === 'negotiating'} onClick={() => setTab('negotiating')} label={`Em negociação (${groups.negotiating.length})`} />
+        <TabButton active={tab === 'received'} onClick={() => setTab('received')} label={`Recebidas (${groups.received.length})`} />
+        <TabButton active={tab === 'sent'} onClick={() => setTab('sent')} label={`Minhas ofertas (${groups.sent.length})`} />
+        <TabButton active={tab === 'history'} onClick={() => setTab('history')} label={`Histórico (${groups.history.length})`} />
       </div>
 
       {loading ? <div className="flex min-h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-stone-400" /></div> : visible.length ? <div className="grid gap-4 lg:grid-cols-2">{visible.map((offer) => <OfferCard key={offer.id} offer={offer} working={workingId === offer.id} respond={respond} withdraw={withdraw} />)}</div> : <Empty tab={tab} />}
@@ -72,7 +79,7 @@ export default function ClassifiedsOffersPage() {
   );
 }
 
-function OfferCard({ offer, working, respond, withdraw }: { offer: ClassifiedOffer; working: boolean; respond: (offer: ClassifiedOffer, decision: 'ACCEPTED' | 'REJECTED') => void; withdraw: (offer: ClassifiedOffer) => void }) {
+function OfferCard({ offer, working, respond, withdraw }: { offer: OfferWithConversation; working: boolean; respond: (offer: OfferWithConversation, decision: 'ACCEPTED' | 'REJECTED') => void; withdraw: (offer: OfferWithConversation) => void }) {
   const remaining = offer.status === 'PENDING' ? remainingText(offer.expiresAt) : '';
   const counterpart = offer.role === 'SELLER' ? offer.buyerName || 'Interessado' : offer.sellerName || 'Anunciante';
   return (
@@ -88,25 +95,15 @@ function OfferCard({ offer, working, respond, withdraw }: { offer: ClassifiedOff
           {remaining && <p className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-amber-700"><Clock3 className="h-3.5 w-3.5" /> {remaining}</p>}
         </div>
       </div>
-      {offer.status === 'ACCEPTED' && <div className="border-t border-emerald-100 bg-emerald-50/70 p-3 text-xs leading-5 text-emerald-900"><strong>Preço acordado.</strong> Agora comprador e anunciante combinam pagamento, retirada ou entrega diretamente. <Link to={`/classificados/explorar/${encodeURIComponent(offer.slug)}`} className="font-black underline">Abrir anúncio</Link></div>}
+      {offer.conversationId && <div className="border-t border-stone-100 px-3 py-2"><Link to={`/classificados/conversas/${offer.conversationId}`} className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black text-[#7f4938] hover:bg-[#fff1eb]"><MessageCircle className="h-4 w-4" /> Abrir histórico no chat</Link></div>}
+      {offer.status === 'ACCEPTED' && <div className="border-t border-emerald-100 bg-emerald-50/70 p-3 text-xs leading-5 text-emerald-900"><strong>Preço acordado.</strong> Esta negociação permanece no histórico e no chat até vocês concluírem pagamento, retirada ou entrega.</div>}
       {offer.status === 'PENDING' && <div className="border-t border-stone-100 bg-stone-50/70 p-3">{offer.role === 'SELLER' ? <div className="grid grid-cols-2 gap-2"><button disabled={working} onClick={() => respond(offer, 'REJECTED')} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white text-xs font-black text-stone-600 ring-1 ring-stone-200 disabled:opacity-50"><X className="h-4 w-4" /> Recusar</button><button disabled={working} onClick={() => respond(offer, 'ACCEPTED')} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 text-xs font-black text-white disabled:opacity-50">{working ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Aceitar</button></div> : <button disabled={working} onClick={() => withdraw(offer)} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-white text-xs font-black text-stone-600 ring-1 ring-stone-200 disabled:opacity-50">{working ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Retirar oferta</button>}</div>}
     </article>
   );
 }
 
-function Status({ status }: { status: ClassifiedOffer['status'] }) {
-  const map: Record<ClassifiedOffer['status'], [string, string]> = {
-    PENDING: ['Pendente', 'bg-amber-50 text-amber-700'],
-    ACCEPTED: ['Aceita', 'bg-emerald-50 text-emerald-700'],
-    REJECTED: ['Recusada', 'bg-red-50 text-red-700'],
-    EXPIRED: ['Expirada', 'bg-stone-100 text-stone-500'],
-    WITHDRAWN: ['Retirada', 'bg-stone-100 text-stone-500'],
-  };
-  const [label, style] = map[status];
-  return <span className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-[.12em] ${style}`}>{label}</span>;
-}
-
-function TabButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) { return <button onClick={onClick} className={`border-b-2 px-3 py-3 text-xs font-black ${active ? 'border-[#c96847] text-[#a84f34]' : 'border-transparent text-stone-400'}`}>{label}</button>; }
-function Empty({ tab }: { tab: Tab }) { return <div className="rounded-[26px] border border-dashed border-stone-300 bg-white px-6 py-14 text-center"><BadgeDollarSign className="mx-auto h-9 w-9 text-stone-300" /><h2 className="mt-4 font-serif text-2xl font-black">{tab === 'received' ? 'Nenhuma oferta recebida' : 'Você ainda não fez ofertas'}</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-stone-500">{tab === 'received' ? 'Quando alguém oferecer um valor por um dos seus produtos, aparece aqui.' : 'Produtos com preço podem receber uma oferta direta, sem precisar começar uma conversa.'}</p>{tab === 'sent' && <Link to="/classificados/explorar" className="mt-5 inline-flex rounded-2xl bg-stone-900 px-5 py-3 text-sm font-black text-white">Explorar produtos</Link>}</div>; }
+function Status({ status }: { status: ClassifiedOffer['status'] }) { const map: Record<ClassifiedOffer['status'], [string, string]> = { PENDING: ['Pendente', 'bg-amber-50 text-amber-700'], ACCEPTED: ['Aceita', 'bg-emerald-50 text-emerald-700'], REJECTED: ['Recusada', 'bg-red-50 text-red-700'], EXPIRED: ['Expirada', 'bg-stone-100 text-stone-500'], WITHDRAWN: ['Retirada', 'bg-stone-100 text-stone-500'] }; const [label, style] = map[status]; return <span className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-[.12em] ${style}`}>{label}</span>; }
+function TabButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) { return <button onClick={onClick} className={`rounded-full px-3 py-2 text-xs font-black ${active ? 'bg-[#3a222b] text-white' : 'bg-stone-100 text-stone-500'}`}>{label}</button>; }
+function Empty({ tab }: { tab: Tab }) { const copy = tab === 'negotiating' ? ['Nenhuma negociação ativa','As ofertas que você fez e ainda estão pendentes ou aceitas aparecem aqui.'] : tab === 'received' ? ['Nenhuma oferta aguardando você','Novas ofertas recebidas aparecem aqui e também no chat.'] : tab === 'sent' ? ['Você ainda não fez ofertas','Explore os produtos e faça uma proposta quando o anúncio aceitar negociação.'] : ['Histórico vazio','Ofertas concluídas, recusadas, expiradas ou retiradas ficam guardadas aqui.']; return <div className="rounded-[26px] border border-dashed border-stone-300 bg-white px-6 py-14 text-center"><BadgeDollarSign className="mx-auto h-9 w-9 text-stone-300" /><h2 className="mt-4 font-serif text-2xl font-black">{copy[0]}</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-stone-500">{copy[1]}</p>{tab === 'sent' && <Link to="/classificados/explorar" className="mt-5 inline-flex rounded-2xl bg-stone-900 px-5 py-3 text-sm font-black text-white">Explorar produtos</Link>}</div>; }
 function currency(value: unknown) { const n = Number(value); return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number.isFinite(n) ? n : 0); }
 function remainingText(expiresAt: string) { const ms = new Date(expiresAt).getTime() - Date.now(); if (ms <= 0) return 'Expirando agora'; const hours = Math.ceil(ms / 3_600_000); return hours > 24 ? `${Math.ceil(hours / 24)} dias restantes` : `${hours}h restantes`; }
