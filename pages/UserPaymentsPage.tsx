@@ -1,62 +1,94 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, BellRing, CalendarClock, CheckCircle2, Clock3, Copy, Crown, ExternalLink, Eye, EyeOff, ReceiptText, ShieldCheck, Sparkles, Zap } from "lucide-react";
-import { Link } from "react-router-dom";
-import { api } from "../lib/api";
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ArrowLeft,
+  BellRing,
+  CalendarClock,
+  CheckCircle2,
+  Clock3,
+  Crown,
+  Eye,
+  EyeOff,
+  ReceiptText,
+  Sparkles,
+  WalletCards,
+  Zap,
+} from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { api } from '../lib/api';
+import { PaymentCheckoutModal } from '../components/payments/PaymentCheckoutModal';
 
-function money(cents: number) {
-  return (Number(cents || 0) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+function money(cents?: number | null) {
+  return (Number(cents || 0) / 100).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  });
 }
 
 function dateLabel(value?: string | null) {
-  if (!value) return "";
+  if (!value) return '';
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
 function providerLabel(code?: string | null) {
-  if (code === "EFI") return "Efí Bank";
-  if (code === "MERCADO_PAGO") return "Mercado Pago";
-  return "provedor de pagamento";
+  if (code === 'EFI') return 'Efí Bank';
+  if (code === 'MERCADO_PAGO') return 'Mercado Pago';
+  return code || 'PiraNegócios';
 }
 
 const statusLabel: Record<string, string> = {
-  PENDING: "Aguardando Pix",
-  PAID: "Pago",
-  EXPIRED: "Expirado",
-  CANCELED: "Cancelado",
-  REFUNDED: "Estornado",
+  PENDING: 'Aguardando pagamento',
+  PAID: 'Pago',
+  EXPIRED: 'Expirado',
+  CANCELED: 'Cancelado',
+  REFUNDED: 'Estornado',
 };
+
+const purchasableCodes = [
+  'RESUME_REANALYSIS',
+  'RESUME_AI_IMPROVEMENT',
+  'RESUME_AI_IMPORT',
+  'JOB_MATCH_30D',
+  'RESUME_BOOST_7D',
+  'RESUME_BOOST_15D',
+  'PREMIUM_MONTHLY',
+];
 
 export function UserPaymentsPage() {
   const [payments, setPayments] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [credits, setCredits] = useState<Record<string, number>>({});
-  const [billing, setBilling] = useState<any>({ lifetimeFree: false, isOpenToWork: false, entitlements: [], subscriptions: [] });
+  const [billing, setBilling] = useState<any>({
+    lifetimeFree: false,
+    isOpenToWork: false,
+    entitlements: [],
+    subscriptions: [],
+  });
   const [paymentRoutes, setPaymentRoutes] = useState<any>({});
   const [loading, setLoading] = useState(true);
-  const [buying, setBuying] = useState<string | null>(null);
-  const [checkout, setCheckout] = useState<any>(null);
-  const [message, setMessage] = useState("");
-  const [payerName, setPayerName] = useState("");
-  const [payerCpf, setPayerCpf] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [message, setMessage] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+  const [payerName, setPayerName] = useState('');
+  const [payerCpf, setPayerCpf] = useState('');
 
   const load = async () => {
     setLoading(true);
     try {
       const [paymentsResponse, catalogResponse, creditsResponse, billingResponse, providerResponse] = await Promise.all([
-        api.get("/payments/me"),
-        api.get("/payments/catalog"),
-        api.get("/payments/me/credits"),
-        api.get("/payments/me/billing-status"),
-        api.get("/payments/provider").catch(() => ({ data: {} })),
+        api.get('/payments/me'),
+        api.get('/payments/catalog'),
+        api.get('/payments/me/credits'),
+        api.get('/payments/me/billing-status'),
+        api.get('/payments/provider').catch(() => ({ data: {} })),
       ]);
       setPayments(Array.isArray(paymentsResponse.data) ? paymentsResponse.data : []);
       setProducts(Array.isArray(catalogResponse.data) ? catalogResponse.data : []);
       setCredits(creditsResponse.data || {});
       setBilling(billingResponse.data || {});
       setPaymentRoutes(providerResponse.data || {});
+    } catch (error: any) {
+      setMessage(error?.response?.data?.message || 'Não foi possível atualizar seus dados financeiros.');
     } finally {
       setLoading(false);
     }
@@ -65,242 +97,165 @@ export function UserPaymentsPage() {
   useEffect(() => { void load(); }, []);
 
   const availableProducts = useMemo(
-    () => products.filter((product) => [
-      "RESUME_REANALYSIS",
-      "RESUME_AI_IMPROVEMENT",
-      "RESUME_AI_IMPORT",
-      "JOB_MATCH_30D",
-      "RESUME_BOOST_7D",
-      "RESUME_BOOST_15D",
-      "PREMIUM_MONTHLY",
-    ].includes(product.code)),
+    () => products.filter((product) => purchasableCodes.includes(product.code)),
     [products],
   );
 
-  const activeEntitlement = (feature: string) => (billing.entitlements || []).find((item: any) => item.feature === feature && item.active);
-  const matchAccess = activeEntitlement("JOB_MATCH_PREMIUM");
-  const boostAccess = activeEntitlement("RESUME_BOOST");
-  const earlyAlertAccess = activeEntitlement("EARLY_JOB_ALERTS");
-  const activeSubscription = (billing.subscriptions || []).find((item: any) => item.status === "ACTIVE" && new Date(item.currentPeriodEnd).getTime() > Date.now());
+  const activeEntitlement = (feature: string) => (billing.entitlements || [])
+    .find((item: any) => item.feature === feature && item.active);
+  const matchAccess = activeEntitlement('JOB_MATCH_PREMIUM');
+  const boostAccess = activeEntitlement('RESUME_BOOST');
+  const earlyAlertAccess = activeEntitlement('EARLY_JOB_ALERTS');
+  const activeSubscription = (billing.subscriptions || []).find(
+    (item: any) => item.status === 'ACTIVE' && new Date(item.currentPeriodEnd).getTime() > Date.now(),
+  );
+
   const pixRoute = paymentRoutes?.PIX || { available: false };
   const automaticRoute = paymentRoutes?.PIX_AUTOMATICO || { available: false };
-  const anyPixAvailable = pixRoute.available === true || automaticRoute.available === true;
 
-  const buy = async (productCode: string) => {
-    const product = products.find((item) => item.code === productCode);
-    const recurring = product?.billingType === "RECURRING";
-    const route = recurring ? automaticRoute : pixRoute;
-    const includesBoost = Array.isArray(product?.benefits) && product.benefits.some((benefit: any) => benefit?.kind === "ENTITLEMENT" && benefit?.feature === "RESUME_BOOST");
+  const openProduct = (product: any) => {
+    const includesBoost = Array.isArray(product?.benefits)
+      && product.benefits.some((benefit: any) => benefit?.kind === 'ENTITLEMENT' && benefit?.feature === 'RESUME_BOOST');
     if (includesBoost && !billing.isOpenToWork) {
       const accepted = window.confirm(
-        "Seu perfil está oculto do Banco de Talentos. Ao ativar este Impulso, a opção “Estou buscando oportunidades” será ligada automaticamente para que seu currículo possa receber destaque. Você poderá ocultá-lo novamente quando quiser; nesse caso, o Impulso continuará funcionando normalmente nas candidaturas, mas deixará de aparecer no Banco de Talentos. Deseja continuar?",
+        'Seu perfil está oculto do Banco de Talentos. Ao ativar este recurso, “Estou buscando oportunidades” será ligado para que o currículo possa receber destaque. Deseja continuar?',
       );
       if (!accepted) return;
     }
+    setMessage('');
+    setPayerName('');
+    setPayerCpf('');
+    setSelectedProduct(product);
+  };
 
-    if (!billing.lifetimeFree && !route?.available) {
-      setMessage(recurring ? "Pix Automático está temporariamente indisponível." : "Pix está temporariamente indisponível.");
-      return;
+  const selectedRecurring = selectedProduct?.billingType === 'RECURRING';
+  const selectedRoute = selectedRecurring ? automaticRoute : pixRoute;
+  const needsEfiRecurringData = Boolean(
+    selectedProduct
+    && !billing.lifetimeFree
+    && selectedRecurring
+    && selectedRoute?.code === 'EFI',
+  );
+
+  const createSelectedCheckout = async () => {
+    if (!selectedProduct) throw new Error('Selecione um recurso.');
+    if (!billing.lifetimeFree && selectedRoute?.available !== true) {
+      throw new Error(selectedRecurring ? 'Pix Automático está temporariamente indisponível.' : 'Pix está temporariamente indisponível.');
     }
 
-    const needsEfiRecurringData = !billing.lifetimeFree && recurring && route?.code === "EFI";
+    const payload: any = { productCode: selectedProduct.code };
     if (needsEfiRecurringData) {
-      const cpf = payerCpf.replace(/\D/g, "");
-      if (cpf.length !== 11) {
-        setMessage("Informe um CPF com 11 dígitos para autorizar o Pix Automático.");
-        return;
-      }
-      if (payerName.trim().length < 3) {
-        setMessage("Informe o nome completo para autorizar o Pix Automático.");
-        return;
-      }
+      const cpf = payerCpf.replace(/\D/g, '');
+      if (cpf.length !== 11) throw new Error('Informe um CPF com 11 dígitos para autorizar o Pix Automático.');
+      if (payerName.trim().length < 3) throw new Error('Informe o nome completo para autorizar o Pix Automático.');
+      payload.payer = { name: payerName.trim(), document: cpf };
     }
-
-    setBuying(productCode);
-    setMessage("");
-    setCheckout(null);
-    setCopied(false);
-    try {
-      const payload: any = { productCode };
-      if (needsEfiRecurringData) {
-        payload.payer = { name: payerName.trim(), document: payerCpf.replace(/\D/g, "") };
-      }
-      const response = await api.post("/payments/pix", payload);
-      if (response.data?.paymentRequired === false) {
-        setCheckout(null);
-        setMessage(response.data?.message || "Recurso ativado sem cobrança.");
-        await load();
-        return;
-      }
-      setCheckout(response.data);
-      if (!response.data?.checkoutReady) {
-        setMessage("A cobrança foi criada, mas não recebemos uma jornada de pagamento utilizável.");
-      }
-      await load();
-    } catch (error: any) {
-      const raw = error?.response?.data?.message;
-      setMessage(Array.isArray(raw) ? raw.join(" · ") : raw || "Não foi possível iniciar o pagamento Pix agora.");
-    } finally {
-      setBuying(null);
-    }
+    return api.post('/payments/pix', payload);
   };
 
-  const copyPix = async () => {
-    if (!checkout?.pixCopyPaste) return;
-    try {
-      await navigator.clipboard.writeText(String(checkout.pixCopyPaste));
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setMessage("Não foi possível copiar automaticamente. Selecione o código Pix abaixo e copie manualmente.");
-    }
-  };
-
-  const checkoutMetadata = checkout?.metadata || {};
-  const authorizationUrl = checkoutMetadata.subscriptionCheckoutUrl || checkoutMetadata.ticketUrl || null;
-  const checkoutProviderName = providerLabel(checkout?.provider);
+  const selectedAmount = billing.lifetimeFree
+    ? 0
+    : Number(selectedProduct?.effectivePriceCents ?? selectedProduct?.priceCents ?? 0);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="mx-auto max-w-6xl space-y-6 pb-10">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <Link to="/user/curriculo" className="mb-3 inline-flex items-center gap-2 text-xs font-bold text-stone-500 hover:text-terracotta-600"><ArrowLeft className="h-4 w-4" /> Voltar ao currículo</Link>
-          <p className="text-[10px] font-black uppercase tracking-[.18em] text-terracotta-600">Minha conta</p>
-          <h1 className="mt-1 font-serif text-3xl font-bold text-stone-900">Pagamentos e benefícios</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Compras, consultas de IA, Match Inteligente, impulso do currículo e assinatura ficam reunidos aqui. Os pagamentos aceitos são exclusivamente Pix.</p>
+          <Link to="/user" className="mb-3 inline-flex items-center gap-2 text-xs font-bold text-stone-500 hover:text-terracotta-600"><ArrowLeft className="h-4 w-4" /> Voltar</Link>
+          <p className="text-[10px] font-black uppercase tracking-[.18em] text-terracotta-600">Minha conta · Financeiro</p>
+          <h1 className="mt-1 font-serif text-4xl font-black text-stone-950">Carteira e histórico</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Aqui ficam seus créditos, benefícios ativos e comprovantes. Quando você compra algum recurso, o pagamento acontece em uma janela própria sem tirar você do que estava fazendo.</p>
         </div>
-        <div className={`flex h-12 min-w-20 items-center justify-center rounded-2xl border px-4 ${anyPixAvailable ? "border-emerald-200 bg-emerald-50" : "border-stone-200 bg-stone-100 opacity-45"}`} title={anyPixAvailable ? "Pix" : "Pix temporariamente indisponível"}>
+        <div className="flex items-center gap-2 rounded-2xl bg-white px-4 py-3 ring-1 ring-stone-200">
           <img src="/brand/pix.svg" alt="Pix" className="h-7 w-auto" />
+          <div><p className="text-[10px] font-black uppercase tracking-wider text-stone-400">Pagamento</p><p className="text-xs font-bold text-stone-700">Pix no próprio fluxo</p></div>
         </div>
-      </div>
+      </header>
+
+      {message && <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-800">{message}</div>}
 
       {billing.lifetimeFree && (
-        <section className="flex items-start gap-3 rounded-[26px] border border-amber-300 bg-amber-50 p-5"><Crown className="mt-0.5 h-6 w-6 shrink-0 text-amber-500" /><div><p className="text-[10px] font-black uppercase tracking-[.16em] text-amber-700">Conta Vitalícia</p><h2 className="mt-1 font-bold text-stone-950">Recursos pagos sem custo</h2><p className="mt-1 text-sm leading-6 text-stone-600">Análises e Match não exigem créditos ou pagamento. Produtos temporários, como Impulso, podem ser ativados normalmente sem gerar Pix.</p></div></section>
-      )}
-
-      {boostAccess && (
-        <section className={`relative overflow-hidden rounded-[28px] border p-5 shadow-sm ${billing.isOpenToWork ? "border-emerald-300 bg-gradient-to-br from-emerald-50 to-lime-50" : "border-orange-300 bg-gradient-to-br from-orange-50 to-amber-50"}`}>
-          <div className={`pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full blur-2xl ${billing.isOpenToWork ? "bg-emerald-300/30" : "bg-orange-300/35"}`} />
-          <div className="relative flex items-start gap-4">
-            <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${billing.isOpenToWork ? "bg-emerald-600 text-white" : "bg-orange-500 text-white"}`}><Zap className="h-5 w-5 animate-pulse" /></span>
-            <div className="min-w-0 flex-1">
-              <p className={`text-[10px] font-black uppercase tracking-[.16em] ${billing.isOpenToWork ? "text-emerald-700" : "text-orange-700"}`}>Impulso ativo</p>
-              <h2 className="mt-1 font-bold text-stone-950">{billing.isOpenToWork ? "Seu currículo está recebendo mais exposição" : "Seu currículo está oculto do Banco de Talentos"}</h2>
-              <p className="mt-1 text-sm leading-6 text-stone-600">{billing.isOpenToWork ? `Destaque ativo no Banco de Talentos e nas suas candidaturas até ${dateLabel(boostAccess.expiresAt)}.` : `O Impulso continua ativo até ${dateLabel(boostAccess.expiresAt)} e suas candidaturas continuam destacadas. Como “Estou buscando oportunidades” está desligado, seu currículo não aparece no Banco de Talentos.`}</p>
-              {!billing.isOpenToWork && <Link to="/user/perfil" className="mt-3 inline-flex items-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-xs font-black text-white"><Eye className="h-4 w-4" /> Ativar exibição do currículo</Link>}
-            </div>
-            {billing.isOpenToWork ? <Eye className="h-5 w-5 text-emerald-600" /> : <EyeOff className="h-5 w-5 text-orange-600" />}
-          </div>
+        <section className="flex items-start gap-3 rounded-[26px] border border-amber-300 bg-amber-50 p-5">
+          <Crown className="mt-0.5 h-6 w-6 shrink-0 text-amber-500" />
+          <div><p className="text-[10px] font-black uppercase tracking-[.16em] text-amber-700">Conta vitalícia</p><h2 className="mt-1 font-bold text-stone-950">Recursos pagos sem custo</h2><p className="mt-1 text-sm leading-6 text-stone-600">Quando um benefício elegível for ativado, nenhuma cobrança será criada.</p></div>
         </section>
       )}
 
-      <section className="grid gap-3 sm:grid-cols-3">
-        <CreditCardValue label="Reanálises" value={credits.RESUME_REANALYSIS || 0} />
-        <CreditCardValue label="Otimizações com IA" value={credits.RESUME_AI_IMPROVEMENT || 0} />
-        <CreditCardValue label="Novas importações por IA" value={credits.RESUME_AI_IMPORT || 0} />
+      <section>
+        <div className="mb-3"><p className="text-[10px] font-black uppercase tracking-[.16em] text-stone-400">Disponível agora</p><h2 className="mt-1 font-serif text-2xl font-black text-stone-950">Seus benefícios</h2></div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <BenefitCard icon={<Sparkles className="h-5 w-5" />} label="Match Inteligente" active={billing.lifetimeFree || Boolean(matchAccess)} detail={billing.lifetimeFree ? 'Incluído no vitalício' : matchAccess ? `Até ${dateLabel(matchAccess.expiresAt)}` : 'Não ativo'} />
+          <BenefitCard icon={<Zap className="h-5 w-5" />} label="Impulso do currículo" active={Boolean(boostAccess)} warning={Boolean(boostAccess && !billing.isOpenToWork)} detail={boostAccess ? billing.isOpenToWork ? `Até ${dateLabel(boostAccess.expiresAt)}` : 'Ativo nas candidaturas · banco oculto' : 'Não ativo'} />
+          <BenefitCard icon={<BellRing className="h-5 w-5" />} label="Vagas em primeira mão" active={Boolean(earlyAlertAccess)} detail={earlyAlertAccess ? `Até ${dateLabel(earlyAlertAccess.expiresAt)}` : 'Não ativo'} />
+          <BenefitCard icon={<CalendarClock className="h-5 w-5" />} label="Plano Destaque" active={Boolean(activeSubscription)} detail={activeSubscription ? `Até ${dateLabel(activeSubscription.currentPeriodEnd)}` : 'Sem assinatura ativa'} />
+        </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <AccessCard icon={<Sparkles className="h-5 w-5" />} label="Match Inteligente" active={billing.lifetimeFree || Boolean(matchAccess)} detail={billing.lifetimeFree ? "Incluído no vitalício" : matchAccess ? `Até ${dateLabel(matchAccess.expiresAt)}` : "Não ativo"} />
-        <AccessCard icon={<Zap className="h-5 w-5" />} label="Impulso do currículo" active={Boolean(boostAccess)} warning={Boolean(boostAccess && !billing.isOpenToWork)} detail={boostAccess ? billing.isOpenToWork ? `Até ${dateLabel(boostAccess.expiresAt)}` : "Ativo nas candidaturas · banco oculto" : "Não ativo"} />
-        <AccessCard icon={<BellRing className="h-5 w-5" />} label="Vagas em primeira mão" active={Boolean(earlyAlertAccess)} detail={earlyAlertAccess ? `Até ${dateLabel(earlyAlertAccess.expiresAt)}` : "Benefício do plano mensal"} />
-        <AccessCard icon={<CalendarClock className="h-5 w-5" />} label="Plano Destaque" active={Boolean(activeSubscription)} detail={activeSubscription ? `Até ${dateLabel(activeSubscription.currentPeriodEnd)}` : "Sem assinatura ativa"} />
+      {boostAccess && !billing.isOpenToWork && (
+        <section className="flex items-start justify-between gap-4 rounded-[24px] border border-orange-200 bg-orange-50 p-5">
+          <div className="flex gap-3"><EyeOff className="mt-0.5 h-5 w-5 text-orange-600" /><div><h3 className="text-sm font-black text-orange-950">Impulso ativo, perfil oculto</h3><p className="mt-1 text-xs leading-5 text-orange-800/80">O destaque segue valendo nas candidaturas, mas você não aparece no Banco de Talentos enquanto “Estou buscando oportunidades” estiver desligado.</p></div></div>
+          <Link to="/user/perfil" className="shrink-0 rounded-xl bg-orange-600 px-4 py-2.5 text-xs font-black text-white"><Eye className="mr-1 inline h-3.5 w-3.5" /> Exibir perfil</Link>
+        </section>
+      )}
+
+      <section className="rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-stone-200 sm:p-6">
+        <div className="flex items-center gap-3"><WalletCards className="h-5 w-5 text-terracotta-600" /><div><h2 className="font-serif text-2xl font-black text-stone-950">Créditos</h2><p className="text-xs text-stone-500">Saldo para ações pontuais do currículo.</p></div></div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <CreditCardValue label="Reanálises" value={credits.RESUME_REANALYSIS || 0} />
+          <CreditCardValue label="Otimizações com IA" value={credits.RESUME_AI_IMPROVEMENT || 0} />
+          <CreditCardValue label="Importações com IA" value={credits.RESUME_AI_IMPORT || 0} />
+        </div>
       </section>
 
-      <section className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><Sparkles className="h-5 w-5" /></span><div><h2 className="font-bold text-stone-900">Recursos e planos</h2><p className="text-xs text-stone-500">Preços e promoções são administrados pela plataforma.</p></div></div>
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <section>
+        <div className="mb-4"><p className="text-[10px] font-black uppercase tracking-[.16em] text-stone-400">Comprar ou renovar</p><h2 className="mt-1 font-serif text-2xl font-black text-stone-950">Recursos disponíveis</h2><p className="mt-1 text-xs text-stone-500">O botão abre o pagamento por cima desta tela. Nada de redirecionamento para checkout genérico.</p></div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {availableProducts.map((product) => {
-            const recurring = product.billingType === "RECURRING";
+            const recurring = product.billingType === 'RECURRING';
             const route = recurring ? automaticRoute : pixRoute;
             const unavailable = !billing.lifetimeFree && route?.available !== true;
-            const needsEfiRecurringData = !billing.lifetimeFree && recurring && route?.code === "EFI";
             return (
-              <div key={product.code} className={`rounded-2xl border p-4 ${product.code === "PREMIUM_MONTHLY" ? "border-violet-200 bg-violet-50/40" : "border-stone-200 bg-[#fffdfa]"}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div><p className="font-bold text-stone-900">{product.name}</p><p className="mt-1 text-xs leading-5 text-stone-500">{product.description}</p>{product.durationDays && <p className="mt-2 text-[10px] font-black uppercase tracking-wider text-violet-600">{recurring ? `Pix Automático · ciclo de ${product.durationDays} dias` : `Validade: ${product.durationDays} dias`}</p>}</div>
-                  <div className="text-right">{product.promotionActive && <p className="text-[10px] font-bold text-stone-400 line-through">{money(product.originalPriceCents)}</p>}<p className="text-xl font-black text-stone-900">{billing.lifetimeFree ? "Grátis" : money(product.effectivePriceCents)}</p>{recurring && !billing.lifetimeFree && <p className="text-[9px] font-bold text-stone-400">por ciclo</p>}</div>
-                </div>
-
-                {needsEfiRecurringData && (
-                  <div className="mt-4 rounded-xl border border-violet-100 bg-white/80 p-3">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-violet-700">Dados para autorização</p>
-                    <p className="mt-1 text-[11px] leading-4 text-stone-500">Nome e CPF são necessários para iniciar a autorização do Pix Automático.</p>
-                    <div className="mt-3 grid gap-2">
-                      <input value={payerName} onChange={(event) => setPayerName(event.target.value)} placeholder="Nome completo" autoComplete="name" className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-violet-300" />
-                      <input value={payerCpf} onChange={(event) => setPayerCpf(event.target.value)} placeholder="CPF" inputMode="numeric" autoComplete="off" className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs outline-none focus:border-violet-300" />
-                    </div>
-                  </div>
-                )}
-
-                {unavailable && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-4 text-amber-800">{recurring ? "Pix Automático está temporariamente indisponível." : "Pix está temporariamente indisponível."}</div>}
-
-                <button type="button" onClick={() => void buy(product.code)} disabled={buying === product.code || unavailable} className="mt-4 w-full rounded-xl bg-[#2b211c] px-4 py-3 text-sm font-bold text-white disabled:opacity-50">{buying === product.code ? "Processando..." : billing.lifetimeFree ? "Ativar grátis" : unavailable ? "Temporariamente indisponível" : recurring ? "Autorizar Pix Automático" : "Pagar com Pix"}</button>
-              </div>
+              <article key={product.code} className={`flex flex-col rounded-[24px] border p-5 ${product.code === 'PREMIUM_MONTHLY' ? 'border-violet-200 bg-violet-50/50' : 'border-stone-200 bg-white'}`}>
+                <div className="flex-1"><p className="text-sm font-black text-stone-950">{product.name}</p><p className="mt-2 text-xs leading-5 text-stone-500">{product.description}</p>{product.durationDays && <p className="mt-3 text-[10px] font-black uppercase tracking-wider text-violet-600">{recurring ? `Recorrente · ciclo de ${product.durationDays} dias` : `Validade: ${product.durationDays} dias`}</p>}</div>
+                <div className="mt-5 flex items-end justify-between gap-3"><div>{product.promotionActive && <p className="text-[10px] font-bold text-stone-400 line-through">{money(product.originalPriceCents)}</p>}<p className="text-xl font-black text-stone-950">{billing.lifetimeFree ? 'Grátis' : money(product.effectivePriceCents)}</p></div><button type="button" disabled={unavailable} onClick={() => openProduct(product)} className="rounded-xl bg-stone-950 px-4 py-2.5 text-xs font-black text-white disabled:bg-stone-200 disabled:text-stone-400">{unavailable ? 'Indisponível' : recurring ? 'Assinar' : 'Comprar'}</button></div>
+              </article>
             );
           })}
         </div>
-
-        {message && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800"><AlertTriangle className="mr-1.5 inline h-3.5 w-3.5" />{message}</div>}
-
-        {(checkout?.pixCopyPaste || authorizationUrl) && (
-          <div className="mt-5 rounded-[24px] border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
-            {checkout?.pixCopyPaste ? (
-              <>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div><p className="text-[10px] font-black uppercase tracking-[.16em] text-emerald-700">Cobrança Pix criada</p><h3 className="mt-1 font-bold text-stone-950">Escaneie o QR ou use o Pix copia e cola</h3><p className="mt-1 text-xs text-stone-500">{checkout.product?.billingType === "RECURRING" ? "Este primeiro Pix inicia a autorização do seu plano com Pix Automático." : "A liberação acontece automaticamente após a confirmação do pagamento."}</p></div>
-                  {checkout.expiresAt && <span className="rounded-full bg-white px-3 py-1.5 text-[10px] font-bold text-stone-500">Expira {dateLabel(checkout.expiresAt)}</span>}
-                </div>
-                <div className="mt-4 grid gap-4 md:grid-cols-[220px_1fr] md:items-center">
-                  {checkout.qrCodeBase64 ? (
-                    <div className="flex min-h-[210px] items-center justify-center rounded-2xl border border-emerald-100 bg-white p-3">
-                      <img src={String(checkout.qrCodeBase64).startsWith("data:") ? checkout.qrCodeBase64 : `data:image/png;base64,${checkout.qrCodeBase64}`} alt="QR Code Pix" className="h-auto max-h-[190px] w-auto max-w-full" />
-                    </div>
-                  ) : (
-                    <div className="flex min-h-[160px] items-center justify-center rounded-2xl border border-dashed border-emerald-200 bg-white/70 p-4 text-center text-xs text-stone-400">Use o código Pix ao lado para pagar.</div>
-                  )}
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Pix copia e cola</p>
-                    <div className="mt-2 break-all rounded-xl bg-white p-3 font-mono text-xs leading-5 text-stone-700">{checkout.pixCopyPaste}</div>
-                    <button type="button" onClick={() => void copyPix()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-black text-white"><Copy className="h-3.5 w-3.5" /> {copied ? "Copiado!" : "Copiar código Pix"}</button>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="rounded-2xl border border-emerald-100 bg-white p-5 text-center">
-                <img src="/brand/pix.svg" alt="Pix" className="mx-auto h-8 w-auto" />
-                <p className="mt-4 text-[10px] font-black uppercase tracking-[.16em] text-emerald-700">Pix Automático</p>
-                <h3 className="mt-1 font-bold text-stone-950">Conclua a autorização do pagamento recorrente</h3>
-                <p className="mx-auto mt-2 max-w-lg text-xs leading-5 text-stone-500">Você será direcionado para a jornada segura de autorização. Depois da confirmação, as próximas cobranças serão processadas automaticamente conforme o plano.</p>
-                <a href={authorizationUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white">Continuar autorização <ExternalLink className="h-4 w-4" /></a>
-              </div>
-            )}
-
-            {checkout?.provider && (
-              <div className="mt-4 flex items-center justify-center gap-2 border-t border-emerald-200/70 pt-3 text-[10px] font-semibold text-stone-500">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                Pagamento processado com segurança por <span className="font-black text-stone-700">{checkoutProviderName}</span>
-              </div>
-            )}
-          </div>
-        )}
       </section>
 
-      <section className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex items-center gap-3"><ReceiptText className="h-5 w-5 text-stone-500" /><div><h2 className="font-bold text-stone-900">Histórico de pagamentos</h2><p className="text-xs text-stone-500">Seu registro financeiro dentro do PiraNegócios.</p></div></div>
-        {loading ? <p className="mt-5 text-sm text-stone-400">Carregando...</p> : payments.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-stone-500">Você ainda não realizou nenhuma compra.</p> : <div className="mt-5 space-y-2">{payments.map((payment) => <div key={payment.id} className="flex flex-col gap-3 rounded-2xl border border-stone-200 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><span className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl ${payment.status === "PAID" ? "bg-emerald-100 text-emerald-700" : payment.status === "CANCELED" || payment.status === "EXPIRED" ? "bg-stone-100 text-stone-500" : "bg-amber-100 text-amber-700"}`}>{payment.status === "PAID" ? <CheckCircle2 className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}</span><div><p className="text-sm font-bold text-stone-900">{payment.productName || payment.productCode}</p><p className="mt-1 text-xs text-stone-400">{dateLabel(payment.createdAt)} · Pix · {statusLabel[payment.status] || payment.status}</p></div></div><p className="text-lg font-black text-stone-900">{money(payment.amountCents)}</p></div>)}</div>}
+      <section className="rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-stone-200 sm:p-6">
+        <div className="flex items-center gap-3"><ReceiptText className="h-5 w-5 text-stone-500" /><div><h2 className="font-serif text-2xl font-black text-stone-950">Histórico financeiro</h2><p className="text-xs text-stone-500">Cobranças e confirmações ficam aqui para consulta. Esta área não é mais etapa do checkout.</p></div></div>
+        {loading ? <p className="mt-5 text-sm text-stone-400">Carregando...</p> : payments.length === 0 ? <p className="mt-5 rounded-2xl bg-stone-50 p-5 text-sm text-stone-500">Você ainda não realizou nenhuma compra.</p> : <div className="mt-5 space-y-2">{payments.map((payment) => <div key={payment.id} className="flex flex-col gap-3 rounded-2xl border border-stone-200 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><span className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl ${payment.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' : payment.status === 'PENDING' ? 'bg-amber-100 text-amber-700' : 'bg-stone-100 text-stone-500'}`}>{payment.status === 'PAID' ? <CheckCircle2 className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}</span><div><p className="text-sm font-bold text-stone-900">{payment.productName || payment.productCode}</p><p className="mt-1 text-xs text-stone-400">{dateLabel(payment.createdAt)} · {providerLabel(payment.provider)} · {statusLabel[payment.status] || payment.status}</p></div></div><p className="text-lg font-black text-stone-900">{money(payment.amountCents)}</p></div>)}</div>}
       </section>
+
+      <PaymentCheckoutModal
+        open={Boolean(selectedProduct)}
+        onClose={() => setSelectedProduct(null)}
+        title={selectedProduct?.name || 'Pagamento'}
+        description={selectedProduct?.description || undefined}
+        amountCents={selectedAmount}
+        confirmLabel={billing.lifetimeFree ? 'Ativar agora' : selectedRecurring ? 'Continuar assinatura' : 'Gerar Pix'}
+        creatingLabel={selectedRecurring ? 'Preparando autorização...' : 'Gerando Pix...'}
+        createCheckout={createSelectedCheckout}
+        onCompleted={async () => {
+          setMessage(selectedRecurring ? 'Assinatura confirmada e benefícios atualizados.' : 'Pagamento confirmado e recurso liberado.');
+          await load();
+        }}
+      >
+        {needsEfiRecurringData && <div className="rounded-2xl border border-violet-100 bg-violet-50 p-4"><p className="text-[10px] font-black uppercase tracking-wider text-violet-700">Dados para autorização</p><p className="mt-1 text-xs leading-5 text-stone-500">A Efí precisa destes dados para iniciar o Pix Automático.</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><input value={payerName} onChange={(event) => setPayerName(event.target.value)} placeholder="Nome completo" autoComplete="name" className="rounded-xl border border-stone-200 bg-white px-3 py-3 text-xs outline-none focus:border-violet-300" /><input value={payerCpf} onChange={(event) => setPayerCpf(event.target.value)} placeholder="CPF" inputMode="numeric" autoComplete="off" className="rounded-xl border border-stone-200 bg-white px-3 py-3 text-xs outline-none focus:border-violet-300" /></div></div>}
+      </PaymentCheckoutModal>
     </div>
   );
 }
 
 function CreditCardValue({ label, value }: { label: string; value: number }) {
-  return <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm"><p className="text-[10px] font-black uppercase tracking-[.14em] text-stone-400">{label}</p><p className="mt-2 text-3xl font-black text-stone-900">{value}</p><p className="mt-1 text-xs text-stone-400">crédito(s) disponível(is)</p></div>;
+  return <div className="rounded-2xl bg-stone-50 p-4"><p className="text-[10px] font-black uppercase tracking-[.14em] text-stone-400">{label}</p><p className="mt-2 text-3xl font-black text-stone-900">{value}</p><p className="mt-1 text-xs text-stone-400">crédito(s)</p></div>;
 }
 
-function AccessCard({ icon, label, active, warning = false, detail }: { icon: React.ReactNode; label: string; active: boolean; warning?: boolean; detail: string }) {
-  const shell = warning ? "border-orange-200 bg-orange-50" : active ? "border-emerald-200 bg-emerald-50" : "border-stone-200 bg-white";
-  const accent = warning ? "text-orange-700" : active ? "text-emerald-700" : "text-stone-400";
-  const text = warning ? "text-orange-800" : active ? "text-emerald-800" : "text-stone-500";
+function BenefitCard({ icon, label, active, warning = false, detail }: { icon: React.ReactNode; label: string; active: boolean; warning?: boolean; detail: string }) {
+  const shell = warning ? 'border-orange-200 bg-orange-50' : active ? 'border-emerald-200 bg-emerald-50' : 'border-stone-200 bg-white';
+  const accent = warning ? 'text-orange-700' : active ? 'text-emerald-700' : 'text-stone-400';
+  const text = warning ? 'text-orange-800' : active ? 'text-emerald-800' : 'text-stone-500';
   return <div className={`rounded-2xl border p-4 shadow-sm ${shell}`}><div className={`flex items-center gap-2 ${accent}`}>{icon}<p className="text-xs font-black uppercase tracking-wider">{label}</p></div><p className={`mt-2 text-sm font-bold ${text}`}>{detail}</p></div>;
 }
