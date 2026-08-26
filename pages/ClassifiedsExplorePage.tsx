@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, BadgeDollarSign, Loader2, MapPin, MessageCircle, Search, ShieldCheck, X } from 'lucide-react';
+import { ArrowLeft, BadgeDollarSign, CreditCard, Loader2, MapPin, MessageCircle, Search, ShieldCheck, X } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ClassifiedListingCard, classifiedPrice } from '../components/classifieds/ClassifiedListingCard';
+import { ClassifiedListingCard, classifiedCommercePricing, classifiedPrice } from '../components/classifieds/ClassifiedListingCard';
 import { useClassifiedsWorkspace } from '../contexts/ClassifiedsWorkspaceContext';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
@@ -125,6 +125,7 @@ function InternalListingDetail({ slug }: { slug: string }) {
   if (loading) return <div className="flex min-h-[55vh] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-stone-400" /></div>;
   if (!listing) return <div className="mx-auto max-w-xl rounded-3xl bg-white p-8 text-center"><p className="font-black">{error || 'Anúncio não encontrado.'}</p><Link to="/classificados/explorar" className="mt-4 inline-flex rounded-xl bg-stone-900 px-4 py-2 text-xs font-black text-white">Voltar</Link></div>;
 
+  const pricing = classifiedCommercePricing(listing);
   const canOffer = !ownListing && listing.listingType === 'PRODUCT' && listing.price != null;
   return (
     <div className="mx-auto max-w-6xl">
@@ -137,11 +138,11 @@ function InternalListingDetail({ slug }: { slug: string }) {
         </section>
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-[28px] bg-white p-6 shadow-sm ring-1 ring-stone-200">
-            <p className="text-2xl font-black text-stone-900">{classifiedPrice(listing)}</p>
-            <h1 className="mt-2 font-serif text-3xl font-black leading-tight">{listing.title}</h1>
+            <PriceBlock listing={listing} />
+            <h1 className="mt-3 font-serif text-3xl font-black leading-tight">{listing.title}</h1>
             <p className="mt-3 flex items-center gap-2 text-xs font-bold text-stone-500"><MapPin className="h-4 w-4" />{listing.neighborhood ? `${listing.neighborhood}, ` : ''}{listing.city} - {listing.state}</p>
             {listing.seller && <div className="mt-5 flex items-center gap-3 rounded-2xl bg-stone-50 p-3"><div className="h-11 w-11 overflow-hidden rounded-full bg-stone-200">{listing.seller.photoURL && <img src={listing.seller.photoURL} alt="" className="h-full w-full object-cover" />}</div><div className="min-w-0"><div className="flex items-center gap-1"><p className="truncate text-sm font-black">{listing.seller.name}</p>{listing.seller.verified && <ShieldCheck className="h-4 w-4 text-emerald-600" />}</div><p className="text-[10px] text-stone-400">{listing.seller.type === 'COMPANY' ? 'Empresa' : 'Particular'}</p></div></div>}
-            {!ownListing ? <div className="mt-5 grid gap-2"><button disabled={working} onClick={() => void startChat()} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-stone-900 text-sm font-black text-white disabled:opacity-50"><MessageCircle className="h-4 w-4" /> Conversar</button>{canOffer && <button disabled={working} onClick={() => { setOfferAmount(String(listing.price || '').replace('.', ',')); setOfferOpen(true); }} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#c96847] text-sm font-black text-white"><BadgeDollarSign className="h-4 w-4" /> Fazer oferta</button>}</div> : <Link to="/classificados/anuncios" className="mt-5 flex h-12 items-center justify-center rounded-2xl bg-stone-100 text-sm font-black text-stone-700">Este anúncio é seu</Link>}
+            {!ownListing ? <div className="mt-5 grid gap-2"><button disabled={working} onClick={() => void startChat()} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-stone-900 text-sm font-black text-white disabled:opacity-50"><MessageCircle className="h-4 w-4" /> Conversar</button>{canOffer && <button disabled={working} onClick={() => { setOfferAmount(String(pricing.currentPrice ?? listing.price ?? '').replace('.', ',')); setOfferOpen(true); }} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#c96847] text-sm font-black text-white"><BadgeDollarSign className="h-4 w-4" /> Fazer oferta</button>}</div> : <div className="mt-5 grid gap-2"><Link to="/classificados/anuncios" className="flex h-12 items-center justify-center rounded-2xl bg-stone-100 text-sm font-black text-stone-700">Este anúncio é seu</Link>{listing.listingType !== 'SERVICE' && <Link to={`/classificados/comercial/${listing.id}`} className="flex h-11 items-center justify-center rounded-2xl bg-[#fff1e9] text-xs font-black text-[#a84f34]">Editar preço e promoção</Link>}</div>}
             {(listing.contactWhatsapp || listing.contactPhone) && !ownListing && <div className="mt-4 border-t border-stone-100 pt-4"><p className="text-[10px] font-bold uppercase tracking-[.12em] text-stone-400">Contato externo opcional</p><div className="mt-2 flex gap-2">{listing.contactWhatsapp && <a onClick={() => trackContact('WHATSAPP')} href={`https://wa.me/${String(listing.contactWhatsapp).replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">WhatsApp</a>}{listing.contactPhone && <a onClick={() => trackContact('PHONE')} href={`tel:${listing.contactPhone}`} className="rounded-xl bg-stone-100 px-3 py-2 text-xs font-black text-stone-700">Telefone</a>}</div></div>}
           </div>
         </aside>
@@ -151,3 +152,12 @@ function InternalListingDetail({ slug }: { slug: string }) {
     </div>
   );
 }
+
+function PriceBlock({ listing }: { listing: ClassifiedListing }) {
+  if (listing.priceType === 'CONTACT') return <p className="text-2xl font-black text-stone-900">{classifiedPrice(listing)}</p>;
+  const pricing = classifiedCommercePricing(listing);
+  const pixEnabled = listing.commerceConfig?.paymentPricing?.pix?.enabled === true && pricing.pixPrice != null && pricing.currentPrice != null && pricing.pixPrice < pricing.currentPrice;
+  const card = listing.commerceConfig?.paymentPricing?.card;
+  return <div>{pricing.promotionActive && pricing.basePrice != null && <div className="flex items-center gap-2"><span className="rounded-full bg-[#d45442] px-2.5 py-1 text-[9px] font-black uppercase tracking-[.12em] text-white">Oferta</span><span className="text-sm font-bold text-stone-400 line-through">{money(pricing.basePrice)}</span></div>}<p className={`mt-1 text-3xl font-black ${pricing.promotionActive ? 'text-[#b74435]' : 'text-stone-900'}`}>{classifiedPrice(listing)}</p>{pricing.promotionActive && pricing.promotionEndsAt && <p className="mt-1 text-[10px] font-bold text-rose-600">Oferta até {new Date(pricing.promotionEndsAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>}{pixEnabled && <div className="mt-3 rounded-2xl bg-emerald-50 p-3"><p className="text-[9px] font-black uppercase tracking-[.1em] text-emerald-600">Preço no Pix</p><p className="mt-0.5 text-lg font-black text-emerald-800">{money(pricing.pixPrice)}</p></div>}{card?.enabled && pricing.cardPrice != null && <div className="mt-2 flex gap-2 rounded-2xl bg-stone-50 p-3 text-stone-600"><CreditCard className="mt-0.5 h-4 w-4 shrink-0" /><div><p className="text-xs font-black">{money(pricing.cardPrice)} no cartão</p><p className="mt-0.5 text-[10px]">até {pricing.maxInstallments}x{pricing.interestFreeInstallments > 0 ? ` · ${pricing.interestFreeInstallments}x sem juros` : ''}</p></div></div>}{listing.commerceConfig?.onlineCheckout?.enabled && <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-700">A empresa habilitou recebimento online para este produto.</p>}</div>;
+}
+function money(value: unknown) { const number = Number(value); return Number.isFinite(number) ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(number) : '—'; }
