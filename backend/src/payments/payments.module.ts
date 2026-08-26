@@ -44,6 +44,7 @@ import { PaymentProviderManagerService } from './payment-provider-manager.servic
     ProductDurationService,
     PaymentProviderConfigService,
     PaymentProviderManagerService,
+    PaymentProviderVaultService,
     EfiPixService,
     MercadoPagoService,
   ],
