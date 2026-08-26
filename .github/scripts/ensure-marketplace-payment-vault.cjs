@@ -26,10 +26,15 @@ patch('backend/src/payments/payment-provider-config.service.ts', (input) => {
   if (!source.includes('marketplaceClientIdConfigured')) {
     source = source.replace(
       `      webhookSecretConfigured: Boolean(config.webhookSecret),\n      publicApiBaseUrl: config.publicApiBaseUrl || null,`,
-      `      webhookSecretConfigured: Boolean(config.webhookSecret),\n      marketplaceClientIdConfigured: Boolean(config.marketplaceClientId),\n      marketplaceClientSecretConfigured: Boolean(config.marketplaceClientSecret),\n      marketplaceRedirectUri: config.marketplaceRedirectUri || null,\n      publicApiBaseUrl: config.publicApiBaseUrl || null,`,
+      `      webhookSecretConfigured: Boolean(config.webhookSecret),\n      marketplaceClientIdConfigured: Boolean(config.marketplaceClientId),\n      marketplaceClientId: config.marketplaceClientId || null,\n      marketplaceClientSecretConfigured: Boolean(config.marketplaceClientSecret),\n      marketplaceRedirectUri: config.marketplaceRedirectUri || null,\n      publicApiBaseUrl: config.publicApiBaseUrl || null,`,
+    );
+  } else if (!source.includes('marketplaceClientId: config.marketplaceClientId || null')) {
+    source = source.replace(
+      '      marketplaceClientIdConfigured: Boolean(config.marketplaceClientId),',
+      '      marketplaceClientIdConfigured: Boolean(config.marketplaceClientId),\n      marketplaceClientId: config.marketplaceClientId || null,',
     );
   }
-  if (!source.includes('marketplaceClientIdConfigured') || !source.includes('marketplaceClientSecretConfigured')) {
+  if (!source.includes('marketplaceClientId: config.marketplaceClientId || null') || !source.includes('marketplaceClientSecretConfigured')) {
     throw new Error('Mercado Pago marketplace vault fields missing.');
   }
   return source;
