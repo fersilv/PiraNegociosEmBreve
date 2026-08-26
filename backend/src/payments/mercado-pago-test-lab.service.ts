@@ -103,7 +103,12 @@ export class MercadoPagoTestLabService {
     const profile: TestProfileCode = 'ORDERS';
     const config = await this.secretProfile(profile);
     const token = this.required(config.accessToken, 'Cadastre o Access Token de teste da aplicação Orders.');
-    const payerEmail = config.payerEmail || 'test_user_br@testuser.com';
+
+    // A medição de qualidade do Checkout Transparente via Orders exige o
+    // cenário predefinido oficial do Mercado Pago. Para Pix, o e-mail e o
+    // first_name abaixo não são dados do comprador real: eles são gatilhos de
+    // sandbox usados pelo próprio MP para produzir uma Order de teste válida.
+    const payerEmail = 'test_user_br@testuser.com';
     const externalReference = `pn-test-order-${Date.now()}`;
     const idempotency = randomUUID();
     try {
@@ -111,25 +116,29 @@ export class MercadoPagoTestLabService {
         type: 'online',
         external_reference: externalReference,
         total_amount: '50.00',
-        processing_mode: 'automatic',
+        payer: {
+          email: payerEmail,
+          first_name: 'APRO',
+        },
         transactions: {
           payments: [{
             amount: '50.00',
             payment_method: { id: 'pix', type: 'bank_transfer' },
-            expiration_time: 'PT1H',
           }],
         },
-        payer: { email: payerEmail },
       }, idempotency);
       const id = String(order?.id || '').trim();
       if (!id) throw new ServiceUnavailableException('O Mercado Pago criou a resposta sem retornar o Order ID.');
       const transaction = Array.isArray(order?.transactions?.payments) ? order.transactions.payments[0] || {} : {};
       await this.record(profile, 'ORDER_PIX_CREATED', true, id, {
         status: order?.status || null,
+        statusDetail: order?.status_detail || null,
         transactionId: transaction?.id || null,
         transactionStatus: transaction?.status || null,
+        transactionStatusDetail: transaction?.status_detail || null,
         externalReference,
         amount: '50.00',
+        certificationScenario: 'PIX_APRO',
       }, adminUserId);
       return {
         ok: true,
@@ -137,10 +146,13 @@ export class MercadoPagoTestLabService {
         orderId: id,
         transactionId: transaction?.id || null,
         status: order?.status || null,
+        statusDetail: order?.status_detail || null,
         transactionStatus: transaction?.status || null,
+        transactionStatusDetail: transaction?.status_detail || null,
         externalReference,
         amount: '50.00',
         payerEmail,
+        certificationScenario: 'PIX_APRO',
       };
     } catch (error) {
       await this.record(profile, 'ORDER_PIX_CREATED', false, null, { error: this.errorMessage(error) }, adminUserId);
@@ -391,12 +403,16 @@ export class MercadoPagoTestLabService {
     try { parsed = text ? JSON.parse(text) : {}; } catch { parsed = { message: text }; }
     if (!response.ok) {
       const detail = parsed?.message || parsed?.error || parsed?.cause?.[0]?.description || `HTTP ${response.status}`;
-      throw new ServiceUnavailableException({
+      const payload = {
         code: 'MERCADO_PAGO_TEST_ERROR',
-        status: response.status,
+        providerStatus: response.status,
         message: `Mercado Pago teste: ${detail}`,
         providerResponse: parsed,
-      });
+      };
+      if (response.status >= 400 && response.status < 500) {
+        throw new BadRequestException(payload);
+      }
+      throw new ServiceUnavailableException(payload);
     }
     return parsed;
   }
@@ -418,6 +434,9 @@ export class MercadoPagoTestLabService {
   }
 
   private errorMessage(error: unknown) {
+    const response = typeof (error as any)?.getResponse === 'function' ? (error as any).getResponse() : null;
+    const detail = response?.message || response?.providerResponse?.message || response?.providerResponse?.error;
+    if (typeof detail === 'string' && detail.trim()) return detail.trim().slice(0, 500);
     if (error instanceof Error) return error.message.slice(0, 500);
     return String(error || 'Erro desconhecido').slice(0, 500);
   }
