@@ -11,6 +11,8 @@ import { ClassifiedsAiReviewService } from './classifieds-ai-review.service';
 import { ClassifiedsAuctionEngagementService } from './classifieds-auction-engagement.service';
 import { ClassifiedsAuctionExtrasController } from './classifieds-auction-extras.controller';
 import { ClassifiedsAuctionGateway } from './classifieds-auction.gateway';
+import { ClassifiedsAuctionManagementController } from './classifieds-auction-management.controller';
+import { ClassifiedsAuctionManagementService } from './classifieds-auction-management.service';
 import { ClassifiedsAuctionPublicController } from './classifieds-auction-public.controller';
 import { ClassifiedsAuctionPublicService } from './classifieds-auction-public.service';
 import { ClassifiedsAuctionService } from './classifieds-auction.service';
@@ -61,6 +63,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
   controllers: [
     ClassifiedsPublicController,
     ClassifiedsAuctionPublicController,
+    ClassifiedsAuctionManagementController,
     ClassifiedsPrivateController,
     ClassifiedsSalesController,
     ClassifiedsCheckoutController,
@@ -79,6 +82,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsAuctionGateway,
     ClassifiedsAuctionService,
     ClassifiedsAuctionPublicService,
+    ClassifiedsAuctionManagementService,
     ClassifiedsAuctionEngagementService,
     ClassifiedsAuctionSettlementService,
     ClassifiedsSalesService,
@@ -93,6 +97,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsEntitlementsService,
     ClassifiedsAuctionService,
     ClassifiedsAuctionPublicService,
+    ClassifiedsAuctionManagementService,
     ClassifiedsAuctionEngagementService,
     ClassifiedsAuctionSettlementService,
     ClassifiedsSalesService,
