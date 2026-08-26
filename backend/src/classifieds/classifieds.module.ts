@@ -13,11 +13,15 @@ import { ClassifiedsAuctionPublicController } from './classifieds-auction-public
 import { ClassifiedsAuctionPublicService } from './classifieds-auction-public.service';
 import { ClassifiedsAuctionService } from './classifieds-auction.service';
 import { ClassifiedsChatService } from './classifieds-chat.service';
+import { ClassifiedsCheckoutController } from './classifieds-checkout.controller';
+import { ClassifiedsCheckoutService } from './classifieds-checkout.service';
+import { ClassifiedsCheckoutWebhookController } from './classifieds-checkout-webhook.controller';
 import { ClassifiedsCommerceAdminController } from './classifieds-commerce-admin.controller';
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
 import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
 import { ClassifiedsMarketplacePaymentsService } from './classifieds-marketplace-payments.service';
+import { ClassifiedsMarketplaceTermsService } from './classifieds-marketplace-terms.service';
 import { ClassifiedsPrivateController } from './classifieds-private.controller';
 import { ClassifiedsPublicController } from './classifieds-public.controller';
 import { ClassifiedsSalesController } from './classifieds-sales.controller';
@@ -56,6 +60,8 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsAuctionPublicController,
     ClassifiedsPrivateController,
     ClassifiedsSalesController,
+    ClassifiedsCheckoutController,
+    ClassifiedsCheckoutWebhookController,
     ClassifiedsCommerceAdminController,
   ],
   providers: [
@@ -71,6 +77,8 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsAuctionPublicService,
     ClassifiedsSalesService,
     ClassifiedsMarketplacePaymentsService,
+    ClassifiedsMarketplaceTermsService,
+    ClassifiedsCheckoutService,
   ],
   exports: [
     ClassifiedsService,
@@ -81,6 +89,8 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsAuctionPublicService,
     ClassifiedsSalesService,
     ClassifiedsMarketplacePaymentsService,
+    ClassifiedsMarketplaceTermsService,
+    ClassifiedsCheckoutService,
   ],
 })
 export class ClassifiedsModule {}
