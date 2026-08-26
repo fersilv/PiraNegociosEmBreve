@@ -64,6 +64,15 @@ const emptyDraft = (): Draft => ({
   payerEmail: "",
 });
 
+function providerError(error: any, fallback: string) {
+  const payload = error?.response?.data;
+  if (typeof payload?.message === "string") return payload.message;
+  if (typeof payload?.providerResponse?.message === "string") return payload.providerResponse.message;
+  if (typeof payload?.providerResponse?.error === "string") return payload.providerResponse.error;
+  if (typeof payload?.error === "string") return payload.error;
+  return fallback;
+}
+
 export default function AdminMercadoPagoTestsPage() {
   const [data, setData] = useState<any>(null);
   const [drafts, setDrafts] = useState<Record<ProfileCode, Draft>>({
@@ -86,7 +95,7 @@ export default function AdminMercadoPagoTestsPage() {
         next[code] = {
           ...current[code],
           applicationId: profile.applicationId || "",
-          payerEmail: profile.payerEmail || "",
+          payerEmail: code === "ORDERS" ? "" : profile.payerEmail || "",
           publicKey: "",
           accessToken: "",
           sellerAccessToken: "",
@@ -97,7 +106,7 @@ export default function AdminMercadoPagoTestsPage() {
   };
 
   useEffect(() => {
-    void load().catch((error) => setMessage(error?.response?.data?.message || "Não foi possível carregar o laboratório Mercado Pago."));
+    void load().catch((error) => setMessage(providerError(error, "Não foi possível carregar o laboratório Mercado Pago.")));
   }, []);
 
   const history = useMemo(() => Array.isArray(data?.history) ? data.history : [], [data]);
@@ -113,8 +122,8 @@ export default function AdminMercadoPagoTestsPage() {
       const draft = drafts[code];
       const body: Record<string, unknown> = {
         applicationId: draft.applicationId,
-        payerEmail: draft.payerEmail,
       };
+      if (code !== "ORDERS") body.payerEmail = draft.payerEmail;
       if (draft.publicKey.trim()) body.publicKey = draft.publicKey.trim();
       if (draft.accessToken.trim()) body.accessToken = draft.accessToken.trim();
       if (draft.sellerAccessToken.trim()) body.sellerAccessToken = draft.sellerAccessToken.trim();
@@ -122,7 +131,7 @@ export default function AdminMercadoPagoTestsPage() {
       setMessage(`${profileInfo[code].title}: credenciais de teste salvas no cofre.`);
       await load();
     } catch (error: any) {
-      setMessage(error?.response?.data?.message || "Não foi possível salvar as credenciais de teste.");
+      setMessage(providerError(error, "Não foi possível salvar as credenciais de teste."));
     } finally {
       setBusy(null);
     }
@@ -137,7 +146,7 @@ export default function AdminMercadoPagoTestsPage() {
       setMessage(`${profileInfo[code].title}: credencial respondeu corretamente.`);
       await load();
     } catch (error: any) {
-      setMessage(error?.response?.data?.message || "O Mercado Pago recusou a credencial de teste.");
+      setMessage(providerError(error, "O Mercado Pago recusou a credencial de teste."));
     } finally {
       setBusy(null);
     }
@@ -157,8 +166,7 @@ export default function AdminMercadoPagoTestsPage() {
       setMessage(`${profileInfo[code].title}: teste criado com sucesso.`);
       await load();
     } catch (error: any) {
-      const payload = error?.response?.data;
-      setMessage(payload?.message || payload?.providerResponse?.message || "O teste não pôde ser criado.");
+      setMessage(providerError(error, "O teste não pôde ser criado."));
     } finally {
       setBusy(null);
     }
@@ -210,11 +218,20 @@ export default function AdminMercadoPagoTestsPage() {
               </div>
 
               <div className="mt-5 space-y-3">
-                <Field label="Nº da aplicação" value={draft.applicationId} onChange={(value) => patchDraft(code, { applicationId: value })} placeholder="Ex.: 1463218279192769" />
+                <Field label="Nº da aplicação (App ID)" value={draft.applicationId} onChange={(value) => patchDraft(code, { applicationId: value })} placeholder="Ex.: 1463218279192769" />
+                <p className="-mt-1 text-[10px] leading-4 text-stone-400">É o número exibido pelo Mercado Pago em Dados da integração → Nº da aplicação.</p>
                 <Field label="Public Key de teste" value={draft.publicKey} onChange={(value) => patchDraft(code, { publicKey: value })} placeholder={profile.publicKeyConfigured ? "Configurada · deixe vazio para manter" : "Cole a Public Key de teste"} secret />
                 {code !== "MARKETPLACE" && <Field label="Access Token de teste" value={draft.accessToken} onChange={(value) => patchDraft(code, { accessToken: value })} placeholder={profile.accessTokenConfigured ? "Configurado · deixe vazio para manter" : "Cole o Access Token de teste"} secret />}
                 {code === "MARKETPLACE" && <Field label="Access Token OAuth do vendedor de teste" value={draft.sellerAccessToken} onChange={(value) => patchDraft(code, { sellerAccessToken: value })} placeholder={profile.sellerAccessTokenConfigured ? "Configurado · deixe vazio para manter" : "Token OAuth da conta vendedor sandbox"} secret />}
-                <Field label={code === "MARKETPLACE" ? "E-mail do comprador de teste" : "E-mail do pagador de teste"} value={draft.payerEmail} onChange={(value) => patchDraft(code, { payerEmail: value })} placeholder={code === "ORDERS" ? "test_user_br@testuser.com" : "usuario_teste@..."} />
+                {code === "ORDERS" ? (
+                  <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-[11px] leading-5 text-sky-900">
+                    <strong>Cenário oficial de certificação:</strong><br />
+                    Pagador <code>APRO</code> · <code>test_user_br@testuser.com</code> · Pix de R$ 50,00.
+                    <br /><span className="text-sky-700">Esses dados são fixos do sandbox do Mercado Pago e não precisam ser preenchidos.</span>
+                  </div>
+                ) : (
+                  <Field label={code === "MARKETPLACE" ? "E-mail do comprador de teste" : "E-mail do pagador de teste"} value={draft.payerEmail} onChange={(value) => patchDraft(code, { payerEmail: value })} placeholder="usuario_teste@..." />
+                )}
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-2">
@@ -229,20 +246,21 @@ export default function AdminMercadoPagoTestsPage() {
               <div className="mt-4 rounded-2xl bg-stone-50 p-4">
                 <p className="text-[10px] font-black uppercase tracking-[0.16em] text-stone-400">Teste executado</p>
                 <p className="mt-1 text-xs leading-5 text-stone-600">
-                  {code === "ORDERS" && "Cria Pix de teste de R$ 50,00 pela Orders API, exatamente no trilho usado pela medição de qualidade."}
+                  {code === "ORDERS" && "Cria o Pix oficial de teste de R$ 50,00 pela Orders API usando o cenário APRO exigido na medição de qualidade."}
                   {code === "SUBSCRIPTIONS" && "Cria assinatura pendente de R$ 10,00/mês e devolve o link/Preapproval ID."}
                   {code === "MARKETPLACE" && "Cria Pix de R$ 25,00 com R$ 0,25 de taxa de intermediação usando o token OAuth do seller de teste."}
                 </p>
                 <button type="button" onClick={() => void execute(code)} disabled={busy !== null} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-stone-950 px-3 py-3 text-xs font-black text-white disabled:opacity-50">
                   {busy === `run-${code}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  {code === "ORDERS" ? "Gerar Order ID" : code === "SUBSCRIPTIONS" ? "Gerar Preapproval ID" : "Gerar Payment ID com split"}
+                  {code === "ORDERS" ? "Gerar Order ID oficial de teste" : code === "SUBSCRIPTIONS" ? "Gerar Preapproval ID" : "Gerar Payment ID com split"}
                 </button>
               </div>
 
               {resourceId && <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
                 <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-700">{profileInfo[code].idLabel}</p>
                 <div className="mt-2 flex items-center gap-2"><code className="min-w-0 flex-1 break-all text-xs font-bold text-emerald-950">{resourceId}</code><button type="button" onClick={() => void copy(resourceId)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-700 shadow-sm"><Clipboard className="h-4 w-4" /></button></div>
-                {result?.status && <p className="mt-2 text-xs font-semibold text-emerald-800">Status: {String(result.status)}</p>}
+                {result?.status && <p className="mt-2 text-xs font-semibold text-emerald-800">Status: {String(result.status)}{result?.statusDetail ? ` · ${String(result.statusDetail)}` : ""}</p>}
+                {result?.transactionStatus && <p className="mt-1 text-xs text-emerald-800">Transação: {String(result.transactionStatus)}{result?.transactionStatusDetail ? ` · ${String(result.transactionStatusDetail)}` : ""}</p>}
                 {result?.initPoint && <a href={result.initPoint} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-xs font-black text-emerald-800 underline">Abrir autorização da assinatura</a>}
               </div>}
             </article>
