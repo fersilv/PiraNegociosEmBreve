@@ -44,7 +44,7 @@ export class ClassifiedsEntitlementsService {
   }
 
   async assertAuctionCreation(uid: string) {
-    const identity = await this.identities.active(uid);
+    const identity = await this.identities.active(uid, true);
     if (identity.type !== 'COMPANY') {
       throw new ForbiddenException('Leilões são exclusivos para empresas no plano Elite.');
     }
