@@ -50,9 +50,7 @@ export class CnpjLookupService {
 
     const previous = current.cnpjSnapshot || null;
     const changes = previous ? this.detectImportantChanges(previous, snapshot) : [];
-    const changeAlert = changes.length
-      ? { detectedAt: new Date().toISOString(), changes }
-      : null;
+    const changeAlert = changes.length ? { detectedAt: new Date().toISOString(), changes } : null;
     const commercialSame = current.commercialAddressSameAsLegal !== false;
 
     const rows = await this.dataSource.query(
@@ -74,7 +72,7 @@ export class CnpjLookupService {
          address=CASE WHEN $14 THEN $5 ELSE address END,
          city=CASE WHEN $14 THEN $6 ELSE city END,
          state=CASE WHEN $14 THEN $7 ELSE state END,
-         "cityState"=CASE WHEN $14 THEN concat_ws('/',NULLIF($6,''),NULLIF($7,'')) ELSE "cityState" END,
+         "cityState"=CASE WHEN $14 THEN concat_ws(', ',NULLIF($6,''),NULLIF($7,'')) ELSE "cityState" END,
          "updatedAt"=now()
        WHERE id=$1 RETURNING *`,
       [
@@ -99,7 +97,6 @@ export class CnpjLookupService {
 
   normalize(value: string) {
     const cnpj = String(value || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
-    // Desde 2026 o CNPJ pode ser alfanumérico nos 12 primeiros caracteres.
     if (!/^[0-9A-Z]{12}[0-9]{2}$/.test(cnpj)) {
       throw new BadRequestException('Informe um CNPJ válido com 14 caracteres.');
     }
