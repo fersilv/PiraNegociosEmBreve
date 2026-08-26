@@ -13,6 +13,7 @@ import { ClassifiedsAuctionExtrasController } from './classifieds-auction-extras
 import { ClassifiedsAuctionGateway } from './classifieds-auction.gateway';
 import { ClassifiedsAuctionManagementController } from './classifieds-auction-management.controller';
 import { ClassifiedsAuctionManagementService } from './classifieds-auction-management.service';
+import { ClassifiedsAuctionPaymentPolicyService } from './classifieds-auction-payment-policy.service';
 import { ClassifiedsAuctionPublicController } from './classifieds-auction-public.controller';
 import { ClassifiedsAuctionPublicService } from './classifieds-auction-public.service';
 import { ClassifiedsAuctionService } from './classifieds-auction.service';
@@ -30,6 +31,10 @@ import { ClassifiedsMarketplacePaymentsService } from './classifieds-marketplace
 import { ClassifiedsMarketplaceTermsService } from './classifieds-marketplace-terms.service';
 import { ClassifiedsPrivateController } from './classifieds-private.controller';
 import { ClassifiedsPublicController } from './classifieds-public.controller';
+import { ClassifiedsReceiptPreferencesService } from './classifieds-receipt-preferences.service';
+import { ClassifiedsReviewModerationService } from './classifieds-review-moderation.service';
+import { ClassifiedsReviewsAdminController, ClassifiedsReviewsController, ClassifiedsReviewsPublicController } from './classifieds-reviews.controller';
+import { ClassifiedsReviewsService } from './classifieds-reviews.service';
 import { ClassifiedsSalesController } from './classifieds-sales.controller';
 import { ClassifiedsSalesService } from './classifieds-sales.service';
 import { ClassifiedsService } from './classifieds.service';
@@ -43,9 +48,80 @@ import { ClassifiedUserPreference } from './entities/classified-user-preference.
 import { CompanyClassifiedProfile } from './entities/company-classified-profile.entity';
 
 @Module({
-  imports: [AdminModule,ChatModule,NotificationsModule,PaymentsModule,TypeOrmModule.forFeature([ClassifiedCategory,ClassifiedListing,ClassifiedListingImage,ClassifiedFavorite,ClassifiedUserPreference,CompanyClassifiedProfile,ClassifiedConversation,ClassifiedConversationMessage,User,Company])],
-  controllers: [ClassifiedsPublicController,ClassifiedsAuctionPublicController,ClassifiedsAuctionManagementController,ClassifiedsPrivateController,ClassifiedsSalesController,ClassifiedsCheckoutController,ClassifiedsCheckoutWebhookController,ClassifiedsAuctionExtrasController,ClassifiedsCommerceAdminController],
-  providers: [AdminGuard,ClassifiedsService,ClassifiedsIdentityService,ClassifiedsLocationService,ClassifiedsChatService,ClassifiedsAiReviewService,ClassifiedsCommerceService,ClassifiedsEntitlementsService,ClassifiedsAuctionGateway,ClassifiedsAuctionService,ClassifiedsAuctionPublicService,ClassifiedsAuctionManagementService,ClassifiedsAuctionEngagementService,ClassifiedsAuctionSettlementService,ClassifiedsSalesService,ClassifiedsMarketplacePaymentsService,ClassifiedsMarketplaceTermsService,ClassifiedsCheckoutService],
-  exports: [ClassifiedsService,ClassifiedsIdentityService,ClassifiedsLocationService,ClassifiedsCommerceService,ClassifiedsEntitlementsService,ClassifiedsAuctionService,ClassifiedsAuctionPublicService,ClassifiedsAuctionManagementService,ClassifiedsAuctionEngagementService,ClassifiedsAuctionSettlementService,ClassifiedsSalesService,ClassifiedsMarketplacePaymentsService,ClassifiedsMarketplaceTermsService,ClassifiedsCheckoutService],
+  imports: [
+    AdminModule,
+    ChatModule,
+    NotificationsModule,
+    PaymentsModule,
+    TypeOrmModule.forFeature([
+      ClassifiedCategory,
+      ClassifiedListing,
+      ClassifiedListingImage,
+      ClassifiedFavorite,
+      ClassifiedUserPreference,
+      CompanyClassifiedProfile,
+      ClassifiedConversation,
+      ClassifiedConversationMessage,
+      User,
+      Company,
+    ]),
+  ],
+  controllers: [
+    ClassifiedsPublicController,
+    ClassifiedsAuctionPublicController,
+    ClassifiedsAuctionManagementController,
+    ClassifiedsPrivateController,
+    ClassifiedsSalesController,
+    ClassifiedsCheckoutController,
+    ClassifiedsCheckoutWebhookController,
+    ClassifiedsAuctionExtrasController,
+    ClassifiedsCommerceAdminController,
+    ClassifiedsReviewsController,
+    ClassifiedsReviewsPublicController,
+    ClassifiedsReviewsAdminController,
+  ],
+  providers: [
+    AdminGuard,
+    ClassifiedsService,
+    ClassifiedsIdentityService,
+    ClassifiedsLocationService,
+    ClassifiedsChatService,
+    ClassifiedsAiReviewService,
+    ClassifiedsCommerceService,
+    ClassifiedsEntitlementsService,
+    ClassifiedsAuctionGateway,
+    ClassifiedsAuctionService,
+    ClassifiedsAuctionPublicService,
+    ClassifiedsAuctionManagementService,
+    ClassifiedsAuctionEngagementService,
+    ClassifiedsAuctionSettlementService,
+    ClassifiedsAuctionPaymentPolicyService,
+    ClassifiedsReceiptPreferencesService,
+    ClassifiedsSalesService,
+    ClassifiedsMarketplacePaymentsService,
+    ClassifiedsMarketplaceTermsService,
+    ClassifiedsCheckoutService,
+    ClassifiedsReviewModerationService,
+    ClassifiedsReviewsService,
+  ],
+  exports: [
+    ClassifiedsService,
+    ClassifiedsIdentityService,
+    ClassifiedsLocationService,
+    ClassifiedsCommerceService,
+    ClassifiedsEntitlementsService,
+    ClassifiedsAuctionService,
+    ClassifiedsAuctionPublicService,
+    ClassifiedsAuctionManagementService,
+    ClassifiedsAuctionEngagementService,
+    ClassifiedsAuctionSettlementService,
+    ClassifiedsAuctionPaymentPolicyService,
+    ClassifiedsReceiptPreferencesService,
+    ClassifiedsSalesService,
+    ClassifiedsMarketplacePaymentsService,
+    ClassifiedsMarketplaceTermsService,
+    ClassifiedsCheckoutService,
+    ClassifiedsReviewsService,
+  ],
 })
 export class ClassifiedsModule {}
