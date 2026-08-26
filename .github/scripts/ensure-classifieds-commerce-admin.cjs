@@ -34,6 +34,12 @@ patch('pages/DashboardRouter.tsx', (input) => {
 
 patch('components/AdminWorkspaceLayout.tsx', (input) => {
   let source = input;
+  if (!/\bBadgeDollarSign\b/.test(source.split('from "lucide-react";')[0])) {
+    source = source.replace(
+      '  AlertTriangle,\n',
+      '  AlertTriangle,\n  BadgeDollarSign,\n',
+    );
+  }
   if (!source.includes('to: "/admin/pagamentos/classificados"')) {
     source = source.replace(
       '{ to: "/admin/pagamentos", label: "Pagamentos", icon: <CreditCard className="h-4 w-4" />, end: true },',
@@ -46,6 +52,7 @@ patch('components/AdminWorkspaceLayout.tsx', (input) => {
       '<MoreLink to="/admin/pagamentos" icon={<CreditCard className="h-4 w-4" />} label="Pagamentos" close={() => setMoreOpen(false)} />\n              <MoreLink to="/admin/pagamentos/classificados" icon={<BadgeDollarSign className="h-4 w-4" />} label="Comissões Classificados" close={() => setMoreOpen(false)} />',
     );
   }
+  if (!source.includes('BadgeDollarSign,')) throw new Error('Could not wire BadgeDollarSign import.');
   if (!source.includes('to: "/admin/pagamentos/classificados"')) throw new Error('Could not wire classifieds commerce admin nav.');
   if (!source.includes('label="Comissões Classificados"')) throw new Error('Could not wire classifieds commerce mobile admin nav.');
   return source;
