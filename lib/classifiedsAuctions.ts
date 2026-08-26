@@ -1,6 +1,26 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
 
+export type PublicAuctionSettlement = {
+  mode: 'DIRECT' | 'ONLINE_OR_DIRECT';
+  protectedPayment: false;
+  onlinePaymentEnabled?: boolean;
+  fulfillmentModes?: Array<'ARRANGE' | 'PICKUP' | 'DELIVERY'>;
+  deliveryFeeCents?: number;
+  deliveryNote?: string | null;
+  pickupAddress?: string | null;
+  paymentStatus?: string;
+  paymentMethods?: Array<'PIX' | 'CARD'>;
+  cardMaxInstallments?: number;
+  auctionFeePayer?: 'SELLER' | 'BUYER';
+  auctionFeeRateBps?: number | null;
+  auctionFeePercentage?: number | null;
+  auctionFeeCents?: number | null;
+  buyerAuctionFeeCents?: number | null;
+  feeDisclosure?: string | null;
+  message: string;
+};
+
 export type PublicClassifiedAuction = {
   id: string;
   listingId: string;
@@ -28,8 +48,14 @@ export type PublicClassifiedAuction = {
   finalAmount?: number | null;
   nextMinimum: number;
   live: boolean;
+  scheduled?: boolean;
+  onlinePaymentEnabled?: boolean;
+  auctionFeePayer?: 'SELLER' | 'BUYER';
+  auctionFeePercentage?: number | null;
+  paymentMethods?: Array<'PIX' | 'CARD'>;
+  pickupAddress?: string | null;
   bids?: Array<{ id: string; amount: number; createdAt: string; bidderName: string }>;
-  settlement?: { mode: 'DIRECT'; protectedPayment: false; message: string };
+  settlement?: PublicAuctionSettlement;
 };
 
 let cache: { at: number; rows: PublicClassifiedAuction[] } | null = null;
