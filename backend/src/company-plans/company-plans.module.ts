@@ -13,6 +13,7 @@ import { User } from '../users/entities/user.entity';
 import { CompanyPlansAdminController } from './company-plans-admin.controller';
 import { CompanyPlansAdminService } from './company-plans-admin.service';
 import { CompanyPlansController } from './company-plans.controller';
+import { CompanyPlansOverviewService } from './company-plans-overview.service';
 import { CompanyPlansService } from './company-plans.service';
 import { CompanyWhatsAppPremiumService } from './company-whatsapp-premium.service';
 
@@ -31,7 +32,13 @@ import { CompanyWhatsAppPremiumService } from './company-whatsapp-premium.servic
     CompaniesModule,
   ],
   controllers: [CompanyPlansController, CompanyPlansAdminController],
-  providers: [CompanyPlansService, CompanyPlansAdminService, CompanyWhatsAppPremiumService, AdminGuard],
+  providers: [
+    CompanyPlansService,
+    CompanyPlansOverviewService,
+    CompanyPlansAdminService,
+    CompanyWhatsAppPremiumService,
+    AdminGuard,
+  ],
   exports: [CompanyPlansService, CompanyWhatsAppPremiumService],
 })
 export class CompanyPlansModule {}
