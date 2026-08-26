@@ -10,12 +10,15 @@ export interface AiStatus {
   paymentAccessOverride: boolean;
   resumeScorePaymentRequired: boolean;
   resumeReanalysisPaymentRequired: boolean;
+  resumeImprovementPaymentRequired: boolean;
   resumeImportPaymentRequired: boolean;
   freeResumeImportAvailable: boolean;
   resumeImportCount: number;
   resumeImportPriceCents: number | null;
   resumeImportProductEnabled: boolean;
   resumeImportCredits: number;
+  resumeReanalysisPriceCents: number | null;
+  resumeImprovementPriceCents: number | null;
   freeResumeAnalysisAvailable: boolean;
   hasSavedResumeAnalysis: boolean;
   resumeAnalysisCount: number;
@@ -31,12 +34,15 @@ const EMPTY_STATUS: AiStatus = {
   paymentAccessOverride: false,
   resumeScorePaymentRequired: false,
   resumeReanalysisPaymentRequired: false,
+  resumeImprovementPaymentRequired: false,
   resumeImportPaymentRequired: false,
   freeResumeImportAvailable: true,
   resumeImportCount: 0,
   resumeImportPriceCents: null,
   resumeImportProductEnabled: false,
   resumeImportCredits: 0,
+  resumeReanalysisPriceCents: null,
+  resumeImprovementPriceCents: null,
   freeResumeAnalysisAvailable: true,
   hasSavedResumeAnalysis: false,
   resumeAnalysisCount: 0,
@@ -63,6 +69,7 @@ export function useAiStatus(): AiStatus {
             paymentAccessOverride: Boolean(response.data?.paymentAccessOverride),
             resumeScorePaymentRequired: Boolean(response.data?.resumeScorePaymentRequired),
             resumeReanalysisPaymentRequired: Boolean(response.data?.resumeReanalysisPaymentRequired),
+            resumeImprovementPaymentRequired: Boolean(response.data?.resumeImprovementPaymentRequired),
             resumeImportPaymentRequired: Boolean(response.data?.resumeImportPaymentRequired),
             freeResumeImportAvailable: response.data?.freeResumeImportAvailable !== false,
             resumeImportCount: Number(response.data?.resumeImportCount || 0),
@@ -71,6 +78,12 @@ export function useAiStatus(): AiStatus {
               : null,
             resumeImportProductEnabled: Boolean(response.data?.products?.import?.enabled),
             resumeImportCredits: Number(response.data?.credits?.RESUME_AI_IMPORT || 0),
+            resumeReanalysisPriceCents: Number.isFinite(Number(response.data?.products?.reanalysis?.effectivePriceCents))
+              ? Number(response.data.products.reanalysis.effectivePriceCents)
+              : null,
+            resumeImprovementPriceCents: Number.isFinite(Number(response.data?.products?.improvement?.effectivePriceCents))
+              ? Number(response.data.products.improvement.effectivePriceCents)
+              : null,
             freeResumeAnalysisAvailable: response.data?.freeResumeAnalysisAvailable !== false,
             hasSavedResumeAnalysis: Boolean(response.data?.hasSavedResumeAnalysis),
             resumeAnalysisCount: Number(response.data?.resumeAnalysisCount || 0),
@@ -86,14 +99,17 @@ export function useAiStatus(): AiStatus {
     const handleVisibility = () => {
       if (document.visibilityState === "visible") load();
     };
+    const handlePaymentCompleted = () => load();
 
     load();
     window.addEventListener("focus", load);
+    window.addEventListener("piranegocios:payment-completed", handlePaymentCompleted);
     document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
       active = false;
       window.removeEventListener("focus", load);
+      window.removeEventListener("piranegocios:payment-completed", handlePaymentCompleted);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, []);
