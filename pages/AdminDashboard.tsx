@@ -211,7 +211,7 @@ export function AdminDashboard({
       } catch (requestError: any) {
         setError(
           requestError.response?.data?.message ||
-          "Não foi possível carregar os dados administrativos.",
+            "Não foi possível carregar os dados administrativos.",
         );
       } finally {
         setLoading(false);
@@ -276,7 +276,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-        "Não foi possível criar a empresa.",
+          "Não foi possível criar a empresa.",
       );
     } finally {
       setSaving(false);
@@ -311,7 +311,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-        "Não foi possível publicar a vaga.",
+          "Não foi possível publicar a vaga.",
       );
     } finally {
       setSaving(false);
@@ -327,7 +327,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-        "Não foi possível atualizar a empresa.",
+          "Não foi possível atualizar a empresa.",
       );
     }
   };
@@ -343,7 +343,28 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-        "Não foi possível atualizar a vaga.",
+          "Não foi possível atualizar a vaga.",
+      );
+    }
+  };
+  const moderateJob = async (job: Job, action: "APPROVE" | "REJECT") => {
+    if (
+      action === "REJECT" &&
+      !window.confirm(`Rejeitar a vaga “${job.title}”? Ela não será publicada.`)
+    )
+      return;
+    try {
+      const response = await api.put(`/admin/jobs/${job.id}/moderation`, {
+        action,
+      });
+      setJobs((current) =>
+        current.map((item) => (item.id === job.id ? response.data : item)),
+      );
+      await load("jobs");
+    } catch (requestError: any) {
+      setError(
+        requestError.response?.data?.message ||
+          "Não foi possível concluir a moderação da vaga.",
       );
     }
   };
@@ -357,7 +378,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-        "Não foi possível excluir a vaga.",
+          "Não foi possível excluir a vaga.",
       );
     }
   };
@@ -375,7 +396,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-        "Não foi possível processar a solicitação.",
+          "Não foi possível processar a solicitação.",
       );
     }
   };
@@ -407,7 +428,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-        "Não foi possível registrar a sanção.",
+          "Não foi possível registrar a sanção.",
       );
     } finally {
       setSaving(false);
@@ -427,7 +448,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-        "Não foi possível salvar a empresa.",
+          "Não foi possível salvar a empresa.",
       );
     } finally {
       setSaving(false);
@@ -445,7 +466,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-        "Não foi possível revisar a alteração da URL.",
+          "Não foi possível revisar a alteração da URL.",
       );
     }
   };
@@ -463,7 +484,7 @@ export function AdminDashboard({
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-        "Não foi possível salvar o usuário.",
+          "Não foi possível salvar o usuário.",
       );
     } finally {
       setSaving(false);
@@ -703,7 +724,8 @@ export function AdminDashboard({
                   >
                     <option value="PENDING">Aguardando aprovação</option>
                     <option value="ACTIVE">Ativas</option>
-                    <option value="INACTIVE">Inativas</option>
+                    <option value="CLOSED">Encerradas</option>
+                    <option value="REJECTED">Rejeitadas</option>
                     <option value="ALL">Todos os status</option>
                   </select>
                   <select
@@ -785,6 +807,7 @@ export function AdminDashboard({
                   <JobsTable
                     jobs={filteredJobs}
                     onToggle={toggleJob}
+                    onModerate={moderateJob}
                     onDelete={deleteJob}
                   />
                 )}
@@ -1197,7 +1220,10 @@ export function AdminDashboard({
           wide
         >
           <div className="space-y-5 text-sm">
-            <AdminCompanyPlanEditor companyId={companyDetail.company.id} companyName={companyDetail.company.name} />
+            <AdminCompanyPlanEditor
+              companyId={companyDetail.company.id}
+              companyName={companyDetail.company.name}
+            />
             <form
               onSubmit={saveCompanyDetail}
               className="space-y-3 rounded-xl border border-stone-200 p-4"
@@ -1422,7 +1448,7 @@ export function AdminDashboard({
                   <div className="py-2" key={job.id}>
                     {job.title}{" "}
                     <span className="text-stone-500">
-                      — {job.active ? "ativa" : "inativa"}
+                      — {job.active ? "ativa" : "encerrada"}
                     </span>
                   </div>
                 )) || <p>Sem vagas.</p>}
@@ -1641,8 +1667,8 @@ export function AdminDashboard({
                     </small>
                   </div>
                 )) || (
-                    <p className="text-stone-500">Sem acessos registrados.</p>
-                  )}
+                  <p className="text-stone-500">Sem acessos registrados.</p>
+                )}
               </div>
             </section>
           </div>
@@ -1758,7 +1784,7 @@ export function ApiV1Panel() {
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-        "Não foi possível gerar a chave.",
+          "Não foi possível gerar a chave.",
       );
     } finally {
       setSaving(false);
@@ -1798,7 +1824,7 @@ export function ApiV1Panel() {
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-        "Não foi possível carregar a atividade desta chave.",
+          "Não foi possível carregar a atividade desta chave.",
       );
     } finally {
       setRequestsLoading(false);
@@ -2008,7 +2034,7 @@ export function ApiV1Panel() {
                       <button
                         disabled={
                           requestPagination.page >=
-                          requestPagination.totalPages || requestsLoading
+                            requestPagination.totalPages || requestsLoading
                         }
                         onClick={() =>
                           loadClientRequests(client, requestPagination.page + 1)
@@ -2043,24 +2069,47 @@ export function ApiV1Panel() {
 
         <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-4">
           <strong className="text-sm text-amber-900 flex items-center gap-2">
-            <span className="text-lg">✨</span> O que há de novo na API Externa 2.0 para IA?
+            <span className="text-lg">✨</span> O que há de novo na API Externa
+            2.0 para IA?
           </strong>
           <p className="mt-2 text-xs text-amber-800">
-            A API externa agora permite identificar empresas explicitamente, adicionar IDs únicos e verificar vagas contínuas.
-            No payload (POST ou PATCH), você pode incluir:
+            A API externa agora permite identificar empresas explicitamente,
+            adicionar IDs únicos e verificar vagas contínuas. No payload (POST
+            ou PATCH), você pode incluir:
           </p>
           <ul className="mt-2 ml-4 list-disc text-xs text-amber-800 space-y-1">
-            <li><code>companyName</code> (string): Para separar o nome da empresa do portal que originou a vaga.</li>
-            <li><code>sourceExternalId</code> (string): Código único da vaga na fonte original (Ex: ID da Gupy ou MTE).</li>
-            <li><code>sourcePublishedAt</code>, <code>lastVerifiedAt</code> (string ISO-8601): Data de publicação original e última verificação.</li>
-            <li><code>isTalentPool</code> (boolean): Envie <code>true</code> para vagas que são "Banco de Talentos".</li>
-            <li><code>isFlagged</code>, <code>flagReason</code>, <code>flagObservation</code>: Sinalize vagas expiradas ou problemáticas.</li>
+            <li>
+              <code>companyName</code> (string): Para separar o nome da empresa
+              do portal que originou a vaga.
+            </li>
+            <li>
+              <code>sourceExternalId</code> (string): Código único da vaga na
+              fonte original (Ex: ID da Gupy ou MTE).
+            </li>
+            <li>
+              <code>sourcePublishedAt</code>, <code>lastVerifiedAt</code>{" "}
+              (string ISO-8601): Data de publicação original e última
+              verificação.
+            </li>
+            <li>
+              <code>isTalentPool</code> (boolean): Envie <code>true</code> para
+              vagas que são "Banco de Talentos".
+            </li>
+            <li>
+              <code>isFlagged</code>, <code>flagReason</code>,{" "}
+              <code>flagObservation</code>: Sinalize vagas expiradas ou
+              problemáticas.
+            </li>
           </ul>
           <p className="mt-2 text-xs text-amber-800 font-medium">
-            Novo endpoint <code>POST {endpoint}/:id/verification</code>: Use-o com {"{ status: 'AVAILABLE' }"} para atualizar a data de verificação sem precisar enviar o payload inteiro.
+            Novo endpoint <code>POST {endpoint}/:id/verification</code>: Use-o
+            com {"{ status: 'AVAILABLE' }"} para atualizar a data de verificação
+            sem precisar enviar o payload inteiro.
           </p>
           <p className="mt-2 text-xs text-amber-800 font-medium">
-            Qualquer vaga com <code>isExternalListing = true</code> pode ser atualizada via PATCH usando a sua chave de API, independentemente de quem cadastrou originalmente.
+            Qualquer vaga com <code>isExternalListing = true</code> pode ser
+            atualizada via PATCH usando a sua chave de API, independentemente de
+            quem cadastrou originalmente.
           </p>
         </div>
 
@@ -2123,7 +2172,8 @@ export function ApiV1Panel() {
             {`{"title":"Novo título","salary":"R$ 2.500"}`}
           </pre>
           <p className="mt-2 text-xs text-stone-500">
-            A chave tem permissão para editar QUALQUER vaga que seja catalogada como externa (<code>isExternalListing = true</code>). Todos os
+            A chave tem permissão para editar QUALQUER vaga que seja catalogada
+            como externa (<code>isExternalListing = true</code>). Todos os
             campos de conteúdo podem ser atualizados; <code>status</code>,{" "}
             <code>active</code> e <code>moderationStatus</code> são exclusivos
             da moderação administrativa.
@@ -2219,7 +2269,7 @@ function AdvertisingPanel() {
     } catch (requestError: any) {
       setError(
         requestError.response?.data?.message ||
-        "Não foi possível salvar o anúncio.",
+          "Não foi possível salvar o anúncio.",
       );
     } finally {
       setSaving(false);
@@ -2288,7 +2338,9 @@ function AdvertisingPanel() {
         className="space-y-3 rounded-2xl border border-stone-200 p-5"
       >
         <h3 className="font-bold text-stone-900">
-          {editingAdId ? "Editar anúncio contratado" : "Novo anúncio contratado"}
+          {editingAdId
+            ? "Editar anúncio contratado"
+            : "Novo anúncio contratado"}
         </h3>
         {error && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -2340,18 +2392,18 @@ function AdvertisingPanel() {
               <option value="">Selecione...</option>
               {form.ownerType === "company"
                 ? companies.map((company) => (
-                  <option value={company.id} key={company.id}>
-                    {company.name}
-                  </option>
-                ))
+                    <option value={company.id} key={company.id}>
+                      {company.name}
+                    </option>
+                  ))
                 : users.map((user) => (
-                  <option value={user.id} key={user.id}>
-                    {user.fullName ||
-                      user.displayName ||
-                      user.email ||
-                      user.id}
-                  </option>
-                ))}
+                    <option value={user.id} key={user.id}>
+                      {user.fullName ||
+                        user.displayName ||
+                        user.email ||
+                        user.id}
+                    </option>
+                  ))}
             </select>
           </Field>
         </div>
@@ -2487,14 +2539,14 @@ function AdvertisingPanel() {
                   Responsável:{" "}
                   {ad.companyId
                     ? companies.find((company) => company.id === ad.companyId)
-                      ?.name || "Empresa removida"
+                        ?.name || "Empresa removida"
                     : users.find((user) => user.id === ad.contractedByUserId)
-                      ?.fullName ||
-                    users.find((user) => user.id === ad.contractedByUserId)
-                      ?.displayName ||
-                    users.find((user) => user.id === ad.contractedByUserId)
-                      ?.email ||
-                    "Usuário removido"}
+                        ?.fullName ||
+                      users.find((user) => user.id === ad.contractedByUserId)
+                        ?.displayName ||
+                      users.find((user) => user.id === ad.contractedByUserId)
+                        ?.email ||
+                      "Usuário removido"}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -2631,10 +2683,12 @@ function CompaniesTable({
 function JobsTable({
   jobs,
   onToggle,
+  onModerate,
   onDelete,
 }: {
   jobs: Job[];
   onToggle: (job: Job) => void;
+  onModerate: (job: Job, action: "APPROVE" | "REJECT") => void;
   onDelete: (job: Job) => void;
 }) {
   return (
@@ -2677,41 +2731,91 @@ function JobsTable({
               )}
               {job.updatedAt && (
                 <span className="mt-1 block text-xs text-stone-400">
-                  Atualizado em {new Date(job.updatedAt).toLocaleDateString("pt-BR")} às {new Date(job.updatedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  Atualizado em{" "}
+                  {new Date(job.updatedAt).toLocaleDateString("pt-BR")} às{" "}
+                  {new Date(job.updatedAt).toLocaleTimeString("pt-BR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </span>
               )}
               {job.lastVerifiedAt && (
                 <span className="mt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                  Verificado há {Math.floor((Date.now() - new Date(job.lastVerifiedAt).getTime()) / (1000 * 60 * 60 * 24))} dias
+                  <svg
+                    className="w-3 h-3"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                  Verificado há{" "}
+                  {Math.floor(
+                    (Date.now() - new Date(job.lastVerifiedAt).getTime()) /
+                      (1000 * 60 * 60 * 24),
+                  )}{" "}
+                  dias
                 </span>
               )}
             </td>
             <td className="px-5 py-4">
               <span
-                className={`rounded-full px-2.5 py-1 text-xs font-bold ${job.active ? "bg-emerald-100 text-emerald-800" : "bg-stone-100 text-stone-600"}`}
+                className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                  job.moderationStatus === "PENDING"
+                    ? "bg-blue-100 text-blue-800"
+                    : job.moderationStatus === "REJECTED"
+                      ? "bg-red-100 text-red-800"
+                      : job.active
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-amber-100 text-amber-800"
+                }`}
               >
-                {job.active ? "Ativa" : "Inativa"}
+                {job.moderationStatus === "PENDING"
+                  ? "Aguardando revisão"
+                  : job.moderationStatus === "REJECTED"
+                    ? "Rejeitada"
+                    : job.active
+                      ? "Ativa"
+                      : "Encerrada"}
               </span>
               {(job.reportCount || 0) > 0 && (
                 <span className="ml-2 rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-800">
                   {job.reportCount} alerta{job.reportCount === 1 ? "" : "s"}
                 </span>
               )}
-              {job.moderationStatus === "PENDING" && (
-                <span className="ml-2 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-800">
-                  Aguardando revisão
-                </span>
-              )}
               {job.isFlagged && (
                 <div className="mt-2 text-xs font-medium text-amber-700 bg-amber-50 p-2 rounded border border-amber-200">
-                  <strong>Sinalizada pela IA:</strong> {job.flagObservation || "Nenhuma observação informada"}
+                  <strong>Sinalizada pela IA:</strong>{" "}
+                  {job.flagObservation || "Nenhuma observação informada"}
                 </div>
               )}
             </td>
             <td className="px-5 py-4 text-stone-600 font-medium text-sm">
               <span className="flex items-center gap-1.5 bg-stone-100 w-fit px-2.5 py-1 rounded-md">
-                <svg className="w-3.5 h-3.5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                <svg
+                  className="w-3.5 h-3.5 text-stone-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                  />
+                </svg>
                 {job.views || 0}
               </span>
             </td>
@@ -2723,12 +2827,36 @@ function JobsTable({
                 >
                   Gerenciar
                 </Link>
-                <button
-                  onClick={() => onToggle(job)}
-                  className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
-                >
-                  {job.active ? "Desativar" : "Ativar"}
-                </button>
+                {job.moderationStatus === "PENDING" ? (
+                  <>
+                    <button
+                      onClick={() => onModerate(job, "APPROVE")}
+                      className="rounded-lg bg-emerald-100 px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-200"
+                    >
+                      Aprovar e publicar
+                    </button>
+                    <button
+                      onClick={() => onModerate(job, "REJECT")}
+                      className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100"
+                    >
+                      Rejeitar
+                    </button>
+                  </>
+                ) : job.moderationStatus === "REJECTED" ? (
+                  <button
+                    onClick={() => onModerate(job, "APPROVE")}
+                    className="rounded-lg bg-emerald-100 px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-200"
+                  >
+                    Aprovar e publicar
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => onToggle(job)}
+                    className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
+                  >
+                    {job.active ? "Encerrar" : "Reabrir"}
+                  </button>
+                )}
                 <button
                   onClick={() => onDelete(job)}
                   className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100"
@@ -2852,7 +2980,9 @@ function Modal({
       >
         <div className="flex shrink-0 items-center justify-between gap-4 border-b border-stone-200 bg-white px-4 py-3 sm:px-6 sm:py-4">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-400">Gerenciamento</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-400">
+              Gerenciamento
+            </p>
             <h2 className="truncate font-serif text-xl font-bold text-stone-900">
               {title}
             </h2>

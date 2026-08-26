@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   ForbiddenException,
@@ -94,9 +95,16 @@ export class JobsService {
     if (!alreadyAuthorized && job.ownerId !== userId)
       throw new ForbiddenException('Você só pode editar suas próprias vagas');
 
+    if (
+      data.active === true &&
+      (job.moderationStatus === 'PENDING' ||
+        job.moderationStatus === 'REJECTED')
+    ) {
+      throw new BadRequestException(
+        'Esta vaga precisa ser aprovada pela moderação antes da publicação.',
+      );
+    }
     Object.assign(job, this.pickMutableFields(data));
-    if (data.active === true && job.moderationStatus === 'PENDING')
-      job.moderationStatus = 'APPROVED';
     return this.jobsRepository.save(job);
   }
 

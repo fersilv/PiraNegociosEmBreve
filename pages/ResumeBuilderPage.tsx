@@ -14,8 +14,10 @@ import { api } from "../lib/api";
 import { Link, Navigate } from "react-router-dom";
 import {
   AlertCircle,
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
   BookOpen,
   BrainCircuit,
   Briefcase,
@@ -26,6 +28,7 @@ import {
   FileText,
   Globe,
   GraduationCap,
+  GripVertical,
   Layout,
   Loader2,
   Lock,
@@ -177,6 +180,14 @@ function dateSortValue(value: string): number {
   return Number.MAX_SAFE_INTEGER - 1;
 }
 
+function stageRecencyValue(stage: ExperienceTimelineEntry): number {
+  if (stage.current) return Number.MAX_SAFE_INTEGER;
+  const end = dateSortValue(stage.endDate);
+  if (end < Number.MAX_SAFE_INTEGER - 1) return end;
+  const start = dateSortValue(stage.startDate);
+  return start < Number.MAX_SAFE_INTEGER - 1 ? start : -1;
+}
+
 function normalizeStage(stage: ExperienceTimelineEntry): ExperienceTimelineEntry {
   return {
     ...stage,
@@ -203,12 +214,17 @@ function syncExperience(exp: ProfessionalExperience): ProfessionalExperience {
           skills: exp.skills || [],
         },
       ];
-  const timeline = rawTimeline
-    .map(normalizeStage)
+  const normalizedTimeline = rawTimeline.map(normalizeStage);
+  const datedStages = normalizedTimeline
+    .filter((stage) => Boolean(stage.startDate))
     .sort((a, b) => dateSortValue(a.startDate) - dateSortValue(b.startDate));
-  const datedStages = timeline.filter((stage) => Boolean(stage.startDate));
-  const first = datedStages[0] || timeline[0];
-  const latest = datedStages[datedStages.length - 1] || timeline[timeline.length - 1];
+  const first = datedStages[0] || normalizedTimeline[0];
+  const latest = [...normalizedTimeline].sort(
+    (a, b) => stageRecencyValue(b) - stageRecencyValue(a),
+  )[0];
+  const timeline = [...normalizedTimeline].sort(
+    (a, b) => stageRecencyValue(b) - stageRecencyValue(a),
+  );
   const allSkills = Array.from(
     new Set([...(exp.skills || []), ...timeline.flatMap((stage) => stage.skills || [])]),
   );
@@ -240,6 +256,31 @@ function prepareExperienceForSave(exp: ProfessionalExperience): ProfessionalExpe
   });
 }
 
+function experienceRecencyValue(exp: ProfessionalExperience): number {
+  const experience = syncExperience(exp);
+  const stages = experience.timeline || [];
+  if (experience.current || stages.some((stage) => stage.current)) return Number.MAX_SAFE_INTEGER;
+  const values = stages
+    .flatMap((stage) => [stage.endDate, stage.startDate])
+    .concat([experience.endDate, experience.startDate])
+    .map(dateSortValue)
+    .filter((value) => value < Number.MAX_SAFE_INTEGER - 1);
+  return values.length > 0 ? Math.max(...values) : 0;
+}
+
+function sortExperiencesByRecency(experiences: ProfessionalExperience[]): ProfessionalExperience[] {
+  return [...experiences].sort(
+    (left, right) => experienceRecencyValue(right) - experienceRecencyValue(left),
+  );
+}
+
+function applyExperienceDisplayOrder(experiences: ProfessionalExperience[]): ProfessionalExperience[] {
+  return experiences.map((experience, displayOrder) => ({
+    ...experience,
+    displayOrder,
+  }));
+}
+
 function mergeExperiencesByCompany(value: unknown): ProfessionalExperience[] {
   if (!Array.isArray(value)) return [];
   const merged = new Map<string, ProfessionalExperience>();
@@ -262,7 +303,16 @@ function mergeExperiencesByCompany(value: unknown): ProfessionalExperience[] {
       }),
     );
   }
-  return Array.from(merged.values());
+  const experiences = Array.from(merged.values());
+  const hasSavedCustomOrder =
+    experiences.length > 0 &&
+    experiences.every((experience) => Number.isFinite(experience.displayOrder));
+  if (hasSavedCustomOrder) {
+    return [...experiences].sort(
+      (left, right) => Number(left.displayOrder) - Number(right.displayOrder),
+    );
+  }
+  return sortExperiencesByRecency(experiences);
 }
 
 function normalizeEducation(value: unknown): AcademicEducation[] {
@@ -434,7 +484,9 @@ export function ResumeBuilderPage() {
   const saveProgress = async () => {
     setSaving(true);
     try {
-      const normalizedExperiences = formExperiences.map(prepareExperienceForSave);
+      const normalizedExperiences = applyExperienceDisplayOrder(
+        formExperiences.map(prepareExperienceForSave),
+      );
       setFormExperiences(normalizedExperiences);
       await api.patch("/users/me", {
         fullName: formName,
@@ -465,6 +517,21 @@ export function ResumeBuilderPage() {
     setStep((current) => current + 1);
   };
   const prevStep = () => setStep((current) => Math.max(-1, current - 1));
+  const moveExperience = (index: number, direction: -1 | 1) => {
+    setFormExperiences((current) => {
+      const destination = index + direction;
+      if (destination < 0 || destination >= current.length) return current;
+      const next = [...current];
+      const [moved] = next.splice(index, 1);
+      next.splice(destination, 0, moved);
+      return applyExperienceDisplayOrder(next);
+    });
+  };
+  const sortExperiencesNewestFirst = () => {
+    setFormExperiences((current) =>
+      applyExperienceDisplayOrder(sortExperiencesByRecency(current)),
+    );
+  };
   const goToPreview = async () => {
     await saveProgress();
     setStep(99);
@@ -876,7 +943,10 @@ export function ResumeBuilderPage() {
                   analysis={formAiAnalysis}
                   unlocked={Boolean(formAiAnalysis || profile.resumeScoreUnlocked)}
                   reviewing={reviewing}
-                  onReview={() => void reviewResume()}
+                  onReview={() => {
+                    setScoreOfferMessage("");
+                    setScoreOfferOpen(true);
+                  }}
                   onUpgrade={() => {
                     setScoreOfferMessage("");
                     setScoreOfferOpen(true);
@@ -984,6 +1054,7 @@ export function ResumeBuilderPage() {
         {scoreOfferOpen && (
           <ResumeScoreOfferModal
             message={scoreOfferMessage}
+            reanalysis={Boolean(formAiAnalysis)}
             onLater={() => {
               setScoreOfferOpen(false);
               setScoreOfferMessage("");
@@ -1072,15 +1143,70 @@ export function ResumeBuilderPage() {
       case "experience":
         return (
           <div className="space-y-4">
+            {formExperiences.length > 1 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3">
+                <div>
+                  <p className="text-xs font-bold text-stone-800">Ordem no currículo</p>
+                  <p className="mt-0.5 text-[11px] text-stone-500">
+                    Começamos pela experiência mais recente. Você pode personalizar a ordem.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={sortExperiencesNewestFirst}
+                  className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-bold text-stone-600 hover:border-terracotta-200 hover:text-terracotta-700"
+                >
+                  Mais recentes primeiro
+                </button>
+              </div>
+            )}
             {formExperiences.map((experience, index) => (
-              <ExperienceEditor
-                key={experience.id || index}
-                value={experience}
-                onChange={(next) => setFormExperiences((current) => current.map((item, itemIndex) => itemIndex === index ? syncExperience(next) : item))}
-                onDelete={() => setFormExperiences((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-              />
+              <div key={experience.id || index} className="space-y-2">
+                {formExperiences.length > 1 && (
+                  <div className="flex items-center justify-between gap-3 px-1">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-stone-400">
+                      <GripVertical className="h-3.5 w-3.5" /> Posição {index + 1}
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => moveExperience(index, -1)}
+                        disabled={index === 0}
+                        className="rounded-lg border border-stone-200 bg-white p-2 text-stone-500 hover:text-terracotta-700 disabled:cursor-not-allowed disabled:opacity-30"
+                        aria-label={`Mover ${experience.company} para cima`}
+                        title="Mover para cima"
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveExperience(index, 1)}
+                        disabled={index === formExperiences.length - 1}
+                        className="rounded-lg border border-stone-200 bg-white p-2 text-stone-500 hover:text-terracotta-700 disabled:cursor-not-allowed disabled:opacity-30"
+                        aria-label={`Mover ${experience.company} para baixo`}
+                        title="Mover para baixo"
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <ExperienceEditor
+                  value={experience}
+                  onChange={(next) => setFormExperiences((current) => current.map((item, itemIndex) => itemIndex === index ? syncExperience(next) : item))}
+                  onDelete={() => setFormExperiences((current) => applyExperienceDisplayOrder(current.filter((_, itemIndex) => itemIndex !== index)))}
+                />
+              </div>
             ))}
-            <ExperienceForm onAdd={(experience) => setFormExperiences((current) => [...current, syncExperience(experience)])} />
+            <ExperienceForm
+              onAdd={(experience) =>
+                setFormExperiences((current) =>
+                  applyExperienceDisplayOrder(
+                    sortExperiencesByRecency([...current, syncExperience(experience)]),
+                  ),
+                )
+              }
+            />
           </div>
         );
 
@@ -1278,6 +1404,7 @@ export function ResumeBuilderPage() {
       {scoreOfferOpen && (
         <ResumeScoreOfferModal
           message={scoreOfferMessage}
+          reanalysis={Boolean(formAiAnalysis)}
           onLater={() => {
             setScoreOfferOpen(false);
             setScoreOfferMessage("");
@@ -1374,30 +1501,48 @@ function ResumeScoreProcessingScreen() {
   );
 }
 
-function ResumeScoreOfferModal({ message, onLater, onContinue }: { message: string; onLater: () => void; onContinue: () => void }) {
+function ResumeScoreOfferModal({ message, reanalysis = false, onLater, onContinue }: { message: string; reanalysis?: boolean; onLater: () => void; onContinue: () => void }) {
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-stone-950/60 p-4 backdrop-blur-sm">
       <div className="w-full max-w-md rounded-3xl border border-white/20 bg-white p-6 shadow-2xl sm:p-7">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
           <Sparkles className="h-6 w-6" />
         </div>
-        <h2 className="mt-5 text-2xl font-bold text-stone-900">Seu currículo está pronto.</h2>
-        <p className="mt-2 text-sm leading-relaxed text-stone-600">Quer descobrir a pontuação do seu currículo, seus pontos fortes e o que pode ser melhorado?</p>
+        <h2 className="mt-5 text-2xl font-bold text-stone-900">
+          {reanalysis ? "Fazer uma nova análise" : "Seu currículo está pronto."}
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-stone-600">
+          {reanalysis
+            ? "Reavalie a versão atual para atualizar a nota, os pontos fortes e as recomendações do documento."
+            : "Quer descobrir a pontuação do seu currículo, seus pontos fortes e o que pode ser melhorado?"}
+        </p>
         <div className="mt-5 rounded-2xl border border-violet-100 bg-violet-50/70 p-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-violet-600">Análise profissional</span>
-            <Lock className="h-4 w-4 text-violet-500" />
+            <span className="text-xs font-bold uppercase tracking-wider text-violet-600">
+              {reanalysis ? "Nova leitura profissional" : "Análise profissional"}
+            </span>
+            {reanalysis ? <BrainCircuit className="h-4 w-4 text-violet-500" /> : <Lock className="h-4 w-4 text-violet-500" />}
           </div>
-          <div className="mt-3 flex items-end gap-2">
-            <span className="select-none text-4xl font-black text-stone-900 blur-[6px]">86</span>
-            <span className="pb-1 text-sm font-bold text-stone-400">/100</span>
-          </div>
-          <p className="mt-2 text-[11px] text-stone-400">Prévia ilustrativa. Sua nota real ainda não foi calculada.</p>
+          {reanalysis ? (
+            <p className="mt-3 text-xs leading-5 text-stone-600">
+              A análise considera as alterações mais recentes e gera um novo diagnóstico antes de qualquer aprimoramento com IA.
+            </p>
+          ) : (
+            <>
+              <div className="mt-3 flex items-end gap-2">
+                <span className="select-none text-4xl font-black text-stone-900 blur-[6px]">86</span>
+                <span className="pb-1 text-sm font-bold text-stone-400">/100</span>
+              </div>
+              <p className="mt-2 text-[11px] text-stone-400">Prévia ilustrativa. Sua nota real ainda não foi calculada.</p>
+            </>
+          )}
         </div>
         {message && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">{message}</div>}
         <div className="mt-6 grid gap-2 sm:grid-cols-2">
           <button onClick={onLater} className="rounded-xl border border-stone-200 px-4 py-3 text-sm font-bold text-stone-600 hover:bg-stone-50">Agora não</button>
-          <button onClick={onContinue} className="rounded-xl bg-violet-600 px-4 py-3 text-sm font-bold text-white hover:bg-violet-700">Quero ver minha pontuação</button>
+          <button onClick={onContinue} className="rounded-xl bg-violet-600 px-4 py-3 text-sm font-bold text-white hover:bg-violet-700">
+            {reanalysis ? "Continuar para nova análise" : "Quero ver minha pontuação"}
+          </button>
         </div>
       </div>
     </div>

@@ -195,8 +195,7 @@ export function ResumeQualificationWidget() {
     }
 
     let cancelled = false;
-    let retryTimer: number | null = null;
-    let attempts = 0;
+    let frame: number | null = null;
 
     const mountOnce = () => {
       if (cancelled) return;
@@ -204,11 +203,7 @@ export function ResumeQualificationWidget() {
       const sidebar = document.getElementById('resume-builder-sidebar');
       const body = sidebar?.querySelector<HTMLElement>(':scope > .p-5');
 
-      if (!body) {
-        attempts += 1;
-        if (attempts < 24) retryTimer = window.setTimeout(mountOnce, 150);
-        return;
-      }
+      if (!body) return;
 
       const directSections = Array.from(body.querySelectorAll<HTMLElement>(':scope > section'));
       const legacy = directSections.find((section) => {
@@ -234,11 +229,22 @@ export function ResumeQualificationWidget() {
       setTarget(root);
     };
 
+    const scheduleMount = () => {
+      if (cancelled || frame !== null) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        mountOnce();
+      });
+    };
+
+    const observer = new MutationObserver(scheduleMount);
+    observer.observe(document.body, { childList: true, subtree: true });
     mountOnce();
 
     return () => {
       cancelled = true;
-      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      observer.disconnect();
+      if (frame !== null) window.cancelAnimationFrame(frame);
       if (hiddenLegacyRef.current) {
         hiddenLegacyRef.current.style.removeProperty('display');
         hiddenLegacyRef.current = null;
@@ -309,9 +315,7 @@ export function ResumeQualificationWidget() {
   const improvementCredits = Number(status?.credits?.RESUME_AI_IMPROVEMENT || 0);
   const accessOverride = Boolean(status?.paymentAccessOverride);
 
-  const improvementLabel = hasAnalysis
-    ? `Aplicar novas melhorias${improvementPrice ? ` · ${improvementPrice}` : ''}`
-    : `Aplicar melhorias${improvementPrice ? ` · ${improvementPrice}` : ''}`;
+  const improvementLabel = `Aprimorar com IA${improvementPrice ? ` · ${improvementPrice}` : ''}`;
 
   const primaryAction: 'review' | 'improve' = !hasAnalysis || analysisStale ? 'review' : 'improve';
   const primaryLabel = !hasAnalysis
@@ -390,15 +394,23 @@ export function ResumeQualificationWidget() {
             <span className="truncate">{primaryLabel}</span>
           </button>
 
-          {hasAnalysis && analysisStale && (
+          {hasAnalysis && (
             <button
               type="button"
-              onClick={() => setOfferAction('improve')}
+              onClick={() => setOfferAction(analysisStale ? 'improve' : 'review')}
               disabled={reviewing || !status?.enabled}
               className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/12 bg-white/5 px-3 py-2.5 text-[11px] font-black text-white/85 transition hover:bg-white/10 disabled:opacity-50"
             >
-              <WandSparkles className="h-3.5 w-3.5 text-violet-200" />
-              <span className="truncate">{improvementLabel}</span>
+              {analysisStale ? (
+                <WandSparkles className="h-3.5 w-3.5 text-violet-200" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5 text-violet-200" />
+              )}
+              <span className="truncate">
+                {analysisStale
+                  ? improvementLabel
+                  : `Fazer nova análise${reanalysisPrice ? ` · ${reanalysisPrice}` : ''}`}
+              </span>
             </button>
           )}
         </div>
@@ -459,7 +471,7 @@ export function ResumeQualificationWidget() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[9px] font-black uppercase tracking-[.15em] text-violet-600">{offerAction === 'improve' ? 'Melhoria com IA' : 'Nova qualificação'}</p>
-                  <h3 className="mt-1 text-lg font-black text-stone-950">{offerAction === 'improve' ? 'Aplicar novas melhorias' : 'Atualizar a nota'}</h3>
+                  <h3 className="mt-1 text-lg font-black text-stone-950">{offerAction === 'improve' ? 'Aprimorar seu currículo' : 'Fazer nova análise'}</h3>
                 </div>
                 <button type="button" onClick={() => setOfferAction(null)} className="text-stone-400" aria-label="Fechar"><X className="h-4 w-4" /></button>
               </div>
@@ -505,7 +517,7 @@ export function ResumeQualificationWidget() {
           <button type="button" onClick={continueOffer} className="rounded-xl bg-stone-950 px-4 py-2.5 text-xs font-black text-white">
             {offerAction === 'improve'
               ? `Continuar${!accessOverride && improvementCredits <= 0 && improvementPrice ? ` · ${improvementPrice}` : ''}`
-              : `Atualizar${!accessOverride && reanalysisCredits <= 0 && reanalysisPrice ? ` · ${reanalysisPrice}` : ''}`}
+              : `Analisar novamente${!accessOverride && reanalysisCredits <= 0 && reanalysisPrice ? ` · ${reanalysisPrice}` : ''}`}
           </button>
         </div>
       </div>

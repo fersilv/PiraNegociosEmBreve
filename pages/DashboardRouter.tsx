@@ -7,6 +7,7 @@ import { WorkspaceLayout } from "../components/WorkspaceLayout";
 import { AdminWorkspaceLayout } from "../components/AdminWorkspaceLayout";
 import { BoostVisibilityBanner } from "../components/BoostVisibilityBanner";
 import { ResumeImportEntitlementOrchestrator } from "../components/ResumeImportEntitlementOrchestrator";
+import { ResumeQualificationWidget } from "../components/ResumeQualificationWidget";
 import { CompanyJobsManagementPage } from "./CompanyJobsManagementPage";
 import { CompanyHomePage } from "./CompanyHomePage";
 import { CompanyNewJobPage } from "./CompanyNewJobPage";
@@ -234,7 +235,14 @@ export function Dashboard() {
   }
   if (isAdminRoute) return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
   if (isCompanyRoute) return <WorkspaceLayout workspace="company"><CompanyRoutes companyId={profile?.companyId} /></WorkspaceLayout>;
-  if (isResumeStudioRoute) return <><ResumeImportEntitlementOrchestrator /><ResumeWorkspace /></>;
+  if (isResumeStudioRoute)
+    return (
+      <>
+        <ResumeImportEntitlementOrchestrator />
+        <ResumeQualificationWidget />
+        <ResumeWorkspace />
+      </>
+    );
   if (isUserRoute) return <WorkspaceLayout workspace="user"><ResumeImportEntitlementOrchestrator /><BoostVisibilityBanner /><UserRoutes /></WorkspaceLayout>;
   return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
 }

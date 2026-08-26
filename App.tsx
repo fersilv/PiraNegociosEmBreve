@@ -31,7 +31,6 @@ const ClassifiedsTermsPage = lazy(() => import("./pages/ClassifiedsTermsPage"));
 const ClassifiedsWorkspacePage = lazy(() => import("./pages/ClassifiedsWorkspacePage"));
 const ClassifiedsPublicRouteGate = lazy(() => import("./pages/ClassifiedsPublicRouteGate"));
 const CompanyLegalPage = lazy(() => import("./pages/CompanyLegalPage").then((module) => ({ default: module.CompanyLegalPage })));
-const ResumeQualificationWidget = lazy(() => import("./components/ResumeQualificationWidget").then((module) => ({ default: module.ResumeQualificationWidget })));
 
 function RouteLoader() {
   return <div className="min-h-screen flex items-center justify-center text-stone-500">Carregando...</div>;
@@ -44,7 +43,6 @@ export default function App() {
   const isCompanyPreview = pathname.startsWith("/preview/empresa/");
   const isTalentInvite = pathname.startsWith("/convites/vaga/");
   const isCompanyVerificationInvite = pathname.startsWith("/empresa/autorizar/");
-  const isResumeWorkspace = pathname === "/user/curriculo";
   const isMinimalShell = isEmbed || isMobileTransfer || isCompanyPreview || isTalentInvite || isCompanyVerificationInvite;
 
   return (
@@ -57,7 +55,6 @@ export default function App() {
           {!isMobileTransfer && !isCompanyPreview && !isTalentInvite && !isCompanyVerificationInvite && <AnalyticsTracker />}
           <PublicResumeResponsiveStyles />
           <PublicResumeExitIntent />
-          {!isMinimalShell && isResumeWorkspace && <Suspense fallback={null}><ResumeQualificationWidget /></Suspense>}
           {!isMinimalShell && <PublishedResumeCompanyBridge />}
           <Suspense fallback={<RouteLoader />}>
             <Routes>

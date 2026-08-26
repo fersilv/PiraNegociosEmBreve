@@ -16,6 +16,7 @@ export interface ExperienceTimelineEntry {
 
 export interface ProfessionalExperience {
   id?: string;
+  displayOrder?: number;
   company: string;
   role: string;
   startDate: string;

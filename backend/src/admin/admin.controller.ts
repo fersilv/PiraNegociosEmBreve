@@ -527,8 +527,22 @@ export class AdminController {
       builder.andWhere('job."moderationStatus" = :pending', {
         pending: 'PENDING',
       });
-    if (query.status === 'ACTIVE') builder.andWhere('job.active = true');
-    if (query.status === 'INACTIVE') builder.andWhere('job.active = false');
+    if (query.status === 'ACTIVE')
+      builder
+        .andWhere('job.active = true')
+        .andWhere('job."moderationStatus" = :approvedActive', {
+          approvedActive: 'APPROVED',
+        });
+    if (query.status === 'CLOSED' || query.status === 'INACTIVE')
+      builder
+        .andWhere('job.active = false')
+        .andWhere('job."moderationStatus" = :approvedClosed', {
+          approvedClosed: 'APPROVED',
+        });
+    if (query.status === 'REJECTED')
+      builder.andWhere('job."moderationStatus" = :rejected', {
+        rejected: 'REJECTED',
+      });
     if (query.source === 'API')
       builder.andWhere('job."ingestionSourceId" IS NOT NULL');
     if (query.source === 'EXTERNAL')
@@ -678,6 +692,18 @@ export class AdminController {
         'Informe ao menos WhatsApp, e-mail ou instruções para a candidatura externa.',
       );
     }
+    if (data.active !== undefined && typeof data.active !== 'boolean')
+      throw new BadRequestException(
+        'O estado da vaga deve ser verdadeiro ou falso.',
+      );
+    if (data.active !== undefined && job.moderationStatus === 'PENDING')
+      throw new BadRequestException(
+        'Use a ação de aprovar ou rejeitar para uma vaga aguardando revisão.',
+      );
+    if (data.active === true && job.moderationStatus === 'REJECTED')
+      throw new BadRequestException(
+        'Uma vaga rejeitada precisa ser aprovada antes de ser publicada.',
+      );
     this.validateJobContactFields(data);
     Object.assign(job, pick<Job>(data, JOB_FIELDS));
     if (
@@ -686,8 +712,41 @@ export class AdminController {
       data.state !== undefined
     )
       Object.assign(job, this.normalizeJobLocation(data));
-    if (data.active === true && job.moderationStatus === 'PENDING')
-      job.moderationStatus = 'APPROVED';
+    if (data.active === true) job.reviewStatus = 'REVIEWED_OK';
+    if (data.active === false) job.reviewStatus = 'RESOLVED';
+    return this.jobs.save(job);
+  }
+
+  @Put('jobs/:id/moderation')
+  async moderateJob(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Body() data: { action?: string; note?: string },
+  ) {
+    const job = await this.jobs.findOne({ where: { id } });
+    if (!job) throw new NotFoundException('Vaga não encontrada.');
+    const action = String(data?.action || '')
+      .trim()
+      .toUpperCase();
+    if (!['APPROVE', 'REJECT'].includes(action))
+      throw new BadRequestException('A ação deve ser APPROVE ou REJECT.');
+
+    job.moderationStatus = action === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+    job.active = action === 'APPROVE';
+    job.reviewStatus = action === 'APPROVE' ? 'REVIEWED_OK' : 'RESOLVED';
+    job.reviewedAt = new Date();
+    job.reviewedBy = String(req.user?.uid || req.user?.email || 'admin').slice(
+      0,
+      160,
+    );
+    job.reviewNote = String(
+      data?.note ||
+        (action === 'APPROVE'
+          ? 'Vaga aprovada e publicada pelo administrador.'
+          : 'Vaga rejeitada pelo administrador.'),
+    )
+      .trim()
+      .slice(0, 4000);
     return this.jobs.save(job);
   }
 

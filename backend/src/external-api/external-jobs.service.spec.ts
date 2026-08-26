@@ -253,7 +253,11 @@ describe('ExternalJobsService', () => {
 
     const result = await service.update(
       current.id,
-      { title: 'Repositor de loja', salary: 'R$ 2.500', applicationUrl: 'https://empresa.example/jobs/repositor' },
+      {
+        title: 'Repositor de loja',
+        salary: 'R$ 2.500',
+        applicationUrl: 'https://empresa.example/jobs/repositor',
+      },
       client,
     );
 
@@ -292,5 +296,92 @@ describe('ExternalJobsService', () => {
         client,
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('não publica uma vaga pendente quando a fonte informa que ela está disponível', async () => {
+    const { service, jobs } = setup();
+    const pendingJob = {
+      id: 'job-pending',
+      title: 'Auxiliar administrativo',
+      isExternalListing: true,
+      active: true,
+      moderationStatus: 'PENDING',
+      isFlagged: false,
+      flagReason: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    jobs.findOne.mockResolvedValue(pendingJob);
+    jobs.save.mockImplementation(async (value) => value);
+
+    const result = await service.verify(
+      pendingJob.id,
+      { status: 'AVAILABLE' },
+      client,
+    );
+
+    expect(result.job).toEqual(
+      expect.objectContaining({
+        active: false,
+        moderationStatus: 'PENDING',
+      }),
+    );
+  });
+
+  it('reabre automaticamente apenas vaga aprovada encerrada por indisponibilidade da fonte', async () => {
+    const { service, jobs } = setup();
+    const approvedJob = {
+      id: 'job-approved',
+      title: 'Operador de caixa',
+      isExternalListing: true,
+      active: false,
+      moderationStatus: 'APPROVED',
+      isFlagged: true,
+      flagReason: 'CLOSED',
+      flagObservation: 'Fonte estava encerrada.',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    jobs.findOne.mockResolvedValue(approvedJob);
+    jobs.save.mockImplementation(async (value) => value);
+
+    const result = await service.verify(
+      approvedJob.id,
+      { status: 'AVAILABLE' },
+      client,
+    );
+
+    expect(result.job).toEqual(
+      expect.objectContaining({
+        active: true,
+        moderationStatus: 'APPROVED',
+        isFlagged: false,
+      }),
+    );
+  });
+
+  it('preserva encerramento manual de vaga aprovada durante nova verificação', async () => {
+    const { service, jobs } = setup();
+    const closedJob = {
+      id: 'job-manually-closed',
+      title: 'Estoquista',
+      isExternalListing: true,
+      active: false,
+      moderationStatus: 'APPROVED',
+      isFlagged: false,
+      flagReason: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    jobs.findOne.mockResolvedValue(closedJob);
+    jobs.save.mockImplementation(async (value) => value);
+
+    const result = await service.verify(
+      closedJob.id,
+      { status: 'AVAILABLE' },
+      client,
+    );
+
+    expect(result.job).toEqual(expect.objectContaining({ active: false }));
   });
 });
