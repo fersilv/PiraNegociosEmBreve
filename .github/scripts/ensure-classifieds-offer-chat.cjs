@@ -31,7 +31,7 @@ patch('backend/src/classifieds/classifieds-private.controller.ts', (input) => {
   }
 
   const createOld = `  async createOffer(@Req() req: any, @Param('listingId') listingId: string, @Body() body: any) {\n    await this.auctions.assertOffersAllowed(listingId);\n    return this.commerce.createOffer(req.user.uid, listingId, body?.amount);\n  }`;
-  const createNew = `  async createOffer(@Req() req: any, @Param('listingId') listingId: string, @Body() body: any) {\n    await this.auctions.assertOffersAllowed(listingId);\n    const offer = await this.commerce.createOffer(req.user.uid, listingId, body?.amount);\n    const chat = offer?.id ? await this.offerChat.record(req.user.uid, offer.id, 'CREATED') : null;\n    if (chat?.message) this.chatGateway.publishMessage(chat.message, chat.recipientIds);\n    return { ...offer, conversationId: chat?.conversationId || null };\n  }`;
+  const createNew = `  async createOffer(@Req() req: any, @Param('listingId') listingId: string, @Body() body: any) {\n    await this.auctions.assertOffersAllowed(listingId);\n    const offer = await this.commerce.createOffer(req.user.uid, listingId, body?.amount);\n    const event = offer?.offerEvent === 'UPDATED' ? 'UPDATED' : 'CREATED';\n    const chat = offer?.id ? await this.offerChat.record(req.user.uid, offer.id, event) : null;\n    if (chat?.message) this.chatGateway.publishMessage(chat.message, chat.recipientIds);\n    return { ...offer, conversationId: chat?.conversationId || null };\n  }`;
   if (!source.includes(createNew)) {
     if (!source.includes(createOld)) throw new Error('Create offer controller anchor missing.');
     source = source.replace(createOld, createNew);
@@ -57,6 +57,13 @@ patch('backend/src/classifieds/classifieds-private.controller.ts', (input) => {
 
 patch('backend/src/classifieds/classifieds-commerce.service.ts', (input) => {
   let source = input;
+  const oldReturn = `    return this.decorateOffer(rows[0], listing, identity.type === 'COMPANY' ? 'BUYER' : 'BUYER');`;
+  const newReturn = `    return { ...this.decorateOffer(rows[0], listing, 'BUYER'), offerEvent: existing[0] ? 'UPDATED' : 'CREATED' };`;
+  if (!source.includes(newReturn)) {
+    if (!source.includes(oldReturn)) throw new Error('Offer create result anchor missing.');
+    source = source.replace(oldReturn, newReturn);
+  }
+
   const imageJoin = `           LEFT JOIN LATERAL (SELECT url FROM classified_listing_images WHERE \"listingId\" = l.id ORDER BY \"sortOrder\" ASC LIMIT 1) i ON true`;
   const conversationJoin = `${imageJoin}\n           LEFT JOIN LATERAL (\n             SELECT id FROM classified_conversations\n             WHERE \"listingId\" = o.\"listingId\" AND \"buyerUserId\" = o.\"buyerUserId\"\n               AND ((\"buyerCompanyId\" IS NULL AND o.\"buyerCompanyId\" IS NULL) OR \"buyerCompanyId\" = o.\"buyerCompanyId\")\n             ORDER BY \"createdAt\" DESC LIMIT 1\n           ) conv ON true`;
   if (!source.includes('conv.id AS "conversationId"')) {
@@ -65,7 +72,7 @@ patch('backend/src/classifieds/classifieds-commerce.service.ts', (input) => {
   if (!source.includes(') conv ON true')) {
     source = source.replaceAll(imageJoin, conversationJoin);
   }
-  if (!source.includes('conv.id AS "conversationId"') || !source.includes(') conv ON true')) throw new Error('Offer conversation list integration missing.');
+  if (!source.includes('offerEvent: existing[0]') || !source.includes('conv.id AS "conversationId"') || !source.includes(') conv ON true')) throw new Error('Offer conversation/history integration missing.');
   return source;
 });
 
