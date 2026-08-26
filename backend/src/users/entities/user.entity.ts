@@ -184,8 +184,10 @@ export class User {
   @Column({ type: 'jsonb', nullable: true })
   resumePreferences: Record<string, unknown> | null;
 
+  // Preferências antigas eram booleanas. O objeto agora também guarda janela de contato
+  // e matrizes de canais (PUSH/EMAIL/WHATSAPP) sem quebrar as chaves legadas.
   @Column({ type: 'jsonb', nullable: true })
-  notificationPreferences: Record<string, boolean> | null;
+  notificationPreferences: Record<string, unknown> | null;
 
   @Column({ type: 'varchar', nullable: true })
   fcmToken: string | null;
