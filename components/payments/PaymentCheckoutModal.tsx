@@ -67,13 +67,19 @@ export function PaymentCheckoutModal({
 
   const completed = checkout?.completed === true || checkout?.status === 'PAID';
   const failed = ['CANCELED', 'EXPIRED', 'REFUNDED'].includes(String(checkout?.status || '').toUpperCase());
-  const authorizationUrl = checkout?.authorizationUrl
-    || checkout?.metadata?.subscriptionCheckoutUrl
-    || checkout?.metadata?.ticketUrl
-    || null;
+  const recurring = checkout?.recurring === true
+    || checkout?.billingType === 'RECURRING'
+    || checkout?.product?.billingType === 'RECURRING'
+    || checkout?.metadata?.recurringApi === 'SUBSCRIPTIONS';
+  const authorizationUrl = recurring
+    ? checkout?.authorizationUrl || checkout?.metadata?.subscriptionCheckoutUrl || null
+    : null;
+  const ticketUrl = !recurring
+    ? checkout?.ticketUrl || checkout?.metadata?.ticketUrl || null
+    : null;
   const pixCopyPaste = checkout?.pixCopyPaste || null;
   const qrCodeBase64 = checkout?.qrCodeBase64 || null;
-  const checkoutReady = Boolean(pixCopyPaste || qrCodeBase64 || authorizationUrl || checkout?.checkoutReady);
+  const checkoutReady = Boolean(pixCopyPaste || qrCodeBase64 || authorizationUrl || ticketUrl || checkout?.checkoutReady);
 
   const shownAmount = useMemo(() => {
     if (checkout?.amountCents !== undefined && checkout?.amountCents !== null) return Number(checkout.amountCents);
@@ -100,7 +106,7 @@ export function PaymentCheckoutModal({
           }
         }
       } catch {
-        // Webhook e próxima tentativa continuam sendo a fonte de verdade.
+        // O webhook e a próxima consulta continuam sendo a fonte de verdade.
       } finally {
         busy = false;
       }
@@ -178,7 +184,7 @@ export function PaymentCheckoutModal({
             <div className="py-6 text-center">
               <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><CheckCircle2 className="h-8 w-8" /></span>
               <p className="mt-5 text-[10px] font-black uppercase tracking-[.16em] text-emerald-700">Confirmado</p>
-              <h3 className="mt-1 font-serif text-3xl font-black text-stone-950">Pagamento concluído</h3>
+              <h3 className="mt-1 font-serif text-3xl font-black text-stone-950">{recurring ? 'Autorização concluída' : 'Pagamento concluído'}</h3>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-stone-500">A confirmação chegou e o recurso já foi processado pelo PiraNegócios.</p>
               <button type="button" onClick={onClose} className="mt-6 rounded-2xl bg-stone-950 px-6 py-3 text-sm font-black text-white">Continuar</button>
             </div>
@@ -208,7 +214,7 @@ export function PaymentCheckoutModal({
                   <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-stone-500">A janela pode ser aberta em outra aba. Esta modal continua acompanhando a autorização e será atualizada automaticamente.</p>
                   <a href={authorizationUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-violet-700 px-5 py-3 text-sm font-black text-white">Abrir autorização <ExternalLink className="h-4 w-4" /></a>
                 </div>
-              ) : checkoutReady ? (
+              ) : (pixCopyPaste || qrCodeBase64) ? (
                 <div className="grid gap-4 md:grid-cols-[220px_1fr] md:items-center">
                   {qrCodeBase64 ? (
                     <div className="flex min-h-[210px] items-center justify-center rounded-2xl border border-emerald-100 bg-white p-3">
@@ -222,6 +228,15 @@ export function PaymentCheckoutModal({
                     {pixCopyPaste ? <><div className="mt-2 max-h-28 overflow-auto break-all rounded-xl bg-white p-3 font-mono text-[11px] leading-5 text-stone-700 ring-1 ring-stone-200">{pixCopyPaste}</div><button type="button" onClick={() => void copyPix()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-black text-white"><Copy className="h-3.5 w-3.5" />{copied ? 'Copiado!' : 'Copiar código Pix'}</button></> : <p className="mt-2 text-xs text-stone-500">O QR está disponível para leitura.</p>}
                   </div>
                 </div>
+              ) : ticketUrl ? (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center">
+                  <QrCode className="mx-auto h-8 w-8 text-emerald-700" />
+                  <h3 className="mt-3 font-bold text-stone-950">Pix pronto no Mercado Pago</h3>
+                  <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-stone-500">O provedor retornou a página de instruções antes do QR bruto. Você pode abrir essa página enquanto continuamos tentando carregar o QR dentro da modal.</p>
+                  <a href={ticketUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white">Abrir instruções do Pix <ExternalLink className="h-4 w-4" /></a>
+                </div>
+              ) : checkoutReady ? (
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center"><QrCode className="mx-auto h-8 w-8 text-emerald-700" /><p className="mt-3 text-sm font-bold text-stone-900">Cobrança criada. Preparando os dados do Pix...</p></div>
               ) : (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center">
                   <Loader2 className="mx-auto h-7 w-7 animate-spin text-amber-700" />
@@ -232,7 +247,7 @@ export function PaymentCheckoutModal({
 
               <div className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-stone-100 px-3 py-2.5 text-[10px] font-bold text-stone-500">
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-600" />
-                Aguardando confirmação do pagamento
+                {recurring ? 'Aguardando autorização' : 'Aguardando confirmação do pagamento'}
               </div>
 
               {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold leading-5 text-red-700">{error}</div>}
