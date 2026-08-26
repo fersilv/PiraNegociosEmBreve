@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
 
@@ -12,25 +12,21 @@ export class ClassifiedsEntitlementsService {
   async limits(uid: string) {
     const identity = await this.identities.active(uid);
     if (identity.type !== 'COMPANY') {
-      return { photoLimit: 3, plan: 'FREE', paid: false };
+      return {
+        photoLimit: 3,
+        plan: 'FREE',
+        paid: false,
+        auctionCreation: false,
+      };
     }
 
-    const rows = await this.dataSource.query(
-      `SELECT plan FROM company_plan_subscriptions
-       WHERE "companyId" = $1
-         AND status IN ('ACTIVE','PAST_DUE')
-         AND "currentPeriodEnd" > now()
-         AND plan IN ('PLUS','ELITE')
-       ORDER BY "currentPeriodEnd" DESC LIMIT 1`,
-      [identity.company!.id],
-    ).catch(() => []);
-
-    const plan = String(rows[0]?.plan || 'FREE').toUpperCase();
+    const plan = await this.companyPlan(identity.company!.id);
     const paid = plan === 'PLUS' || plan === 'ELITE';
     return {
-      photoLimit: identity.type === 'COMPANY' ? 10 : 3,
-      plan: paid ? plan : 'FREE',
+      photoLimit: 10,
+      plan,
       paid,
+      auctionCreation: plan === 'ELITE',
     };
   }
 
@@ -45,5 +41,52 @@ export class ClassifiedsEntitlementsService {
       );
     }
     return limits;
+  }
+
+  async assertAuctionCreation(uid: string) {
+    const identity = await this.identities.active(uid);
+    if (identity.type !== 'COMPANY') {
+      throw new ForbiddenException('Leilões são exclusivos para empresas no plano Elite.');
+    }
+    const plan = await this.companyPlan(identity.company!.id);
+    if (plan !== 'ELITE') {
+      throw new ForbiddenException('Leilões são um recurso exclusivo do plano PiraNegócios Empresa Elite.');
+    }
+    return { allowed: true, plan, companyId: identity.company!.id };
+  }
+
+  async assertAuctionParticipant(uid: string) {
+    const identity = await this.identities.active(uid);
+    const user = identity.user;
+    const missing: string[] = [];
+    if (!String(user.email || '').trim()) missing.push('e-mail');
+    if (!user.whatsappVerifiedAt || !String(user.whatsappPhoneE164 || '').trim()) missing.push('WhatsApp verificado');
+    if (!String(user.photoURL || '').trim()) missing.push('foto de perfil com o rosto');
+    if (missing.length) {
+      throw new ForbiddenException(
+        `Para participar de leilões, complete seu perfil com ${missing.join(', ')}.`,
+      );
+    }
+    return {
+      allowed: true,
+      userId: uid,
+      email: user.email,
+      whatsapp: user.whatsappPhoneE164,
+      photoURL: user.photoURL,
+    };
+  }
+
+  async companyPlan(companyId: string): Promise<'FREE' | 'PLUS' | 'ELITE'> {
+    const rows = await this.dataSource.query(
+      `SELECT plan FROM company_plan_subscriptions
+       WHERE "companyId" = $1
+         AND status IN ('ACTIVE','PAST_DUE')
+         AND "currentPeriodEnd" > now()
+         AND plan IN ('PLUS','ELITE')
+       ORDER BY "currentPeriodEnd" DESC LIMIT 1`,
+      [companyId],
+    ).catch(() => []);
+    const plan = String(rows[0]?.plan || 'FREE').toUpperCase();
+    return plan === 'ELITE' ? 'ELITE' : plan === 'PLUS' ? 'PLUS' : 'FREE';
   }
 }
