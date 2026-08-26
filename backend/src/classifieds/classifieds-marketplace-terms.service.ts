@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
 
@@ -17,13 +22,27 @@ export class ClassifiedsMarketplaceTermsService {
     const buyerKey = this.buyerKey(uid);
     const sellerKey = identity.type === 'COMPANY' ? this.sellerKey(identity.company!.id) : null;
     const keys = [buyerKey, sellerKey].filter(Boolean) as string[];
-    const rows = keys.length
-      ? await this.dataSource.query(
+    let rows: any[] = [];
+    if (keys.length) {
+      try {
+        rows = await this.dataSource.query(
           `SELECT scope,"identityKey","acceptedAt" FROM classified_marketplace_terms_acceptances
            WHERE version=$1 AND "identityKey" = ANY($2::varchar[])`,
           [CLASSIFIEDS_PAYMENT_TERMS_VERSION, keys],
-        ).catch(() => [])
-      : [];
+        );
+      } catch (error) {
+        if (!this.isTermsSchemaGap(error)) throw error;
+        return {
+          version: CLASSIFIEDS_PAYMENT_TERMS_VERSION,
+          termsUrl: '/classificados/termos#pagamentos-online',
+          buyerAccepted: false,
+          sellerAccepted: false,
+          sellerAvailable: Boolean(sellerKey),
+          schemaReady: false,
+          message: 'A estrutura de aceite dos termos de pagamento online ainda não foi migrada neste ambiente.',
+        };
+      }
+    }
     return {
       version: CLASSIFIEDS_PAYMENT_TERMS_VERSION,
       termsUrl: '/classificados/termos#pagamentos-online',
@@ -32,6 +51,7 @@ export class ClassifiedsMarketplaceTermsService {
         ? rows.some((row: any) => row.scope === 'ONLINE_PAYMENT_SELLER' && row.identityKey === sellerKey)
         : false,
       sellerAvailable: Boolean(sellerKey),
+      schemaReady: true,
     };
   }
 
@@ -43,21 +63,29 @@ export class ClassifiedsMarketplaceTermsService {
 
     if (scope === 'ONLINE_PAYMENT_SELLER') {
       if (identity.type !== 'COMPANY') {
-        throw new ForbiddenException('O aceite de vendedor exige o workspace Business.');
+        throw new ForbiddenException('O aceite de vendedor exige o workspace Marketplace da empresa.');
       }
       companyId = identity.company!.id;
       identityKey = this.sellerKey(companyId);
     }
 
-    await this.dataSource.query(
-      `INSERT INTO classified_marketplace_terms_acceptances
-       ("userId","companyId",scope,version,"identityKey",metadata,"acceptedAt")
-       VALUES ($1,$2,$3,$4,$5,$6::jsonb,now())
-       ON CONFLICT ("identityKey",scope,version) DO UPDATE SET
-         "userId"=EXCLUDED."userId", "companyId"=EXCLUDED."companyId",
-         metadata=EXCLUDED.metadata, "acceptedAt"=now()`,
-      [uid, companyId, scope, CLASSIFIEDS_PAYMENT_TERMS_VERSION, identityKey, JSON.stringify(this.safeMetadata(metadata))],
-    );
+    try {
+      await this.dataSource.query(
+        `INSERT INTO classified_marketplace_terms_acceptances
+         ("userId","companyId",scope,version,"identityKey",metadata,"acceptedAt")
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,now())
+         ON CONFLICT ("identityKey",scope,version) DO UPDATE SET
+           "userId"=EXCLUDED."userId", "companyId"=EXCLUDED."companyId",
+           metadata=EXCLUDED.metadata, "acceptedAt"=now()`,
+        [uid, companyId, scope, CLASSIFIEDS_PAYMENT_TERMS_VERSION, identityKey, JSON.stringify(this.safeMetadata(metadata))],
+      );
+    } catch (error) {
+      if (!this.isTermsSchemaGap(error)) throw error;
+      throw new ServiceUnavailableException({
+        code: 'MARKETPLACE_TERMS_SCHEMA_PENDING',
+        message: 'Os pagamentos online estão sendo atualizados. Aplique as migrations do Marketplace antes de registrar novos aceites.',
+      });
+    }
     return { accepted: true, scope, version: CLASSIFIEDS_PAYMENT_TERMS_VERSION, acceptedAt: new Date().toISOString() };
   }
 
@@ -68,17 +96,26 @@ export class ClassifiedsMarketplaceTermsService {
         ? this.sellerKey(identity.company!.id)
         : null
       : this.buyerKey(uid);
-    if (!identityKey) throw new ForbiddenException('O aceite de vendedor exige o workspace Business.');
-    const rows = await this.dataSource.query(
-      `SELECT id FROM classified_marketplace_terms_acceptances
-       WHERE "identityKey"=$1 AND scope=$2 AND version=$3 LIMIT 1`,
-      [identityKey, scope, CLASSIFIEDS_PAYMENT_TERMS_VERSION],
-    ).catch(() => []);
+    if (!identityKey) throw new ForbiddenException('O aceite de vendedor exige o workspace Marketplace da empresa.');
+    let rows: any[] = [];
+    try {
+      rows = await this.dataSource.query(
+        `SELECT id FROM classified_marketplace_terms_acceptances
+         WHERE "identityKey"=$1 AND scope=$2 AND version=$3 LIMIT 1`,
+        [identityKey, scope, CLASSIFIEDS_PAYMENT_TERMS_VERSION],
+      );
+    } catch (error) {
+      if (!this.isTermsSchemaGap(error)) throw error;
+      throw new ServiceUnavailableException({
+        code: 'MARKETPLACE_TERMS_SCHEMA_PENDING',
+        message: 'Os pagamentos online estão temporariamente indisponíveis porque a estrutura de termos ainda não foi migrada.',
+      });
+    }
     if (!rows[0]) {
       throw new BadRequestException(
         scope === 'ONLINE_PAYMENT_SELLER'
           ? 'Leia e aceite os termos de vendas e pagamentos online antes de habilitar o checkout.'
-          : 'Leia e aceite os termos do marketplace e pagamentos online antes de concluir a compra.',
+          : 'Leia e aceite os termos do Marketplace e pagamentos online antes de concluir a compra.',
       );
     }
     return true;
@@ -105,5 +142,12 @@ export class ClassifiedsMarketplaceTermsService {
       surface: String(input.surface || '').slice(0, 80) || null,
       userAgent: String(input.userAgent || '').slice(0, 500) || null,
     };
+  }
+
+  private isTermsSchemaGap(error: any) {
+    const code = String(error?.code || error?.driverError?.code || '');
+    if (code === '42P01') return true;
+    const message = String(error?.message || error?.driverError?.message || '').toLowerCase();
+    return message.includes('classified_marketplace_terms_acceptances') && message.includes('does not exist');
   }
 }
