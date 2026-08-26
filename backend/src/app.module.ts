@@ -24,6 +24,7 @@ import { ProductFeedbackModule } from './product-feedback/product-feedback.modul
 import { ClassifiedsModule } from './classifieds/classifieds.module';
 import { CompanyPlansModule } from './company-plans/company-plans.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
+import { ComplianceModule } from './compliance/compliance.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
     JobMatchModule,
     AdminModule,
     ProductFeedbackModule,
+    ComplianceModule,
     ClassifiedsModule,
     CompanyPlansModule,
     WhatsAppModule,
