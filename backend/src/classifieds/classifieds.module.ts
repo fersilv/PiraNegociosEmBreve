@@ -8,6 +8,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { User } from '../users/entities/user.entity';
 import { ClassifiedsAiReviewService } from './classifieds-ai-review.service';
+import { ClassifiedsAuctionPublicController } from './classifieds-auction-public.controller';
+import { ClassifiedsAuctionPublicService } from './classifieds-auction-public.service';
 import { ClassifiedsAuctionService } from './classifieds-auction.service';
 import { ClassifiedsChatService } from './classifieds-chat.service';
 import { ClassifiedsCommerceAdminController } from './classifieds-commerce-admin.controller';
@@ -50,6 +52,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
   ],
   controllers: [
     ClassifiedsPublicController,
+    ClassifiedsAuctionPublicController,
     ClassifiedsPrivateController,
     ClassifiedsSalesController,
     ClassifiedsCommerceAdminController,
@@ -63,6 +66,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsCommerceService,
     ClassifiedsEntitlementsService,
     ClassifiedsAuctionService,
+    ClassifiedsAuctionPublicService,
     ClassifiedsSalesService,
     ClassifiedsMarketplacePaymentsService,
   ],
@@ -72,6 +76,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsCommerceService,
     ClassifiedsEntitlementsService,
     ClassifiedsAuctionService,
+    ClassifiedsAuctionPublicService,
     ClassifiedsSalesService,
     ClassifiedsMarketplacePaymentsService,
   ],
