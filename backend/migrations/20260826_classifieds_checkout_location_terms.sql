@@ -19,6 +19,10 @@ ALTER TABLE classified_orders
   ADD CONSTRAINT classified_orders_fulfillment_check
   CHECK ("fulfillmentMode" IN ('ARRANGE','PICKUP','DELIVERY'));
 
+-- PKCE do OAuth de sellers. O verifier é criptografado com o mesmo cofre de pagamentos.
+ALTER TABLE company_classified_payment_oauth_states
+  ADD COLUMN IF NOT EXISTS "codeVerifierEncrypted" text NULL;
+
 CREATE TABLE IF NOT EXISTS classified_marketplace_terms_acceptances (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "userId" varchar NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -62,6 +66,22 @@ CREATE TABLE IF NOT EXISTS classified_listing_private_locations (
 CREATE INDEX IF NOT EXISTS classified_listing_private_location_coords_idx
   ON classified_listing_private_locations(latitude, longitude)
   WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
+
+-- Move dados de precisão que versões anteriores deixavam na própria entidade pública.
+INSERT INTO classified_listing_private_locations
+  ("listingId","zipCode",latitude,longitude,source,"updatedByUserId","createdAt","updatedAt")
+SELECT id,"zipCode",latitude,longitude,'PROFILE',"sellerUserId",now(),now()
+FROM classified_listings
+WHERE "zipCode" IS NOT NULL OR latitude IS NOT NULL OR longitude IS NOT NULL
+ON CONFLICT ("listingId") DO UPDATE SET
+  "zipCode" = COALESCE(classified_listing_private_locations."zipCode", EXCLUDED."zipCode"),
+  latitude = COALESCE(classified_listing_private_locations.latitude, EXCLUDED.latitude),
+  longitude = COALESCE(classified_listing_private_locations.longitude, EXCLUDED.longitude),
+  "updatedAt" = now();
+
+UPDATE classified_listings
+SET "zipCode" = NULL, latitude = NULL, longitude = NULL, "updatedAt" = now()
+WHERE "zipCode" IS NOT NULL OR latitude IS NOT NULL OR longitude IS NOT NULL;
 
 COMMENT ON TABLE classified_listing_private_locations IS
   'Exact seller location used only for proximity/fulfillment. Never expose raw address or coordinates in public classifieds APIs.';
