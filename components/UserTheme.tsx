@@ -1,9 +1,11 @@
 import React from "react";
+import { PaymentRequiredOverlay } from "./payments/PaymentRequiredOverlay";
 import { ResumeScorePaymentBridge } from "./payments/ResumeScorePaymentBridge";
 
 export function UserTheme() {
   return (
     <>
+      <PaymentRequiredOverlay />
       <ResumeScorePaymentBridge />
       <style>{`
         .user-workspace {
