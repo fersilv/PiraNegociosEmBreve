@@ -16,7 +16,8 @@ export class CompanyPlansOverviewService {
 
     try {
       payload = await this.plans.getForUser(userId);
-    } catch {
+    } catch (error) {
+      if (!this.isSchemaGap(error)) throw error;
       degraded = true;
       payload = this.fallback(company);
     }
@@ -29,7 +30,10 @@ export class CompanyPlansOverviewService {
 
     const [subscription, latestCheckout] = await Promise.all([
       this.subscription(company.id),
-      this.plans.latestCheckout(userId).catch(() => null),
+      this.plans.latestCheckout(userId).catch((error) => {
+        if (this.isSchemaGap(error)) return null;
+        throw error;
+      }),
     ]);
 
     const configuredPriceCents = Number(
@@ -96,19 +100,25 @@ export class CompanyPlansOverviewService {
       },
       scopes: this.planScopes(basePlan),
       warnings: degraded
-        ? ['Os dados de assinatura estão temporariamente indisponíveis. O catálogo e o plano Free continuam acessíveis enquanto o banco de cobrança é atualizado.']
+        ? ['A estrutura de cobrança deste ambiente ainda não foi migrada. O catálogo permanece disponível, mas dados de assinatura e cobrança podem estar temporariamente incompletos.']
         : [],
     };
   }
 
   private async subscription(companyId: string) {
-    return this.dataSource.query(
-      `SELECT * FROM company_plan_subscriptions
-       WHERE "companyId"=$1
-       ORDER BY "createdAt" DESC
-       LIMIT 1`,
-      [companyId],
-    ).then((rows) => rows[0] || null).catch(() => null);
+    try {
+      const rows = await this.dataSource.query(
+        `SELECT * FROM company_plan_subscriptions
+         WHERE "companyId"=$1
+         ORDER BY "createdAt" DESC
+         LIMIT 1`,
+        [companyId],
+      );
+      return rows[0] || null;
+    } catch (error) {
+      if (this.isSchemaGap(error)) return null;
+      throw error;
+    }
   }
 
   private fallback(company: any) {
@@ -202,5 +212,15 @@ export class CompanyPlansOverviewService {
           : 'Anúncios empresariais e vendas online; criação de leilões exige Elite.',
       },
     };
+  }
+
+  private isSchemaGap(error: any) {
+    const code = String(error?.code || error?.driverError?.code || '');
+    if (['42P01', '42703', '42883'].includes(code)) return true;
+    const message = String(error?.message || error?.driverError?.message || '').toLowerCase();
+    return (
+      message.includes('does not exist') &&
+      (message.includes('company_plan_') || message.includes('payment_products') || message.includes('payments'))
+    );
   }
 }
