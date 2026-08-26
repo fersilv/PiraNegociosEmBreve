@@ -172,7 +172,6 @@ export class PaymentCheckoutStatusService {
     const authorizationUrl = recurring ? metadata.subscriptionCheckoutUrl || null : null;
     const ticketUrl = !recurring ? metadata.ticketUrl || null : null;
     const completed = payment.status === 'PAID'
-      || (recurring && subscriptionStatus === 'authorized')
       || metadata.companyEliteTrialActivated === true;
 
     return {
@@ -196,6 +195,7 @@ export class PaymentCheckoutStatusService {
       ticketUrl,
       recurring,
       subscriptionStatus: subscriptionStatus || null,
+      authorizationComplete: recurring && subscriptionStatus === 'authorized',
       providerStatus: metadata.mercadoPagoTransactionStatus || metadata.mercadoPagoOrderStatus || null,
       providerStatusDetail: metadata.mercadoPagoStatusDetail || null,
       completed,
