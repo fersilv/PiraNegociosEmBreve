@@ -1,14 +1,14 @@
 import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { ClassifiedsAuctionEngagementService } from './classifieds-auction-engagement.service';
-import { ClassifiedsAuctionSettlementService } from './classifieds-auction-settlement.service';
+import { ClassifiedsAuctionPaymentPolicyService } from './classifieds-auction-payment-policy.service';
 
 @Controller('classifieds/auctions')
 @UseGuards(FirebaseAuthGuard)
 export class ClassifiedsAuctionExtrasController {
   constructor(
     private readonly engagement: ClassifiedsAuctionEngagementService,
-    private readonly settlement: ClassifiedsAuctionSettlementService,
+    private readonly paymentPolicy: ClassifiedsAuctionPaymentPolicyService,
   ) {}
 
   @Get(':auctionId/reminder')
@@ -28,21 +28,21 @@ export class ClassifiedsAuctionExtrasController {
 
   @Get(':auctionId/settlement')
   buyerSettlement(@Req() req: any, @Param('auctionId') auctionId: string) {
-    return this.settlement.buyerConfig(req.user.uid, auctionId);
+    return this.paymentPolicy.buyerConfig(req.user.uid, auctionId);
   }
 
   @Post(':auctionId/settlement/checkout')
   checkout(@Req() req: any, @Param('auctionId') auctionId: string, @Body() body: Record<string, any>) {
-    return this.settlement.createPayment(req.user.uid, auctionId, body || {});
+    return this.paymentPolicy.createPayment(req.user.uid, auctionId, body || {});
   }
 
   @Get(':auctionId/seller-settlement')
   sellerSettlement(@Req() req: any, @Param('auctionId') auctionId: string) {
-    return this.settlement.sellerConfig(req.user.uid, auctionId);
+    return this.paymentPolicy.sellerConfig(req.user.uid, auctionId);
   }
 
   @Patch(':auctionId/seller-settlement')
   configureSeller(@Req() req: any, @Param('auctionId') auctionId: string, @Body() body: Record<string, unknown>) {
-    return this.settlement.configureSeller(req.user.uid, auctionId, body || {});
+    return this.paymentPolicy.configureSeller(req.user.uid, auctionId, body || {});
   }
 }
