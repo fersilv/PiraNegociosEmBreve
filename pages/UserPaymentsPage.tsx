@@ -235,6 +235,7 @@ export function UserPaymentsPage() {
         title={selectedProduct?.name || 'Pagamento'}
         description={selectedProduct?.description || undefined}
         amountCents={selectedAmount}
+        productCode={selectedProduct?.code || null}
         confirmLabel={billing.lifetimeFree ? 'Ativar agora' : selectedRecurring ? 'Continuar assinatura' : 'Gerar Pix'}
         creatingLabel={selectedRecurring ? 'Preparando autorização...' : 'Gerando Pix...'}
         createCheckout={createSelectedCheckout}
