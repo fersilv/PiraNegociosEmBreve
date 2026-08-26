@@ -43,6 +43,7 @@ import { AdminProductFeedbackPage } from "./AdminProductFeedbackPage";
 import { AdminWhatsAppPage } from "./AdminWhatsAppPage";
 import IdentityVerificationPage from "./IdentityVerificationPage";
 import AdminIdentityVerificationsPage from "./AdminIdentityVerificationsPage";
+import AdminClassifiedReviewsPage from "./AdminClassifiedReviewsPage";
 
 function AdminPage({ children }: { children: React.ReactNode }) {
   return <div className="admin-page-shell">{children}</div>;
@@ -55,6 +56,7 @@ function AdminRoutes() {
       <Route index element={<AdminPage><AdminOverview /></AdminPage>} />
       <Route path="empresas" element={<AdminPage><AdminDashboard mode="moderation" section="companies" /></AdminPage>} />
       <Route path="validacao-cadastral" element={<AdminPage><AdminIdentityVerificationsPage /></AdminPage>} />
+      <Route path="avaliacoes-classificados" element={<AdminPage><AdminClassifiedReviewsPage /></AdminPage>} />
       <Route path="vagas" element={<AdminPage><AdminDashboard mode="moderation" section="jobs" /></AdminPage>} />
       <Route path="vagas/sinalizadas" element={<AdminPage><AdminFlaggedJobsPage /></AdminPage>} />
       <Route path="vagas/:jobId" element={<AdminPage><AdminJobDetailsPage /></AdminPage>} />
@@ -142,7 +144,7 @@ function VerifiedCompanyPageRoute({ companyId }: { companyId: string }) {
 
 function CompanyRoutes({ companyId }: { companyId?: string }) {
   const hasCompany = Boolean(companyId);
-  const companyOnly = (element: React.ReactNode) => hasCompany ? element : <Navigate to="/company/perfil" replace />;
+  const companyOnly = (element: React.ReactNode) => hasCompany ? element : <Navigate to="/company/comercial" replace />;
   return (
     <Routes>
       <Route index element={companyOnly(<CompanyHomePage />)} />
@@ -155,8 +157,12 @@ function CompanyRoutes({ companyId }: { companyId?: string }) {
       <Route path="pagina" element={companyOnly(companyId ? <VerifiedCompanyPageRoute companyId={companyId} /> : null)} />
       <Route path="notificacoes" element={companyOnly(<NotificationPreferencesPage />)} />
       <Route path="verificacao" element={companyOnly(<IdentityVerificationPage />)} />
-      <Route path="perfil" element={<CompanyProfilePage />} />
-      <Route path="*" element={<Navigate to={hasCompany ? "/company" : "/company/perfil"} replace />} />
+      <Route path="comercial" element={<CompanyProfilePage section="commercial" />} />
+      <Route path="financeiro" element={companyOnly(<CompanyProfilePage section="finance" />)} />
+      <Route path="equipe" element={companyOnly(<CompanyProfilePage section="team" />)} />
+      <Route path="configuracoes" element={companyOnly(<CompanyProfilePage section="settings" />)} />
+      <Route path="perfil" element={<Navigate to="/company/comercial" replace />} />
+      <Route path="*" element={<Navigate to={hasCompany ? "/company" : "/company/comercial"} replace />} />
     </Routes>
   );
 }
@@ -196,7 +202,7 @@ function LegacyDashboardRedirect() {
   if (path === "/dashboard/curriculos") return <Navigate to="/company/talentos" replace />;
   if (path === "/dashboard/configuracao-contratacao") return <Navigate to="/company/contratacao" replace />;
   if (path === "/dashboard/empresa/pagina") return <Navigate to="/company/pagina" replace />;
-  if (path === "/dashboard/empresa") return <Navigate to="/company/perfil" replace />;
+  if (path === "/dashboard/empresa") return <Navigate to="/company/comercial" replace />;
   if (path === "/dashboard/onboarding") return <Navigate to={profile?.type === "ADMIN" ? "/admin/onboarding" : "/user/onboarding"} replace />;
   if (profile?.type === "ADMIN") return <Navigate to="/admin" replace />;
   if (profile?.companyId) return <Navigate to="/company" replace />;
