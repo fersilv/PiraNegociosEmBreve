@@ -4,9 +4,20 @@ const path = require('path');
 const repoRoot = path.resolve(__dirname, '../..');
 process.chdir(repoRoot);
 
+function readNormalized(file) {
+  return fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+}
+
+function writeIfChanged(file, original, source) {
+  if (source !== original) {
+    fs.writeFileSync(file, source);
+    console.log(`updated ${file}`);
+  }
+}
+
 function patchClassifiedsCatalogTypes() {
   const file = 'backend/src/classifieds/classifieds.service.ts';
-  let source = fs.readFileSync(file, 'utf8');
+  let source = readNormalized(file);
   const original = source;
 
   source = source.replace(
@@ -25,15 +36,12 @@ function patchClassifiedsCatalogTypes() {
     throw new Error('Classifieds build fix could not verify catalog option group selection typing.');
   }
 
-  if (source !== original) {
-    fs.writeFileSync(file, source);
-    console.log(`updated ${file}`);
-  }
+  writeIfChanged(file, original, source);
 }
 
 function patchClassifiedsCommerceMapTypes() {
   const file = 'backend/src/classifieds/classifieds-commerce.service.ts';
-  let source = fs.readFileSync(file, 'utf8');
+  let source = readNormalized(file);
   const original = source;
 
   source = source.replace(
@@ -60,15 +68,12 @@ function patchClassifiedsCommerceMapTypes() {
     throw new Error('Classifieds build fix could not verify conversation preference map typing.');
   }
 
-  if (source !== original) {
-    fs.writeFileSync(file, source);
-    console.log(`updated ${file}`);
-  }
+  writeIfChanged(file, original, source);
 }
 
 function patchClassifiedsSalesFulfillmentTypes() {
   const file = 'backend/src/classifieds/classifieds-sales.service.ts';
-  let source = fs.readFileSync(file, 'utf8');
+  let source = readNormalized(file);
   const original = source;
 
   source = source.replace(
@@ -88,29 +93,26 @@ function patchClassifiedsSalesFulfillmentTypes() {
     throw new Error('Classifieds build fix could not verify fulfillment mode typing.');
   }
 
-  if (source !== original) {
-    fs.writeFileSync(file, source);
-    console.log(`updated ${file}`);
-  }
+  writeIfChanged(file, original, source);
 }
 
 function patchWhatsAppDetachListener() {
   const file = 'backend/src/whatsapp/whatsapp-channel-publisher.ts';
-  let source = fs.readFileSync(file, 'utf8');
+  let source = readNormalized(file);
   const original = source;
 
-  source = source.replace("          let detachListener: (() => void) | null = null;\n", '');
-  source = source.replace("            detachListener = () => collection.off?.('add', handler);\n", '');
-  source = source.replace("          detachListener?.();\n", '');
+  // Older WPP typings made the extra detach callback troublesome. The handler
+  // already unregisters itself both on match and on timeout, so this callback
+  // is redundant. Remove all historical formatting variants idempotently.
+  source = source.replace(/^\s*let detachListener:\s*\(\(\) => void\)\s*\|\s*null\s*=\s*null;\s*\n/gm, '');
+  source = source.replace(/^\s*detachListener\s*=\s*\(\)\s*=>\s*collection\.off\?\.\('add',\s*handler\);\s*\n/gm, '');
+  source = source.replace(/^\s*detachListener\?\.\(\);\s*\n/gm, '');
 
-  if (source.includes('detachListener')) {
-    throw new Error('Classifieds build fix could not remove obsolete WhatsApp detachListener flow.');
+  if (/\bdetachListener\b/.test(source)) {
+    throw new Error('Classifieds build fix found an unsupported WhatsApp detachListener variant.');
   }
 
-  if (source !== original) {
-    fs.writeFileSync(file, source);
-    console.log(`updated ${file}`);
-  }
+  writeIfChanged(file, original, source);
 }
 
 patchClassifiedsCatalogTypes();
