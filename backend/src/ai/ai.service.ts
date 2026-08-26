@@ -6,9 +6,9 @@ import {
 } from '@nestjs/common';
 import { SettingsService } from '../admin/settings.service';
 import OpenAI from 'openai';
-import Anthropic from '@anthropic-ai/sdk';
+import { GroqCompat as Groq } from './groq-anthropic-compat';
 
-type AiProvider = 'GEMINI' | 'OPENAI' | 'ANTHROPIC';
+type AiProvider = 'GEMINI' | 'OPENAI' | 'GROQ';
 
 interface AiRuntimeConfig {
   provider: AiProvider;
@@ -73,7 +73,7 @@ export class AiService {
   constructor(private readonly settingsService: SettingsService) {}
 
   private isProvider(value: unknown): value is AiProvider {
-    return ['GEMINI', 'OPENAI', 'ANTHROPIC'].includes(value as string);
+    return ['GEMINI', 'OPENAI', 'GROQ'].includes(value as string);
   }
 
   private async getRuntimeConfig(): Promise<AiRuntimeConfig> {
@@ -326,13 +326,13 @@ export class AiService {
     return this.parseJson(response.output_text || '{}');
   }
 
-  private async generateResumeWithAnthropic(
+  private async generateResumeWithGroq(
     config: AiRuntimeConfig,
     cleanBase64: string,
     cleanMimeType: string,
     systemInstruction: string,
   ) {
-    const anthropic = new Anthropic({ apiKey: config.apiKey });
+    const anthropic = new Groq({ apiKey: config.apiKey });
     const filePart =
       cleanMimeType === 'application/pdf'
         ? {
@@ -392,8 +392,8 @@ export class AiService {
           systemInstruction,
         );
       }
-      if (config.provider === 'ANTHROPIC') {
-        return await this.generateResumeWithAnthropic(
+      if (config.provider === 'GROQ') {
+        return await this.generateResumeWithGroq(
           config,
           cleanBase64,
           cleanMimeType,
@@ -438,8 +438,8 @@ export class AiService {
       });
       return response.output_text || '';
     }
-    if (config.provider === 'ANTHROPIC') {
-      const anthropic = new Anthropic({ apiKey: config.apiKey });
+    if (config.provider === 'GROQ') {
+      const anthropic = new Groq({ apiKey: config.apiKey });
       const response = await anthropic.messages.create({
         model: config.model,
         max_tokens: maxOutputTokens,
@@ -509,8 +509,8 @@ export class AiService {
           output: usage?.output_tokens,
         });
       }
-      if (config.provider === 'ANTHROPIC') {
-        const anthropic = new Anthropic({ apiKey: config.apiKey });
+      if (config.provider === 'GROQ') {
+        const anthropic = new Groq({ apiKey: config.apiKey });
         const response = await anthropic.messages.create({
           model: config.model,
           max_tokens: 900,

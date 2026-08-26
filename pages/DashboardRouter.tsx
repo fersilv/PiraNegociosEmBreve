@@ -26,6 +26,7 @@ import { AdminJobDetailsPage } from "./AdminJobDetailsPage";
 import { AdminFlaggedJobsPage } from "./AdminFlaggedJobsPage";
 import { AdminRegistrationPage } from "./AdminRegistrationPage";
 import { AdminPaymentsPage } from "./AdminPaymentsPage";
+import AdminClassifiedCommercePage from "./AdminClassifiedCommercePage";
 import { AdminBillingSupportPage } from "./AdminBillingSupportPage";
 import { AdminPublicResumeBuilderPage } from "./AdminPublicResumeBuilderPage";
 import { AdminJobIntegrationsPage } from "./AdminJobIntegrationsPage";
@@ -36,6 +37,7 @@ import { CompanyPageBuilder } from "./CompanyPageBuilder";
 import { CompanyJobPage } from "./CompanyJobPage";
 import { CompanyJobInvitesPage } from "./CompanyJobInvitesPage";
 import { CompanyHiringConfig } from "./CompanyHiringConfig";
+import { CompanyPlansPage } from "./CompanyPlansPage";
 import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
 import { CandidateJobViewPage } from "./CandidateJobViewPage";
 import { ResumeWorkspace } from "./ResumeWorkspace";
@@ -66,6 +68,7 @@ function AdminRoutes() {
       <Route path="publicidade" element={<AdminPage><AdminDashboard mode="moderation" section="advertising" /></AdminPage>} />
       <Route path="criador-publico" element={<AdminPage><AdminPublicResumeBuilderPage /></AdminPage>} />
       <Route path="pagamentos" element={<AdminPage><AdminPaymentsPage /></AdminPage>} />
+      <Route path="pagamentos/classificados" element={<AdminPage><AdminClassifiedCommercePage /></AdminPage>} />
       <Route path="pagamentos/formas" element={<AdminPage><PaymentMethodsPage /></AdminPage>} />
       <Route path="pagamentos/suporte" element={<AdminPage><AdminBillingSupportPage /></AdminPage>} />
       <Route path="whatsapp" element={<AdminPage><AdminWhatsAppPage /></AdminPage>} />
@@ -154,6 +157,7 @@ function CompanyRoutes({ companyId }: { companyId?: string }) {
       <Route path="vagas/:jobId" element={companyOnly(<CompanyJobPage />)} />
       <Route path="talentos" element={companyOnly(<TalentSearchPage />)} />
       <Route path="contratacao" element={companyOnly(<CompanyHiringConfig />)} />
+      <Route path="planos" element={companyOnly(<CompanyPlansPage />)} />
       <Route path="pagina" element={companyOnly(companyId ? <VerifiedCompanyPageRoute companyId={companyId} /> : null)} />
       <Route path="notificacoes" element={companyOnly(<NotificationPreferencesPage />)} />
       <Route path="verificacao" element={companyOnly(<IdentityVerificationPage />)} />

@@ -9,9 +9,13 @@ import {
 import { DataSource, EntityManager } from 'typeorm';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
+import { ClassifiedsAuctionGateway } from './classifieds-auction.gateway';
 
-const MIN_DURATION_MS = 30 * 60 * 1000;
+const MIN_DURATION_MS = 60 * 60 * 1000;
 const MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+const SOFT_CLOSE_SECONDS = 30;
+const AUCTION_RELIST_COOLDOWN_HOURS = 48;
+const MAX_SCHEDULE_AHEAD_MS = 90 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy {
@@ -21,10 +25,11 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
     private readonly dataSource: DataSource,
     private readonly identities: ClassifiedsIdentityService,
     private readonly notifications: NotificationsService,
+    private readonly auctionGateway: ClassifiedsAuctionGateway,
   ) {}
 
   onModuleInit() {
-    this.timer = setInterval(() => void this.closeDue().catch(() => undefined), 60_000);
+    this.timer = setInterval(() => void this.closeDue().catch(() => undefined), 1_000);
     this.timer.unref?.();
     void this.closeDue().catch(() => undefined);
   }
@@ -59,8 +64,8 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
          SELECT url FROM classified_listing_images
          WHERE "listingId" = l.id ORDER BY "sortOrder" ASC LIMIT 1
        ) i ON true
-       WHERE a.status = 'OPEN' OR a."updatedAt" >= now() - interval '30 days'
-       ORDER BY CASE WHEN a.status = 'OPEN' THEN 0 ELSE 1 END, a."endsAt" ASC, a."updatedAt" DESC`,
+       WHERE a.status IN ('SCHEDULED','OPEN') OR a."updatedAt" >= now() - interval '30 days'
+       ORDER BY CASE a.status WHEN 'OPEN' THEN 0 WHEN 'SCHEDULED' THEN 1 ELSE 2 END, a."startsAt" ASC, a."endsAt" ASC, a."updatedAt" DESC`,
     );
 
     return rows.map((row: any) => this.decorate(row, uid, companyId));
@@ -145,7 +150,7 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
 
     const [active, pendingOffers] = await Promise.all([
       this.dataSource.query(
-        `SELECT id FROM classified_auctions WHERE "listingId" = $1 AND status = 'OPEN' LIMIT 1`,
+        `SELECT id FROM classified_auctions WHERE "listingId" = $1 AND status IN ('SCHEDULED','OPEN') LIMIT 1`,
         [listingId],
       ),
       this.dataSource.query(
@@ -154,6 +159,15 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
       ).catch(() => []),
     ]);
     if (active[0]) throw new BadRequestException('Este produto já está em um leilão ativo.');
+    const cooldown = await this.dataSource.query(
+      `SELECT COALESCE("closedAt","updatedAt") + interval '${AUCTION_RELIST_COOLDOWN_HOURS} hours' AS "cooldownUntil"
+       FROM classified_auctions WHERE "listingId"=$1 AND status IN ('ENDED','CANCELED')
+         AND COALESCE("closedAt","updatedAt") > now() - interval '${AUCTION_RELIST_COOLDOWN_HOURS} hours'
+       ORDER BY COALESCE("closedAt","updatedAt") DESC LIMIT 1`, [listingId]);
+    if (cooldown[0]) {
+      const until = new Date(cooldown[0].cooldownUntil).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      throw new BadRequestException(`Este produto está em quarentena de leilão por ${AUCTION_RELIST_COOLDOWN_HOURS} horas. Novo leilão disponível após ${until}.`);
+    }
     if (pendingOffers[0]) {
       throw new BadRequestException('Resolva ou aguarde expirar as ofertas pendentes deste produto antes de abrir um leilão.');
     }
@@ -163,10 +177,15 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
     if (!startPrice) throw new BadRequestException('Informe um lance inicial válido.');
     if (!minIncrement) throw new BadRequestException('Informe um incremento mínimo válido.');
 
+    const requestedStartsAt = body.startsAt ? this.parseEndsAt(body.startsAt) : new Date();
+    const startsAt = requestedStartsAt.getTime() < Date.now() ? new Date() : requestedStartsAt;
     const endsAt = this.parseEndsAt(body.endsAt);
-    const duration = endsAt.getTime() - Date.now();
+    if (!Number.isFinite(startsAt.getTime()) || startsAt.getTime() - Date.now() > MAX_SCHEDULE_AHEAD_MS) {
+      throw new BadRequestException('O início do leilão pode ser agendado em até 90 dias.');
+    }
+    const duration = endsAt.getTime() - startsAt.getTime();
     if (!Number.isFinite(endsAt.getTime()) || duration < MIN_DURATION_MS) {
-      throw new BadRequestException('O leilão deve durar pelo menos 30 minutos.');
+      throw new BadRequestException('Entre o início e o encerramento, o leilão deve durar pelo menos 60 minutos.');
     }
     if (duration > MAX_DURATION_MS) {
       throw new BadRequestException('O leilão pode durar no máximo 30 dias nesta versão.');
@@ -175,10 +194,12 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
     const rows = await this.dataSource.query(
       `INSERT INTO classified_auctions
         ("listingId","companyId","sellerUserId",status,"startPrice","minIncrement","startsAt","endsAt")
-       VALUES ($1,$2,$3,'OPEN',$4,$5,now(),$6) RETURNING *`,
-      [listingId, companyId, uid, startPrice, minIncrement, endsAt],
+       VALUES ($1,$2,$3,CASE WHEN $6 > now() THEN 'SCHEDULED' ELSE 'OPEN' END,$4,$5,$6,$7) RETURNING *`,
+      [listingId, companyId, uid, startPrice, minIncrement, startsAt, endsAt],
     );
-    return this.detail(uid, rows[0].id);
+    const detail = await this.detail(uid, rows[0].id);
+    this.auctionGateway.publishAuctionChanged(rows[0].id, 'CREATED');
+    return detail;
   }
 
   async bid(uid: string, auctionId: string, rawAmount: unknown) {
@@ -190,7 +211,7 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
 
     const result = await this.dataSource.transaction(async (manager) => {
       const auctionRows = await manager.query(
-        `SELECT a.*, l.title FROM classified_auctions a
+        `SELECT a.*, l.title, (a."endsAt" > now()) AS "clockOpen" FROM classified_auctions a
          JOIN classified_listings l ON l.id = a."listingId"
          WHERE a.id = $1 FOR UPDATE`,
         [auctionId],
@@ -198,7 +219,8 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
       const auction = auctionRows[0];
       if (!auction) throw new NotFoundException('Leilão não encontrado.');
       if (auction.status !== 'OPEN') throw new BadRequestException('Este leilão já foi encerrado.');
-      if (new Date(auction.endsAt).getTime() <= Date.now()) {
+      if (new Date(auction.startsAt).getTime() > Date.now()) throw new BadRequestException('Este leilão ainda não começou.');
+      if (!auction.clockOpen) {
         throw new BadRequestException('O prazo deste leilão terminou.');
       }
       if (auction.sellerUserId === uid || (bidderCompanyId && auction.companyId === bidderCompanyId)) {
@@ -223,7 +245,17 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
          VALUES ($1,$2,$3,$4) RETURNING *`,
         [auctionId, uid, bidderCompanyId, amount],
       );
-      return { auction, bid: bidRows[0], previous };
+
+      const extensionRows = await manager.query(
+        `UPDATE classified_auctions
+         SET "endsAt" = now() + interval '${SOFT_CLOSE_SECONDS} seconds', "updatedAt" = now()
+         WHERE id = $1
+           AND status = 'OPEN'
+           AND "endsAt" <= now() + interval '${SOFT_CLOSE_SECONDS} seconds'
+         RETURNING "endsAt"`,
+        [auctionId],
+      );
+      return { auction, bid: bidRows[0], previous, extended: Boolean(extensionRows[0]), extendedEndsAt: extensionRows[0]?.endsAt || null };
     });
 
     if (result.previous && result.previous.bidderUserId !== uid) {
@@ -236,12 +268,16 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
     }
     await this.notifyIdentity(result.auction.sellerUserId, result.auction.companyId, {
       title: `Novo lance: ${this.currency(amount)}`,
-      message: `“${result.auction.title}” recebeu um novo lance.`,
+      message: result.extended
+        ? `“${result.auction.title}” recebeu um novo lance e o relógio voltou para ${SOFT_CLOSE_SECONDS} segundos.`
+        : `“${result.auction.title}” recebeu um novo lance.`,
       type: 'classified_auction_bid',
       link: `/classificados/leiloes/${auctionId}`,
     }).catch(() => undefined);
 
-    return this.detail(uid, auctionId);
+    this.auctionGateway.publishAuctionChanged(auctionId, result.extended ? 'EXTENDED' : 'BID');
+    const detail = await this.detail(uid, auctionId);
+    return { ...detail, softCloseExtended: result.extended, softCloseSeconds: SOFT_CLOSE_SECONDS };
   }
 
   async cancel(uid: string, auctionId: string) {
@@ -249,14 +285,14 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
     if (identity.type !== 'COMPANY') throw new ForbiddenException('Somente a empresa anunciante pode cancelar o leilão.');
     const companyId = identity.company!.id;
 
-    return this.dataSource.transaction(async (manager) => {
+    const canceled = await this.dataSource.transaction(async (manager) => {
       const rows = await manager.query(
         `SELECT * FROM classified_auctions WHERE id = $1 FOR UPDATE`,
         [auctionId],
       );
       const auction = rows[0];
       if (!auction || auction.companyId !== companyId) throw new NotFoundException('Leilão não encontrado para esta empresa.');
-      if (auction.status !== 'OPEN') throw new BadRequestException('Este leilão não está aberto.');
+      if (!['SCHEDULED','OPEN'].includes(auction.status)) throw new BadRequestException('Este leilão não pode mais ser cancelado.');
       const countRows = await manager.query(
         `SELECT count(*)::int AS count FROM classified_auction_bids WHERE "auctionId" = $1`,
         [auctionId],
@@ -271,6 +307,8 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
       );
       return updated[0];
     });
+    if (canceled?.id) this.auctionGateway.publishAuctionChanged(auctionId, 'CANCELED');
+    return canceled;
   }
 
   async assertOffersAllowed(listingId: string) {
@@ -299,13 +337,14 @@ export class ClassifiedsAuctionService implements OnModuleInit, OnModuleDestroy 
   private async closeOneIfDue(auctionId: string) {
     let closed: any = null;
     await this.dataSource.transaction(async (manager) => {
-      const rows = await manager.query(`SELECT * FROM classified_auctions WHERE id = $1 FOR UPDATE`, [auctionId]);
+      const rows = await manager.query(`SELECT *, ("endsAt" <= now()) AS "clockDue" FROM classified_auctions WHERE id = $1 FOR UPDATE`, [auctionId]);
       const auction = rows[0];
-      if (!auction || auction.status !== 'OPEN' || new Date(auction.endsAt).getTime() > Date.now()) return;
+      if (!auction || auction.status !== 'OPEN' || !auction.clockDue) return;
       closed = await this.finalizeLocked(manager, auction);
     });
     if (closed) {
       await this.notifyClosed(closed).catch(() => undefined);
+      this.auctionGateway.publishAuctionChanged(auctionId, 'ENDED');
       return true;
     }
     return false;

@@ -4,10 +4,10 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import OpenAI from 'openai';
-import Anthropic from '@anthropic-ai/sdk';
+import { GroqCompat as Groq } from './groq-anthropic-compat';
 import { SettingsService } from '../admin/settings.service';
 
-type AiProvider = 'GEMINI' | 'OPENAI' | 'ANTHROPIC';
+type AiProvider = 'GEMINI' | 'OPENAI' | 'GROQ';
 
 type RuntimeConfig = {
   provider: AiProvider;
@@ -41,7 +41,7 @@ export class ResumeReviewService {
   constructor(private readonly settingsService: SettingsService) {}
 
   private isProvider(value: unknown): value is AiProvider {
-    return ['GEMINI', 'OPENAI', 'ANTHROPIC'].includes(value as string);
+    return ['GEMINI', 'OPENAI', 'GROQ'].includes(value as string);
   }
 
   private async getRuntimeConfig(): Promise<RuntimeConfig> {
@@ -391,8 +391,8 @@ export class ResumeReviewService {
       return String(response?.output_text || '{}');
     }
 
-    if (config.provider === 'ANTHROPIC') {
-      const anthropic = new Anthropic({ apiKey: config.apiKey });
+    if (config.provider === 'GROQ') {
+      const anthropic = new Groq({ apiKey: config.apiKey });
       const response: any = await anthropic.messages.create({
         model: config.model,
         system: systemInstruction,

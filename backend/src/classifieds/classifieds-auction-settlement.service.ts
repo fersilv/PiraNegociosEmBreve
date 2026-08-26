@@ -297,7 +297,12 @@ export class ClassifiedsAuctionSettlementService {
   private fulfillmentModes(value: unknown): Array<'ARRANGE' | 'PICKUP' | 'DELIVERY'> {
     const values = Array.isArray(value) ? value : ['ARRANGE'];
     const modes = values.map(String).map((v) => v.toUpperCase()).filter((v) => ['ARRANGE','PICKUP','DELIVERY'].includes(v)) as Array<'ARRANGE'|'PICKUP'|'DELIVERY'>;
-    return [...new Set(modes.length ? modes : ['ARRANGE'])];
+    const fallback: Array<'ARRANGE' | 'PICKUP' | 'DELIVERY'> = ['ARRANGE'];
+    return [
+      ...new Set<'ARRANGE' | 'PICKUP' | 'DELIVERY'>(
+        modes.length ? modes : fallback,
+      ),
+    ];
   }
 
   private cleanModes(value: unknown) {

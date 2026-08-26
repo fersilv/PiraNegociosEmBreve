@@ -33,6 +33,9 @@ export interface MercadoPagoProviderConfig extends Record<string, unknown> {
   publicKey?: string;
   webhookSecret?: string;
   publicApiBaseUrl?: string;
+  marketplaceClientId?: string;
+  marketplaceClientSecret?: string;
+  marketplaceRedirectUri?: string;
 }
 
 @Injectable()
@@ -147,6 +150,9 @@ export class PaymentProviderConfigService {
       publicKey: this.text(input.publicKey, 1000) ?? current.publicKey ?? '',
       webhookSecret: this.text(input.webhookSecret, 2000) ?? current.webhookSecret ?? '',
       publicApiBaseUrl: this.publicApiBaseUrl(input.publicApiBaseUrl, current.publicApiBaseUrl),
+      marketplaceClientId: this.text(input.marketplaceClientId, 500) ?? current.marketplaceClientId ?? '',
+      marketplaceClientSecret: this.text(input.marketplaceClientSecret, 1000) ?? current.marketplaceClientSecret ?? '',
+      marketplaceRedirectUri: this.publicApiBaseUrl(input.marketplaceRedirectUri, current.marketplaceRedirectUri),
     };
   }
 
@@ -187,6 +193,10 @@ export class PaymentProviderConfigService {
       accessTokenConfigured: Boolean(config.accessToken),
       publicKeyConfigured: Boolean(config.publicKey),
       webhookSecretConfigured: Boolean(config.webhookSecret),
+      marketplaceClientIdConfigured: Boolean(config.marketplaceClientId),
+      marketplaceClientId: config.marketplaceClientId || null,
+      marketplaceClientSecretConfigured: Boolean(config.marketplaceClientSecret),
+      marketplaceRedirectUri: config.marketplaceRedirectUri || null,
       publicApiBaseUrl: config.publicApiBaseUrl || null,
       capabilities: ['PIX', 'PIX_AUTOMATICO'],
       checkoutApi: 'ORDERS',

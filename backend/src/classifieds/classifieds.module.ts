@@ -29,6 +29,7 @@ import { ClassifiedsEntitlementsService } from './classifieds-entitlements.servi
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
 import { ClassifiedsLocationService } from './classifieds-location.service';
 import { ClassifiedsMarketplacePaymentsService } from './classifieds-marketplace-payments.service';
+import { ClassifiedsOfferChatService } from './classifieds-offer-chat.service';
 import { ClassifiedsMarketplaceTermsService } from './classifieds-marketplace-terms.service';
 import { ClassifiedsPrivateController } from './classifieds-private.controller';
 import { ClassifiedsPublicController } from './classifieds-public.controller';
@@ -101,6 +102,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsReceiptPreferencesService,
     ClassifiedsSalesService,
     ClassifiedsMarketplacePaymentsService,
+    ClassifiedsOfferChatService,
     ClassifiedsMarketplaceTermsService,
     ClassifiedsCheckoutService,
     ClassifiedsReviewModerationService,

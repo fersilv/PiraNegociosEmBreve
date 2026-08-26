@@ -481,8 +481,8 @@ function cleanCatalogConfig(value: unknown): ClassifiedCatalogConfig | null {
     return {
       id: cleanText(group?.id || `group-${groupIndex + 1}`, 80),
       name: cleanText(group?.name, 120),
-      kind: String(group?.kind || 'MODIFIER').toUpperCase() === 'VARIANT' ? 'VARIANT' : 'MODIFIER',
-      selectionType: String(group?.selectionType || 'SINGLE').toUpperCase() === 'MULTIPLE' ? 'MULTIPLE' : 'SINGLE',
+      kind: (String(group?.kind || 'MODIFIER').toUpperCase() === 'VARIANT' ? 'VARIANT' : 'MODIFIER') as 'VARIANT' | 'MODIFIER',
+      selectionType: (String(group?.selectionType || 'SINGLE').toUpperCase() === 'MULTIPLE' ? 'MULTIPLE' : 'SINGLE') as 'SINGLE' | 'MULTIPLE',
       minSelections: clampInt(group?.minSelections, 0, 80, 0),
       maxSelections: clampInt(group?.maxSelections, 1, 80, 1),
       pricingStrategy: cleanPricingStrategy(group?.pricingStrategy),

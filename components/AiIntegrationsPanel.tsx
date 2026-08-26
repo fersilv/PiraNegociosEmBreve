@@ -12,7 +12,7 @@ import {
 import { api } from "../lib/api";
 import { AiImageEnhancementPanel } from "./AiImageEnhancementPanel";
 
-type ProviderId = "GEMINI" | "OPENAI" | "ANTHROPIC";
+type ProviderId = "GEMINI" | "OPENAI" | "GROQ";
 
 interface AiModelInfo {
   id: string;
@@ -44,7 +44,7 @@ interface AiInstructionSettings {
 const PROVIDERS: Array<{
   id: ProviderId;
   label: string;
-  key: "GEMINI_API_KEY" | "OPENAI_API_KEY" | "ANTHROPIC_API_KEY";
+  key: "GEMINI_API_KEY" | "OPENAI_API_KEY" | "GROQ_API_KEY";
   placeholder: string;
 }> = [
   {
@@ -60,10 +60,10 @@ const PROVIDERS: Array<{
     placeholder: "sk-proj-...",
   },
   {
-    id: "ANTHROPIC",
-    label: "Anthropic",
-    key: "ANTHROPIC_API_KEY",
-    placeholder: "sk-ant-...",
+    id: "GROQ",
+    label: "Groq",
+    key: "GROQ_API_KEY",
+    placeholder: "gsk_...",
   },
 ];
 
@@ -85,7 +85,7 @@ export function AiIntegrationsPanel() {
   const [keys, setKeys] = useState({
     GEMINI_API_KEY: "",
     OPENAI_API_KEY: "",
-    ANTHROPIC_API_KEY: "",
+    GROQ_API_KEY: "",
   });
   const [config, setConfig] = useState<AiConfig>({
     enabled: false,
@@ -132,7 +132,7 @@ export function AiIntegrationsPanel() {
       const nextKeys = {
         GEMINI_API_KEY: settings.GEMINI_API_KEY || "",
         OPENAI_API_KEY: settings.OPENAI_API_KEY || "",
-        ANTHROPIC_API_KEY: settings.ANTHROPIC_API_KEY || "",
+        GROQ_API_KEY: settings.GROQ_API_KEY || "",
       };
       setKeys(nextKeys);
       setInstructions({

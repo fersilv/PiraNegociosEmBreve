@@ -194,12 +194,18 @@ export class MercadoPagoService {
     paymentId: string,
     productName: string,
     payer: MercadoPagoPayerInput,
+    trialDays = 0,
   ) {
     const config = await this.config();
     const email = String(payer.email || '').trim();
     if (!email || !email.includes('@')) {
       throw new BadRequestException('O Mercado Pago exige o e-mail da conta para iniciar a assinatura.');
     }
+
+    const safeTrialDays = Math.max(0, Math.min(30, Math.round(Number(trialDays || 0))));
+    const trialStartDate = safeTrialDays > 0
+      ? new Date(Date.now() + safeTrialDays * 24 * 60 * 60 * 1000).toISOString()
+      : undefined;
 
     const subscription: any = await this.request<any>(
       config,
@@ -212,6 +218,7 @@ export class MercadoPagoService {
         auto_recurring: {
           frequency: 1,
           frequency_type: 'months',
+          start_date: trialStartDate,
           transaction_amount: Math.max(0, Math.round(amountCents)) / 100,
           currency_id: 'BRL',
         },
@@ -241,6 +248,8 @@ export class MercadoPagoService {
         recurringApi: 'SUBSCRIPTIONS',
         paymentType: 'PIX_AUTOMATICO',
         requiresAuthorization: true,
+        mercadoPagoTrialDays: safeTrialDays,
+        mercadoPagoTrialStartDate: trialStartDate || null,
       },
     };
   }
@@ -337,6 +346,14 @@ export class MercadoPagoService {
         mercadoPagoNextPaymentDate: subscription?.next_payment_date || null,
       })],
     );
+
+    if (status === 'authorized') {
+      await this.payments.activateCompanyPlanTrial(local.id, { provider: 'MERCADO_PAGO', providerSubscriptionId: dataId }).catch(() => undefined);
+      await this.dataSource.query(
+        `UPDATE payments SET metadata = coalesce(metadata,'{}'::jsonb) || $2::jsonb, "updatedAt" = now() WHERE id = $1`,
+        [local.id, JSON.stringify({ companyEliteTrialSubscriptionAuthorized: true })],
+      ).catch(() => undefined);
+    }
 
     const localSubscriptionStatus = status === 'cancelled' || status === 'canceled'
       ? 'CANCELED'

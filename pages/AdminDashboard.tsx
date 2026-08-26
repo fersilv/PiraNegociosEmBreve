@@ -9,6 +9,7 @@ import { Link } from "react-router-dom";
 import { api, asArray } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { CityStateSelector } from "../components/CityStateSelector";
+import { AdminCompanyPlanEditor } from "../components/AdminCompanyPlanEditor";
 import {
   Briefcase,
   Building2,
@@ -1193,8 +1194,10 @@ export function AdminDashboard({
         <Modal
           title={companyDetail.company.name}
           onClose={() => setCompanyDetail(null)}
+          wide
         >
           <div className="space-y-5 text-sm">
+            <AdminCompanyPlanEditor companyId={companyDetail.company.id} companyName={companyDetail.company.name} />
             <form
               onSubmit={saveCompanyDetail}
               className="space-y-3 rounded-xl border border-stone-200 p-4"
@@ -2813,31 +2816,59 @@ function Modal({
   title,
   onClose,
   children,
+  wide = false,
 }: {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  wide?: boolean;
 }) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/45 p-4"
+      data-admin-modal-layout="viewport-safe"
+      className="fixed inset-0 z-[100] flex items-start justify-center overflow-hidden bg-stone-950/55 px-3 py-3 backdrop-blur-[1px] sm:px-6 sm:py-6 lg:py-8"
       role="dialog"
       aria-modal="true"
+      aria-label={title}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
     >
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-        <div className="sticky top-0 flex items-center justify-between border-b border-stone-200 bg-white px-6 py-4">
-          <h2 className="font-serif text-xl font-bold text-stone-900">
-            {title}
-          </h2>
+      <div
+        className={`flex max-h-[calc(100dvh-1.5rem)] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 sm:max-h-[calc(100dvh-3rem)] lg:max-h-[calc(100dvh-4rem)] ${wide ? "max-w-5xl" : "max-w-2xl"}`}
+      >
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-stone-200 bg-white px-4 py-3 sm:px-6 sm:py-4">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-400">Gerenciamento</p>
+            <h2 className="truncate font-serif text-xl font-bold text-stone-900">
+              {title}
+            </h2>
+          </div>
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-lg p-2 text-stone-500 hover:bg-stone-100"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-500 shadow-sm transition hover:bg-stone-100 hover:text-stone-900"
             aria-label="Fechar"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="p-6">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 sm:py-6">
+          {children}
+        </div>
       </div>
     </div>
   );

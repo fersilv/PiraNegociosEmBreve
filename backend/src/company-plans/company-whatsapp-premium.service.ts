@@ -99,7 +99,7 @@ export class CompanyWhatsAppPremiumService {
     jobId: string,
     action: 'ACTIVATE' | 'DEACTIVATE' | 'CLOSE',
   ) {
-    await this.plans.assertFeature(
+    await this.plans.assertWhatsAppFeature(
       companyId,
       action === 'ACTIVATE'
         ? 'JOB_ACTIVATE'
@@ -128,7 +128,7 @@ export class CompanyWhatsAppPremiumService {
   }
 
   async listCandidates(companyId: string, jobId: string) {
-    await this.plans.assertFeature(companyId, 'CANDIDATES_DETAIL');
+    await this.plans.assertWhatsAppFeature(companyId, 'CANDIDATES_DETAIL');
     const job = await this.companyJob(companyId, jobId);
     const rows = await this.appsService.findAllForJob(job.id);
     return {
@@ -152,7 +152,7 @@ export class CompanyWhatsAppPremiumService {
   }
 
   async candidateProfile(companyId: string, candidateId: string) {
-    await this.plans.assertFeature(companyId, 'CANDIDATE_PROFILE');
+    await this.plans.assertWhatsAppFeature(companyId, 'CANDIDATE_PROFILE');
     const application = await this.applications
       .createQueryBuilder('application')
       .innerJoin(Job, 'job', 'job.id = application."jobId"')
@@ -196,7 +196,7 @@ export class CompanyWhatsAppPremiumService {
     statusInput: unknown,
     actor: { id: string; name: string },
   ) {
-    await this.plans.assertFeature(companyId, 'APPLICATION_STATUS');
+    await this.plans.assertWhatsAppFeature(companyId, 'APPLICATION_STATUS');
     const { application } = await this.companyApplication(companyId, applicationId);
     const status = this.parseStatus(statusInput);
     return this.appsService.updateByCompany(application.id, { status }, actor);
@@ -208,7 +208,7 @@ export class CompanyWhatsAppPremiumService {
     note: string,
     actor: { id: string; name: string },
   ) {
-    await this.plans.assertFeature(companyId, 'APPLICATION_NOTE');
+    await this.plans.assertWhatsAppFeature(companyId, 'APPLICATION_NOTE');
     const { application } = await this.companyApplication(companyId, applicationId);
     const text = String(note || '').trim().slice(0, 3000);
     if (!text) throw new BadRequestException('Escreva a observação que deseja registrar.');
@@ -229,7 +229,7 @@ export class CompanyWhatsAppPremiumService {
     candidateId: string,
     actorId: string,
   ) {
-    await this.plans.assertFeature(company.id, 'CANDIDATE_INVITE');
+    await this.plans.assertWhatsAppFeature(company.id, 'CANDIDATE_INVITE');
     const [job, candidate] = await Promise.all([
       this.companyJob(company.id, jobId),
       this.users.findOne({ where: { id: candidateId } }),
@@ -256,17 +256,17 @@ export class CompanyWhatsAppPremiumService {
   }
 
   async cancelInvite(companyId: string, inviteId: string) {
-    await this.plans.assertFeature(companyId, 'CANDIDATE_INVITE_CANCEL');
+    await this.plans.assertWhatsAppFeature(companyId, 'CANDIDATE_INVITE_CANCEL');
     return this.talentInvites.cancelPending(companyId, inviteId);
   }
 
   async listInvites(companyId: string) {
-    await this.plans.assertFeature(companyId, 'CANDIDATE_INVITE');
+    await this.plans.assertWhatsAppFeature(companyId, 'CANDIDATE_INVITE');
     return this.talentInvites.listForCompany(companyId);
   }
 
   async listTalentFolders(companyId: string) {
-    await this.plans.assertFeature(companyId, 'TALENT_MANAGE');
+    await this.plans.assertWhatsAppFeature(companyId, 'TALENT_MANAGE');
     return this.folders.find({ where: { companyId }, order: { name: 'ASC' } });
   }
 
@@ -276,7 +276,7 @@ export class CompanyWhatsAppPremiumService {
     folderIds?: string[],
     jobIds?: string[],
   ) {
-    await this.plans.assertFeature(companyId, 'TALENT_MANAGE');
+    await this.plans.assertWhatsAppFeature(companyId, 'TALENT_MANAGE');
     const candidate = await this.users.findOne({ where: { id: candidateId } });
     if (!candidate?.isOpenToWork) {
       throw new BadRequestException('Este candidato não está disponível no Banco de Talentos.');
@@ -290,7 +290,7 @@ export class CompanyWhatsAppPremiumService {
   }
 
   async removeTalent(companyId: string, candidateId: string, folderId?: string) {
-    await this.plans.assertFeature(companyId, 'TALENT_MANAGE');
+    await this.plans.assertWhatsAppFeature(companyId, 'TALENT_MANAGE');
     const record = await this.talentRecords.findOne({ where: { companyId, candidateId } });
     if (!record) return { removed: false };
     if (folderId) {
@@ -302,7 +302,7 @@ export class CompanyWhatsAppPremiumService {
   }
 
   async addTalentNote(companyId: string, candidateId: string, actorId: string, note: string) {
-    await this.plans.assertFeature(companyId, 'TALENT_MANAGE');
+    await this.plans.assertWhatsAppFeature(companyId, 'TALENT_MANAGE');
     const record = await this.talentRecords.findOne({ where: { companyId, candidateId } });
     if (!record) throw new BadRequestException('Salve o candidato no Banco de Talentos antes de registrar histórico.');
     const body = String(note || '').trim().slice(0, 3000);
@@ -331,7 +331,7 @@ export class CompanyWhatsAppPremiumService {
   }
 
   async recentApplications(companyId: string, window: string) {
-    await this.plans.assertFeature(companyId, 'RECENT_APPLICATIONS');
+    await this.plans.assertWhatsAppFeature(companyId, 'RECENT_APPLICATIONS');
     const since = this.startOfWindow(window);
     const rows = await this.applications
       .createQueryBuilder('application')
@@ -365,7 +365,7 @@ export class CompanyWhatsAppPremiumService {
   }
 
   async jobStats(companyId: string, jobId?: string) {
-    await this.plans.assertFeature(companyId, 'ADVANCED_JOB_STATS');
+    await this.plans.assertWhatsAppFeature(companyId, 'ADVANCED_JOB_STATS');
     const jobs = jobId
       ? [await this.companyJob(companyId, jobId)]
       : await this.jobs.find({ where: { companyId }, order: { createdAt: 'DESC' } });
@@ -402,7 +402,7 @@ export class CompanyWhatsAppPremiumService {
   }
 
   async candidateWhatsAppTarget(companyId: string, candidateId: string) {
-    await this.plans.assertFeature(companyId, 'CANDIDATE_WHATSAPP');
+    await this.plans.assertWhatsAppFeature(companyId, 'CANDIDATE_WHATSAPP');
     const hasRelationship = await this.applications
       .createQueryBuilder('application')
       .innerJoin(Job, 'job', 'job.id = application."jobId"')

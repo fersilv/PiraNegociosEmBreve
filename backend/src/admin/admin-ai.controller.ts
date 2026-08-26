@@ -10,9 +10,9 @@ import { SettingsService } from './settings.service';
 import { AdminGuard } from './admin.guard';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import OpenAI from 'openai';
-import Anthropic from '@anthropic-ai/sdk';
+import { GroqCompat as Groq } from '../ai/groq-anthropic-compat';
 
-type AiProvider = 'GEMINI' | 'OPENAI' | 'ANTHROPIC';
+type AiProvider = 'GEMINI' | 'OPENAI' | 'GROQ';
 
 interface AiModelInfo {
   id: string;
@@ -24,7 +24,7 @@ interface AiModelInfo {
   contextWindow?: number;
 }
 
-const PROVIDERS: AiProvider[] = ['GEMINI', 'OPENAI', 'ANTHROPIC'];
+const PROVIDERS: AiProvider[] = ['GEMINI', 'OPENAI', 'GROQ'];
 const PROVIDER_REQUEST_TIMEOUT_MS = 25_000;
 
 const COST_DATABASE: Record<
@@ -163,21 +163,21 @@ export class AdminAiController {
     );
   }
 
-  private chooseAnthropicModel(ids: string[]): string | null {
-    const compatible = ids.filter((id) => /^claude-/i.test(id));
+  private isGroqTextModel(id: string): boolean {
+    return Boolean(id) && !/(whisper|tts|guard|moderation|audio|speech|transcribe)/i.test(id);
+  }
+
+  private chooseGroqModel(ids: string[]): string | null {
+    const compatible = ids.filter((id) => this.isGroqTextModel(id));
     const priorities = [
-      'claude-sonnet-5',
-      'claude-opus-5',
-      'claude-sonnet-4-6',
-      'claude-opus-4-8',
-      'claude-haiku-4-5',
+      'openai/gpt-oss-20b',
+      'llama-3.1-8b-instant',
+      'qwen/qwen3.6-27b',
+      'openai/gpt-oss-120b',
     ];
     return (
       priorities.find((id) => compatible.includes(id)) ||
-      compatible.find((id) => /sonnet-5/i.test(id)) ||
-      compatible.find((id) => /sonnet/i.test(id)) ||
-      compatible.find((id) => /opus/i.test(id)) ||
-      compatible.find((id) => /haiku/i.test(id)) ||
+      compatible.find((id) => /instant|8b|20b|mini/i.test(id)) ||
       compatible[0] ||
       null
     );
@@ -275,18 +275,18 @@ export class AdminAiController {
         };
       }
 
-      if (provider === 'ANTHROPIC') {
-        const anthropic = new Anthropic({
+      if (provider === 'GROQ') {
+        const anthropic = new Groq({
           apiKey,
           timeout: PROVIDER_REQUEST_TIMEOUT_MS,
         });
         const list = await anthropic.models.list();
         const ids = list.data.map((item) => item.id);
-        const compatibleIds = ids.filter((id) => /^claude-/i.test(id));
+        const compatibleIds = ids.filter((id) => this.isGroqTextModel(id));
         const model = this.selectRequestedOrSuggested(
           compatibleIds,
           requestedModel,
-          this.chooseAnthropicModel(compatibleIds),
+          this.chooseGroqModel(compatibleIds),
         );
 
         await anthropic.messages.create({
@@ -302,8 +302,8 @@ export class AdminAiController {
             .map((item) =>
               this.modelInfo(
                 item.id,
-                'ANTHROPIC',
-                'Anthropic',
+                'GROQ',
+                'Groq',
                 item.display_name,
               ),
             ),

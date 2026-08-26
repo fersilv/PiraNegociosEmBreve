@@ -80,6 +80,7 @@ export default function App() {
               <Route path="/classificados/explorar" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/explorar/:listingSlug" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/gestao/leiloes" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/gestao/leiloes/arena" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/gestao/leiloes/:auctionId" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/gestao/leiloes/:auctionId/ao-vivo" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/anuncios" element={<ClassifiedsWorkspacePage />} />

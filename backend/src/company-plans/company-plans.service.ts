@@ -200,10 +200,13 @@ export class CompanyPlansService {
 
   async getForUser(userId: string) {
     const company = await this.managedCompany(userId);
-    const [current, trialRecord] = await Promise.all([
+    const [current, trialRecord, plusProduct, eliteProduct] = await Promise.all([
       this.getCompanyPlan(company.id),
       this.trialForCompany(company.id),
+      this.payments.findProduct('COMPANY_PLUS_MONTHLY', true).catch(() => null),
+      this.payments.findProduct('COMPANY_ELITE_MONTHLY', true).catch(() => null),
     ]);
+    const planProducts = new Map<CompanyPlan, any>([['PLUS', plusProduct], ['ELITE', eliteProduct]]);
     const trialUsed = Boolean(trialRecord);
     const trialEligibleOnSubscription = !trialUsed && !current.hasPaidSubscription;
     return {
@@ -224,13 +227,21 @@ export class CompanyPlansService {
           'As funções do painel web da empresa não são limitadas por estes planos',
         ],
       },
-      plans: COMPANY_PLAN_CATALOG.map((plan) => ({
-        ...plan,
-        current: !current.isTrial && current.basePlan === plan.id,
-        available: RANK[plan.id] >= RANK[current.basePlan] || plan.id === current.basePlan,
-        includesEliteTrial: plan.id !== 'FREE' && trialEligibleOnSubscription,
-        eliteTrialDays: plan.id !== 'FREE' && trialEligibleOnSubscription ? ELITE_TRIAL_DAYS : 0,
-      })),
+      plans: COMPANY_PLAN_CATALOG.map((plan) => {
+        const product = plan.id === 'FREE' ? null : planProducts.get(plan.id);
+        return {
+          ...plan,
+          priceCents: plan.id === 'FREE' ? 0 : Number(product?.priceCents ?? plan.priceCents ?? 0),
+          originalPriceCents: plan.id === 'FREE' ? 0 : Number(product?.originalPriceCents ?? product?.priceCents ?? plan.priceCents ?? 0),
+          effectivePriceCents: plan.id === 'FREE' ? 0 : Number(product?.effectivePriceCents ?? product?.priceCents ?? plan.priceCents ?? 0),
+          promotionalPriceCents: plan.id === 'FREE' ? null : product?.promotionalPriceCents ?? null,
+          promotionActive: plan.id === 'FREE' ? false : Boolean(product?.promotionActive),
+          current: !current.isTrial && current.basePlan === plan.id,
+          available: RANK[plan.id] >= RANK[current.basePlan] || plan.id === current.basePlan,
+          includesEliteTrial: plan.id !== 'FREE' && trialEligibleOnSubscription,
+          eliteTrialDays: plan.id !== 'FREE' && trialEligibleOnSubscription ? ELITE_TRIAL_DAYS : 0,
+        };
+      }),
     };
   }
 

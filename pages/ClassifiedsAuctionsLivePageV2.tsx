@@ -47,13 +47,14 @@ type SellerState = {
 type AuctionSocketUpdate = {
   auctionId?: string;
   reason?: 'BID' | 'EXTENDED' | 'ENDED' | 'CANCELED' | 'CREATED';
+  snapshot?: Partial<PublicClassifiedAuction> | null;
   at?: string;
 };
 
 const emptySeller: SellerState = { context: null, limits: null, listings: [] };
 const SOFT_CLOSE_SECONDS = 30;
 
-export default function ClassifiedsAuctionsLivePageV2() {
+export default function ClassifiedsAuctionsLivePageV2({ embedded = false }: { embedded?: boolean } = {}) {
   const { auctionId } = useParams();
   const navigate = useNavigate();
   const { user, profile } = useAuth();
@@ -73,7 +74,7 @@ export default function ClassifiedsAuctionsLivePageV2() {
   const [online, setOnline] = useState(0);
   const [socketConnected, setSocketConnected] = useState(false);
   const [extensionPulse, setExtensionPulse] = useState(false);
-  const [createForm, setCreateForm] = useState({ listingId: '', startPrice: '', minIncrement: '5', endsAt: '' });
+  const [createForm, setCreateForm] = useState({ listingId: '', startPrice: '', minIncrement: '5', startsAt: '', endsAt: '' });
 
   const loadList = async (force = false) => {
     try {
@@ -84,16 +85,16 @@ export default function ClassifiedsAuctionsLivePageV2() {
     }
   };
 
-  const loadDetail = async (id: string) => {
-    setDetailLoading(true);
+  const loadDetail = async (id: string, silent = false) => {
+    if (!silent) setDetailLoading(true);
     try {
       const row = await loadPublicAuctionDetail(id);
       setDetail(row);
       setBidAmount((current) => current || toInputMoney(row.nextMinimum));
     } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || 'Leilão não encontrado.');
+      if (!silent) setError(requestError?.response?.data?.message || 'Leilão não encontrado.');
     } finally {
-      setDetailLoading(false);
+      if (!silent) setDetailLoading(false);
     }
   };
 
@@ -159,6 +160,14 @@ export default function ClassifiedsAuctionsLivePageV2() {
     let refreshTimer: number | null = null;
 
     const refresh = (payload: AuctionSocketUpdate) => {
+      if (auctionId && payload.auctionId === auctionId && payload.snapshot) {
+        setDetail((current) => current ? { ...current, ...payload.snapshot } : current);
+        if (payload.snapshot.nextMinimum != null) setBidAmount((current) => {
+          const parsed = parseMoneyInput(current);
+          const nextMinimum = Number(payload.snapshot?.nextMinimum || 0);
+          return !Number.isFinite(parsed) || parsed < nextMinimum ? toInputMoney(nextMinimum) : current;
+        });
+      }
       if (refreshTimer) window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(() => {
         invalidatePublicAuctions();
@@ -166,7 +175,7 @@ export default function ClassifiedsAuctionsLivePageV2() {
           setExtensionPulse(true);
           window.setTimeout(() => setExtensionPulse(false), 2600);
         }
-        if (auctionId && payload.auctionId === auctionId) void loadDetail(auctionId);
+        if (auctionId && payload.auctionId === auctionId) void loadDetail(auctionId, true);
         void loadList(true);
       }, 60);
     };
@@ -208,7 +217,7 @@ export default function ClassifiedsAuctionsLivePageV2() {
   useEffect(() => {
     if (!auctionId) return;
     const timer = window.setInterval(() => {
-      if (!socketConnected) void loadDetail(auctionId);
+      if (!socketConnected) void loadDetail(auctionId, true);
     }, 5000);
     return () => window.clearInterval(timer);
   }, [auctionId, socketConnected]);
@@ -300,16 +309,18 @@ export default function ClassifiedsAuctionsLivePageV2() {
     setCreating(true);
     setError('');
     try {
+      const startsAt = createForm.startsAt ? new Date(`${createForm.startsAt}:00-03:00`).toISOString() : '';
       const endsAt = createForm.endsAt ? new Date(`${createForm.endsAt}:00-03:00`).toISOString() : '';
       const response = await api.post('/classifieds/me/auctions', {
         listingId: createForm.listingId,
         startPrice: parseMoneyInput(createForm.startPrice),
         minIncrement: parseMoneyInput(createForm.minIncrement),
+        startsAt: startsAt || undefined,
         endsAt,
       });
       invalidatePublicAuctions();
       setCreateOpen(false);
-      setCreateForm({ listingId: '', startPrice: '', minIncrement: '5', endsAt: '' });
+      setCreateForm({ listingId: '', startPrice: '', minIncrement: '5', startsAt: '', endsAt: '' });
       await loadList(true);
       if (response.data?.id) navigate(`/classificados/leiloes/${response.data.id}`);
     } catch (requestError: any) {
@@ -326,7 +337,7 @@ export default function ClassifiedsAuctionsLivePageV2() {
         description="Acompanhe leilões públicos da região com lances e presença em tempo real."
         canonical={`${window.location.origin}${auctionId ? `/classificados/leiloes/${auctionId}` : '/classificados/leiloes'}`}
       />
-      <AuctionNavbar user={Boolean(user)} />
+      {!embedded && <AuctionNavbar user={Boolean(user)} />}
 
       {auctionId ? (
         <AuctionRoomPage
@@ -478,13 +489,13 @@ function AuctionCard({ auction, now, onOpen }: { auction: PublicClassifiedAuctio
   return <button onClick={onOpen} className="group overflow-hidden rounded-[26px] border border-white/[.08] bg-[#15100e] text-left transition hover:-translate-y-1 hover:border-[#ff7049]/30"><AuctionImage auction={auction} /><div className="p-4"><p className="text-[8px] font-black uppercase tracking-[.13em] text-[#ff8c6b]">{auction.companyName}</p><h3 className="mt-2 line-clamp-2 text-base font-black">{auction.title}</h3><div className="mt-4 flex items-end justify-between gap-3"><div><p className="text-[8px] font-black uppercase tracking-[.12em] text-white/28">Lance atual</p><p className="mt-1 text-2xl font-black">{money(auctionCurrentValue(auction))}</p></div><span className="rounded-xl bg-white/[.05] px-2.5 py-2 text-[9px] font-black text-white/50"><Clock3 className="mr-1 inline h-3.5 w-3.5 text-[#ff8b69]" /> {compactCountdown(new Date(auction.endsAt).getTime() - now)}</span></div><div className="mt-4 grid grid-cols-2 gap-2 border-t border-white/[.06] pt-3"><span className="text-[9px] font-bold text-white/35">Incremento {money(auction.minIncrement)}</span><span className="text-right text-[9px] font-bold text-white/35">{auction.bidCount} lance{auction.bidCount === 1 ? '' : 's'}</span></div></div></button>;
 }
 
-function CreateAuctionPanel({ listings, form, setForm, creating, onCreate, onClose }: { listings: ClassifiedListing[]; form: { listingId: string; startPrice: string; minIncrement: string; endsAt: string }; setForm: React.Dispatch<React.SetStateAction<{ listingId: string; startPrice: string; minIncrement: string; endsAt: string }>>; creating: boolean; onCreate: () => void; onClose: () => void }) {
+function CreateAuctionPanel({ listings, form, setForm, creating, onCreate, onClose }: { listings: ClassifiedListing[]; form: { listingId: string; startPrice: string; minIncrement: string; startsAt: string; endsAt: string }; setForm: React.Dispatch<React.SetStateAction<{ listingId: string; startPrice: string; minIncrement: string; startsAt: string; endsAt: string }>>; creating: boolean; onCreate: () => void; onClose: () => void }) {
   const increment = parseMoneyInput(form.minIncrement);
   const start = parseMoneyInput(form.startPrice);
   const incrementValid = Number.isFinite(increment) && increment > 0;
   const startValid = Number.isFinite(start) && start > 0;
   const formValid = Boolean(form.listingId && startValid && incrementValid && form.endsAt);
-  return <section className="w-full max-w-xl overflow-hidden rounded-[28px] border border-white/10 bg-[#17100e] text-white shadow-[0_35px_100px_rgba(0,0,0,.5)]"><div className="flex items-start justify-between gap-4 border-b border-white/[.07] p-5 sm:p-6"><div><p className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[.15em] text-[#ff8b69]"><Crown className="h-4 w-4" /> Elite</p><h2 className="mt-2 font-serif text-3xl font-black">Abrir leilão</h2><p className="mt-2 text-xs leading-5 text-white/40">O incremento é a diferença mínima que cada novo lance precisa superar.</p></div><button onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[.06] text-white/50"><X className="h-4 w-4" /></button></div><div className="space-y-4 p-5 sm:p-6"><DarkField label="Produto"><select value={form.listingId} onChange={(event) => setForm((current) => ({ ...current, listingId: event.target.value }))} className="auction-input"><option value="">Selecione</option>{listings.map((listing) => <option key={listing.id} value={listing.id}>{listing.title}</option>)}</select></DarkField><div className="grid gap-3 sm:grid-cols-2"><DarkField label="Lance inicial"><input value={form.startPrice} onChange={(event) => setForm((current) => ({ ...current, startPrice: event.target.value }))} inputMode="decimal" placeholder="100,00" className={`auction-input ${form.startPrice && !startValid ? 'auction-input-error' : ''}`} /></DarkField><DarkField label="Incremento mínimo"><input value={form.minIncrement} onChange={(event) => setForm((current) => ({ ...current, minIncrement: event.target.value }))} inputMode="decimal" placeholder="5,00" className={`auction-input ${form.minIncrement && !incrementValid ? 'auction-input-error' : ''}`} />{form.minIncrement && <p className={`mt-1 text-[9px] ${incrementValid ? 'text-emerald-300' : 'text-red-300'}`}>{incrementValid ? `Cada novo lance deverá subir pelo menos ${money(increment)}.` : 'Informe um incremento maior que zero.'}</p>}</DarkField></div><DarkField label="Encerra em"><input type="datetime-local" value={form.endsAt} onChange={(event) => setForm((current) => ({ ...current, endsAt: event.target.value }))} className="auction-input" /></DarkField><div className="rounded-2xl border border-[#ff7049]/15 bg-[#ff633c]/[.06] p-3 text-[10px] leading-5 text-[#ffb099]"><Bolt className="mr-1 inline h-3.5 w-3.5" /> Anti-sniping automático: lance aceito faltando até 30s redefine o encerramento para 30s a partir daquele lance.</div>{!listings.length && <p className="rounded-2xl border border-amber-300/15 bg-amber-300/[.07] p-3 text-xs text-amber-100">Nenhum produto publicado disponível.</p>}<button onClick={onCreate} disabled={creating || !formValid} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#ff5d37] to-[#ff8a55] text-sm font-black disabled:opacity-35">{creating ? <Loader2 className="h-5 w-5 animate-spin" /> : <Gavel className="h-5 w-5" />} Colocar na arena</button></div><style>{`.auction-input{width:100%;height:46px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:#0d0908;padding:0 13px;color:white;font-size:13px;font-weight:800;outline:none}.auction-input:focus{border-color:rgba(255,112,73,.55)}.auction-input-error{border-color:rgba(248,113,113,.55)}.auction-input option{color:#21130f}`}</style></section>;
+  return <section className="w-full max-w-xl overflow-hidden rounded-[28px] border border-white/10 bg-[#17100e] text-white shadow-[0_35px_100px_rgba(0,0,0,.5)]"><div className="flex items-start justify-between gap-4 border-b border-white/[.07] p-5 sm:p-6"><div><p className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[.15em] text-[#ff8b69]"><Crown className="h-4 w-4" /> Elite</p><h2 className="mt-2 font-serif text-3xl font-black">Abrir leilão</h2><p className="mt-2 text-xs leading-5 text-white/40">O incremento é a diferença mínima que cada novo lance precisa superar.</p></div><button onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[.06] text-white/50"><X className="h-4 w-4" /></button></div><div className="space-y-4 p-5 sm:p-6"><DarkField label="Produto"><select value={form.listingId} onChange={(event) => setForm((current) => ({ ...current, listingId: event.target.value }))} className="auction-input"><option value="">Selecione</option>{listings.map((listing) => <option key={listing.id} value={listing.id}>{listing.title}</option>)}</select></DarkField><div className="grid gap-3 sm:grid-cols-2"><DarkField label="Lance inicial"><input value={form.startPrice} onChange={(event) => setForm((current) => ({ ...current, startPrice: event.target.value }))} inputMode="decimal" placeholder="100,00" className={`auction-input ${form.startPrice && !startValid ? 'auction-input-error' : ''}`} /></DarkField><DarkField label="Incremento mínimo"><input value={form.minIncrement} onChange={(event) => setForm((current) => ({ ...current, minIncrement: event.target.value }))} inputMode="decimal" placeholder="5,00" className={`auction-input ${form.minIncrement && !incrementValid ? 'auction-input-error' : ''}`} />{form.minIncrement && <p className={`mt-1 text-[9px] ${incrementValid ? 'text-emerald-300' : 'text-red-300'}`}>{incrementValid ? `Cada novo lance deverá subir pelo menos ${money(increment)}.` : 'Informe um incremento maior que zero.'}</p>}</DarkField></div><div className="grid gap-3 sm:grid-cols-2"><DarkField label="Começa em · opcional"><input type="datetime-local" value={form.startsAt} onChange={(event) => setForm((current) => ({ ...current, startsAt: event.target.value }))} className="auction-input" /><p className="mt-1 text-[9px] leading-4 text-white/30">Deixe vazio para começar imediatamente. Agendado, o leilão já ganha URL pública antes da abertura.</p></DarkField><DarkField label="Encerra em"><input type="datetime-local" value={form.endsAt} onChange={(event) => setForm((current) => ({ ...current, endsAt: event.target.value }))} className="auction-input" /></DarkField></div><div className="rounded-2xl border border-[#ff7049]/15 bg-[#ff633c]/[.06] p-3 text-[10px] leading-5 text-[#ffb099]"><Bolt className="mr-1 inline h-3.5 w-3.5" /> Anti-sniping automático: lance aceito faltando até 30s redefine o encerramento para 30s a partir daquele lance.</div>{!listings.length && <p className="rounded-2xl border border-amber-300/15 bg-amber-300/[.07] p-3 text-xs text-amber-100">Nenhum produto publicado disponível.</p>}<button onClick={onCreate} disabled={creating || !formValid} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#ff5d37] to-[#ff8a55] text-sm font-black disabled:opacity-35">{creating ? <Loader2 className="h-5 w-5 animate-spin" /> : <Gavel className="h-5 w-5" />} Colocar na arena</button></div><style>{`.auction-input{width:100%;height:46px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:#0d0908;padding:0 13px;color:white;font-size:13px;font-weight:800;outline:none}.auction-input:focus{border-color:rgba(255,112,73,.55)}.auction-input-error{border-color:rgba(248,113,113,.55)}.auction-input option{color:#21130f}`}</style></section>;
 }
 
 function ModalShell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {

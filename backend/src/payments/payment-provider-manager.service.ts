@@ -116,7 +116,9 @@ export class PaymentProviderManagerService {
   async createCheckout(
     payment: any,
     payerInput: PaymentCheckoutPayer = {},
+    options: { trialDays?: number } = {},
   ) {
+    const trialDays = Math.max(0, Math.min(30, Math.round(Number(options.trialDays || 0))));
     const paymentType: PaymentType = payment.product?.billingType === 'RECURRING'
       ? 'PIX_AUTOMATICO'
       : 'PIX';
@@ -147,6 +149,7 @@ export class PaymentProviderManagerService {
             payment.id,
             payment.product?.name || payment.productCode,
             payer,
+            trialDays,
           )
         : this.efi.createImmediateCharge(
             Number(payment.amountCents),
@@ -162,6 +165,7 @@ export class PaymentProviderManagerService {
             payment.id,
             payment.product?.name || payment.productCode,
             payer,
+            trialDays,
           )
         : this.mercadoPago.createImmediateCharge(
             Number(payment.amountCents),

@@ -347,9 +347,9 @@ export class ClassifiedsSalesService implements OnModuleInit, OnModuleDestroy {
       : 0;
 
     const checkoutSource = source.onlineCheckout && typeof source.onlineCheckout === 'object' ? source.onlineCheckout : {};
-    const fulfillmentModes = Array.isArray(checkoutSource.fulfillmentModes)
+    const fulfillmentModes: Array<'PICKUP' | 'DELIVERY'> = Array.isArray(checkoutSource.fulfillmentModes)
       ? [...new Set(checkoutSource.fulfillmentModes.map((item: unknown) => String(item).toUpperCase()).filter((item: string) => ['PICKUP','DELIVERY'].includes(item)))].slice(0, 2) as Array<'PICKUP'|'DELIVERY'>
-      : ['PICKUP'];
+      : (['PICKUP'] as Array<'PICKUP' | 'DELIVERY'>);
     const onlineEnabled = listingType === 'PRODUCT' && checkoutSource.enabled === true;
 
     return {
@@ -360,7 +360,7 @@ export class ClassifiedsSalesService implements OnModuleInit, OnModuleDestroy {
       },
       onlineCheckout: {
         enabled: onlineEnabled,
-        fulfillmentModes: fulfillmentModes.length ? fulfillmentModes : ['PICKUP'],
+        fulfillmentModes: fulfillmentModes.length ? fulfillmentModes : (['PICKUP'] as Array<'PICKUP' | 'DELIVERY'>),
         stockQuantity: checkoutSource.stockQuantity == null || checkoutSource.stockQuantity === '' ? null : this.int(checkoutSource.stockQuantity, 0, 1_000_000, 0),
         lowStockThreshold: checkoutSource.lowStockThreshold == null || checkoutSource.lowStockThreshold === '' ? null : this.int(checkoutSource.lowStockThreshold, 0, 1_000_000, 0),
         orderWhatsappE164: this.phone(checkoutSource.orderWhatsappE164),

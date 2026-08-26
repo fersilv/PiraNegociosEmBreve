@@ -199,6 +199,14 @@ export class EfiPixService {
     if (typeof value === 'object') return value;
     try { return JSON.parse(String(value)); } catch { return {}; }
   }
+  private addCalendarDays(dateValue: string, days: number) {
+    const match = String(dateValue || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) throw new BadRequestException('Data inválida para o Pix Automático.');
+    const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    date.setUTCDate(date.getUTCDate() + Math.max(0, Math.round(days)));
+    return date.toISOString().slice(0, 10);
+  }
+
   private addCalendarMonths(dateValue: string, months = 1) {
     const match = String(dateValue || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!match) throw new BadRequestException('Data de ciclo inválida para o Pix Automático.');
@@ -245,7 +253,7 @@ export class EfiPixService {
     };
   }
 
-  async createMonthlyAutomaticCharge(amountCents: number, paymentId: string, productName: string, payer: EfiPayerInput) {
+  async createMonthlyAutomaticCharge(amountCents: number, paymentId: string, productName: string, payer: EfiPayerInput, trialDays = 0) {
     const config = await this.config();
     if (!this.automaticEnabled(config)) throw new ServiceUnavailableException('Pix Automático da Efí está desativado nesta forma de pagamento.');
     this.receiverAccount(config);
@@ -254,6 +262,28 @@ export class EfiPixService {
     if (cpf.length !== 11 || name.length < 3) throw new BadRequestException('Para assinar com Pix Automático, informe nome completo e CPF válido.');
     const loc = await this.api<{ id: number; location?: string }>(config, 'POST', '/v2/locrec');
     if (!loc?.id) throw new ServiceUnavailableException('A Efí não retornou o location da recorrência.');
+    const safeTrialDays = Math.max(0, Math.min(30, Math.round(Number(trialDays || 0))));
+    if (safeTrialDays > 0) {
+      const dataInicial = this.addCalendarDays(new Date().toISOString().slice(0, 10), safeTrialDays);
+      const recurrence = await this.api<EfiRecurrenceResponse>(config, 'POST', '/v2/rec', {
+        vinculo: { contrato: paymentId.replace(/-/g, '').slice(0, 35), devedor: { cpf, nome: name }, objeto: 'Plano empresarial PiraNegócios' },
+        calendario: { dataInicial, periodicidade: 'MENSAL' },
+        valor: { valorRec: this.amount(amountCents) },
+        politicaRetentativa: 'PERMITE_3R_7D', loc: loc.id,
+      });
+      if (!recurrence.idRec) throw new ServiceUnavailableException('A Efí não retornou o identificador da recorrência.');
+      const detail = await this.api<EfiRecurrenceResponse>(config, 'GET', `/v2/rec/${encodeURIComponent(recurrence.idRec)}`).catch(() => recurrence);
+      return {
+        provider: 'EFI', providerPaymentId: recurrence.idRec,
+        pixCopyPaste: detail.dadosQR?.pixCopiaECola || null, qrCodeBase64: null, expiresAt: null,
+        metadata: {
+          efiAutomaticPix: true, efiJourney: 'JORNADA_2', efiRecurrenceId: recurrence.idRec,
+          efiRecurrenceStatus: detail.status || recurrence.status || 'CRIADA', efiRecurrenceLocationId: loc.id,
+          efiRecurrenceLocation: loc.location || null, efiNextChargeDate: dataInicial, efiTrialDays: safeTrialDays,
+          requiresAuthorization: true, efiSandbox: this.sandbox(config),
+        },
+      };
+    }
     const expiration = this.expirationSeconds(config);
     const firstCharge = await this.api<EfiChargeResponse>(config, 'POST', '/v2/cob', {
       calendario: { expiracao: expiration }, valor: { original: this.amount(amountCents) }, chave: config.pixKey,
@@ -396,9 +426,24 @@ export class EfiPixService {
       if (!rows.length) return { created: false, reason: 'payment_not_found' } as any;
       const metaRows: RecurrenceMetaRow[] = rows.map((row: any) => ({ row, metadata: this.parseMetadata(row.metadata) }));
       const first = metaRows.find((item) => !item.metadata.efiAutomaticRenewal)?.row || rows[0];
-      if (first.status !== 'PAID') return { created: false, reason: 'initial_payment_pending' } as any;
       const recurrenceStatus = String([...metaRows].reverse().find((item) => item.metadata.efiRecurrenceStatus)?.metadata.efiRecurrenceStatus || '').toUpperCase();
       if (recurrenceStatus !== 'APROVADA') return { created: false, reason: `recurrence_${recurrenceStatus || 'unknown'}` } as any;
+      if (first.status !== 'PAID') {
+        const firstMeta = this.parseMetadata(first.metadata);
+        const trialDays = Math.max(0, Number(firstMeta.companyEliteTrialDays || firstMeta.efiTrialDays || 0));
+        const dueDate = String(firstMeta.efiNextChargeDate || '');
+        if (first.status === 'PENDING' && trialDays > 0 && dueDate) {
+          const currentProviderId = String(first.providerPaymentId || '');
+          if (currentProviderId && currentProviderId !== idRec) return { created: false, reason: 'trial_first_charge_exists', payment: first } as any;
+          const charge = await this.createAutomaticProviderCharge(config, first, idRec, dueDate);
+          const stored = await this.payments.attachProviderCheckout(first.id, {
+            provider: 'EFI', providerPaymentId: charge.txid, expiresAt: null,
+            metadata: { efiAutomaticChargeStatus: charge.status || 'CRIADA', efiRecurrenceId: idRec, efiTrialFirstCharge: true, automaticCycleDueDate: dueDate },
+          });
+          return { created: true, reason: 'trial_first_charge_created', dueDate, payment: stored, providerStatus: charge.status || null } as any;
+        }
+        return { created: false, reason: 'initial_payment_pending' } as any;
+      }
       const renewals = metaRows.filter((item) => item.metadata.efiAutomaticRenewal);
       const pending = renewals.find((item) => item.row.status === 'PENDING');
       if (pending) return { created: false, reason: 'charge_pending', payment: pending.row } as any;
@@ -467,8 +512,26 @@ export class EfiPixService {
       if (!idRec) continue;
       const status = String(event?.status || '').toUpperCase();
       const subscription = await this.markRecurrenceStatus(idRec, status);
+      let trial: any = null;
+      if (status === 'APROVADA') {
+        const paymentRows = await this.dataSource.query(
+          `SELECT * FROM payments WHERE provider = 'EFI' AND metadata->>'efiRecurrenceId' = $1 ORDER BY "createdAt" ASC LIMIT 1`, [idRec],
+        );
+        const firstPayment = paymentRows[0];
+        const firstMeta = this.parseMetadata(firstPayment?.metadata);
+        const trialDays = Math.max(0, Math.min(30, Math.round(Number(firstMeta.companyEliteTrialDays || firstMeta.efiTrialDays || 0))));
+        if (firstPayment && trialDays > 0) {
+          const dueDate = this.addCalendarDays(new Date().toISOString().slice(0, 10), trialDays);
+          await this.api<EfiRecurrenceResponse>(config, 'PATCH', `/v2/rec/${encodeURIComponent(idRec)}`, { calendario: { dataInicial: dueDate } }).catch(() => undefined);
+          await this.dataSource.query(
+            `UPDATE payments SET metadata = coalesce(metadata,'{}'::jsonb) || $2::jsonb, "updatedAt" = now() WHERE id = $1`,
+            [firstPayment.id, JSON.stringify({ efiNextChargeDate: dueDate, companyEliteTrialAuthorizedAt: new Date().toISOString() })],
+          );
+          trial = await this.payments.activateCompanyPlanTrial(firstPayment.id, { provider: 'EFI', providerSubscriptionId: idRec });
+        }
+      }
       const nextCharge = status === 'APROVADA' ? await this.ensureNextAutomaticCharge(idRec).catch((error) => ({ created: false, error: error instanceof Error ? error.message : String(error) })) : null;
-      updated.push({ idRec, status, subscription, nextCharge });
+      updated.push({ idRec, status, subscription, trial, nextCharge });
     }
     return { ok: true, processed: updated.length, updated };
   }

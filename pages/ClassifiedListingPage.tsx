@@ -16,7 +16,7 @@ import {
   Smartphone,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ClassifiedListingCard, classifiedPrice } from '../components/classifieds/ClassifiedListingCard';
+import { ClassifiedListingCard, classifiedCommercePricing, classifiedPrice } from '../components/classifieds/ClassifiedListingCard';
 import { Navbar } from '../components/Navbar';
 import { SeoHead } from '../components/SeoHead';
 import { useAuth } from '../contexts/AuthContext';
@@ -128,7 +128,7 @@ export default function ClassifiedListingPage() {
 
             <section className="mt-5 rounded-[24px] bg-white p-5 ring-1 ring-[#4b3328]/10 sm:p-7">
               <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.16em] text-[#b06448]">{conditionLabel(listing.condition)}</p><h1 className="mt-1 text-2xl font-bold tracking-[-.025em] sm:text-3xl">{listing.title}</h1><p className="mt-3 text-3xl font-black tracking-[-.035em] text-[#2d211c] sm:text-4xl">{classifiedPrice(listing)}</p></div>
+                <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-[.16em] text-[#b06448]">{conditionLabel(listing.condition)}</p><h1 className="mt-1 text-2xl font-bold tracking-[-.025em] sm:text-3xl">{listing.title}</h1><PublicPriceSummary listing={listing} /></div>
                 <div className="flex flex-col gap-2 text-xs font-semibold text-[#806b60]"><span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4 text-[#c96847]" />{listing.neighborhood ? `${listing.neighborhood}, ` : ''}{listing.city} - {listing.state}</span><span className="inline-flex items-center gap-1.5"><Clock3 className="h-4 w-4" />{relativeDate(listing.publishedAt || listing.createdAt)}</span><span className="inline-flex items-center gap-1.5"><Eye className="h-4 w-4" />{listing.viewsCount || 0} visualizações</span></div>
               </div>
               <button onClick={() => void startConversation()} disabled={startingConversation} className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#2d211c] px-5 text-sm font-black text-white disabled:opacity-60 lg:hidden">{startingConversation ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />} Conversar pelo PiraNegócios</button>
@@ -154,6 +154,17 @@ export default function ClassifiedListingPage() {
     </div>
   );
 }
+
+function PublicPriceSummary({ listing }: { listing: ClassifiedListing }) {
+  const pricing = classifiedCommercePricing(listing);
+  if (listing.priceType === 'CONTACT') return <p className="mt-3 text-3xl font-black tracking-[-.035em] text-[#2d211c] sm:text-4xl">{classifiedPrice(listing)}</p>;
+  const pix = listing.commerceConfig?.paymentPricing?.pix;
+  const card = listing.commerceConfig?.paymentPricing?.card;
+  const pixSpecial = pix?.enabled && pricing.pixPrice != null && pricing.currentPrice != null && pricing.pixPrice < pricing.currentPrice;
+  return <div className="mt-3">{pricing.promotionActive && pricing.basePrice != null && <div className="mb-1.5 flex items-center gap-2"><span className="rounded-full bg-[#d45442] px-2.5 py-1 text-[9px] font-black uppercase tracking-[.12em] text-white">Oferta</span><span className="text-sm font-bold text-[#9b8275] line-through">{commerceMoney(pricing.basePrice)}</span></div>}<p className={`text-3xl font-black tracking-[-.035em] sm:text-4xl ${pricing.promotionActive ? 'text-[#b74435]' : 'text-[#2d211c]'}`}>{classifiedPrice(listing)}</p>{pricing.promotionActive && pricing.promotionEndsAt && <p className="mt-1.5 text-[10px] font-black text-[#b74435]">Oferta até {new Date(pricing.promotionEndsAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>}{pixSpecial && <p className="mt-2 text-sm font-black text-emerald-700">{commerceMoney(pricing.pixPrice)} no Pix</p>}{card?.enabled && pricing.cardPrice != null && <p className="mt-1 text-xs font-bold text-[#806b60]">Cartão: {commerceMoney(pricing.cardPrice)} · até {pricing.maxInstallments}x{pricing.interestFreeInstallments > 0 ? ` · ${pricing.interestFreeInstallments}x sem juros` : ''}</p>}{listing.commerceConfig?.onlineCheckout?.enabled && <span className="mt-3 inline-flex rounded-full bg-blue-50 px-3 py-1.5 text-[9px] font-black uppercase tracking-[.1em] text-blue-700">Recebimento online habilitado</span>}</div>;
+}
+
+function commerceMoney(value: unknown) { const number = Number(value); return Number.isFinite(number) ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(number) : '—'; }
 
 function Gallery({ images, title, selected, setSelected }: { images: Array<{ url: string }>; title: string; selected: number; setSelected: (index: number) => void }) {
   if (!images.length) return <div className="flex aspect-[4/3] items-center justify-center rounded-[24px] bg-[#e9e4df] text-[#9e8d84] sm:aspect-[16/10]"><ImageIcon className="h-12 w-12" /></div>;

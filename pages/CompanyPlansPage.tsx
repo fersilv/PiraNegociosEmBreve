@@ -26,6 +26,8 @@ type Plan = {
   description: string;
   features: string[];
   current?: boolean;
+  includesEliteTrial?: boolean;
+  eliteTrialDays?: number;
 };
 
 type CurrentPlan = {
@@ -35,6 +37,12 @@ type CurrentPlan = {
   currentPeriodEnd?: string | null;
   cancelAtPeriodEnd?: boolean;
   advertisingEligible?: boolean;
+  jobHighlightEligible?: boolean;
+  isTrial?: boolean;
+  trialEndsAt?: string | null;
+  trialTargetPlan?: PlanId | null;
+  basePlan?: PlanId;
+  hasPaidSubscription?: boolean;
 };
 
 export function CompanyPlansPage() {
@@ -44,6 +52,7 @@ export function CompanyPlansPage() {
     company?: { id: string; name: string };
     current?: CurrentPlan;
     plans?: Plan[];
+    trial?: { days: number; active: boolean; eligibleOnSubscription: boolean; used: boolean; targetPlan?: PlanId | null; startedAt?: string | null; endsAt?: string | null; restrictions?: string[] };
   }>({});
   const [selected, setSelected] = useState<PlanId | null>(null);
   const [payer, setPayer] = useState({ name: "", document: "", email: "" });
@@ -86,10 +95,10 @@ export function CompanyPlansPage() {
       });
       setCheckout(response.data || null);
       if (response.data?.devSimulation) {
-        setMessage(`Plano ${selected} ativado em modo DEV.`);
+        setMessage(response.data?.trialActivated ? `Assinatura ${selected} autorizada. Seus 15 dias de Elite grátis começaram agora.` : `Plano ${selected} ativado em modo DEV.`);
         await load();
       } else {
-        setMessage("Checkout criado. Conclua a autorização/pagamento para ativar o plano da empresa.");
+        setMessage(response.data?.trialDays > 0 ? "Assinatura criada. Conclua a autorização da recorrência para começar seus 15 dias de Elite grátis. A primeira cobrança ocorre após o período gratuito." : "Checkout criado. Conclua a autorização/pagamento para ativar o plano da empresa.");
       }
     } catch (error: any) {
       const payload = error?.response?.data;
@@ -129,6 +138,7 @@ export function CompanyPlansPage() {
   }
 
   const current = data.current?.plan || "FREE";
+  const basePlan = data.current?.basePlan || current;
   const subscriptionUrl = checkout?.metadata?.subscriptionCheckoutUrl || checkout?.metadata?.ticketUrl;
 
   return (
@@ -141,26 +151,33 @@ export function CompanyPlansPage() {
             </div>
             <h1 className="mt-4 font-serif text-4xl font-black sm:text-5xl">Planos da empresa</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/55">
-              Comece no Free e transforme o WhatsApp em uma central de recrutamento conforme sua operação cresce.
+              Os planos ampliam o que a assistente pode fazer pelo WhatsApp. As funções já existentes no painel web da empresa continuam intactas.
             </p>
           </div>
           <div className="rounded-3xl border border-white/10 bg-white/[0.06] px-5 py-4">
             <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">Plano atual</p>
             <div className="mt-1 flex items-center gap-2 text-xl font-black">
-              <BadgeCheck className="h-5 w-5" /> {current}
+              <BadgeCheck className="h-5 w-5" /> {data.current?.isTrial ? "ELITE • 15 DIAS GRÁTIS" : current}
             </div>
             {data.current?.currentPeriodEnd && (
               <p className="mt-1 text-xs text-white/45">
-                Vigente até {new Date(data.current.currentPeriodEnd).toLocaleDateString("pt-BR")}
+                {data.current?.isTrial ? "Teste gratuito até" : "Vigente até"} {new Date(data.current.currentPeriodEnd).toLocaleDateString("pt-BR")}
               </p>
             )}
           </div>
         </div>
       </section>
 
+      {data.current?.isTrial && (
+        <section className="rounded-[30px] border border-violet-200 bg-violet-950 p-6 text-white shadow-lg sm:p-7">
+          <div className="flex gap-4"><Crown className="mt-1 h-6 w-6 shrink-0 text-violet-200" /><div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-violet-200">Elite gratuito da assinatura</p><h2 className="mt-2 font-serif text-3xl font-black">Seu teste de 15 dias está ativo</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-white/65">Todos os recursos operacionais do Elite ficam liberados pelo WhatsApp. O trial não inclui destaque/impulsionamento de vagas nem elegibilidade para Meta ou Google. O painel web continua funcionando normalmente.</p>{data.current.trialEndsAt && <p className="mt-3 text-xs font-bold text-violet-200">Termina em {new Date(data.current.trialEndsAt).toLocaleDateString("pt-BR")}.</p>}</div></div>
+        </section>
+      )}
+
       <div className="grid gap-5 lg:grid-cols-3">
         {(data.plans || []).map((plan) => {
-          const active = current === plan.id;
+          const active = !data.current?.isTrial && basePlan === plan.id;
+          const trialSubscription = Boolean(data.current?.isTrial && data.current?.trialTargetPlan === plan.id);
           const elite = plan.id === "ELITE";
           const plus = plan.id === "PLUS";
           return (
@@ -188,6 +205,7 @@ export function CompanyPlansPage() {
                 {plan.monthly && <span className="pb-1 text-xs font-bold text-stone-400">/mês</span>}
               </div>
               <p className="mt-3 min-h-12 text-sm leading-6 text-stone-500">{plan.description}</p>
+              {plan.includesEliteTrial && <div className="mt-3 rounded-2xl border border-violet-200 bg-violet-50 px-3.5 py-3 text-xs font-black text-violet-800"><Sparkles className="mr-1.5 inline h-3.5 w-3.5" /> Assine e ganhe 15 dias do Elite no WhatsApp antes da primeira cobrança.</div>}
               <div className="my-5 h-px bg-stone-200/80" />
               <ul className="flex-1 space-y-3">
                 {plan.features.map((feature) => (
@@ -201,21 +219,21 @@ export function CompanyPlansPage() {
               </ul>
               <button
                 type="button"
-                disabled={active || plan.id === "FREE"}
+                disabled={active || trialSubscription || plan.id === "FREE"}
                 onClick={() => {
                   setSelected(plan.id);
                   setCheckout(null);
                   setMessage("");
                 }}
                 className={`mt-6 w-full rounded-2xl px-4 py-3.5 text-xs font-black transition disabled:cursor-default ${
-                  active || plan.id === "FREE"
+                  active || trialSubscription || plan.id === "FREE"
                     ? "bg-stone-100 text-stone-400"
                     : elite
                       ? "bg-violet-900 text-white hover:bg-violet-800"
                       : "bg-stone-900 text-white hover:bg-black"
                 }`}
               >
-                {active ? "Plano atual" : plan.id === "FREE" ? "Incluído" : `Assinar ${plan.name}`}
+                {trialSubscription ? "Assinatura em teste" : active ? "Plano atual" : plan.id === "FREE" ? "Incluído" : `Assinar ${plan.name}`}
               </button>
             </article>
           );
@@ -229,6 +247,7 @@ export function CompanyPlansPage() {
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-stone-400">Assinatura mensal</p>
               <h3 className="mt-2 font-serif text-3xl font-black text-stone-950">Ativar {chosen.name}</h3>
               <p className="mt-2 text-sm text-stone-500">{money(chosen.priceCents)} por mês via método recorrente habilitado no PiraNegócios.</p>
+              {chosen.includesEliteTrial && <p className="mt-2 max-w-2xl text-xs font-bold leading-5 text-violet-700">Na primeira assinatura, a autorização inicia 15 dias de Elite grátis. A cobrança começa depois do período gratuito. Impulsos, destaque de vagas e elegibilidade Meta/Google não fazem parte do trial.</p>}
             </div>
             <button type="button" onClick={() => setSelected(null)} className="text-xs font-bold text-stone-400 hover:text-stone-700">Fechar</button>
           </div>
@@ -259,7 +278,7 @@ export function CompanyPlansPage() {
         </section>
       )}
 
-      {data.current?.active && !data.current.cancelAtPeriodEnd && (
+      {data.current?.hasPaidSubscription && !data.current.cancelAtPeriodEnd && (
         <section className="flex flex-col gap-4 rounded-[26px] border border-stone-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
           <div><p className="text-sm font-black text-stone-900">Renovação automática ativa</p><p className="mt-1 text-xs text-stone-500">Você pode solicitar o encerramento ao fim do período atual sem perder o acesso imediatamente.</p></div>
           <button type="button" disabled={submitting} onClick={() => void cancelRenewal()} className="rounded-2xl border border-stone-200 px-4 py-3 text-xs font-bold text-stone-600 hover:bg-stone-50">Encerrar ao fim do período</button>

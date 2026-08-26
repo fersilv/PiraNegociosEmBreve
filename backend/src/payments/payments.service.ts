@@ -326,6 +326,49 @@ export class PaymentsService {
     });
   }
 
+  async activateCompanyPlanTrial(
+    paymentId: string,
+    input: { provider?: string; providerSubscriptionId?: string | null } = {},
+  ) {
+    const rows = await this.dataSource.query(`SELECT * FROM payments WHERE id = $1 LIMIT 1`, [paymentId]);
+    const payment = rows[0];
+    if (!payment) throw new NotFoundException('Pagamento da assinatura não encontrado.');
+    if (!['COMPANY_PLUS_MONTHLY', 'COMPANY_ELITE_MONTHLY'].includes(String(payment.productCode))) return null;
+    const metadata = typeof payment.metadata === 'object' && payment.metadata
+      ? payment.metadata
+      : (() => { try { return JSON.parse(String(payment.metadata || '{}')); } catch { return {}; } })();
+    const companyId = String(metadata.companyId || '').trim();
+    const trialDays = Math.max(0, Math.min(30, Math.round(Number(metadata.companyEliteTrialDays || 0))));
+    const targetPlan = String(metadata.companyPlan || '').toUpperCase() === 'ELITE' ? 'ELITE' : 'PLUS';
+    if (!companyId || trialDays <= 0) return null;
+
+    const inserted = await this.dataSource.query(
+      `INSERT INTO company_plan_trials
+        ("companyId", "startedBy", "targetPlan", status, "startedAt", "endsAt", provider,
+         "providerSubscriptionId", "paymentId", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, 'ACTIVE', now(), now() + make_interval(days => $4::int), $5, $6, $7, now(), now())
+       ON CONFLICT ("companyId") DO NOTHING RETURNING *`,
+      [companyId, payment.userId, targetPlan, trialDays, String(input.provider || payment.provider || '') || null, input.providerSubscriptionId || null, payment.id],
+    );
+    const trial = inserted[0] || (await this.dataSource.query(
+      `SELECT * FROM company_plan_trials WHERE "companyId" = $1 LIMIT 1`, [companyId],
+    ))[0] || null;
+    if (trial?.status === 'ACTIVE') {
+      await this.dataSource.query(
+        `INSERT INTO company_ad_highlight_eligibility
+          ("companyId", eligible, channels, "eligibleUntil", source, "updatedAt")
+         VALUES ($1, false, '["META","GOOGLE"]'::jsonb, NULL, 'ELITE_TRIAL', now())
+         ON CONFLICT ("companyId") DO UPDATE SET eligible = false, "eligibleUntil" = NULL, source = 'ELITE_TRIAL', "updatedAt" = now()`,
+        [companyId],
+      ).catch(() => undefined);
+      await this.dataSource.query(
+        `UPDATE payments SET metadata = coalesce(metadata,'{}'::jsonb) || $2::jsonb, "updatedAt" = now() WHERE id = $1`,
+        [payment.id, JSON.stringify({ companyEliteTrialPending: false, companyEliteTrialActivated: true, companyEliteTrialStartedAt: trial.startedAt, companyEliteTrialEndsAt: trial.endsAt })],
+      );
+    }
+    return trial;
+  }
+
   async confirmPayment(paymentId: string, metadata: Record<string, unknown> = {}) {
     return this.settlePayment(paymentId, metadata, false);
   }

@@ -382,7 +382,8 @@ export class ClassifiedsCheckoutService implements OnModuleInit, OnModuleDestroy
     const raw = checkout.length ? checkout : declared.length ? declared : ['ARRANGE'];
     const modes = raw.map((item: unknown) => String(item).toUpperCase())
       .filter((item: string) => ['ARRANGE','PICKUP','DELIVERY'].includes(item)) as FulfillmentMode[];
-    return [...new Set(modes.length ? modes : ['ARRANGE'])];
+    const fallback: FulfillmentMode[] = ['ARRANGE'];
+    return [...new Set<FulfillmentMode>(modes.length ? modes : fallback)];
   }
 
   private fulfillmentMode(value: unknown, allowed: FulfillmentMode[]): FulfillmentMode {

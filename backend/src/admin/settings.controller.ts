@@ -47,7 +47,7 @@ export class SettingsController {
     const providerByKey: Record<string, string> = {
       GEMINI_API_KEY: 'GEMINI',
       OPENAI_API_KEY: 'OPENAI',
-      ANTHROPIC_API_KEY: 'ANTHROPIC',
+      GROQ_API_KEY: 'GROQ',
     };
     const changedProvider = providerByKey[body.key];
     if (changedProvider && previousValue !== body.value) {

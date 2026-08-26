@@ -1,10 +1,10 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import OpenAI from 'openai';
-import Anthropic from '@anthropic-ai/sdk';
+import { GroqCompat as Groq } from '../ai/groq-anthropic-compat';
 import { SettingsService } from '../admin/settings.service';
 import { Job } from '../jobs/entities/job.entity';
 
-type AiProvider = 'GEMINI' | 'OPENAI' | 'ANTHROPIC';
+type AiProvider = 'GEMINI' | 'OPENAI' | 'GROQ';
 type RuntimeConfig = { provider: AiProvider; model: string; apiKey: string };
 const GENERIC_OCCUPATION_WORDS = new Set(['operador','operadora','auxiliar','assistente','analista','ajudante','tecnico','tecnica','profissional','colaborador','colaboradora']);
 
@@ -38,7 +38,7 @@ export class JobMatchAiService {
   constructor(private readonly settings: SettingsService) {}
 
   private isProvider(value: unknown): value is AiProvider {
-    return ['GEMINI', 'OPENAI', 'ANTHROPIC'].includes(value as string);
+    return ['GEMINI', 'OPENAI', 'GROQ'].includes(value as string);
   }
 
   private async config(): Promise<RuntimeConfig> {
@@ -90,8 +90,8 @@ export class JobMatchAiService {
       });
       return response.output_text || '';
     }
-    if (config.provider === 'ANTHROPIC') {
-      const response = await new Anthropic({ apiKey: config.apiKey }).messages.create({
+    if (config.provider === 'GROQ') {
+      const response = await new Groq({ apiKey: config.apiKey }).messages.create({
         model: config.model,
         system,
         max_tokens: maxTokens,

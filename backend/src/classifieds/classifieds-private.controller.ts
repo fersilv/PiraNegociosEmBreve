@@ -7,6 +7,7 @@ import { ClassifiedsChatService } from './classifieds-chat.service';
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
 import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
+import { ClassifiedsOfferChatService } from './classifieds-offer-chat.service';
 import { ClassifiedsService } from './classifieds.service';
 
 @Controller('classifieds')
@@ -19,6 +20,7 @@ export class ClassifiedsPrivateController {
     private readonly commerce: ClassifiedsCommerceService,
     private readonly entitlements: ClassifiedsEntitlementsService,
     private readonly auctions: ClassifiedsAuctionService,
+    private readonly offerChat: ClassifiedsOfferChatService,
     private readonly chatGateway: ChatGateway,
     private readonly compliance: IdentityComplianceService,
   ) {}
@@ -76,17 +78,28 @@ export class ClassifiedsPrivateController {
   @Post('listings/:listingId/offers')
   async createOffer(@Req() req: any, @Param('listingId') listingId: string, @Body() body: any) {
     await this.auctions.assertOffersAllowed(listingId);
-    return this.commerce.createOffer(req.user.uid, listingId, body?.amount);
+    const offer = await this.commerce.createOffer(req.user.uid, listingId, body?.amount);
+    const event = offer?.offerEvent === 'UPDATED' ? 'UPDATED' : 'CREATED';
+    const chat = offer?.id ? await this.offerChat.record(req.user.uid, offer.id, event) : null;
+    if (chat?.message) this.chatGateway.publishMessage(chat.message, chat.recipientIds);
+    return { ...offer, conversationId: chat?.conversationId || null };
   }
 
   @Post('me/offers/:offerId/respond')
-  respondOffer(@Req() req: any, @Param('offerId') offerId: string, @Body() body: any) {
-    return this.commerce.respondOffer(req.user.uid, offerId, body?.decision);
+  async respondOffer(@Req() req: any, @Param('offerId') offerId: string, @Body() body: any) {
+    const result = await this.commerce.respondOffer(req.user.uid, offerId, body?.decision);
+    const event = String(body?.decision || '').toUpperCase().startsWith('ACCEPT') ? 'ACCEPTED' : 'REJECTED';
+    const chat = await this.offerChat.record(req.user.uid, offerId, event);
+    if (chat?.message) this.chatGateway.publishMessage(chat.message, chat.recipientIds);
+    return { ...result, conversationId: chat?.conversationId || null };
   }
 
   @Post('me/offers/:offerId/withdraw')
-  withdrawOffer(@Req() req: any, @Param('offerId') offerId: string) {
-    return this.commerce.withdrawOffer(req.user.uid, offerId);
+  async withdrawOffer(@Req() req: any, @Param('offerId') offerId: string) {
+    const result = await this.commerce.withdrawOffer(req.user.uid, offerId);
+    const chat = await this.offerChat.record(req.user.uid, offerId, 'WITHDRAWN');
+    if (chat?.message) this.chatGateway.publishMessage(chat.message, chat.recipientIds);
+    return { ...result, conversationId: chat?.conversationId || null };
   }
 
   @Get('auctions')

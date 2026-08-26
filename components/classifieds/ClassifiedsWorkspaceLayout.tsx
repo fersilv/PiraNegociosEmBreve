@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { BadgeCheck, Building2, ChevronDown, Compass, Home, LogOut, Menu, MessageCircle, Plus, Settings2, Store, User, X } from 'lucide-react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { BadgeCheck, BadgeDollarSign, BarChart3, Briefcase, Building2, ChevronDown, Compass, Gavel, Home, LogOut, Menu, MessageCircle, Plus, Settings2, ShoppingCart, Store, User, Wrench, X } from 'lucide-react';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { auth } from '../../lib/firebase';
+import { api } from '../../lib/api';
 import { useClassifiedsWorkspace } from '../../contexts/ClassifiedsWorkspaceContext';
 import type { ClassifiedIdentityType, ClassifiedPublicationChannel } from '../../types/classifieds';
 
@@ -13,13 +14,25 @@ const BUSINESS_SEGMENT_SUGGESTIONS = [
 
 export function ClassifiedsWorkspaceGate({ children }: { children: React.ReactNode }) {
   const { data, loading, error, selectIdentity, acceptPersonalTerms, configureCompany } = useClassifiedsWorkspace();
+  const location = useLocation();
+  const publicationFlow = location.pathname.startsWith('/classificados/publicar');
   const [working, setWorking] = useState(false);
+  const [companyPlan, setCompanyPlan] = useState('FREE');
   const [canSellProducts, setCanSellProducts] = useState(true);
   const [canOfferServices, setCanOfferServices] = useState(false);
   const [segments, setSegments] = useState<string[]>([]);
   const [segmentInput, setSegmentInput] = useState('');
   const [pageSectionLabel, setPageSectionLabel] = useState('');
   const [channels, setChannels] = useState<ClassifiedPublicationChannel[]>(['CLASSIFIEDS', 'COMPANY_PAGE']);
+
+  useEffect(() => {
+    if (!publicationFlow || data?.activeIdentity !== 'COMPANY') return;
+    let active = true;
+    api.get('/classifieds/me/limits')
+      .then((response) => { if (active) setCompanyPlan(String(response.data?.plan || 'FREE').toUpperCase()); })
+      .catch(() => { if (active) setCompanyPlan('FREE'); });
+    return () => { active = false; };
+  }, [publicationFlow, data?.activeIdentity, data?.company?.id]);
 
   const run = async (action: () => Promise<void>) => {
     if (working) return;
@@ -33,21 +46,21 @@ export function ClassifiedsWorkspaceGate({ children }: { children: React.ReactNo
     return <FirstIdentityChoice data={data} working={working} error={error} choose={(identity) => run(() => selectIdentity(identity))} />;
   }
 
-  if (data.activeIdentity === 'PERSONAL' && !data.personal.termsAccepted) {
+  if (publicationFlow && data.activeIdentity === 'PERSONAL' && !data.personal.termsAccepted) {
     return (
-      <OnboardingFrame mode="PERSONAL" title="Ative seu PiraNegócios Personal" subtitle="Seu espaço pessoal para vender, comprar e negociar com segurança dentro da plataforma." error={error}>
+      <OnboardingFrame mode="PERSONAL" title="Antes da sua primeira publicação" subtitle="Explorar os Classificados é livre. Este aceite é necessário somente quando você decide anunciar." error={error}>
         <div className="rounded-3xl border border-[#e6c8bd] bg-white p-5 text-sm leading-6 text-[#654a43]">
           Ao continuar, você concorda com os Termos de Uso dos Classificados. Seus anúncios pessoais aparecem como Particular e ficam separados de qualquer empresa vinculada à sua conta.
           <Link to="/classificados/termos" target="_blank" className="ml-1 font-black text-[#a84f34] underline">Ler os Termos dos Classificados</Link>
         </div>
-        <button disabled={working} onClick={() => run(acceptPersonalTerms)} className="mt-5 w-full rounded-2xl bg-[#9f4e3d] px-5 py-3.5 text-sm font-black text-white disabled:opacity-60">{working ? 'Ativando...' : 'Aceitar e entrar como Personal'}</button>
+        <button disabled={working} onClick={() => run(acceptPersonalTerms)} className="mt-5 w-full rounded-2xl bg-[#9f4e3d] px-5 py-3.5 text-sm font-black text-white disabled:opacity-60">{working ? 'Salvando aceite...' : 'Aceitar e continuar para publicar'}</button>
       </OnboardingFrame>
     );
   }
 
-  if (data.activeIdentity === 'COMPANY' && data.company && !data.company.verified) {
+  if (publicationFlow && data.activeIdentity === 'COMPANY' && data.company && !data.company.verified) {
     return (
-      <OnboardingFrame mode="BUSINESS" title={`${data.company.name} ainda precisa ser verificada`} subtitle="Empresas ganham identidade comercial, selo de verificação, vitrine na página e recursos próprios de catálogo." error={error}>
+      <OnboardingFrame mode="BUSINESS" title={`Verifique ${data.company.name} para publicar`} subtitle="A empresa pode acessar e explorar os Classificados normalmente. A verificação é exigida quando ela começa a anunciar." error={error}>
         <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-950">Para proteger compradores e a reputação do marketplace, apenas empresas verificadas podem publicar como Business.</div>
         <div className="mt-5 grid gap-2 sm:grid-cols-2">
           <Link to="/company/perfil" className="rounded-2xl bg-[#0d4542] px-5 py-3.5 text-center text-sm font-black text-white">Verificação da empresa</Link>
@@ -57,7 +70,7 @@ export function ClassifiedsWorkspaceGate({ children }: { children: React.ReactNo
     );
   }
 
-  if (data.activeIdentity === 'COMPANY' && data.company && !data.company.termsAccepted) {
+  if (publicationFlow && data.activeIdentity === 'COMPANY' && data.company && !data.company.termsAccepted) {
     const addSegment = (value: string) => {
       const clean = value.trim();
       if (!clean || segments.some((item) => item.toLowerCase() === clean.toLowerCase())) return;
@@ -68,8 +81,9 @@ export function ClassifiedsWorkspaceGate({ children }: { children: React.ReactNo
       setChannels((current) => current.includes(channel) ? current.filter((item) => item !== channel) : [...current, channel]);
     };
     return (
-      <OnboardingFrame mode="BUSINESS" title={`Leve ${data.company.name} para os Classificados`} subtitle="Configure uma vez. Depois, o PiraNegócios lembra que você entrou como Business e aplica estas escolhas como padrão." error={error}>
+      <OnboardingFrame mode="BUSINESS" title={`Primeira publicação de ${data.company.name}`} subtitle="Acesso aos Classificados é livre. Aqui você só configura as regras de publicação da empresa uma vez." error={error}>
         <div className="space-y-6">
+          <div className="rounded-3xl border border-[#c9dedb] bg-white p-5 shadow-sm"><p className="text-[10px] font-black uppercase tracking-[.16em] text-[#44736e]">Plano desta publicação</p><div className="mt-2 flex items-center justify-between gap-4"><div><p className="text-2xl font-black text-[#0d4542]">{companyPlan}</p><p className="mt-1 text-xs leading-5 text-stone-500">Os limites e recursos do anúncio seguem o plano ativo da empresa. Leilões são exclusivos do Elite.</p></div><span className="rounded-full bg-[#e7f2ef] px-3 py-1.5 text-[10px] font-black uppercase tracking-[.12em] text-[#276b64]">Business</span></div></div>
           <section>
             <p className="text-xs font-black uppercase tracking-[.16em] text-[#44736e]">Como sua empresa atua?</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -93,7 +107,7 @@ export function ClassifiedsWorkspaceGate({ children }: { children: React.ReactNo
           <div className="rounded-3xl border border-[#c9dedb] bg-[#f4faf8] p-5 text-sm leading-6 text-[#315f5a]">
             Ao ativar o Business, você aceita os <Link to="/classificados/termos" target="_blank" className="font-black underline">Termos de Uso dos Classificados</Link> em nome da empresa. Cada anúncio ainda poderá alterar discretamente onde será exibido.
           </div>
-          <button disabled={working || (!canSellProducts && !canOfferServices) || channels.length === 0} onClick={() => run(() => configureCompany({ acceptedTerms: true, canSellProducts, canOfferServices, businessSegments: segments, defaultPublicationChannels: channels, pageSectionLabel: pageSectionLabel || null }))} className="w-full rounded-2xl bg-[#0d4542] px-5 py-3.5 text-sm font-black text-white disabled:opacity-50">{working ? 'Ativando Business...' : 'Aceitar e ativar PiraNegócios Business'}</button>
+          <button disabled={working || (!canSellProducts && !canOfferServices) || channels.length === 0} onClick={() => run(() => configureCompany({ acceptedTerms: true, canSellProducts, canOfferServices, businessSegments: segments, defaultPublicationChannels: channels, pageSectionLabel: pageSectionLabel || null }))} className="w-full rounded-2xl bg-[#0d4542] px-5 py-3.5 text-sm font-black text-white disabled:opacity-50">{working ? 'Salvando configuração...' : 'Aceitar e continuar para publicar'}</button>
         </div>
       </OnboardingFrame>
     );
@@ -113,9 +127,15 @@ export function ClassifiedsWorkspaceLayout({ children }: { children: React.React
   const identityName = business ? data.company?.name || 'Empresa' : data.personal.name;
   const nav = [
     { to: '/classificados/painel', label: 'Painel', icon: <Home className="h-5 w-5" /> },
-    { to: '/classificados', label: 'Explorar', icon: <Compass className="h-5 w-5" />, publicLink: true },
-    { to: '/classificados/publicar', label: 'Novo anúncio', icon: <Plus className="h-5 w-5" /> },
+    { to: '/classificados/explorar', label: 'Explorar', icon: <Compass className="h-5 w-5" /> },
+    ...(!business || data.company?.canSellProducts !== false ? [{ to: '/classificados/anuncios', label: 'Meus anúncios', icon: <Store className="h-5 w-5" /> }] : []),
+    ...(!business || data.company?.canOfferServices !== false ? [{ to: '/classificados/servicos', label: 'Meus serviços', icon: <Wrench className="h-5 w-5" /> }] : []),
+    { to: '/classificados/ofertas', label: 'Negociações', icon: <BadgeDollarSign className="h-5 w-5" /> },
+    { to: '/classificados/gestao/leiloes', label: 'Leilões', icon: <Gavel className="h-5 w-5" /> },
     { to: '/classificados/conversas', label: 'Conversas', icon: <MessageCircle className="h-5 w-5" /> },
+    { to: '/classificados/analytics', label: 'Analytics', icon: <BarChart3 className="h-5 w-5" /> },
+    ...(business ? [{ to: '/classificados/vendas', label: 'Vendas', icon: <ShoppingCart className="h-5 w-5" /> }] : []),
+    { to: '/classificados/publicar', label: 'Novo anúncio', icon: <Plus className="h-5 w-5" /> },
     { to: '/classificados/configuracoes', label: 'Configurações', icon: <Settings2 className="h-5 w-5" /> },
   ];
 
@@ -134,6 +154,7 @@ export function ClassifiedsWorkspaceLayout({ children }: { children: React.React
     <div className={`min-h-screen ${palette.page}`}>
       <aside className={`fixed inset-y-0 left-0 z-40 hidden w-[286px] flex-col text-white md:flex ${palette.side}`}>
         <WorkspaceBrand business={business} />
+        <div className="mx-4 mb-3 grid grid-cols-2 gap-2"><Link to="/user" className="flex items-center justify-center gap-1.5 rounded-xl bg-white/[.07] px-2 py-2 text-[10px] font-black text-white/70 hover:bg-white/[.12] hover:text-white"><Briefcase className="h-3.5 w-3.5" /> Career</Link>{data.company?.available && <Link to="/company" className="flex items-center justify-center gap-1.5 rounded-xl bg-white/[.07] px-2 py-2 text-[10px] font-black text-white/70 hover:bg-white/[.12] hover:text-white"><Building2 className="h-3.5 w-3.5" /> Business</Link>}</div>
         <div className="relative mx-4 mt-2">
           <button onClick={() => setIdentityOpen((value) => !value)} className="flex w-full items-center gap-3 rounded-[20px] border border-white/10 bg-white/[.07] p-3.5 text-left">
             <IdentityAvatar business={business} name={identityName} />
@@ -143,7 +164,7 @@ export function ClassifiedsWorkspaceLayout({ children }: { children: React.React
           {identityOpen && data.company?.available && <IdentityMenu active={data.activeIdentity} personalName={data.personal.name} companyName={data.company.name} onSelect={switchIdentity} />}
         </div>
         <p className={`px-6 pb-2 pt-7 text-[9px] font-black uppercase tracking-[.2em] ${palette.muted}`}>Classificados</p>
-        <nav className="flex-1 space-y-1 px-4">{nav.map((item) => item.publicLink ? <Link key={item.to} to={item.to} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-white/62 transition hover:bg-white/[.07] hover:text-white">{item.icon}{item.label}</Link> : <NavLink key={item.to} to={item.to} end={item.to === '/classificados/painel'} className={({ isActive }) => `flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${isActive ? 'bg-white text-stone-900 shadow-lg' : 'text-white/62 hover:bg-white/[.07] hover:text-white'}`}>{item.icon}{item.label}</NavLink>)}</nav>
+        <nav className="flex-1 space-y-1 overflow-y-auto px-4 pb-3">{nav.map((item) => <NavLink key={item.to} to={item.to} end={item.to === '/classificados/painel'} className={({ isActive }) => `flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${isActive ? 'bg-white text-stone-900 shadow-lg' : 'text-white/62 hover:bg-white/[.07] hover:text-white'}`}>{item.icon}{item.label}</NavLink>)}</nav>
         <div className="border-t border-white/10 p-4"><button onClick={async () => { await auth.signOut(); window.location.replace('/'); }} className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-white/55 hover:bg-white/[.06] hover:text-white"><LogOut className="h-5 w-5" /> Sair</button></div>
       </aside>
 
@@ -155,18 +176,18 @@ export function ClassifiedsWorkspaceLayout({ children }: { children: React.React
         <main className="p-4 pb-24 sm:p-6 md:p-8 md:pb-10">{children}</main>
       </div>
 
-      {mobileOpen && <div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-sm md:hidden" onClick={() => setMobileOpen(false)}><aside onClick={(event) => event.stopPropagation()} className={`flex h-full w-[86%] max-w-[330px] flex-col p-4 text-white ${palette.side}`}><div className="flex items-center justify-between"><WorkspaceBrand business={business} compact /><button onClick={() => setMobileOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10"><X className="h-4 w-4" /></button></div><div className="mt-4 rounded-2xl border border-white/10 bg-white/[.07] p-3"><p className={`text-[9px] font-black uppercase tracking-[.18em] ${palette.muted}`}>{business ? 'Business' : 'Personal'}</p><p className="mt-1 truncate text-sm font-black">{identityName}</p>{data.company?.available && <div className="mt-3 flex gap-2"><button onClick={() => switchIdentity('PERSONAL')} className="rounded-xl bg-white/10 px-3 py-2 text-[11px] font-black">Personal</button><button onClick={() => switchIdentity('COMPANY')} className="rounded-xl bg-white/10 px-3 py-2 text-[11px] font-black">Business</button></div>}</div><nav className="mt-5 space-y-1">{nav.map((item) => <Link key={item.to} to={item.to} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-white/72 hover:bg-white/[.07]">{item.icon}{item.label}</Link>)}</nav></aside></div>}
+      {mobileOpen && <div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-sm md:hidden" onClick={() => setMobileOpen(false)}><aside onClick={(event) => event.stopPropagation()} className={`flex h-full w-[86%] max-w-[330px] flex-col p-4 text-white ${palette.side}`}><div className="flex items-center justify-between"><WorkspaceBrand business={business} compact /><button onClick={() => setMobileOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10"><X className="h-4 w-4" /></button></div><div className="mt-4 grid grid-cols-2 gap-2"><Link to="/user" onClick={() => setMobileOpen(false)} className="flex items-center justify-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-[10px] font-black"><Briefcase className="h-3.5 w-3.5" /> Career</Link>{data.company?.available && <Link to="/company" onClick={() => setMobileOpen(false)} className="flex items-center justify-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-[10px] font-black"><Building2 className="h-3.5 w-3.5" /> Business</Link>}</div><div className="mt-3 rounded-2xl border border-white/10 bg-white/[.07] p-3"><p className={`text-[9px] font-black uppercase tracking-[.18em] ${palette.muted}`}>{business ? 'Business' : 'Personal'}</p><p className="mt-1 truncate text-sm font-black">{identityName}</p>{data.company?.available && <div className="mt-3 flex gap-2"><button onClick={() => switchIdentity('PERSONAL')} className="rounded-xl bg-white/10 px-3 py-2 text-[11px] font-black">Personal</button><button onClick={() => switchIdentity('COMPANY')} className="rounded-xl bg-white/10 px-3 py-2 text-[11px] font-black">Business</button></div>}</div><nav className="mt-5 space-y-1">{nav.map((item) => <Link key={item.to} to={item.to} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-white/72 hover:bg-white/[.07]">{item.icon}{item.label}</Link>)}</nav></aside></div>}
     </div>
   );
 }
 
 function FirstIdentityChoice({ data, working, error, choose }: { data: NonNullable<ReturnType<typeof useClassifiedsWorkspace>['data']>; working: boolean; error: string; choose: (identity: ClassifiedIdentityType) => void }) {
-  return <div className="min-h-screen bg-[#f4f1ed] px-4 py-10 text-stone-900"><div className="mx-auto max-w-4xl"><div className="text-center"><p className="text-[10px] font-black uppercase tracking-[.2em] text-stone-400">PiraNegócios Classificados</p><h1 className="mt-3 font-serif text-3xl font-black sm:text-5xl">Como você quer entrar?</h1><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-stone-500">Essa escolha define o workspace inteiro. O PiraNegócios lembra o último perfil usado e você pode trocar depois.</p></div>{error && <div className="mx-auto mt-6 max-w-2xl rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}<div className="mt-8 grid gap-4 md:grid-cols-2"><button disabled={working} onClick={() => choose('PERSONAL')} className="group rounded-[30px] border border-[#e3cbbf] bg-[#fff8f3] p-7 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-xl"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f1d5c7] text-[#994b39]"><User className="h-6 w-6" /></div><p className="mt-6 text-[10px] font-black uppercase tracking-[.18em] text-[#b76850]">PiraNegócios Personal</p><h2 className="mt-1 text-2xl font-black">{data.personal.name}</h2><p className="mt-3 text-sm leading-6 text-stone-500">Venda seus próprios itens, compre e negocie como particular. Seus anúncios ficam separados da empresa.</p><span className="mt-6 inline-flex rounded-2xl bg-[#9f4e3d] px-4 py-3 text-xs font-black text-white">Entrar como Personal</span></button>{data.company && <button disabled={working || !data.company.available} onClick={() => choose('COMPANY')} className="group relative rounded-[30px] border-2 border-[#5a9d95] bg-[#f3faf8] p-7 text-left shadow-[0_20px_60px_rgba(21,90,85,.12)] transition hover:-translate-y-1 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-55"><span className="absolute right-5 top-5 rounded-full bg-[#0d4542] px-3 py-1.5 text-[9px] font-black uppercase tracking-[.14em] text-white">Recomendado para negócios</span><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#d6ebe7] text-[#155a55]"><Building2 className="h-6 w-6" /></div><p className="mt-6 text-[10px] font-black uppercase tracking-[.18em] text-[#397c75]">PiraNegócios Business</p><div className="mt-1 flex items-center gap-2"><h2 className="text-2xl font-black">{data.company.name}</h2>{data.company.verified && <BadgeCheck className="h-5 w-5 text-emerald-600" />}</div><p className="mt-3 text-sm leading-6 text-stone-500">Identidade empresarial, selo de verificação, catálogo, página da empresa e apresentação comercial mais forte.</p><span className="mt-6 inline-flex rounded-2xl bg-[#0d4542] px-4 py-3 text-xs font-black text-white">Entrar como Business</span></button>}</div></div></div>;
+  return <div className="min-h-screen bg-[#f4f1ed] px-4 py-10 text-stone-900"><div className="mx-auto max-w-4xl"><div className="mb-6 flex justify-center gap-2"><Link to="/user" className="rounded-xl bg-white px-4 py-2 text-xs font-black text-stone-600 shadow-sm ring-1 ring-stone-200">Voltar para Career</Link>{data.company?.available && <Link to="/company" className="rounded-xl bg-white px-4 py-2 text-xs font-black text-stone-600 shadow-sm ring-1 ring-stone-200">Ir para Business</Link>}</div><div className="text-center"><p className="text-[10px] font-black uppercase tracking-[.2em] text-stone-400">PiraNegócios Classificados</p><h1 className="mt-3 font-serif text-3xl font-black sm:text-5xl">Como você quer entrar?</h1><p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-stone-500">Essa escolha define o workspace inteiro. O PiraNegócios lembra o último perfil usado e você pode trocar depois.</p></div>{error && <div className="mx-auto mt-6 max-w-2xl rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}<div className="mt-8 grid gap-4 md:grid-cols-2"><button disabled={working} onClick={() => choose('PERSONAL')} className="group rounded-[30px] border border-[#e3cbbf] bg-[#fff8f3] p-7 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-xl"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f1d5c7] text-[#994b39]"><User className="h-6 w-6" /></div><p className="mt-6 text-[10px] font-black uppercase tracking-[.18em] text-[#b76850]">PiraNegócios Personal</p><h2 className="mt-1 text-2xl font-black">{data.personal.name}</h2><p className="mt-3 text-sm leading-6 text-stone-500">Venda seus próprios itens, compre e negocie como particular. Seus anúncios ficam separados da empresa.</p><span className="mt-6 inline-flex rounded-2xl bg-[#9f4e3d] px-4 py-3 text-xs font-black text-white">Entrar como Personal</span></button>{data.company && <button disabled={working || !data.company.available} onClick={() => choose('COMPANY')} className="group relative rounded-[30px] border-2 border-[#5a9d95] bg-[#f3faf8] p-7 text-left shadow-[0_20px_60px_rgba(21,90,85,.12)] transition hover:-translate-y-1 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-55"><span className="absolute right-5 top-5 rounded-full bg-[#0d4542] px-3 py-1.5 text-[9px] font-black uppercase tracking-[.14em] text-white">Recomendado para negócios</span><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#d6ebe7] text-[#155a55]"><Building2 className="h-6 w-6" /></div><p className="mt-6 text-[10px] font-black uppercase tracking-[.18em] text-[#397c75]">PiraNegócios Business</p><div className="mt-1 flex items-center gap-2"><h2 className="text-2xl font-black">{data.company.name}</h2>{data.company.verified && <BadgeCheck className="h-5 w-5 text-emerald-600" />}</div><p className="mt-3 text-sm leading-6 text-stone-500">Identidade empresarial, selo de verificação, catálogo, página da empresa e apresentação comercial mais forte.</p><span className="mt-6 inline-flex rounded-2xl bg-[#0d4542] px-4 py-3 text-xs font-black text-white">Entrar como Business</span></button>}</div></div></div>;
 }
 
 function OnboardingFrame({ mode, title, subtitle, error, children }: { mode: 'PERSONAL' | 'BUSINESS'; title: string; subtitle: string; error?: string; children: React.ReactNode }) {
   const business = mode === 'BUSINESS';
-  return <div className={`min-h-screen px-4 py-10 ${business ? 'bg-[#edf6f4]' : 'bg-[#fff4ed]'}`}><div className="mx-auto max-w-3xl"><p className={`text-[10px] font-black uppercase tracking-[.2em] ${business ? 'text-[#44736e]' : 'text-[#b76850]'}`}>PiraNegócios {business ? 'Business' : 'Personal'} · Classificados</p><h1 className="mt-3 font-serif text-3xl font-black text-stone-900 sm:text-4xl">{title}</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">{subtitle}</p>{error && <div className="mt-5 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}<div className="mt-7 rounded-[30px] bg-white p-5 shadow-sm ring-1 ring-black/[.06] sm:p-7">{children}</div></div></div>;
+  return <div className={`min-h-screen px-4 py-10 ${business ? 'bg-[#edf6f4]' : 'bg-[#fff4ed]'}`}><div className="mx-auto max-w-3xl"><div className="mb-5 flex flex-wrap gap-2"><Link to="/user" className="rounded-xl bg-white px-4 py-2 text-xs font-black text-stone-600 shadow-sm ring-1 ring-black/[.06]">Agora não · voltar para Career</Link>{business && <Link to="/company" className="rounded-xl bg-white px-4 py-2 text-xs font-black text-stone-600 shadow-sm ring-1 ring-black/[.06]">Voltar para Business</Link>}</div><p className={`text-[10px] font-black uppercase tracking-[.2em] ${business ? 'text-[#44736e]' : 'text-[#b76850]'}`}>PiraNegócios {business ? 'Business' : 'Personal'} · Classificados</p><h1 className="mt-3 font-serif text-3xl font-black text-stone-900 sm:text-4xl">{title}</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-stone-500">{subtitle}</p>{error && <div className="mt-5 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}<div className="mt-7 rounded-[30px] bg-white p-5 shadow-sm ring-1 ring-black/[.06] sm:p-7">{children}</div></div></div>;
 }
 
 function ToggleCard({ checked, onClick, icon, title, text }: { checked: boolean; onClick: () => void; icon: React.ReactNode; title: string; text: string }) { return <button type="button" onClick={onClick} className={`rounded-3xl border p-4 text-left transition ${checked ? 'border-[#4b8f87] bg-[#edf7f5] ring-2 ring-[#4b8f87]/15' : 'border-stone-200 bg-white'}`}><div className="flex items-start gap-3"><span className={`flex h-10 w-10 items-center justify-center rounded-2xl ${checked ? 'bg-[#0d4542] text-white' : 'bg-stone-100 text-stone-500'}`}>{icon}</span><span><span className="block text-sm font-black text-stone-900">{title}</span><span className="mt-1 block text-xs leading-5 text-stone-500">{text}</span></span></div></button>; }

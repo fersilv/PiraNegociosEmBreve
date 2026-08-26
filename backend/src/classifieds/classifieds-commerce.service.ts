@@ -131,7 +131,7 @@ export class ClassifiedsCommerceService implements OnModuleInit, OnModuleDestroy
       type: 'classified_offer_received',
       link: '/classificados/ofertas',
     });
-    return this.decorateOffer(rows[0], listing, identity.type === 'COMPANY' ? 'BUYER' : 'BUYER');
+    return { ...this.decorateOffer(rows[0], listing, 'BUYER'), offerEvent: existing[0] ? 'UPDATED' : 'CREATED' };
   }
 
   async listOffers(uid: string) {
@@ -141,12 +141,18 @@ export class ClassifiedsCommerceService implements OnModuleInit, OnModuleDestroy
     const rows = companyId
       ? await this.dataSource.query(
           `SELECT o.*, l.title, l.slug, l.price, l."priceType", l.status AS "listingStatus",
-                  i.url AS image,
+                  i.url AS image, conv.id AS "conversationId",
                   COALESCE(bc.name, bu."socialName", bu."displayName", bu."fullName", 'Comprador') AS "buyerName",
                   COALESCE(sc.name, su."socialName", su."displayName", su."fullName", 'Anunciante') AS "sellerName"
            FROM classified_offers o
            JOIN classified_listings l ON l.id = o."listingId"
            LEFT JOIN LATERAL (SELECT url FROM classified_listing_images WHERE "listingId" = l.id ORDER BY "sortOrder" ASC LIMIT 1) i ON true
+           LEFT JOIN LATERAL (
+             SELECT id FROM classified_conversations
+             WHERE "listingId" = o."listingId" AND "buyerUserId" = o."buyerUserId"
+               AND (("buyerCompanyId" IS NULL AND o."buyerCompanyId" IS NULL) OR "buyerCompanyId" = o."buyerCompanyId")
+             ORDER BY "createdAt" DESC LIMIT 1
+           ) conv ON true
            LEFT JOIN users bu ON bu.id = o."buyerUserId"
            LEFT JOIN companies bc ON bc.id = o."buyerCompanyId"
            LEFT JOIN users su ON su.id = o."sellerUserId"
@@ -157,12 +163,18 @@ export class ClassifiedsCommerceService implements OnModuleInit, OnModuleDestroy
         )
       : await this.dataSource.query(
           `SELECT o.*, l.title, l.slug, l.price, l."priceType", l.status AS "listingStatus",
-                  i.url AS image,
+                  i.url AS image, conv.id AS "conversationId",
                   COALESCE(bc.name, bu."socialName", bu."displayName", bu."fullName", 'Comprador') AS "buyerName",
                   COALESCE(sc.name, su."socialName", su."displayName", su."fullName", 'Anunciante') AS "sellerName"
            FROM classified_offers o
            JOIN classified_listings l ON l.id = o."listingId"
            LEFT JOIN LATERAL (SELECT url FROM classified_listing_images WHERE "listingId" = l.id ORDER BY "sortOrder" ASC LIMIT 1) i ON true
+           LEFT JOIN LATERAL (
+             SELECT id FROM classified_conversations
+             WHERE "listingId" = o."listingId" AND "buyerUserId" = o."buyerUserId"
+               AND (("buyerCompanyId" IS NULL AND o."buyerCompanyId" IS NULL) OR "buyerCompanyId" = o."buyerCompanyId")
+             ORDER BY "createdAt" DESC LIMIT 1
+           ) conv ON true
            LEFT JOIN users bu ON bu.id = o."buyerUserId"
            LEFT JOIN companies bc ON bc.id = o."buyerCompanyId"
            LEFT JOIN users su ON su.id = o."sellerUserId"
@@ -273,9 +285,9 @@ export class ClassifiedsCommerceService implements OnModuleInit, OnModuleDestroy
       this.dataSource.query(`SELECT "listingId", count(*) FILTER (WHERE "eventType" = 'CONTACT_CLICK')::int AS contacts FROM classified_listing_events WHERE "listingId" = ANY($1::uuid[]) GROUP BY "listingId"`, [ids]).catch(() => []),
       this.dataSource.query(`SELECT date_trunc('day', "createdAt")::date AS day, "eventType", count(*)::int AS count FROM classified_listing_events WHERE "listingId" = ANY($1::uuid[]) AND "createdAt" >= now() - interval '30 days' GROUP BY 1,2 ORDER BY 1 ASC`, [ids]).catch(() => []),
     ]);
-    const conversations = new Map(conversationRows.map((row: any) => [row.listingId, Number(row.count)]));
-    const offers = new Map(offerRows.map((row: any) => [row.listingId, { offers: Number(row.offers), accepted: Number(row.accepted) }]));
-    const contacts = new Map(eventRows.map((row: any) => [row.listingId, Number(row.contacts)]));
+    const conversations = new Map<string, number>(conversationRows.map((row: any) => [row.listingId, Number(row.count)]));
+    const offers = new Map<string, { offers: number; accepted: number }>(offerRows.map((row: any) => [row.listingId, { offers: Number(row.offers), accepted: Number(row.accepted) }]));
+    const contacts = new Map<string, number>(eventRows.map((row: any) => [row.listingId, Number(row.contacts)]));
     const enriched = listings.map((listing: any) => ({
       ...listing,
       views: Number(listing.viewsCount || 0),
@@ -318,7 +330,7 @@ export class ClassifiedsCommerceService implements OnModuleInit, OnModuleDestroy
       `SELECT * FROM classified_conversation_preferences WHERE "ownerKey" = $1 AND "conversationId" = ANY($2::uuid[])`,
       [ownerKey, ids],
     ).catch(() => []);
-    const prefMap = new Map(prefs.map((row: any) => [row.conversationId, row]));
+    const prefMap = new Map<string, { labels?: string[]; customName?: string | null }>(prefs.map((row: any) => [row.conversationId, row]));
     let labelMap = new Map<string, any>();
     if (identity.type === 'COMPANY') {
       const labels = await this.companyLabels(uid);

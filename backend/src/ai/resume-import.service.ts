@@ -5,7 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import OpenAI from 'openai';
-import Anthropic from '@anthropic-ai/sdk';
+import { GroqCompat as Groq } from './groq-anthropic-compat';
 import { SettingsService } from '../admin/settings.service';
 
 const WordExtractor = require('word-extractor') as {
@@ -20,7 +20,7 @@ const WordExtractor = require('word-extractor') as {
   };
 };
 
-type AiProvider = 'GEMINI' | 'OPENAI' | 'ANTHROPIC';
+type AiProvider = 'GEMINI' | 'OPENAI' | 'GROQ';
 
 type RuntimeConfig = {
   provider: AiProvider;
@@ -133,7 +133,7 @@ export class ResumeImportService {
   constructor(private readonly settingsService: SettingsService) {}
 
   private isProvider(value: unknown): value is AiProvider {
-    return ['GEMINI', 'OPENAI', 'ANTHROPIC'].includes(value as string);
+    return ['GEMINI', 'OPENAI', 'GROQ'].includes(value as string);
   }
 
   private async getRuntimeConfig(): Promise<RuntimeConfig> {
@@ -462,12 +462,12 @@ export class ResumeImportService {
     return this.parseJson(response.output_text || '{}');
   }
 
-  private async withAnthropic(
+  private async withGroq(
     config: RuntimeConfig,
     documents: CleanDocument[],
     systemInstruction: string,
   ) {
-    const anthropic = new Anthropic({ apiKey: config.apiKey });
+    const anthropic = new Groq({ apiKey: config.apiKey });
     const content: any[] = [];
     documents.forEach((document) => {
       content.push({ type: 'text', text: `FONTE: ${document.fileName}` });
@@ -517,8 +517,8 @@ export class ResumeImportService {
       const result =
         config.provider === 'OPENAI'
           ? await this.withOpenAi(config, documents, systemInstruction)
-          : config.provider === 'ANTHROPIC'
-            ? await this.withAnthropic(config, documents, systemInstruction)
+          : config.provider === 'GROQ'
+            ? await this.withGroq(config, documents, systemInstruction)
             : await this.withGemini(config, documents, systemInstruction);
       return {
         ...result,

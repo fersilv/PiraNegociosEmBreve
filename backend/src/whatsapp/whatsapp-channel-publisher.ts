@@ -132,7 +132,6 @@ export async function publishChannelMedia(
           const collection = newsletter.msgs;
           const rawId = rawMessage?.id?.toString?.() || String(rawMessage?.id || '');
           let observedMessage: any = null;
-          let detachListener: (() => void) | null = null;
           const observed = new Promise<any>((resolve) => {
             if (!collection?.on || !rawId) {
               resolve(null);
@@ -146,7 +145,6 @@ export async function publishChannelMedia(
               resolve(msg);
             };
             collection.on('add', handler);
-            detachListener = () => collection.off?.('add', handler);
             setTimeout(() => {
               collection.off?.('add', handler);
               resolve(observedMessage);
@@ -166,7 +164,6 @@ export async function publishChannelMedia(
 
           stage = 'observe-message';
           const msg = await observed;
-          detachListener?.();
           const finalMessage = msg || collection?.get?.(rawMessage?.id) || null;
           const finalId = finalMessage?.id?.toString?.() || rawId || null;
           const ack = finalMessage?.ack ?? null;

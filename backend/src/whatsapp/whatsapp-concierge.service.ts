@@ -14,6 +14,8 @@ import { Application } from '../applications/entities/application.entity';
 import { BillingSupportService } from '../payments/billing-support.service';
 import { PaymentsService } from '../payments/payments.service';
 import { Company } from '../companies/entities/company.entity';
+import { CompanyPlansService } from '../company-plans/company-plans.service';
+import { CompanyWhatsAppPremiumService } from '../company-plans/company-whatsapp-premium.service';
 import { Job } from '../jobs/entities/job.entity';
 import { JobsService } from '../jobs/jobs.service';
 import { JobMatchService } from '../job-match/job-match.service';
@@ -63,6 +65,8 @@ export class WhatsAppConciergeService {
     private readonly billingSupport: BillingSupportService,
     private readonly ai: WhatsAppAiService,
     private readonly alerts: WhatsAppAlertService,
+    private readonly companyPlans: CompanyPlansService,
+    private readonly companyPremium: CompanyWhatsAppPremiumService,
   ) {}
 
   async handleInbound(instance: WhatsAppInstance, message: any, client: any) {
@@ -213,6 +217,16 @@ export class WhatsAppConciergeService {
         await this.sendText(buffer, outgoing);
       }
     } catch (error) {
+      if (this.isCompanyPlanRequired(error)) {
+        const payload = this.companyPlanPayload(error);
+        const requiredPlan = String(payload?.requiredPlan || 'Plus');
+        const currentPlan = String(payload?.currentPlan || 'Free');
+        await this.sendText(
+          buffer,
+          `Esse comando pelo WhatsApp faz parte do plano ${requiredPlan}. Sua empresa está no ${currentPlan}. Para liberar: https://piranegocios.com.br/company/planos`,
+        ).catch(() => undefined);
+        return;
+      }
       if (this.isPaymentRequired(error)) {
         await this.sendText(
           buffer,
@@ -319,6 +333,15 @@ export class WhatsAppConciergeService {
 
     if (conversation.contextMode === 'COMPANY') {
       if (!company) return { reply: 'Não consegui localizar a empresa vinculada a esta conta.' };
+      const premiumResult = await this.handleCompanyPremiumDecision({
+        buffer,
+        conversation,
+        user,
+        company,
+        decision,
+        requestText,
+      });
+      if (premiumResult) return premiumResult;
       const companyJobs = await this.jobs.find({ where: { companyId: company.id }, order: { createdAt: 'DESC' } });
       if (intent === 'LIST_COMPANY_JOBS') {
         const result = companyJobs.slice(0, 20).map((job) => ({ id: job.id, title: job.title, active: job.active, city: job.city, state: job.state, url: job.slug ? `https://piranegocios.com.br/vagas/${job.slug}` : null }));
@@ -355,6 +378,261 @@ export class WhatsAppConciergeService {
     }
 
     return { reply: decision.reply || 'Como posso ajudar?' };
+  }
+
+  private async handleCompanyPremiumDecision(input: {
+    buffer: BufferState;
+    conversation: WhatsAppConversation;
+    user: User;
+    company: Company;
+    decision: any;
+    requestText: string;
+  }): Promise<{ handled?: boolean; reply?: string } | null> {
+    const { buffer, conversation, user, company, decision, requestText } = input;
+    const intent = String(decision.intent || '').toUpperCase();
+    const args = decision.args && typeof decision.args === 'object' ? decision.args : {};
+    const actor = {
+      id: user.id,
+      name: String(user.socialName || user.displayName || user.fullName || user.email || 'Empresa'),
+    };
+
+    if (conversation.activeFlow === 'COMPANY_ACTION_CONFIRM') {
+      const pending = (conversation.state as any)?.pendingCompanyAction;
+      const confirmed = intent === 'CONFIRM_COMPANY_ACTION' || /^\s*(CONFIRMO|PODE|PODE FAZER|SIM|CONFIRMAR)\s*[.!]?\s*$/i.test(requestText);
+      if (!confirmed) {
+        return { reply: 'A ação ainda não foi executada. Responda CONFIRMO para continuar ou CANCELAR para desistir.' };
+      }
+      if (!pending?.jobId || !['DEACTIVATE', 'CLOSE'].includes(String(pending.action))) {
+        conversation.activeFlow = null;
+        conversation.state = {};
+        await this.conversations.save(conversation);
+        return { reply: 'A confirmação anterior expirou. Faça o pedido novamente.' };
+      }
+      const result = await this.companyPremium.setJobState(company.id, String(pending.jobId), pending.action);
+      conversation.activeFlow = null;
+      conversation.state = {};
+      await this.conversations.save(conversation);
+      return { reply: pending.action === 'CLOSE' ? `Vaga encerrada: ${result.title}.` : `Vaga desativada: ${result.title}.` };
+    }
+
+    if (conversation.activeFlow === 'CANDIDATE_MESSAGE') {
+      const pending = (conversation.state as any)?.pendingCandidateMessage;
+      const confirmed = intent === 'CONFIRM_CANDIDATE_MESSAGE' || /^\s*(ENVIAR|CONFIRMO|PODE ENVIAR|SIM,? ENVIAR)\s*[.!]?\s*$/i.test(requestText);
+      if (!confirmed) {
+        return { reply: 'A mensagem ainda não foi enviada. Responda ENVIAR para confirmar ou CANCELAR para desistir.' };
+      }
+      if (!pending?.chatId || !pending?.message) {
+        conversation.activeFlow = null;
+        conversation.state = {};
+        await this.conversations.save(conversation);
+        return { reply: 'A prévia da mensagem expirou. Faça o pedido novamente.' };
+      }
+      await this.companyPlans.assertWhatsAppFeature(company.id, 'CANDIDATE_WHATSAPP');
+      await buffer.client.sendText(String(pending.chatId), String(pending.message));
+      conversation.activeFlow = null;
+      conversation.state = {};
+      await this.conversations.save(conversation);
+      return { reply: `Mensagem enviada para ${String(pending.candidateName || 'o candidato')}.` };
+    }
+
+    if (intent === 'COMPANY_PLAN_STATUS') {
+      const current = await this.companyPlans.getCompanyPlan(company.id);
+      const label = current.plan === 'FREE' ? 'Free' : current.plan === 'PLUS' ? 'Plus' : 'Elite';
+      return { reply: `A ${company.name} está no plano ${label}.${current.currentPeriodEnd ? ` Vigente até ${new Date(current.currentPeriodEnd).toLocaleDateString('pt-BR')}.` : ''} Você pode comparar os planos em https://piranegocios.com.br/company/planos` };
+    }
+
+    if (intent === 'JOB_ACTIVATE') {
+      const jobId = await this.resolveCompanyJobId(company.id, args, requestText);
+      if (!jobId) return { reply: await this.companyJobChoiceReply(company.id, 'ativar') };
+      const result = await this.companyPremium.setJobState(company.id, jobId, 'ACTIVATE');
+      return { reply: `Vaga ativada: ${result.title}.` };
+    }
+
+    if (intent === 'JOB_DEACTIVATE' || intent === 'JOB_CLOSE') {
+      const jobId = await this.resolveCompanyJobId(company.id, args, requestText);
+      if (!jobId) return { reply: await this.companyJobChoiceReply(company.id, intent === 'JOB_CLOSE' ? 'encerrar' : 'desativar') };
+      await this.companyPlans.assertWhatsAppFeature(company.id, intent === 'JOB_CLOSE' ? 'JOB_CLOSE' : 'JOB_DEACTIVATE');
+      const job = await this.jobs.findOne({ where: { id: jobId, companyId: company.id } });
+      if (!job) return { reply: 'Não encontrei essa vaga na empresa.' };
+      conversation.activeFlow = 'COMPANY_ACTION_CONFIRM';
+      conversation.state = { ...(conversation.state || {}), pendingCompanyAction: { jobId, action: intent === 'JOB_CLOSE' ? 'CLOSE' : 'DEACTIVATE' } };
+      await this.conversations.save(conversation);
+      return { reply: intent === 'JOB_CLOSE'
+        ? `Você quer ENCERRAR a vaga "${job.title}"? Isso desativa a vaga e encerra o prazo. Responda CONFIRMO ou CANCELAR.`
+        : `Você quer DESATIVAR a vaga "${job.title}"? Responda CONFIRMO ou CANCELAR.` };
+    }
+
+    if (intent === 'LIST_JOB_CANDIDATES') {
+      const jobId = await this.resolveCompanyJobId(company.id, args, requestText);
+      if (!jobId) return { reply: await this.companyJobChoiceReply(company.id, 'listar os candidatos de') };
+      const result = await this.companyPremium.listCandidates(company.id, jobId);
+      if (!result.count) return { reply: `A vaga "${result.job.title}" ainda não possui candidaturas.` };
+      const lines = result.candidates.map((item: any, index: number) =>
+        `${index + 1}. ${item.name || 'Candidato'} · ${item.status} · ${[item.city, item.state].filter(Boolean).join('/') || 'local não informado'} · candidato ${item.candidateId} · candidatura ${item.applicationId}`,
+      );
+      return { reply: `${result.count} candidatura(s) em "${result.job.title}":\n${lines.join('\n')}` };
+    }
+
+    if (intent === 'GET_CANDIDATE_PROFILE') {
+      const candidateId = String(args.candidateId || '').trim();
+      if (!candidateId) return { reply: 'Qual candidato você quer abrir? Peça a lista de candidatos da vaga para eu mostrar os IDs disponíveis.' };
+      const result = await this.companyPremium.candidateProfile(company.id, candidateId);
+      const c: any = result.candidate;
+      const summary = [
+        c.name,
+        [c.city, c.state].filter(Boolean).join('/'),
+        c.phone,
+        c.email,
+        Array.isArray(c.skills) && c.skills.length ? `Habilidades: ${c.skills.slice(0, 12).join(', ')}` : '',
+        c.bio ? `Resumo: ${String(c.bio).slice(0, 900)}` : '',
+        Array.isArray(c.experiences) && c.experiences.length ? `Experiências: ${c.experiences.slice(0, 6).map((e: any) => [e.role, e.company].filter(Boolean).join(' @ ')).join('; ')}` : '',
+        c.linkedinURL ? `LinkedIn: ${c.linkedinURL}` : '',
+      ].filter(Boolean);
+      if (c.resumeURL && /^https?:\/\//i.test(String(c.resumeURL))) {
+        summary.push(`Currículo: ${c.resumeURL}`);
+      }
+      return { reply: summary.join('\n') };
+    }
+
+    if (intent === 'UPDATE_APPLICATION_STATUS') {
+      const applicationId = String(args.applicationId || '').trim();
+      const status = String(args.status || '').trim();
+      if (!applicationId || !status) return { reply: 'Informe qual candidatura e o novo status. Você pode pedir a lista de candidatos da vaga para ver os IDs.' };
+      const result = await this.companyPremium.updateApplicationStatus(company.id, applicationId, status, actor);
+      return { reply: `Status atualizado para ${result.status} na candidatura ${result.id}.` };
+    }
+
+    if (intent === 'ADD_APPLICATION_NOTE') {
+      const applicationId = String(args.applicationId || '').trim();
+      const note = String(args.note || '').trim();
+      if (!applicationId || !note) return { reply: 'Diga em qual candidatura deseja registrar a observação e qual é o texto.' };
+      await this.companyPremium.addApplicationNote(company.id, applicationId, note, actor);
+      return { reply: 'Observação interna registrada com seu nome e horário.' };
+    }
+
+    if (intent === 'INVITE_CANDIDATE') {
+      const candidateId = String(args.candidateId || '').trim();
+      const jobId = await this.resolveCompanyJobId(company.id, args, requestText);
+      if (!candidateId || !jobId) return { reply: 'Para enviar o convite, preciso identificar o candidato e a vaga. Peça a lista de candidatos/vagas se precisar dos IDs.' };
+      const result = await this.companyPremium.inviteCandidate(company, jobId, candidateId, user.id);
+      return { reply: `Convite criado para ${result.candidateName} na vaga "${result.jobTitle}". Status: ${result.status}.` };
+    }
+
+    if (intent === 'LIST_CANDIDATE_INVITES') {
+      const invites: any[] = await this.companyPremium.listInvites(company.id);
+      if (!invites.length) return { reply: 'A empresa ainda não possui convites de vagas.' };
+      return { reply: invites.slice(0, 20).map((invite, index) =>
+        `${index + 1}. ${invite.candidateName || invite.candidateEmail || 'Candidato'} · ${invite.jobTitle} · ${invite.status} · convite ${invite.id}`,
+      ).join('\n') };
+    }
+
+    if (intent === 'CANCEL_CANDIDATE_INVITE') {
+      const inviteId = String(args.inviteId || '').trim();
+      if (!inviteId) return { reply: 'Qual convite deseja remover? Peça a lista de convites para eu mostrar os IDs.' };
+      await this.companyPremium.cancelInvite(company.id, inviteId);
+      return { reply: 'Convite pendente removido.' };
+    }
+
+    if (intent === 'LIST_TALENT_FOLDERS') {
+      const folders = await this.companyPremium.listTalentFolders(company.id);
+      return { reply: folders.length
+        ? `Pastas do Banco de Talentos:\n${folders.map((folder, index) => `${index + 1}. ${folder.name} · ${folder.id}`).join('\n')}`
+        : 'A empresa ainda não possui pastas no Banco de Talentos.' };
+    }
+
+    if (intent === 'ADD_TALENT') {
+      const candidateId = String(args.candidateId || '').trim();
+      if (!candidateId) return { reply: 'Qual candidato deseja salvar no Banco de Talentos?' };
+      await this.companyPremium.saveTalent(
+        company.id,
+        candidateId,
+        Array.isArray(args.folderIds) ? args.folderIds.map(String) : undefined,
+        Array.isArray(args.jobIds) ? args.jobIds.map(String) : undefined,
+      );
+      return { reply: 'Candidato salvo/atualizado no Banco de Talentos.' };
+    }
+
+    if (intent === 'REMOVE_TALENT') {
+      const candidateId = String(args.candidateId || '').trim();
+      const folderId = String(args.folderId || '').trim() || undefined;
+      if (!candidateId) return { reply: 'Qual candidato deseja remover do Banco de Talentos?' };
+      await this.companyPremium.removeTalent(company.id, candidateId, folderId);
+      return { reply: folderId ? 'Candidato removido dessa pasta.' : 'Candidato removido do Banco de Talentos da empresa.' };
+    }
+
+    if (intent === 'ADD_TALENT_NOTE') {
+      const candidateId = String(args.candidateId || '').trim();
+      const note = String(args.note || '').trim();
+      if (!candidateId || !note) return { reply: 'Informe o candidato e a observação que deseja registrar no histórico do Banco de Talentos.' };
+      await this.companyPremium.addTalentNote(company.id, candidateId, user.id, note);
+      return { reply: 'Observação registrada no histórico do candidato.' };
+    }
+
+    if (intent === 'RECENT_APPLICATIONS') {
+      const window = String(args.window || requestText || '24h');
+      const result = await this.companyPremium.recentApplications(company.id, window);
+      if (!result.count) return { reply: 'Não houve novas candidaturas nesse período.' };
+      const lines = result.applications.slice(0, 30).map((item: any, index: number) =>
+        `${index + 1}. ${item.candidateName} · ${item.jobTitle} · ${item.status} · candidatura ${item.applicationId}`,
+      );
+      return { reply: `Foram ${result.count} nova(s) candidatura(s) no período:\n${lines.join('\n')}` };
+    }
+
+    if (intent === 'JOB_STATS') {
+      const jobId = String(args.jobId || '').trim() || undefined;
+      const stats: any[] = await this.companyPremium.jobStats(company.id, jobId);
+      if (!stats.length) return { reply: 'Não encontrei vagas para calcular as estatísticas.' };
+      return { reply: stats.slice(0, 20).map((item) =>
+        `${item.title}: ${item.views} visualizações · ${item.applications} candidaturas · ${item.newApplications24h} nas últimas 24h · conversão ${item.conversionPercent}% · ${item.active ? 'ativa' : 'inativa'}`,
+      ).join('\n') };
+    }
+
+    if (intent === 'MESSAGE_CANDIDATE') {
+      const candidateId = String(args.candidateId || '').trim();
+      const message = String(args.message || '').trim().slice(0, 4000);
+      if (!candidateId || !message) return { reply: 'Informe qual candidato e a mensagem que deseja enviar.' };
+      const target = await this.companyPremium.candidateWhatsAppTarget(company.id, candidateId);
+      conversation.activeFlow = 'CANDIDATE_MESSAGE';
+      conversation.state = {
+        ...(conversation.state || {}),
+        pendingCandidateMessage: {
+          candidateId,
+          candidateName: target.candidateName,
+          chatId: target.chatId,
+          message,
+        },
+      };
+      await this.conversations.save(conversation);
+      return { reply: `Prévia para ${target.candidateName}:\n"${message}"\n\nResponda ENVIAR para confirmar ou CANCELAR para desistir.` };
+    }
+
+    return null;
+  }
+
+  private async resolveCompanyJobId(
+    companyId: string,
+    args: Record<string, any>,
+    requestText: string,
+  ) {
+    const explicit = String(args.jobId || '').trim();
+    if (explicit) {
+      const exists = await this.jobs.findOne({ where: { id: explicit, companyId } });
+      return exists?.id || null;
+    }
+    const jobs = await this.jobs.find({ where: { companyId }, order: { updatedAt: 'DESC' } });
+    if (jobs.length === 1) return jobs[0].id;
+    const hint = String(args.jobTitle || requestText || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const matches = jobs.filter((job) => {
+      const title = String(job.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      return title && hint.includes(title);
+    });
+    return matches.length === 1 ? matches[0].id : null;
+  }
+
+  private async companyJobChoiceReply(companyId: string, action: string) {
+    const jobs = await this.jobs.find({ where: { companyId }, order: { updatedAt: 'DESC' }, take: 12 });
+    if (!jobs.length) return 'A empresa não possui vagas para essa ação.';
+    return `Qual vaga deseja ${action}?\n${jobs.map((job, index) => `${index + 1}. ${job.title} · ${job.active ? 'ativa' : 'inativa'} · ${job.id}`).join('\n')}`;
   }
 
   private async resumeCreationFlow(conversation: WhatsAppConversation, user: User, decision: any, requestText: string) {
@@ -548,6 +826,7 @@ export class WhatsAppConciergeService {
         : [];
       return {
         user: userProfile,
+        companyPlan: await this.companyPlans.getCompanyPlan(company.id),
         company: {
           id: company.id,
           name: company.name,
@@ -961,6 +1240,18 @@ export class WhatsAppConciergeService {
 
   private safeId(value: string) {
     return createHash('sha256').update(value).digest('hex').slice(0, 16);
+  }
+
+  private isCompanyPlanRequired(error: unknown) {
+    if (!(error instanceof ForbiddenException)) return false;
+    const payload = error.getResponse() as any;
+    return Boolean(payload && typeof payload === 'object' && payload.code === 'COMPANY_WHATSAPP_PLAN_REQUIRED');
+  }
+
+  private companyPlanPayload(error: unknown): any {
+    if (!(error instanceof ForbiddenException)) return null;
+    const payload = error.getResponse();
+    return payload && typeof payload === 'object' ? payload : null;
   }
 
   private isPaymentRequired(error: unknown) {

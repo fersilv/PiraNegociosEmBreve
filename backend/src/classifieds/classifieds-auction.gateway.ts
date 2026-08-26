@@ -87,10 +87,14 @@ export class ClassifiedsAuctionGateway implements OnGatewayConnection, OnGateway
     return { ok: true };
   }
 
-  publishAuctionChanged(auctionId: string, reason: 'BID' | 'EXTENDED' | 'ENDED' | 'CANCELED' | 'CREATED') {
+  publishAuctionChanged(
+    auctionId: string,
+    reason: 'BID' | 'EXTENDED' | 'ENDED' | 'CANCELED' | 'CREATED',
+    snapshot?: Record<string, unknown> | null,
+  ) {
     const id = this.auctionId(auctionId);
     if (!id || !this.server) return;
-    const payload = { auctionId: id, reason, at: new Date().toISOString() };
+    const payload = { auctionId: id, reason, snapshot: snapshot || null, at: new Date().toISOString() };
     this.server.to(`auction:${id}`).emit('auction:update', payload);
     this.server.to('auction:lobby').emit('auction:update', payload);
   }

@@ -140,6 +140,9 @@ export function PaymentMethodsPage() {
         accessToken: "",
         publicKey: "",
         webhookSecret: "",
+        marketplaceClientId: config.marketplaceClientId || "",
+        marketplaceClientSecret: "",
+        marketplaceRedirectUri: config.marketplaceRedirectUri || `${window.location.origin}/classificados/vendas/mercado-pago`,
         publicApiBaseUrl: config.publicApiBaseUrl || defaultApiBaseUrl,
       });
     }
@@ -196,6 +199,9 @@ export function PaymentMethodsPage() {
         secretIfFilled(body, "accessToken", draft.accessToken);
         secretIfFilled(body, "publicKey", draft.publicKey);
         secretIfFilled(body, "webhookSecret", draft.webhookSecret);
+        if (typeof draft.marketplaceClientId === 'string') body.marketplaceClientId = draft.marketplaceClientId.trim();
+        secretIfFilled(body, "marketplaceClientSecret", draft.marketplaceClientSecret);
+        body.marketplaceRedirectUri = draft.marketplaceRedirectUri || `${window.location.origin}/classificados/vendas/mercado-pago`;
       }
       const savedName = editing.name;
       await api.patch(`/admin/payments/providers/${editing.code}`, body);
@@ -393,6 +399,10 @@ export function PaymentMethodsPage() {
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="URL pública da API" value={draft.publicApiBaseUrl || ""} onChange={(value) => setDraft((current) => ({ ...current, publicApiBaseUrl: value }))} placeholder={defaultApiBaseUrl} />
                     <div className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5"><p className="text-[10px] font-bold uppercase tracking-wider text-stone-400">Webhook</p><p className="mt-1 break-all text-xs font-bold text-stone-600">{`${String(draft.publicApiBaseUrl || defaultApiBaseUrl).replace(/\/$/, "")}/payments/webhooks/mercado-pago`}</p></div>
+                    <div className="sm:col-span-2 rounded-2xl border border-[#009ee3]/20 bg-[#eaf7fd] p-4"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#009ee3] text-xs font-black text-white">MP</span><div><p className="text-sm font-black text-[#073b5c]">Marketplace · conectar contas das empresas</p><p className="mt-0.5 text-[11px] leading-5 text-[#35647d]">Estas credenciais pertencem à aplicação PiraNegócios no Mercado Pago. O Client Secret fica criptografado e nunca volta para o navegador.</p></div></div></div>
+                    <Field label="Marketplace Client ID" value={draft.marketplaceClientId || ""} onChange={(value) => setDraft((current) => ({ ...current, marketplaceClientId: value }))} placeholder="Client ID da aplicação Mercado Pago" />
+                    <SecretField label="Marketplace Client Secret" configured={editing.config?.marketplaceClientSecretConfigured} value={draft.marketplaceClientSecret || ""} onChange={(value) => setDraft((current) => ({ ...current, marketplaceClientSecret: value }))} />
+                    <div className="sm:col-span-2"><Field label="Redirect URI do marketplace" value={draft.marketplaceRedirectUri || ""} onChange={(value) => setDraft((current) => ({ ...current, marketplaceRedirectUri: value }))} placeholder={`${window.location.origin}/classificados/vendas/mercado-pago`} /></div>
                     <SecretField label="Access Token" configured={editing.config?.accessTokenConfigured} value={draft.accessToken || ""} onChange={(value) => setDraft((current) => ({ ...current, accessToken: value }))} />
                     <SecretField label="Public Key" configured={editing.config?.publicKeyConfigured} value={draft.publicKey || ""} onChange={(value) => setDraft((current) => ({ ...current, publicKey: value }))} />
                     <div className="sm:col-span-2"><SecretField label="Assinatura secreta do Webhook" configured={editing.config?.webhookSecretConfigured} value={draft.webhookSecret || ""} onChange={(value) => setDraft((current) => ({ ...current, webhookSecret: value }))} /></div>

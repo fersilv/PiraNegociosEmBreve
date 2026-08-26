@@ -1,9 +1,9 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
+import { GroqCompat as Groq } from '../ai/groq-anthropic-compat';
 import OpenAI from 'openai';
 import { SettingsService } from '../admin/settings.service';
 
-type Provider = 'GEMINI' | 'OPENAI' | 'ANTHROPIC';
+type Provider = 'GEMINI' | 'OPENAI' | 'GROQ';
 
 type Runtime = { provider: Provider; model: string; apiKey: string };
 
@@ -46,7 +46,7 @@ Responda exclusivamente JSON válido no formato {"intent":"...","reply":"...","a
 INTENTS DE CANDIDATO:
 CHAT, LIST_APPLICATIONS, JOB_MATCHES, GET_RESUME, SET_RESUME_PHOTO, IMPORT_RESUME, START_RESUME_CREATE, CONTINUE_RESUME_CREATE, CONFIRM_RESUME_CREATE, CANCEL_FLOW.
 INTENTS DE EMPRESA:
-LIST_COMPANY_JOBS, JOB_APPLICATION_COUNTS, JOB_MATCH_CANDIDATES, START_JOB_CREATE, CONTINUE_JOB_CREATE, CONFIRM_JOB_CREATE, START_JOB_EDIT, CONTINUE_JOB_EDIT, CONFIRM_JOB_EDIT, CANCEL_FLOW.
+LIST_COMPANY_JOBS, JOB_APPLICATION_COUNTS, JOB_MATCH_CANDIDATES, COMPANY_PLAN_STATUS, JOB_ACTIVATE, JOB_DEACTIVATE, JOB_CLOSE, LIST_JOB_CANDIDATES, GET_CANDIDATE_PROFILE, UPDATE_APPLICATION_STATUS, ADD_APPLICATION_NOTE, INVITE_CANDIDATE, LIST_CANDIDATE_INVITES, CANCEL_CANDIDATE_INVITE, LIST_TALENT_FOLDERS, ADD_TALENT, REMOVE_TALENT, ADD_TALENT_NOTE, MESSAGE_CANDIDATE, CONFIRM_CANDIDATE_MESSAGE, CONFIRM_COMPANY_ACTION, RECENT_APPLICATIONS, JOB_STATS, START_JOB_CREATE, CONTINUE_JOB_CREATE, CONFIRM_JOB_CREATE, START_JOB_EDIT, CONTINUE_JOB_EDIT, CONFIRM_JOB_EDIT, CANCEL_FLOW.
 
 REGRAS DE CONTEXTO:
 - CONTEXTO DISPONÍVEL contém somente dados que o backend decidiu disponibilizar para esta conversa. Você pode usá-los para personalizar e responder perguntas.
@@ -64,6 +64,24 @@ REGRAS DO FLUXO DE CURRÍCULO:
 - Não invente empresa, cargo, datas, formação, habilidade ou atividade profissional.
 - CONFIRM_RESUME_CREATE somente quando a pessoa explicitamente disser para salvar/finalizar e os dados essenciais estiverem coletados.
 - Documentos/fotos podem complementar o fluxo, mas IMPORT_RESUME deve ser usado quando a pessoa pede explicitamente para extrair/organizar os documentos.
+
+REGRAS DE RECURSOS EMPRESARIAIS:
+- COMPANY_PLAN_STATUS quando a empresa perguntar qual plano possui, preço, recursos ou upgrade.
+- JOB_ACTIVATE, JOB_DEACTIVATE e JOB_CLOSE exigem args.jobId. Se o contexto permitir identificar inequivocamente a vaga pelo título, use o id real. Nunca invente UUID.
+- LIST_JOB_CANDIDATES exige args.jobId.
+- GET_CANDIDATE_PROFILE exige args.candidateId.
+- UPDATE_APPLICATION_STATUS exige args.applicationId e args.status. Status aceitos: PENDING, REVIEWING, DOCUMENTS_REQUESTED, DOCUMENTS_SUBMITTED, HIRED, REJECTED, WITHDRAWN.
+- ADD_APPLICATION_NOTE exige args.applicationId e args.note.
+- INVITE_CANDIDATE exige args.candidateId e args.jobId.
+- CANCEL_CANDIDATE_INVITE exige args.inviteId. LIST_CANDIDATE_INVITES lista os convites existentes.
+- LIST_TALENT_FOLDERS lista pastas. ADD_TALENT exige args.candidateId e pode usar args.folderIds/args.jobIds. REMOVE_TALENT exige args.candidateId e opcional args.folderId. ADD_TALENT_NOTE exige args.candidateId e args.note.
+- RECENT_APPLICATIONS usa args.window com hoje, ontem, 24h ou 7d quando o período estiver claro.
+- JOB_STATS usa args.jobId quando a pergunta for sobre uma vaga; sem jobId, retorna panorama das vagas da empresa.
+- MESSAGE_CANDIDATE exige args.candidateId e args.message. Nunca marque como CONFIRM_CANDIDATE_MESSAGE na primeira solicitação: o backend mostra uma prévia e pede confirmação.
+- CONFIRM_CANDIDATE_MESSAGE apenas quando houver fluxo ativo de mensagem e a pessoa confirmar explicitamente ENVIAR, CONFIRMO ou PODE ENVIAR.
+- CONFIRM_COMPANY_ACTION apenas quando houver fluxo ativo de ação empresarial destrutiva e confirmação explícita.
+- Não suponha que um recurso esteja liberado pelo plano. O backend verifica a assinatura e responderá com upgrade quando necessário.
+- Para qualquer ação que exija um id e não possa ser identificada inequivocamente pelos dados reais do contexto, responda pedindo qual vaga/candidato/candidatura deve ser usado; não invente args.
 
 REGRAS DO FLUXO DE VAGA:
 - START_JOB_CREATE inicia coleta de dados.
@@ -140,7 +158,7 @@ Fale em português brasileiro, de forma natural, direta e informativa. Não use 
     const enabled = (await this.settings.getValue('AI_ENABLED', 'false')) === 'true';
     const provider = String(await this.settings.getValue('AI_PROVIDER') || '') as Provider;
     const model = String(await this.settings.getValue('AI_MODEL') || '').trim();
-    if (!enabled || !['GEMINI', 'OPENAI', 'ANTHROPIC'].includes(provider) || !model) {
+    if (!enabled || !['GEMINI', 'OPENAI', 'GROQ'].includes(provider) || !model) {
       throw new ServiceUnavailableException('A inteligência artificial está desabilitada ou sem modelo configurado.');
     }
     const apiKey = String((await this.settings.getValue(`${provider}_API_KEY`)) || process.env[`${provider}_API_KEY`] || '').trim();
@@ -160,8 +178,8 @@ Fale em português brasileiro, de forma natural, direta e informativa. Não use 
       } as any);
       return String(response.output_text || '');
     }
-    if (runtime.provider === 'ANTHROPIC') {
-      const client = new Anthropic({ apiKey: runtime.apiKey });
+    if (runtime.provider === 'GROQ') {
+      const client = new Groq({ apiKey: runtime.apiKey });
       const response = await client.messages.create({
         model: runtime.model,
         max_tokens: maxTokens,

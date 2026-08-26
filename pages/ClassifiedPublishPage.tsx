@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ClassifiedCategoryIcon } from '../components/classifieds/ClassifiedCategoryIcon';
+import { ClassifiedListingPreview } from '../components/classifieds/ClassifiedListingPreview';
 import { useClassifiedsWorkspace } from '../contexts/ClassifiedsWorkspaceContext';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
@@ -78,6 +79,8 @@ export default function ClassifiedPublishPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [channelsTouched, setChannelsTouched] = useState(false);
+  const [photoLimit, setPhotoLimit] = useState(3);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [form, setForm] = useState<FormState>({
     listingType: 'PRODUCT',
     categorySlug: '',
@@ -100,7 +103,8 @@ export default function ClassifiedPublishPage() {
 
   useEffect(() => {
     api.get('/classifieds/categories').then((response) => setCategories(Array.isArray(response.data) ? response.data : [])).catch(() => setCategories([]));
-  }, []);
+    api.get('/classifieds/me/limits').then((response) => setPhotoLimit(Math.max(3, Math.min(10, Number(response.data?.photoLimit) || 3)))).catch(() => setPhotoLimit(3));
+  }, [data?.activeIdentity, data?.company?.id]);
 
   useEffect(() => {
     if (channelsTouched) return;
@@ -154,9 +158,9 @@ export default function ClassifiedPublishPage() {
 
   const uploadImages = async (files: FileList | null) => {
     if (!files?.length) return;
-    const available = 12 - form.images.length;
-    const selected = Array.from(files).slice(0, available);
-    if (!selected.length) { setError('Você pode enviar até 12 fotos.'); return; }
+    const available = photoLimit - form.images.length;
+    const selected = Array.from(files).slice(0, Math.max(0, available));
+    if (!selected.length) { setError(photoLimit <= 3 ? 'O plano Free permite até 3 fotos por anúncio. Empresas podem usar até 10.' : `Você pode enviar até ${photoLimit} fotos.`); return; }
     setUploading(true); setError('');
     try {
       const uploaded: string[] = [];
@@ -222,18 +226,22 @@ export default function ClassifiedPublishPage() {
       }
       if (!id) throw new Error('Não foi possível identificar o rascunho.');
       const response = await api.post(`/classifieds/me/listings/${id}/publish`);
-      navigate(`/classificados/anuncio/${response.data.slug}`);
+      if (response.data?.status === 'PAUSED' && response.data?.moderationReason) {
+        navigate('/classificados/anuncios', { replace: true, state: { moderationNotice: response.data.moderationReason } });
+        return;
+      }
+      navigate(`/classificados/explorar/${response.data.slug}`);
     } catch (requestError: any) {
       setError(requestError?.response?.data?.message || requestError?.message || 'Não foi possível publicar o anúncio.');
     } finally { setPublishing(false); }
   };
 
   return (
-    <div className="mx-auto max-w-5xl pb-12 text-[#2d211c]">
+    <div className="mx-auto max-w-5xl pb-12 text-[#2d211c]"><aside className="fixed right-5 top-28 z-20 hidden w-[280px] 2xl:block"><p className="mb-2 text-[9px] font-black uppercase tracking-[.14em] text-stone-400">Como está ficando</p><ClassifiedListingPreview value={form} /></aside>
       <header className="mb-6 flex items-center gap-3">
         <Link to="/classificados/painel" className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/[.06]" aria-label="Voltar"><ArrowLeft className="h-4 w-4" /></Link>
         <div className="min-w-0"><p className={`text-[9px] font-black uppercase tracking-[.16em] ${business ? 'text-[#397c75]' : 'text-[#b06448]'}`}>PiraNegócios {business ? 'Business' : 'Personal'}</p><h1 className="truncate font-serif text-2xl font-black">Criar anúncio</h1></div>
-        <button onClick={() => void saveDraft()} disabled={saving} className="ml-auto hidden items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-bold text-[#604c42] shadow-sm ring-1 ring-black/[.06] hover:bg-stone-50 sm:inline-flex">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Salvar rascunho</button>
+        <button type="button" onClick={() => setPreviewOpen(true)} className="ml-auto inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-black text-[#604c42] shadow-sm ring-1 ring-black/[.06] sm:hidden">Prévia</button><button onClick={() => void saveDraft()} disabled={saving} className="hidden items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-bold text-[#604c42] shadow-sm ring-1 ring-black/[.06] hover:bg-stone-50 sm:ml-auto sm:inline-flex">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Salvar rascunho</button>
       </header>
 
       <div className="overflow-hidden rounded-full bg-black/[.08]"><div className="h-1.5 transition-all" style={{ width: `${((step + 1) / STEPS.length) * 100}%`, backgroundColor: accent }} /></div>
@@ -244,14 +252,17 @@ export default function ClassifiedPublishPage() {
       <section className="mt-5 rounded-[26px] bg-white p-5 shadow-sm ring-1 ring-black/[.06] sm:p-8">
         {step === 0 && <TypeCategoryStep form={form} categories={categories} business={business} company={company} chooseType={chooseListingType} chooseCategory={(value) => patch('categorySlug', value)} />}
         {step === 1 && <MainInfoStep form={form} patch={patch} />}
-        {step === 2 && <PhotosStep images={form.images} uploading={uploading} uploadImages={uploadImages} remove={(index) => patch('images', form.images.filter((_, itemIndex) => itemIndex !== index))} />}
+        {step === 2 && <PhotosStep images={form.images} photoLimit={photoLimit} uploading={uploading} uploadImages={uploadImages} remove={(index) => patch('images', form.images.filter((_, itemIndex) => itemIndex !== index))} />}
         {step === 3 && <AttributesStep schema={schema} attributes={form.attributes} onChange={(key, value) => patch('attributes', { ...form.attributes, [key]: value })} />}
         {step === 4 && <OptionsStep groups={form.optionGroups} onChange={(groups) => patch('optionGroups', groups)} />}
         {step === 5 && <LocationStep form={form} patch={patch} />}
         {step === 6 && <ReviewStep form={form} category={category} business={business} setChannels={(channels) => { setChannelsTouched(true); patch('publicationChannels', channels); }} />}
       </section>
 
+      <div className="mt-3 text-[10px] font-bold text-stone-400">Fotos permitidas neste workspace: {photoLimit}. {photoLimit <= 3 ? 'Empresas podem publicar até 10 fotos por anúncio.' : `Este workspace permite até ${photoLimit} fotos.`}</div>
       <div className="mt-5 flex items-center justify-between gap-3"><button type="button" onClick={() => setStep((current) => Math.max(0, current - 1))} disabled={step === 0} className="rounded-2xl px-4 py-3 text-sm font-bold text-stone-500 disabled:opacity-30">Voltar</button><div className="flex gap-2"><button onClick={() => void saveDraft()} disabled={saving || publishing} className="hidden items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-bold shadow-sm ring-1 ring-black/[.06] disabled:opacity-50 sm:inline-flex">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Rascunho</button>{step < STEPS.length - 1 ? <button onClick={next} className="inline-flex items-center gap-2 rounded-2xl bg-stone-900 px-6 py-3 text-sm font-black text-white">Continuar <ArrowRight className="h-4 w-4" /></button> : <button onClick={() => void publish()} disabled={publishing} className="inline-flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-black text-white disabled:opacity-60" style={{ backgroundColor: accent }}>{publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Publicar anúncio</button>}</div></div>
+      {previewOpen && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 p-4 sm:hidden"><button className="absolute inset-0" aria-label="Fechar prévia" onClick={() => setPreviewOpen(false)} /><div className="relative w-full max-w-sm"><button onClick={() => setPreviewOpen(false)} className="absolute -right-2 -top-12 z-10 rounded-full bg-white px-4 py-2 text-xs font-black text-stone-700">Fechar</button><ClassifiedListingPreview value={form} /></div></div>}
+
     </div>
   );
 }
@@ -267,7 +278,7 @@ function MainInfoStep({ form, patch }: { form: FormState; patch: <K extends keyo
   return <div><StepHeading eyebrow={service ? 'Apresente o serviço' : 'Apresente o produto'} title="Conte o que está oferecendo" text="Título direto, descrição útil e uma regra de preço clara deixam a negociação mais simples." /><div className="mt-6 space-y-5"><Field label="Título"><input value={form.title} onChange={(event) => patch('title', event.target.value)} maxLength={160} placeholder={service ? 'Ex.: Formatação e manutenção de notebook' : 'Ex.: iPhone 14 128 GB muito conservado'} className={inputClass} /></Field><Field label="Descrição"><textarea value={form.description} onChange={(event) => patch('description', event.target.value)} rows={7} placeholder={service ? 'Explique o atendimento, o que está incluso, região atendida e condições...' : 'Estado do item, tempo de uso, detalhes importantes, garantia...'} className={`${inputClass} h-auto resize-y py-3`} /></Field><div className="grid gap-4 sm:grid-cols-2">{!service && <Field label="Condição"><select value={form.condition} onChange={(event) => patch('condition', event.target.value as ClassifiedCondition)} className={inputClass}><option value="NEW">Novo</option><option value="USED">Usado</option><option value="REFURBISHED">Recondicionado</option></select></Field>}<Field label="Como exibir o preço"><select value={form.priceType} onChange={(event) => patch('priceType', event.target.value as ClassifiedPriceType)} className={inputClass}><option value="FIXED">Preço fixo</option><option value="NEGOTIABLE">Preço negociável</option>{service && <option value="STARTING_AT">A partir de</option>}{service && <option value="CONTACT">Solicite um orçamento</option>}</select></Field></div>{form.priceType !== 'CONTACT' && <Field label={form.priceType === 'STARTING_AT' ? 'Valor inicial' : 'Preço'}><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-stone-400">R$</span><input type="number" min="0" step="0.01" value={form.price} onChange={(event) => patch('price', event.target.value)} className={`${inputClass} pl-11`} placeholder="0,00" /></div></Field>}</div></div>;
 }
 
-function PhotosStep({ images, uploading, uploadImages, remove }: { images: string[]; uploading: boolean; uploadImages: (files: FileList | null) => void; remove: (index: number) => void }) { return <div><StepHeading eyebrow="Imagem vende contexto" title="Mostre bem o anúncio" text="A primeira foto vira a capa. Você pode usar fotos do produto, do serviço, do ambiente ou do resultado do trabalho." /><div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{images.map((url, index) => <div key={`${url}-${index}`} className="relative aspect-square overflow-hidden rounded-[20px] bg-stone-100"><img src={url} alt={`Foto ${index + 1}`} className="h-full w-full object-cover" />{index === 0 && <span className="absolute left-2 top-2 rounded-full bg-stone-900/90 px-2 py-1 text-[9px] font-black uppercase tracking-[.12em] text-white">Capa</span>}<button onClick={() => remove(index)} className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-white/94 text-red-600 shadow" aria-label="Remover foto"><Trash2 className="h-4 w-4" /></button></div>)}{images.length < 12 && <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-3 rounded-[20px] border-2 border-dashed border-stone-300 bg-stone-50 text-center text-stone-500 hover:bg-stone-100"><input type="file" accept="image/*" multiple className="hidden" onChange={(event) => { uploadImages(event.target.files); event.currentTarget.value = ''; }} disabled={uploading} />{uploading ? <Loader2 className="h-7 w-7 animate-spin" /> : <ImagePlus className="h-7 w-7" />}<span className="px-3 text-xs font-bold">{uploading ? 'Enviando...' : 'Adicionar fotos'}</span></label>}</div><div className="mt-5 flex items-start gap-2 rounded-2xl bg-amber-50 p-4 text-xs leading-5 text-amber-800"><UploadCloud className="mt-0.5 h-4 w-4 shrink-0" /><span>Até 12 imagens, máximo de 10 MB por arquivo.</span></div></div>; }
+function PhotosStep({ images, photoLimit, uploading, uploadImages, remove }: { images: string[]; photoLimit: number; uploading: boolean; uploadImages: (files: FileList | null) => void; remove: (index: number) => void }) { return <div><StepHeading eyebrow="Imagem vende contexto" title="Mostre bem o anúncio" text="A primeira foto vira a capa. Você pode usar fotos do produto, do serviço, do ambiente ou do resultado do trabalho." /><div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{images.map((url, index) => <div key={`${url}-${index}`} className="relative aspect-square overflow-hidden rounded-[20px] bg-stone-100"><img src={url} alt={`Foto ${index + 1}`} className="h-full w-full object-cover" />{index === 0 && <span className="absolute left-2 top-2 rounded-full bg-stone-900/90 px-2 py-1 text-[9px] font-black uppercase tracking-[.12em] text-white">Capa</span>}<button onClick={() => remove(index)} className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-white/94 text-red-600 shadow" aria-label="Remover foto"><Trash2 className="h-4 w-4" /></button></div>)}{images.length < photoLimit && <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-3 rounded-[20px] border-2 border-dashed border-stone-300 bg-stone-50 text-center text-stone-500 hover:bg-stone-100"><input type="file" accept="image/*" multiple className="hidden" onChange={(event) => { uploadImages(event.target.files); event.currentTarget.value = ''; }} disabled={uploading} />{uploading ? <Loader2 className="h-7 w-7 animate-spin" /> : <ImagePlus className="h-7 w-7" />}<span className="px-3 text-xs font-bold">{uploading ? 'Enviando...' : 'Adicionar fotos'}</span></label>}</div><div className="mt-5 flex items-start gap-2 rounded-2xl bg-amber-50 p-4 text-xs leading-5 text-amber-800"><UploadCloud className="mt-0.5 h-4 w-4 shrink-0" /><span>Até {photoLimit} {photoLimit === 1 ? 'imagem' : 'imagens'}, máximo de 10 MB por arquivo.</span></div></div>; }
 
 function AttributesStep({ schema, attributes, onChange }: { schema: ClassifiedCategory['attributeSchema']; attributes: Record<string, string>; onChange: (key: string, value: string) => void }) { const fields = Array.isArray(schema) ? schema : []; return <div><StepHeading eyebrow="Campos da categoria" title="Detalhes que ajudam na decisão" text={fields.length ? 'Essas informações mudam conforme a categoria e aparecem de forma organizada no anúncio.' : 'Essa categoria não exige detalhes estruturados adicionais.'} />{fields.length ? <div className="mt-6 grid gap-4 sm:grid-cols-2">{fields.map((field) => <Field key={field.key} label={field.label}>{field.type === 'select' && field.options?.length ? <select value={attributes[field.key] || ''} onChange={(event) => onChange(field.key, event.target.value)} className={inputClass}><option value="">Selecione</option>{field.options.map((option) => <option key={option} value={option}>{option}</option>)}</select> : <input type={field.type === 'number' ? 'number' : 'text'} value={attributes[field.key] || ''} onChange={(event) => onChange(field.key, event.target.value)} className={inputClass} />}</Field>)}</div> : <div className="mt-6 rounded-[20px] bg-stone-50 p-6 text-sm text-stone-500">Sem detalhes adicionais obrigatórios.</div>}</div>; }
 
