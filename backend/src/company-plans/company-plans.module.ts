@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AdminGuard } from '../admin/admin.guard';
 import { ApplicationsModule } from '../applications/applications.module';
 import { Application } from '../applications/entities/application.entity';
 import { CompaniesModule } from '../companies/companies.module';
@@ -9,6 +10,8 @@ import { CompanyTalentRecord } from '../companies/entities/company-talent-record
 import { Job } from '../jobs/entities/job.entity';
 import { PaymentsModule } from '../payments/payments.module';
 import { User } from '../users/entities/user.entity';
+import { CompanyPlansAdminController } from './company-plans-admin.controller';
+import { CompanyPlansAdminService } from './company-plans-admin.service';
 import { CompanyPlansController } from './company-plans.controller';
 import { CompanyPlansService } from './company-plans.service';
 import { CompanyWhatsAppPremiumService } from './company-whatsapp-premium.service';
@@ -27,8 +30,8 @@ import { CompanyWhatsAppPremiumService } from './company-whatsapp-premium.servic
     ApplicationsModule,
     CompaniesModule,
   ],
-  controllers: [CompanyPlansController],
-  providers: [CompanyPlansService, CompanyWhatsAppPremiumService],
+  controllers: [CompanyPlansController, CompanyPlansAdminController],
+  providers: [CompanyPlansService, CompanyPlansAdminService, CompanyWhatsAppPremiumService, AdminGuard],
   exports: [CompanyPlansService, CompanyWhatsAppPremiumService],
 })
 export class CompanyPlansModule {}
