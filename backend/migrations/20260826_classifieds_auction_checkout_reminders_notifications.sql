@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS classified_auction_reminders (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "auctionId" uuid NOT NULL REFERENCES classified_auctions(id) ON DELETE CASCADE,
   "userId" varchar NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  enabled boolean NOT NULL DEFAULT true,
   "createdAt" timestamptz NOT NULL DEFAULT now(),
   "preStartSentAt" timestamptz NULL,
   "startSentAt" timestamptz NULL,
@@ -87,7 +88,23 @@ CREATE TABLE IF NOT EXISTS classified_auction_reminders (
   CONSTRAINT classified_auction_reminders_unique UNIQUE ("auctionId","userId")
 );
 CREATE INDEX IF NOT EXISTS classified_auction_reminders_due_idx
-  ON classified_auction_reminders("auctionId","preStartSentAt","startSentAt","missYouSentAt");
+  ON classified_auction_reminders("auctionId",enabled,"preStartSentAt","startSentAt","missYouSentAt");
+
+CREATE TABLE IF NOT EXISTS classified_auction_closure_notifications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  "auctionId" uuid NOT NULL REFERENCES classified_auctions(id) ON DELETE CASCADE,
+  "userId" varchar NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind varchar(32) NOT NULL,
+  "createdAt" timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT classified_auction_closure_notifications_kind_check
+    CHECK (kind IN ('WINNER','PARTICIPANT','PARTICIPANTS_COMPLETE'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS classified_auction_closure_notifications_user_uq
+  ON classified_auction_closure_notifications("auctionId","userId",kind)
+  WHERE "userId" IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS classified_auction_closure_notifications_complete_uq
+  ON classified_auction_closure_notifications("auctionId",kind)
+  WHERE "userId" IS NULL AND kind='PARTICIPANTS_COMPLETE';
 
 -- Preferências globais de contato. A janela vale para notificações não críticas.
 -- Eventos são agrupados por chave enquanto aguardam a próxima janela, evitando rajada de spam.
