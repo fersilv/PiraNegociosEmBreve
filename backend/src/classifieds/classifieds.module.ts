@@ -25,6 +25,7 @@ import { ClassifiedsCommerceAdminController } from './classifieds-commerce-admin
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
 import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
+import { ClassifiedsLocationService } from './classifieds-location.service';
 import { ClassifiedsMarketplacePaymentsService } from './classifieds-marketplace-payments.service';
 import { ClassifiedsMarketplaceTermsService } from './classifieds-marketplace-terms.service';
 import { ClassifiedsPrivateController } from './classifieds-private.controller';
@@ -42,68 +43,9 @@ import { ClassifiedUserPreference } from './entities/classified-user-preference.
 import { CompanyClassifiedProfile } from './entities/company-classified-profile.entity';
 
 @Module({
-  imports: [
-    AdminModule,
-    ChatModule,
-    NotificationsModule,
-    PaymentsModule,
-    TypeOrmModule.forFeature([
-      ClassifiedCategory,
-      ClassifiedListing,
-      ClassifiedListingImage,
-      ClassifiedFavorite,
-      ClassifiedUserPreference,
-      CompanyClassifiedProfile,
-      ClassifiedConversation,
-      ClassifiedConversationMessage,
-      User,
-      Company,
-    ]),
-  ],
-  controllers: [
-    ClassifiedsPublicController,
-    ClassifiedsAuctionPublicController,
-    ClassifiedsAuctionManagementController,
-    ClassifiedsPrivateController,
-    ClassifiedsSalesController,
-    ClassifiedsCheckoutController,
-    ClassifiedsCheckoutWebhookController,
-    ClassifiedsAuctionExtrasController,
-    ClassifiedsCommerceAdminController,
-  ],
-  providers: [
-    AdminGuard,
-    ClassifiedsService,
-    ClassifiedsIdentityService,
-    ClassifiedsChatService,
-    ClassifiedsAiReviewService,
-    ClassifiedsCommerceService,
-    ClassifiedsEntitlementsService,
-    ClassifiedsAuctionGateway,
-    ClassifiedsAuctionService,
-    ClassifiedsAuctionPublicService,
-    ClassifiedsAuctionManagementService,
-    ClassifiedsAuctionEngagementService,
-    ClassifiedsAuctionSettlementService,
-    ClassifiedsSalesService,
-    ClassifiedsMarketplacePaymentsService,
-    ClassifiedsMarketplaceTermsService,
-    ClassifiedsCheckoutService,
-  ],
-  exports: [
-    ClassifiedsService,
-    ClassifiedsIdentityService,
-    ClassifiedsCommerceService,
-    ClassifiedsEntitlementsService,
-    ClassifiedsAuctionService,
-    ClassifiedsAuctionPublicService,
-    ClassifiedsAuctionManagementService,
-    ClassifiedsAuctionEngagementService,
-    ClassifiedsAuctionSettlementService,
-    ClassifiedsSalesService,
-    ClassifiedsMarketplacePaymentsService,
-    ClassifiedsMarketplaceTermsService,
-    ClassifiedsCheckoutService,
-  ],
+  imports: [AdminModule,ChatModule,NotificationsModule,PaymentsModule,TypeOrmModule.forFeature([ClassifiedCategory,ClassifiedListing,ClassifiedListingImage,ClassifiedFavorite,ClassifiedUserPreference,CompanyClassifiedProfile,ClassifiedConversation,ClassifiedConversationMessage,User,Company])],
+  controllers: [ClassifiedsPublicController,ClassifiedsAuctionPublicController,ClassifiedsAuctionManagementController,ClassifiedsPrivateController,ClassifiedsSalesController,ClassifiedsCheckoutController,ClassifiedsCheckoutWebhookController,ClassifiedsAuctionExtrasController,ClassifiedsCommerceAdminController],
+  providers: [AdminGuard,ClassifiedsService,ClassifiedsIdentityService,ClassifiedsLocationService,ClassifiedsChatService,ClassifiedsAiReviewService,ClassifiedsCommerceService,ClassifiedsEntitlementsService,ClassifiedsAuctionGateway,ClassifiedsAuctionService,ClassifiedsAuctionPublicService,ClassifiedsAuctionManagementService,ClassifiedsAuctionEngagementService,ClassifiedsAuctionSettlementService,ClassifiedsSalesService,ClassifiedsMarketplacePaymentsService,ClassifiedsMarketplaceTermsService,ClassifiedsCheckoutService],
+  exports: [ClassifiedsService,ClassifiedsIdentityService,ClassifiedsLocationService,ClassifiedsCommerceService,ClassifiedsEntitlementsService,ClassifiedsAuctionService,ClassifiedsAuctionPublicService,ClassifiedsAuctionManagementService,ClassifiedsAuctionEngagementService,ClassifiedsAuctionSettlementService,ClassifiedsSalesService,ClassifiedsMarketplacePaymentsService,ClassifiedsMarketplaceTermsService,ClassifiedsCheckoutService],
 })
 export class ClassifiedsModule {}
