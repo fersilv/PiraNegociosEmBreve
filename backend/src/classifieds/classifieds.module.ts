@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AdminGuard } from '../admin/admin.guard';
 import { AdminModule } from '../admin/admin.module';
 import { ChatModule } from '../chat/chat.module';
 import { Company } from '../companies/entities/company.entity';
@@ -9,6 +10,7 @@ import { User } from '../users/entities/user.entity';
 import { ClassifiedsAiReviewService } from './classifieds-ai-review.service';
 import { ClassifiedsAuctionService } from './classifieds-auction.service';
 import { ClassifiedsChatService } from './classifieds-chat.service';
+import { ClassifiedsCommerceAdminController } from './classifieds-commerce-admin.controller';
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
 import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
@@ -46,8 +48,14 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
       Company,
     ]),
   ],
-  controllers: [ClassifiedsPublicController, ClassifiedsPrivateController, ClassifiedsSalesController],
+  controllers: [
+    ClassifiedsPublicController,
+    ClassifiedsPrivateController,
+    ClassifiedsSalesController,
+    ClassifiedsCommerceAdminController,
+  ],
   providers: [
+    AdminGuard,
     ClassifiedsService,
     ClassifiedsIdentityService,
     ClassifiedsChatService,
