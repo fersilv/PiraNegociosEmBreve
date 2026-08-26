@@ -38,7 +38,7 @@ patch('backend/src/classifieds/classifieds-private.controller.ts', (input) => {
   }
 
   const respondOld = `  @Post('me/offers/:offerId/respond')\n  respondOffer(@Req() req: any, @Param('offerId') offerId: string, @Body() body: any) {\n    return this.commerce.respondOffer(req.user.uid, offerId, body?.decision);\n  }`;
-  const respondNew = `  @Post('me/offers/:offerId/respond')\n  async respondOffer(@Req() req: any, @Param('offerId') offerId: string, @Body() body: any) {\n    const result = await this.commerce.respondOffer(req.user.uid, offerId, body?.decision);\n    const event = String(body?.decision || '').toUpperCase() === 'ACCEPT' ? 'ACCEPTED' : 'REJECTED';\n    const chat = await this.offerChat.record(req.user.uid, offerId, event);\n    if (chat?.message) this.chatGateway.publishMessage(chat.message, chat.recipientIds);\n    return { ...result, conversationId: chat?.conversationId || null };\n  }`;
+  const respondNew = `  @Post('me/offers/:offerId/respond')\n  async respondOffer(@Req() req: any, @Param('offerId') offerId: string, @Body() body: any) {\n    const result = await this.commerce.respondOffer(req.user.uid, offerId, body?.decision);\n    const event = String(body?.decision || '').toUpperCase().startsWith('ACCEPT') ? 'ACCEPTED' : 'REJECTED';\n    const chat = await this.offerChat.record(req.user.uid, offerId, event);\n    if (chat?.message) this.chatGateway.publishMessage(chat.message, chat.recipientIds);\n    return { ...result, conversationId: chat?.conversationId || null };\n  }`;
   if (!source.includes(respondNew)) {
     if (!source.includes(respondOld)) throw new Error('Respond offer controller anchor missing.');
     source = source.replace(respondOld, respondNew);
@@ -55,4 +55,18 @@ patch('backend/src/classifieds/classifieds-private.controller.ts', (input) => {
   return source;
 });
 
-console.log('Classified offers are mirrored into chat history.');
+patch('backend/src/classifieds/classifieds-commerce.service.ts', (input) => {
+  let source = input;
+  const imageJoin = `           LEFT JOIN LATERAL (SELECT url FROM classified_listing_images WHERE \"listingId\" = l.id ORDER BY \"sortOrder\" ASC LIMIT 1) i ON true`;
+  const conversationJoin = `${imageJoin}\n           LEFT JOIN LATERAL (\n             SELECT id FROM classified_conversations\n             WHERE \"listingId\" = o.\"listingId\" AND \"buyerUserId\" = o.\"buyerUserId\"\n               AND ((\"buyerCompanyId\" IS NULL AND o.\"buyerCompanyId\" IS NULL) OR \"buyerCompanyId\" = o.\"buyerCompanyId\")\n             ORDER BY \"createdAt\" DESC LIMIT 1\n           ) conv ON true`;
+  if (!source.includes('conv.id AS "conversationId"')) {
+    source = source.replaceAll('                  i.url AS image,', '                  i.url AS image, conv.id AS "conversationId",');
+  }
+  if (!source.includes(') conv ON true')) {
+    source = source.replaceAll(imageJoin, conversationJoin);
+  }
+  if (!source.includes('conv.id AS "conversationId"') || !source.includes(') conv ON true')) throw new Error('Offer conversation list integration missing.');
+  return source;
+});
+
+console.log('Classified offers are mirrored into chat history and expose their negotiation conversation.');
