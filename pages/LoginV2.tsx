@@ -6,6 +6,7 @@ import {
   createUserWithEmailAndPassword,
   deleteUser,
   getAdditionalUserInfo,
+  sendPasswordResetEmail,
   sendEmailVerification,
   signOut,
   signInWithEmailAndPassword,
@@ -56,6 +57,10 @@ export function Login() {
   const [waitlistEmail, setWaitlistEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [passwordResetOpen, setPasswordResetOpen] = useState(false);
+  const [passwordResetLoading, setPasswordResetLoading] = useState(false);
+  const [passwordResetError, setPasswordResetError] = useState("");
+  const [passwordResetSentTo, setPasswordResetSentTo] = useState("");
   const navigate = useNavigate();
   const { refreshProfile } = useAuth();
   const isRegister = mode === "register";
@@ -226,6 +231,36 @@ export function Login() {
     }
   };
 
+  const openPasswordReset = () => {
+    setPasswordResetError("");
+    setPasswordResetSentTo("");
+    setPasswordResetOpen(true);
+  };
+
+  const handlePasswordReset = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setPasswordResetError("Informe o e-mail usado no cadastro.");
+      return;
+    }
+    setPasswordResetLoading(true);
+    setPasswordResetError("");
+    try {
+      await sendPasswordResetEmail(auth, normalizedEmail);
+      setPasswordResetSentTo(normalizedEmail);
+    } catch (resetError: any) {
+      // Não revela se uma conta existe ou não para evitar enumeração de e-mails.
+      if (String(resetError?.code || "").includes("user-not-found")) {
+        setPasswordResetSentTo(normalizedEmail);
+      } else {
+        setPasswordResetError(firebaseMessage(resetError));
+      }
+    } finally {
+      setPasswordResetLoading(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-[#f5efe8] text-[#251a15] lg:grid lg:grid-cols-[.92fr_1.08fr]">
       <section className="relative hidden min-h-screen overflow-hidden bg-[#2b211c] p-10 text-white lg:flex lg:flex-col lg:justify-between xl:p-14">
@@ -284,6 +319,7 @@ export function Login() {
                       {isRegister && <><div className="grid gap-4 sm:grid-cols-2"><Field label="Nome completo *"><input required value={name} onChange={(event) => setName(event.target.value)} className="auth-field" autoComplete="name" placeholder="Seu nome" /></Field><Field label="Telefone / WhatsApp *"><input required value={phone} onChange={(event) => setPhone(event.target.value)} className="auth-field" autoComplete="tel" placeholder="(19) 99999-9999" /></Field></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Nome social"><input value={socialName} onChange={(event) => setSocialName(event.target.value)} className="auth-field" placeholder="Opcional" /></Field><Field label="Como prefere ser tratado"><select value={treatment} onChange={(event) => setTreatment(event.target.value)} className="auth-field"><option value="ela/dela">Ela/Dela</option><option value="ele/dele">Ele/Dele</option><option value="elu/delu">Elu/Delu</option></select></Field></div><Field label="Cidade onde você mora *"><CityStateSelector initialValue={registrationLocation} onLocationChange={(value) => { setRegistrationLocation(value); setLocationWasSuggested(false); }} /><p className="mt-1.5 flex items-center gap-1.5 text-[10px] leading-4 text-stone-400"><MapPin className="h-3 w-3 text-terracotta-500" />{locationWasSuggested ? "Sugerimos esta cidade pela sua região de acesso. Confira e altere se necessário." : "Usamos sua cidade para priorizar vagas e matches realmente viáveis."}</p></Field></>}
                       <Field label="E-mail *"><input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="auth-field" autoComplete="email" placeholder="voce@email.com" /></Field>
                       <Field label="Senha *"><div className="relative"><input required type={showPassword ? "text" : "password"} minLength={6} value={password} onChange={(event) => setPassword(event.target.value)} className="auth-field pr-12" autoComplete={isRegister ? "new-password" : "current-password"} placeholder={isRegister ? "Mínimo 6 caracteres" : "Sua senha"} /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-stone-400 hover:bg-stone-100" aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></Field>
+                      {!isRegister && <div className="-mt-2 text-right"><button type="button" onClick={openPasswordReset} className="text-xs font-black text-terracotta-700 hover:underline">Esqueci minha senha</button></div>}
                       {isRegister && <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-stone-200 bg-stone-50/60 p-3.5"><input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-stone-300 text-terracotta-600 focus:ring-terracotta-500" /><span className="text-xs leading-5 text-stone-600">Li e concordo com os <Link to="/termos" target="_blank" className="font-bold text-terracotta-700 hover:underline">Termos de Uso e Política de Privacidade</Link>.</span></label>}
                     </>
                   )}
@@ -296,6 +332,90 @@ export function Login() {
           <div className="mt-5 flex items-center justify-center gap-2 text-[10px] font-bold text-stone-400"><Sparkles className="h-3.5 w-3.5 text-terracotta-500" /> Um cadastro para carreira e, quando precisar, para o workspace da sua empresa.</div>
         </div>
       </section>
+      {passwordResetOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-stone-950/55 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !passwordResetLoading)
+              setPasswordResetOpen(false);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="password-reset-title"
+            className="w-full max-w-md rounded-[28px] border border-[#ddcfc3] bg-[#fffdfa] p-6 shadow-2xl sm:p-8"
+          >
+            {passwordResetSentTo ? (
+              <div className="text-center">
+                <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-[20px] bg-emerald-100 text-emerald-700">
+                  <CheckCircle2 className="h-7 w-7" />
+                </span>
+                <h2 id="password-reset-title" className="mt-5 font-serif text-3xl font-bold text-stone-950">
+                  Confira seu e-mail
+                </h2>
+                <p className="mt-3 text-sm leading-6 text-stone-500">
+                  Se existir uma conta para <strong>{passwordResetSentTo}</strong>, você receberá um link para criar uma nova senha. Confira também a caixa de spam.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setPasswordResetOpen(false)}
+                  className="mt-6 w-full rounded-2xl bg-[#2b211c] px-5 py-3 text-sm font-black text-white"
+                >
+                  Voltar para entrar
+                </button>
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setPasswordResetOpen(false)}
+                  disabled={passwordResetLoading}
+                  className="inline-flex items-center gap-2 text-xs font-bold text-stone-500 hover:text-stone-900 disabled:opacity-50"
+                >
+                  <ArrowLeft className="h-4 w-4" /> Voltar
+                </button>
+                <h2 id="password-reset-title" className="mt-5 font-serif text-3xl font-bold text-stone-950">
+                  Recupere sua senha
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-stone-500">
+                  Informe o e-mail usado no cadastro. Enviaremos um link seguro para você definir uma nova senha.
+                </p>
+                {passwordResetError && (
+                  <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm font-semibold text-red-700">
+                    {passwordResetError}
+                  </div>
+                )}
+                <form onSubmit={handlePasswordReset} className="mt-5 space-y-4">
+                  <Field label="E-mail cadastrado">
+                    <input
+                      required
+                      type="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      className="auth-field"
+                      autoComplete="email"
+                      autoFocus
+                      placeholder="voce@email.com"
+                    />
+                  </Field>
+                  <button
+                    type="submit"
+                    disabled={passwordResetLoading}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-terracotta-600 px-5 py-3.5 text-sm font-black text-white disabled:opacity-50"
+                  >
+                    {passwordResetLoading ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      "Enviar link de recuperação"
+                    )}
+                  </button>
+                </form>
+              </>
+            )}
+          </section>
+        </div>
+      )}
       <style>{`.auth-field{width:100%;border:1px solid #ddd6d0;border-radius:14px;background:#fff;padding:12px 14px;font-size:14px;color:#292524;outline:none;transition:.2s}.auth-field:focus{border-color:#c66a4b;box-shadow:0 0 0 3px rgba(198,106,75,.10)}`}</style>
     </main>
   );
