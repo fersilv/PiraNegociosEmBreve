@@ -1,16 +1,20 @@
 import { Body, Controller, Get, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import type { PaymentCheckoutPayer } from '../payments/payment-provider-manager.service';
+import { CompanyPlansOverviewService } from './company-plans-overview.service';
 import { CompanyPlansService } from './company-plans.service';
 
 @Controller('company/plans')
 @UseGuards(FirebaseAuthGuard)
 export class CompanyPlansController {
-  constructor(private readonly plans: CompanyPlansService) {}
+  constructor(
+    private readonly plans: CompanyPlansService,
+    private readonly overview: CompanyPlansOverviewService,
+  ) {}
 
   @Get()
   getPlans(@Req() req: any) {
-    return this.plans.getForUser(req.user.uid);
+    return this.overview.getForUser(req.user.uid);
   }
 
   @Get('checkout/latest')
