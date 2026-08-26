@@ -5,7 +5,7 @@ const root = path.resolve(__dirname, '../..');
 process.chdir(root);
 
 function patch(file, transform) {
-  const source = fs.readFileSync(file, 'utf8');
+  const source = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
   const next = transform(source);
   if (next !== source) {
     fs.writeFileSync(file, next);
@@ -110,12 +110,8 @@ patch('pages/ClassifiedPublishPage.tsx', (input) => {
     `      <div className=\"mt-3 text-[10px] font-bold text-stone-400\">Fotos permitidas neste workspace: {photoLimit}. {photoLimit <= 3 ? 'Empresas podem publicar até 10 fotos por anúncio.' : \`Este workspace permite até \${photoLimit} fotos.\`}</div>\n      <div className=\"mt-5 flex items-center justify-between gap-3\">`,
     'photo entitlement copy',
   );
-  source = replace(
-    source,
-    `      </div>\n    </div>\n  );\n}\n\nfunction TypeCategoryStep`,
-    `      </div>\n      {previewOpen && <div className=\"fixed inset-0 z-[120] flex items-center justify-center bg-black/45 p-4 sm:hidden\"><button className=\"absolute inset-0\" aria-label=\"Fechar prévia\" onClick={() => setPreviewOpen(false)} /><div className=\"relative w-full max-w-sm\"><button onClick={() => setPreviewOpen(false)} className=\"absolute -right-2 -top-12 z-10 rounded-full bg-white px-4 py-2 text-xs font-black text-stone-700\">Fechar</button><ClassifiedListingPreview value={form} /></div></div>}\n    </div>\n  );\n}\n\nfunction TypeCategoryStep`,
-    'mobile preview modal',
-  );
+  // The modal itself is intentionally owned by ensure-classifieds-preview-modal.cjs,
+  // which runs after v2/final. Keeping one owner avoids circular exact-string anchors.
   return source;
 });
 
