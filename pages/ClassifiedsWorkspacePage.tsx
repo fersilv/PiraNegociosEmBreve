@@ -13,6 +13,8 @@ import ClassifiedsExplorePage from './ClassifiedsExplorePage';
 import ClassifiedsListingsPage from './ClassifiedsListingsPage';
 import ClassifiedsMessengerPage from './ClassifiedsMessengerPage';
 import ClassifiedsOffersPage from './ClassifiedsOffersPage';
+import ClassifiedsReceiptPreferencesPage from './ClassifiedsReceiptPreferencesPage';
+import ClassifiedsReviewsPage from './ClassifiedsReviewsPage';
 import ClassifiedsSalesPage from './ClassifiedsSalesPage';
 import ClassifiedsSettingsPage from './ClassifiedsSettingsPage';
 import UserClassifiedsPage from './UserClassifiedsPage';
@@ -67,6 +69,8 @@ function WorkspaceReadyContent() {
   if (isIntegratedLiveAuction) page = <ClassifiedsAuctionsLivePageV2 embedded />;
   else if (location.pathname.startsWith('/classificados/gestao/leiloes')) page = <ClassifiedsAuctionManagementPage />;
   else if (location.pathname.startsWith('/classificados/explorar')) page = <ClassifiedsExplorePage />;
+  else if (location.pathname.startsWith('/classificados/recebimentos')) page = <ClassifiedsReceiptPreferencesPage />;
+  else if (location.pathname.startsWith('/classificados/avaliacoes')) page = <ClassifiedsReviewsPage />;
   else if (location.pathname.startsWith('/classificados/vendas')) page = <ClassifiedsSalesPage />;
   else if (location.pathname.startsWith('/classificados/comercial/')) page = <ClassifiedCommerceEditorPage />;
   else if (location.pathname.startsWith('/classificados/publicar')) page = <ClassifiedPublishPage />;
