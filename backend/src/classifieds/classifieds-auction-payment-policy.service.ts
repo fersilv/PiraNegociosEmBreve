@@ -1,6 +1,8 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ClassifiedsAuctionSettlementService } from './classifieds-auction-settlement.service';
+import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
+import { ClassifiedsMarketplacePaymentsService } from './classifieds-marketplace-payments.service';
 import { ClassifiedsReceiptPreferencesService } from './classifieds-receipt-preferences.service';
 
 @Injectable()
@@ -8,8 +10,27 @@ export class ClassifiedsAuctionPaymentPolicyService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly settlement: ClassifiedsAuctionSettlementService,
+    private readonly entitlements: ClassifiedsEntitlementsService,
+    private readonly marketplacePayments: ClassifiedsMarketplacePaymentsService,
     private readonly receiptPreferences: ClassifiedsReceiptPreferencesService,
   ) {}
+
+  async defaults(uid: string) {
+    const prefs = await this.receiptPreferences.get(uid);
+    const plan = await this.entitlements.companyPlan(prefs.companyId);
+    const feeRule = await this.settlement.resolveAuctionFeeRule(prefs.companyId, plan);
+    return {
+      ...prefs,
+      plan,
+      feeRule,
+      auctionFeePayer: prefs.auctionFeePayerDefault,
+      paymentMethods: this.methods(null, prefs),
+      fulfillmentModes: this.defaultFulfillment(prefs),
+      feeDisclosure: feeRule
+        ? `Taxa de leilão vigente: ${Number(feeRule.percentage || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%.`
+        : 'A taxa de leilão ainda não foi configurada no Admin.',
+    };
+  }
 
   async sellerConfig(uid: string, auctionId: string) {
     const base = await this.settlement.sellerConfig(uid, auctionId);
@@ -59,11 +80,17 @@ export class ClassifiedsAuctionPaymentPolicyService {
     const base = await this.settlement.buyerConfig(uid, auctionId);
     const row = await this.policy(auctionId);
     if (!row) return base;
+    const sellerCredentials = await this.marketplacePayments.sellerMercadoPagoCredentials(row.companyId);
+    const publicKey = String(sellerCredentials.publicKey || base.publicKey || '').trim();
+    if (this.methods(row.paymentMethods).includes('CARD') && !publicKey) {
+      throw new ServiceUnavailableException('A conta Mercado Pago da empresa precisa ser reconectada para liberar pagamentos por cartão.');
+    }
     const feeCents = this.fee(Number(base.amountCents || 0), row);
     const feePayer = this.receiptPreferences.feePayer(row.auctionFeePayer);
     const buyerFeeCents = feePayer === 'BUYER' ? feeCents : 0;
     return {
       ...base,
+      publicKey: publicKey || base.publicKey,
       paymentMethods: this.methods(row.paymentMethods),
       cardMaxInstallments: this.receiptPreferences.installments(row.cardMaxInstallments || 12),
       pickupAddress: this.fulfillment(row.fulfillmentModes).includes('PICKUP') ? row.pickupAddressSnapshot || row.companyAddress || null : null,
@@ -94,10 +121,15 @@ export class ClassifiedsAuctionPaymentPolicyService {
 
   private async policy(auctionId: string) {
     const rows = await this.dataSource.query(
-      `SELECT a.*,c.address AS "companyAddress" FROM classified_auctions a JOIN companies c ON c.id=a."companyId" WHERE a.id=$1 LIMIT 1`,
+      `SELECT a.*,c.address AS "companyAddress",c.city AS "companyCity",c.state AS "companyState"
+       FROM classified_auctions a JOIN companies c ON c.id=a."companyId" WHERE a.id=$1 LIMIT 1`,
       [auctionId],
     ).catch(() => []);
-    return rows[0] || null;
+    const row = rows[0] || null;
+    if (row && !row.pickupAddressSnapshot) {
+      row.companyAddress = [row.companyAddress, [row.companyCity, row.companyState].filter(Boolean).join('/')].filter(Boolean).join(', ');
+    }
+    return row;
   }
 
   private methods(value: unknown, fallback?: { pixEnabled?: boolean; cardEnabled?: boolean }) {
@@ -108,6 +140,14 @@ export class ClassifiedsAuctionPaymentPolicyService {
     if (fallback?.pixEnabled !== false) defaults.push('PIX');
     if (fallback?.cardEnabled !== false) defaults.push('CARD');
     return defaults.length ? defaults : ['PIX','CARD'];
+  }
+
+  private defaultFulfillment(prefs: { pickupEnabled?: boolean; deliveryEnabled?: boolean; arrangeEnabled?: boolean }) {
+    const values: Array<'ARRANGE'|'PICKUP'|'DELIVERY'> = [];
+    if (prefs.arrangeEnabled !== false) values.push('ARRANGE');
+    if (prefs.pickupEnabled !== false) values.push('PICKUP');
+    if (prefs.deliveryEnabled === true) values.push('DELIVERY');
+    return values.length ? values : ['ARRANGE'];
   }
 
   private fulfillment(value: unknown) {
