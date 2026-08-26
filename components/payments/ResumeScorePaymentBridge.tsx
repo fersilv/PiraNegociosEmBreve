@@ -68,6 +68,7 @@ export function ResumeScorePaymentBridge() {
       title="Análise profissional do currículo"
       description="Adquira um crédito de análise e continue exatamente de onde parou."
       amountCents={status.resumeReanalysisPriceCents}
+      productCode="RESUME_REANALYSIS"
       confirmLabel="Gerar Pix e analisar"
       createCheckout={() => api.post('/payments/pix', { productCode: 'RESUME_REANALYSIS' })}
       onCompleted={resumeOriginalAction}
