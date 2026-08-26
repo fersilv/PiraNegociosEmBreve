@@ -98,17 +98,20 @@ export class ClassifiedsPrivateController {
   }
 
   @Post('me/auctions')
-  createAuction(@Req() req: any, @Body() body: Record<string, unknown>) {
+  async createAuction(@Req() req: any, @Body() body: Record<string, unknown>) {
+    await this.entitlements.assertAuctionCreation(req.user.uid);
     return this.auctions.create(req.user.uid, body || {});
   }
 
   @Post('auctions/:auctionId/bids')
-  bidAuction(@Req() req: any, @Param('auctionId') auctionId: string, @Body() body: any) {
+  async bidAuction(@Req() req: any, @Param('auctionId') auctionId: string, @Body() body: any) {
+    await this.entitlements.assertAuctionParticipant(req.user.uid);
     return this.auctions.bid(req.user.uid, auctionId, body?.amount);
   }
 
   @Post('me/auctions/:auctionId/cancel')
-  cancelAuction(@Req() req: any, @Param('auctionId') auctionId: string) {
+  async cancelAuction(@Req() req: any, @Param('auctionId') auctionId: string) {
+    await this.entitlements.assertAuctionCreation(req.user.uid);
     return this.auctions.cancel(req.user.uid, auctionId);
   }
 
