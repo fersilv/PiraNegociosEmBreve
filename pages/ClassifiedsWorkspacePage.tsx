@@ -4,6 +4,7 @@ import { ClassifiedsWorkspaceGate, ClassifiedsWorkspaceLayout } from '../compone
 import { ClassifiedsWorkspaceProvider } from '../contexts/ClassifiedsWorkspaceContext';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
+import ClassifiedCommerceEditorPage from './ClassifiedCommerceEditorPage';
 import ClassifiedPublishPage from './ClassifiedPublishPage';
 import ClassifiedsAnalyticsPage from './ClassifiedsAnalyticsPage';
 import ClassifiedsAuctionsPage from './ClassifiedsAuctionsPage';
@@ -11,6 +12,7 @@ import ClassifiedsExplorePage from './ClassifiedsExplorePage';
 import ClassifiedsListingsPage from './ClassifiedsListingsPage';
 import ClassifiedsMessengerPage from './ClassifiedsMessengerPage';
 import ClassifiedsOffersPage from './ClassifiedsOffersPage';
+import ClassifiedsSalesPage from './ClassifiedsSalesPage';
 import ClassifiedsSettingsPage from './ClassifiedsSettingsPage';
 import UserClassifiedsPage from './UserClassifiedsPage';
 
@@ -62,6 +64,8 @@ function WorkspaceReadyContent() {
   let page: React.ReactNode = <UserClassifiedsPage />;
   if (location.pathname.startsWith('/classificados/explorar')) page = <ClassifiedsExplorePage />;
   else if (location.pathname.startsWith('/classificados/leiloes')) page = <ClassifiedsAuctionsPage />;
+  else if (location.pathname.startsWith('/classificados/vendas')) page = <ClassifiedsSalesPage />;
+  else if (location.pathname.startsWith('/classificados/comercial/')) page = <ClassifiedCommerceEditorPage />;
   else if (location.pathname.startsWith('/classificados/publicar')) page = <ClassifiedPublishPage />;
   else if (location.pathname.startsWith('/classificados/ofertas')) page = <ClassifiedsOffersPage />;
   else if (location.pathname.startsWith('/classificados/anuncios')) page = <ClassifiedsListingsPage listingType="PRODUCT" />;
