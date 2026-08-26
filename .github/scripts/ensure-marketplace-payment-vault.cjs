@@ -29,12 +29,15 @@ patch('backend/src/payments/payment-provider-config.service.ts', (input) => {
       `      webhookSecretConfigured: Boolean(config.webhookSecret),\n      marketplaceClientIdConfigured: Boolean(config.marketplaceClientId),\n      marketplaceClientSecretConfigured: Boolean(config.marketplaceClientSecret),\n      marketplaceRedirectUri: config.marketplaceRedirectUri || null,\n      publicApiBaseUrl: config.publicApiBaseUrl || null,`,
     );
   }
-  if (!source.includes('marketplaceClientSecretConfigured')) throw new Error('Mercado Pago marketplace vault fields missing.');
+  if (!source.includes('marketplaceClientIdConfigured') || !source.includes('marketplaceClientSecretConfigured')) {
+    throw new Error('Mercado Pago marketplace vault fields missing.');
+  }
   return source;
 });
 
 patch('backend/src/classifieds/classifieds-marketplace-payments.service.ts', (input) => {
   let source = input;
+
   if (!source.includes('PaymentProviderConfigService')) {
     source = source.replace(
       "import { PaymentProviderVaultService } from '../payments/payment-provider-vault.service';",
@@ -45,38 +48,48 @@ patch('backend/src/classifieds/classifieds-marketplace-payments.service.ts', (in
       '    private readonly identities: ClassifiedsIdentityService,\n    private readonly providerConfig: PaymentProviderConfigService,\n    private readonly vault: PaymentProviderVaultService,',
     );
   }
+
   source = source.replace(
     "    const clientId = this.env('MERCADO_PAGO_MARKETPLACE_CLIENT_ID');\n    const redirectUri = this.env('MERCADO_PAGO_MARKETPLACE_REDIRECT_URI');",
     "    const marketplace = await this.marketplaceConfig();\n    const clientId = marketplace.clientId;\n    const redirectUri = marketplace.redirectUri;",
   );
-  source = source.replace(
-    "        client_id: this.env('MERCADO_PAGO_MARKETPLACE_CLIENT_ID'),\n        client_secret: this.env('MERCADO_PAGO_MARKETPLACE_CLIENT_SECRET'),",
-    "        client_id: (await this.marketplaceConfig()).clientId,\n        client_secret: (await this.marketplaceConfig()).clientSecret,",
-  );
-  if (source.includes("client_id: this.env('MERCADO_PAGO_MARKETPLACE_CLIENT_ID')")) {
-    throw new Error('Mercado Pago refresh still depends directly on env.');
+
+  if (!source.includes('private async refreshMercadoPago(connection: any, current: MercadoPagoSellerCredentials) {\n    const marketplace = await this.marketplaceConfig();')) {
+    source = source.replace(
+      '  private async refreshMercadoPago(connection: any, current: MercadoPagoSellerCredentials) {\n    const response = await fetch',
+      '  private async refreshMercadoPago(connection: any, current: MercadoPagoSellerCredentials) {\n    const marketplace = await this.marketplaceConfig();\n    const response = await fetch',
+    );
   }
-  const exchangeOld = `  private async exchangeMercadoPagoCode(code: string) {\n    const response = await fetch('https://api.mercadopago.com/oauth/token', {`;
-  const exchangeNew = `  private async exchangeMercadoPagoCode(code: string) {\n    const marketplace = await this.marketplaceConfig();\n    const response = await fetch('https://api.mercadopago.com/oauth/token', {`;
-  if (!source.includes(exchangeNew)) {
-    if (!source.includes(exchangeOld)) throw new Error('Mercado Pago exchange anchor missing.');
-    source = source.replace(exchangeOld, exchangeNew);
+
+  if (!source.includes('private async exchangeMercadoPagoCode(code: string) {\n    const marketplace = await this.marketplaceConfig();')) {
+    source = source.replace(
+      '  private async exchangeMercadoPagoCode(code: string) {\n    const response = await fetch',
+      '  private async exchangeMercadoPagoCode(code: string) {\n    const marketplace = await this.marketplaceConfig();\n    const response = await fetch',
+    );
   }
-  source = source.replace(
+
+  source = source.replaceAll(
     "        client_id: this.env('MERCADO_PAGO_MARKETPLACE_CLIENT_ID'),\n        client_secret: this.env('MERCADO_PAGO_MARKETPLACE_CLIENT_SECRET'),",
-    "        client_id: marketplace.clientId,\n        client_secret: marketplace.clientSecret,",
+    '        client_id: marketplace.clientId,\n        client_secret: marketplace.clientSecret,',
   );
-  source = source.replace(
+  source = source.replaceAll(
     "        redirect_uri: this.env('MERCADO_PAGO_MARKETPLACE_REDIRECT_URI'),",
     '        redirect_uri: marketplace.redirectUri,',
   );
+
   if (!source.includes('private async marketplaceConfig()')) {
     source = source.replace(
       `  private env(name: string) {\n    const value = String(process.env[name] || '').trim();\n    if (!value) throw new ServiceUnavailableException(\`Integração de marketplace incompleta: configure \${name}.\`);\n    return value;\n  }`,
       `  private async marketplaceConfig() {\n    const config = await this.providerConfig.getSecretConfig<MercadoPagoProviderConfig>('MERCADO_PAGO').catch(() => ({} as MercadoPagoProviderConfig));\n    const clientId = String(config.marketplaceClientId || process.env.MERCADO_PAGO_MARKETPLACE_CLIENT_ID || '').trim();\n    const clientSecret = String(config.marketplaceClientSecret || process.env.MERCADO_PAGO_MARKETPLACE_CLIENT_SECRET || '').trim();\n    const redirectUri = String(config.marketplaceRedirectUri || process.env.MERCADO_PAGO_MARKETPLACE_REDIRECT_URI || '').trim();\n    if (!clientId || !clientSecret || !redirectUri) {\n      throw new ServiceUnavailableException('Marketplace Mercado Pago incompleto. Configure Client ID, Client Secret e Redirect URI em Admin → Pagamentos → Formas de pagamento → Mercado Pago.');\n    }\n    return { clientId, clientSecret, redirectUri };\n  }`,
     );
   }
-  if (!source.includes("getSecretConfig<MercadoPagoProviderConfig>('MERCADO_PAGO')")) throw new Error('Marketplace Mercado Pago vault integration missing.');
+
+  if (source.includes("this.env('MERCADO_PAGO_MARKETPLACE_")) {
+    throw new Error('Mercado Pago marketplace OAuth still depends directly on environment helpers.');
+  }
+  if (!source.includes("getSecretConfig<MercadoPagoProviderConfig>('MERCADO_PAGO')") || !source.includes('marketplace.clientSecret')) {
+    throw new Error('Marketplace Mercado Pago vault integration missing.');
+  }
   return source;
 });
 
