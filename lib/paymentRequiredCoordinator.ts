@@ -34,6 +34,9 @@ export function getInlinePaymentRequirement() {
 export function requestInlinePayment(requirement: InlinePaymentRequirement): Promise<void> {
   const productCode = String(requirement.productCode || requirement.product?.code || '').trim();
   if (!productCode) return Promise.reject(new Error('O backend solicitou pagamento sem informar o produto.'));
+  if (listeners.size === 0) {
+    return Promise.reject(new Error('A interface de pagamento contextual ainda não está disponível nesta área.'));
+  }
 
   if (active && active.productCode !== productCode) {
     return Promise.reject(new Error('Já existe outro pagamento em andamento. Conclua ou feche a cobrança atual.'));
