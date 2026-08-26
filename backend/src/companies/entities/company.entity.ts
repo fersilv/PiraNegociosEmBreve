@@ -26,12 +26,12 @@ export class Company {
   id: string;
 
   @Column()
-  ownerId: string; // The user who created the company
+  ownerId: string;
 
+  // Nome comercial exibido no PiraNegócios. Pode divergir da razão social.
   @Column()
   name: string;
 
-  // Public, human-readable company address: https://piranegocios.com.br/{slug}
   @Column({ type: 'varchar', nullable: true, unique: true })
   slug: string | null;
 
@@ -59,11 +59,7 @@ export class Company {
   @Column({ type: 'text', nullable: true })
   slugChangeReviewNote: string | null;
 
-  @Column({
-    type: 'enum',
-    enum: CompanyCategory,
-    default: CompanyCategory.EMPLOYER,
-  })
+  @Column({ type: 'enum', enum: CompanyCategory, default: CompanyCategory.EMPLOYER })
   category: CompanyCategory;
 
   @Column({ type: 'text', nullable: true })
@@ -78,9 +74,52 @@ export class Company {
   @Column({ nullable: true })
   cpf: string;
 
+  @Column({ default: false })
+  hasCnpj: boolean;
+
+  @Column({ type: 'varchar', length: 240, nullable: true })
+  legalName: string | null;
+
+  @Column({ type: 'varchar', length: 240, nullable: true })
+  registryTradeName: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  legalAddress: string | null;
+
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  legalCity: string | null;
+
+  @Column({ type: 'varchar', length: 2, nullable: true })
+  legalState: string | null;
+
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  legalZipCode: string | null;
+
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  cnpjSituation: string | null;
+
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  cnpjDataSource: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  cnpjDataCheckedAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  cnpjDataUpdatedAt: Date | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  cnpjSnapshot: Record<string, unknown> | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  cnpjChangeAlert: Record<string, unknown> | null;
+
+  @Column({ default: true })
+  commercialAddressSameAsLegal: boolean;
+
   @Column({ nullable: true })
   website: string;
 
+  // Endereço comercial. Quando commercialAddressSameAsLegal=true, é sincronizado da consulta do CNPJ.
   @Column({ nullable: true })
   address: string;
 
@@ -101,6 +140,18 @@ export class Company {
 
   @Column({ default: false })
   isVerified: boolean;
+
+  @Column({ type: 'varchar', length: 24, default: 'NOT_STARTED' })
+  complianceStatus: string;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  complianceGraceDeadline: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  complianceSuspendedAt: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  complianceSuspensionReason: string | null;
 
   @Column({ type: 'text', nullable: true })
   rejectionReason: string;
