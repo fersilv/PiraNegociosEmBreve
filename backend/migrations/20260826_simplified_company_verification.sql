@@ -18,6 +18,17 @@ ALTER TABLE companies
   ADD COLUMN IF NOT EXISTS "cnpjChangeAlert" jsonb NULL,
   ADD COLUMN IF NOT EXISTS "commercialAddressSameAsLegal" boolean NOT NULL DEFAULT true;
 
+UPDATE companies SET "hasCnpj"=true WHERE NULLIF(regexp_replace(COALESCE(cnpj,''),'[^0-9A-Za-z]','','g'),'') IS NOT NULL;
+
+-- O fluxo anterior criava uma janela automática de KYC documental para empresas já
+-- verificadas. No modelo simplificado, empresas que já tinham selo não perdem acesso.
+UPDATE companies
+SET "complianceStatus"='APPROVED',
+    "complianceGraceDeadline"=NULL,
+    "complianceSuspendedAt"=NULL,
+    "complianceSuspensionReason"=NULL
+WHERE "isVerified"=true OR "verificationStatus"='VERIFIED';
+
 ALTER TABLE identity_verifications
   ADD COLUMN IF NOT EXISTS "verificationMethod" varchar(32) NOT NULL DEFAULT 'SELFIE_MANUAL',
   ADD COLUMN IF NOT EXISTS "selectedQsaName" varchar(180) NULL,
