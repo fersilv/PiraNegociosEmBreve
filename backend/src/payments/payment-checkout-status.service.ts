@@ -169,7 +169,8 @@ export class PaymentCheckoutStatusService {
       || metadata.recurringApi === 'SUBSCRIPTIONS'
       || Boolean(metadata.mercadoPagoSubscriptionId);
     const subscriptionStatus = String(metadata.mercadoPagoSubscriptionStatus || '').toLowerCase();
-    const authorizationUrl = metadata.subscriptionCheckoutUrl || metadata.ticketUrl || null;
+    const authorizationUrl = recurring ? metadata.subscriptionCheckoutUrl || null : null;
+    const ticketUrl = !recurring ? metadata.ticketUrl || null : null;
     const completed = payment.status === 'PAID'
       || (recurring && subscriptionStatus === 'authorized')
       || metadata.companyEliteTrialActivated === true;
@@ -190,8 +191,9 @@ export class PaymentCheckoutStatusService {
       qrCodeBase64: payment.qrCodeBase64 || null,
       expiresAt: payment.expiresAt || null,
       paidAt: payment.paidAt || null,
-      checkoutReady: Boolean(payment.pixCopyPaste || payment.qrCodeBase64 || authorizationUrl),
+      checkoutReady: Boolean(payment.pixCopyPaste || payment.qrCodeBase64 || authorizationUrl || ticketUrl),
       authorizationUrl,
+      ticketUrl,
       recurring,
       subscriptionStatus: subscriptionStatus || null,
       providerStatus: metadata.mercadoPagoTransactionStatus || metadata.mercadoPagoOrderStatus || null,
