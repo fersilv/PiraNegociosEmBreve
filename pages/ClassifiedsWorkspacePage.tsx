@@ -7,7 +7,8 @@ import { api } from '../lib/api';
 import ClassifiedCommerceEditorPage from './ClassifiedCommerceEditorPage';
 import ClassifiedPublishPage from './ClassifiedPublishPage';
 import ClassifiedsAnalyticsPage from './ClassifiedsAnalyticsPage';
-import ClassifiedsAuctionsPage from './ClassifiedsAuctionsPage';
+import ClassifiedsAuctionManagementPage from './ClassifiedsAuctionManagementPage';
+import ClassifiedsAuctionsLivePageV2 from './ClassifiedsAuctionsLivePageV2';
 import ClassifiedsExplorePage from './ClassifiedsExplorePage';
 import ClassifiedsListingsPage from './ClassifiedsListingsPage';
 import ClassifiedsMessengerPage from './ClassifiedsMessengerPage';
@@ -61,9 +62,11 @@ function WorkspaceReadyContent() {
     return <div className="flex min-h-[55vh] items-center justify-center px-4 text-center"><div><div className="mx-auto h-9 w-9 animate-spin rounded-full border-4 border-stone-200 border-t-stone-800" /><p className="mt-4 text-sm font-black text-stone-700">Abrindo sua negociação...</p>{resumeError && <p className="mt-2 text-xs text-red-600">{resumeError}</p>}</div></div>;
   }
 
+  const isIntegratedLiveAuction = location.pathname.startsWith('/classificados/gestao/leiloes/') && location.pathname.endsWith('/ao-vivo');
   let page: React.ReactNode = <UserClassifiedsPage />;
-  if (location.pathname.startsWith('/classificados/explorar')) page = <ClassifiedsExplorePage />;
-  else if (location.pathname.startsWith('/classificados/leiloes')) page = <ClassifiedsAuctionsPage />;
+  if (isIntegratedLiveAuction) page = <ClassifiedsAuctionsLivePageV2 embedded />;
+  else if (location.pathname.startsWith('/classificados/gestao/leiloes')) page = <ClassifiedsAuctionManagementPage />;
+  else if (location.pathname.startsWith('/classificados/explorar')) page = <ClassifiedsExplorePage />;
   else if (location.pathname.startsWith('/classificados/vendas')) page = <ClassifiedsSalesPage />;
   else if (location.pathname.startsWith('/classificados/comercial/')) page = <ClassifiedCommerceEditorPage />;
   else if (location.pathname.startsWith('/classificados/publicar')) page = <ClassifiedPublishPage />;
