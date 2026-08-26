@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { ChatGateway } from '../chat/chat.gateway';
+import { IdentityComplianceService } from '../compliance/identity-compliance.service';
 import { ClassifiedsAuctionService } from './classifieds-auction.service';
 import { ClassifiedsChatService } from './classifieds-chat.service';
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
@@ -19,6 +20,7 @@ export class ClassifiedsPrivateController {
     private readonly entitlements: ClassifiedsEntitlementsService,
     private readonly auctions: ClassifiedsAuctionService,
     private readonly chatGateway: ChatGateway,
+    private readonly compliance: IdentityComplianceService,
   ) {}
 
   @Get('me/context')
@@ -99,6 +101,8 @@ export class ClassifiedsPrivateController {
 
   @Post('me/auctions')
   async createAuction(@Req() req: any, @Body() body: Record<string, unknown>) {
+    const identity = await this.identities.active(req.user.uid);
+    await this.compliance.assertSellerEligible(req.user.uid, identity);
     await this.entitlements.assertAuctionCreation(req.user.uid);
     return this.auctions.create(req.user.uid, body || {});
   }
@@ -130,6 +134,8 @@ export class ClassifiedsPrivateController {
   @Post('me/listings/:id/publish')
   async publish(@Req() req: any, @Param('id') id: string) {
     await this.identities.assertPublishingReady(req.user.uid);
+    const identity = await this.identities.active(req.user.uid);
+    await this.compliance.assertSellerEligible(req.user.uid, identity);
     const listing = await this.classifieds.publish(req.user.uid, id);
     const moderation = await this.commerce.moderatePublishedListing(req.user.uid, id);
     if ((moderation as any)?.status === 'PAUSED') {
@@ -144,7 +150,11 @@ export class ClassifiedsPrivateController {
   }
 
   @Post('me/listings/:id/status')
-  status(@Req() req: any, @Param('id') id: string, @Body() body: { status?: unknown }) {
+  async status(@Req() req: any, @Param('id') id: string, @Body() body: { status?: unknown }) {
+    if (String(body?.status || '').toUpperCase() === 'PUBLISHED') {
+      const identity = await this.identities.active(req.user.uid);
+      await this.compliance.assertSellerEligible(req.user.uid, identity);
+    }
     return this.classifieds.setStatus(req.user.uid, id, body?.status);
   }
 
@@ -214,7 +224,6 @@ export class ClassifiedsPrivateController {
 
 function normalizeOptionalPublicContacts(body: Record<string, unknown>) {
   const payload = { ...body };
-  // A publicação externa de telefone/WhatsApp é opt-in.
   if (!String(body.contactPhone ?? '').trim()) payload.contactPhone = ' ';
   if (!String(body.contactWhatsapp ?? '').trim()) payload.contactWhatsapp = ' ';
   return payload;
