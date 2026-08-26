@@ -3,8 +3,6 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  OnModuleDestroy,
-  OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
@@ -12,8 +10,8 @@ import { mkdir, readFile, rename, unlink, writeFile } from 'fs/promises';
 import { join, resolve } from 'path';
 import { DataSource } from 'typeorm';
 
-export const IDENTITY_COMPLIANCE_CONSENT_VERSION = '2026-08-26';
-const REQUIRED_PERSONAL_DOCUMENTS = ['SELFIE', 'ID_FRONT', 'ADDRESS_PROOF'] as const;
+export const IDENTITY_COMPLIANCE_CONSENT_VERSION = '2026-08-26-simple';
+const REQUIRED_STANDARD_FILES = ['SELFIE'] as const;
 const VALID_DOCUMENT_KINDS = new Set(['SELFIE', 'ID_FRONT', 'ID_BACK', 'ADDRESS_PROOF', 'REPRESENTATION_PROOF']);
 const VALID_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
 
@@ -21,25 +19,16 @@ type VerificationContext = 'PERSONAL' | 'COMPANY';
 type Relationship = 'PERSONAL' | 'EMPLOYEE' | 'PARTNER';
 
 @Injectable()
-export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy {
-  private timer: NodeJS.Timeout | null = null;
-
+export class IdentityComplianceService {
   constructor(private readonly dataSource: DataSource) {}
-
-  onModuleInit() {
-    this.timer = setInterval(() => void this.enforceCompanyDeadlines().catch(() => undefined), 60 * 60 * 1000);
-    this.timer.unref?.();
-    void this.enforceCompanyDeadlines().catch(() => undefined);
-  }
-
-  onModuleDestroy() {
-    if (this.timer) clearInterval(this.timer);
-  }
 
   async myStatus(uid: string) {
     const users = await this.dataSource.query(
-      `SELECT u.id,u.email,u."displayName",u."fullName",u."socialName",u.phone,u."whatsappPhoneE164",u."companyId",
-              c.name AS "companyName",c."verificationStatus",c."isVerified",c."complianceStatus",c."complianceGraceDeadline"
+      `SELECT u.id,u.email,u."displayName",u."fullName",u."socialName",u.phone,u."whatsappPhoneE164",u."whatsappVerifiedAt",u."companyId",
+              c.name AS "companyName",c.cnpj,c."hasCnpj",c."legalName",c."registryTradeName",c."legalAddress",c."legalCity",c."legalState",c."legalZipCode",
+              c."cnpjSituation",c."cnpjDataSource",c."cnpjDataCheckedAt",c."cnpjDataUpdatedAt",c."cnpjSnapshot",c."cnpjChangeAlert",
+              c."commercialAddressSameAsLegal",c.address AS "commercialAddress",c.city AS "commercialCity",c.state AS "commercialState",
+              c."verificationStatus",c."isVerified",c."complianceStatus"
        FROM users u LEFT JOIN companies c ON c.id=u."companyId" WHERE u.id=$1 LIMIT 1`,
       [uid],
     );
@@ -59,9 +48,9 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
       `SELECT * FROM company_memberships WHERE "companyId"=$1 AND "userId"=$2 AND status='ACTIVE' LIMIT 1`,
       [user.companyId, uid],
     ).catch(() => []))[0] || null : null;
-    const partners = user.companyId ? await this.dataSource.query(
-      `SELECT id,name,email,phone,"participationPercentage","hasAdministrativePowers","isBeneficialOwner","confirmationStatus","createdAt"
-       FROM company_partner_declarations WHERE "companyId"=$1 ORDER BY "participationPercentage" DESC,name ASC`,
+    const authorizations = user.companyId ? await this.dataSource.query(
+      `SELECT id,"partnerName","partnerEmail","partnerPhone","qsaQualification",status,"grantFullPowers",permissions,"submittedAt","reviewedAt","reviewReason","expiresAt","createdAt"
+       FROM company_verification_authorizations WHERE "companyId"=$1 ORDER BY "createdAt" DESC LIMIT 20`,
       [user.companyId],
     ).catch(() => []) : [];
     return {
@@ -71,16 +60,35 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
         name: user.socialName || user.displayName || user.fullName || null,
         email: user.email || null,
         phone: user.whatsappPhoneE164 || user.phone || null,
+        phoneVerified: Boolean(user.whatsappVerifiedAt),
+        contactReady: Boolean(user.email && user.whatsappVerifiedAt),
       },
       company: user.companyId ? {
         id: user.companyId,
         name: user.companyName,
+        cnpj: user.cnpj || null,
+        hasCnpj: Boolean(user.hasCnpj),
+        legalName: user.legalName || null,
+        registryTradeName: user.registryTradeName || null,
+        legalAddress: user.legalAddress || null,
+        legalCity: user.legalCity || null,
+        legalState: user.legalState || null,
+        legalZipCode: user.legalZipCode || null,
+        commercialAddress: user.commercialAddress || null,
+        commercialCity: user.commercialCity || null,
+        commercialState: user.commercialState || null,
+        commercialAddressSameAsLegal: user.commercialAddressSameAsLegal !== false,
+        cnpjSituation: user.cnpjSituation || null,
+        cnpjDataSource: user.cnpjDataSource || null,
+        cnpjDataCheckedAt: user.cnpjDataCheckedAt || null,
+        cnpjDataUpdatedAt: user.cnpjDataUpdatedAt || null,
+        cnpjSnapshot: user.cnpjSnapshot || null,
+        cnpjChangeAlert: user.cnpjChangeAlert || null,
         verified: Boolean(user.isVerified || user.verificationStatus === 'VERIFIED'),
         verificationStatus: user.verificationStatus,
         complianceStatus: user.complianceStatus,
-        graceDeadline: user.complianceGraceDeadline,
         membership,
-        partners,
+        authorizations,
       } : null,
       verifications: verifications.map((row: any) => this.presentVerification(row)),
     };
@@ -90,21 +98,42 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
     const context = this.context(body.context);
     const companyId = context === 'COMPANY' ? await this.companyForUser(uid) : null;
     const relationship = this.relationship(body.relationship, context);
-    const partnerPercentage = relationship === 'PARTNER' ? this.percentage(body.partnerPercentage) : null;
-    const declaresRepresentationPowers = relationship === 'PARTNER' && body.declaresRepresentationPowers === true;
-    if (context === 'COMPANY' && relationship === 'PARTNER' && !declaresRepresentationPowers) {
-      throw new BadRequestException('Confirme que possui poderes para representar a empresa ou autorização válida para agir em nome dela.');
-    }
     const row = await this.upsertVerification(uid, companyId, context);
     if (['PENDING','APPROVED'].includes(row.status)) throw new BadRequestException('Esta verificação já foi enviada e não pode ser alterada agora.');
+
+    let selectedQsaName: string | null = null;
+    let selectedQsaQualification: string | null = null;
+    let declaresAtLeast25Percent = false;
+    if (context === 'COMPANY' && relationship === 'PARTNER') {
+      declaresAtLeast25Percent = body.declaresAtLeast25Percent === true;
+      selectedQsaName = String(body.selectedQsaName || '').trim().slice(0, 180) || null;
+      const companies = await this.dataSource.query(`SELECT "cnpjSnapshot" FROM companies WHERE id=$1 LIMIT 1`, [companyId]);
+      const qsa = Array.isArray(companies[0]?.cnpjSnapshot?.qsa) ? companies[0].cnpjSnapshot.qsa : [];
+      if (qsa.length) {
+        const match = qsa.find((item: any) => this.normalizeName(item?.name) === this.normalizeName(selectedQsaName));
+        if (!match) throw new BadRequestException('Selecione seu nome entre os sócios retornados pela consulta do CNPJ.');
+        selectedQsaName = String(match.name || '').trim();
+        selectedQsaQualification = String(match.qualification || '').trim() || null;
+      }
+    }
+
     const rows = await this.dataSource.query(
-      `UPDATE identity_verifications SET relationship=$2,"partnerPercentage"=$3,"declaresRepresentationPowers"=$4,"updatedAt"=now()
+      `UPDATE identity_verifications SET
+         relationship=$2,
+         "partnerPercentage"=NULL,
+         "declaresRepresentationPowers"=CASE WHEN $2='PARTNER' THEN true ELSE false END,
+         "selectedQsaName"=$3,
+         "selectedQsaQualification"=$4,
+         "declaresAtLeast25Percent"=$5,
+         "verificationMethod"='SELFIE_MANUAL',
+         "updatedAt"=now()
        WHERE id=$1 RETURNING *`,
-      [row.id, relationship, partnerPercentage, declaresRepresentationPowers],
+      [row.id, relationship, selectedQsaName, selectedQsaQualification, declaresAtLeast25Percent],
     );
     return this.presentVerification(rows[0]);
   }
 
+  // Mantido somente para compatibilidade/futura política ampliada. Não faz parte do fluxo padrão.
   async replacePartners(uid: string, partnersRaw: unknown) {
     const companyId = await this.companyForUser(uid);
     await this.assertPrimaryAdmin(uid, companyId);
@@ -116,9 +145,7 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
       participationPercentage: this.percentage(item?.participationPercentage),
       hasAdministrativePowers: item?.hasAdministrativePowers === true,
     }));
-    if (cleaned.some((item) => !item.name)) throw new BadRequestException('Informe o nome de cada sócio declarado.');
-    const total = cleaned.reduce((sum, item) => sum + Number(item.participationPercentage || 0), 0);
-    if (total > 100.0001) throw new BadRequestException('A soma das participações societárias não pode ultrapassar 100%.');
+    if (cleaned.some((item) => !item.name || item.participationPercentage == null)) throw new BadRequestException('Preencha nome e participação dos sócios declarados.');
     await this.dataSource.transaction(async (manager) => {
       await manager.query(`DELETE FROM company_partner_declarations WHERE "companyId"=$1 AND "declaredByUserId"=$2`, [companyId, uid]);
       for (const item of cleaned) {
@@ -135,9 +162,10 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
 
   async uploadDocument(uid: string, kindRaw: string, file: Express.Multer.File, body: Record<string, unknown>) {
     const kind = String(kindRaw || '').trim().toUpperCase();
-    if (!VALID_DOCUMENT_KINDS.has(kind)) throw new BadRequestException('Tipo de documento inválido.');
+    if (!VALID_DOCUMENT_KINDS.has(kind)) throw new BadRequestException('Tipo de arquivo inválido.');
     if (!file?.buffer?.length) throw new BadRequestException('Arquivo não recebido.');
     if (!VALID_MIMES.has(file.mimetype)) throw new BadRequestException('Envie JPG, PNG, WEBP ou PDF.');
+    if (kind === 'SELFIE' && file.mimetype === 'application/pdf') throw new BadRequestException('A selfie precisa ser uma imagem.');
     if (file.size > 12 * 1024 * 1024) throw new BadRequestException('O arquivo deve ter no máximo 12 MB.');
     const context = this.context(body.context);
     const companyId = context === 'COMPANY' ? await this.companyForUser(uid) : null;
@@ -157,10 +185,9 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
     const tempPath = `${finalPath}.tmp-${process.pid}-${Date.now()}`;
     await writeFile(tempPath, ciphertext, { mode: 0o600 });
     await rename(tempPath, finalPath);
-
     try {
       const existing = await this.dataSource.query(
-        `SELECT id,"storageKey" FROM identity_verification_documents WHERE "verificationId"=$1 AND kind=$2 LIMIT 1`,
+        `SELECT "storageKey" FROM identity_verification_documents WHERE "verificationId"=$1 AND kind=$2 LIMIT 1`,
         [verification.id, kind],
       );
       const rows = await this.dataSource.query(
@@ -173,9 +200,7 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
          RETURNING id,kind,"mimeType","originalName","sizeBytes","uploadedAt"`,
         [verification.id, kind, storageKey, file.mimetype, String(file.originalname || kind).slice(0, 240), file.size, sha256, iv.toString('base64'), tag.toString('base64')],
       );
-      if (existing[0]?.storageKey && existing[0].storageKey !== storageKey) {
-        await unlink(join(dir, existing[0].storageKey)).catch(() => undefined);
-      }
+      if (existing[0]?.storageKey && existing[0].storageKey !== storageKey) await unlink(join(dir, existing[0].storageKey)).catch(() => undefined);
       return rows[0];
     } catch (error) {
       await unlink(finalPath).catch(() => undefined);
@@ -188,23 +213,32 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
     const companyId = context === 'COMPANY' ? await this.companyForUser(uid) : null;
     const verification = await this.upsertVerification(uid, companyId, context);
     if (verification.status === 'APPROVED') return this.presentVerification(verification);
-    const documents = await this.dataSource.query(
-      `SELECT kind FROM identity_verification_documents WHERE "verificationId"=$1`,
-      [verification.id],
-    );
+
+    const users = await this.dataSource.query(`SELECT email,"whatsappVerifiedAt" FROM users WHERE id=$1 LIMIT 1`, [uid]);
+    if (!users[0]?.email) throw new BadRequestException('Sua conta precisa ter um e-mail antes da verificação. Em login social, o e-mail da conta já é suficiente.');
+    if (!users[0]?.whatsappVerifiedAt) throw new BadRequestException('Valide seu telefone/WhatsApp antes de solicitar a análise.');
+
+    const documents = await this.dataSource.query(`SELECT kind FROM identity_verification_documents WHERE "verificationId"=$1`, [verification.id]);
     const kinds = new Set(documents.map((item: any) => item.kind));
-    const missing = REQUIRED_PERSONAL_DOCUMENTS.filter((kind) => !kinds.has(kind));
-    if (missing.length) throw new BadRequestException(`Envie os documentos obrigatórios antes de solicitar análise: ${missing.join(', ')}.`);
+    const missing = REQUIRED_STANDARD_FILES.filter((kind) => !kinds.has(kind));
+    if (missing.length) throw new BadRequestException('Tire uma selfie atual antes de solicitar a análise.');
+
     if (context === 'COMPANY') {
-      if (!['EMPLOYEE','PARTNER'].includes(verification.relationship)) throw new BadRequestException('Informe se você é sócio(a) ou funcionário(a) da empresa.');
-      if (verification.relationship === 'PARTNER' && verification.declaresRepresentationPowers !== true) {
-        throw new BadRequestException('Sócio responsável precisa declarar poderes de representação ou autorização válida.');
+      const companyRows = await this.dataSource.query(`SELECT cnpj,"hasCnpj","cnpjSnapshot" FROM companies WHERE id=$1 LIMIT 1`, [companyId]);
+      const company = companyRows[0];
+      if (!company?.hasCnpj || !company?.cnpj || !company?.cnpjSnapshot) {
+        throw new BadRequestException('Consulte o CNPJ da empresa antes de solicitar a verificação empresarial.');
       }
-      const membership = await this.assertMembership(uid, companyId!);
-      if (membership.role === 'PRIMARY_ADMIN' && verification.relationship !== 'PARTNER') {
-        throw new BadRequestException('O administrador principal que valida a empresa precisa ser sócio(a)/representante.');
+      if (verification.relationship !== 'PARTNER') {
+        throw new BadRequestException('Se você não é o sócio responsável, use a opção de enviar autorização ao sócio.');
       }
+      if (verification.declaresAtLeast25Percent !== true) {
+        throw new BadRequestException('Se você não possui 25% ou mais, indique um sócio responsável para autorizar a empresa.');
+      }
+      const qsa = Array.isArray(company.cnpjSnapshot?.qsa) ? company.cnpjSnapshot.qsa : [];
+      if (qsa.length && !verification.selectedQsaName) throw new BadRequestException('Selecione qual sócio do QSA é você.');
     }
+
     if (body.accepted !== true || String(body.consentVersion || '') !== IDENTITY_COMPLIANCE_CONSENT_VERSION) {
       throw new BadRequestException('Leia e aceite a versão vigente dos termos de verificação cadastral.');
     }
@@ -214,10 +248,7 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
       [verification.id, IDENTITY_COMPLIANCE_CONSENT_VERSION],
     );
     if (context === 'COMPANY' && companyId) {
-      await this.dataSource.query(
-        `UPDATE companies SET "complianceStatus"='PENDING',"complianceSuspensionReason"=NULL WHERE id=$1 AND "complianceStatus" IN ('NOT_STARTED','GRACE','REJECTED','SUSPENDED')`,
-        [companyId],
-      );
+      await this.dataSource.query(`UPDATE companies SET "complianceStatus"='PENDING',"updatedAt"=now() WHERE id=$1 AND "complianceStatus"<>'APPROVED'`, [companyId]);
     }
     return this.presentVerification(rows[0]);
   }
@@ -227,9 +258,9 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
     const filter = status === 'ALL' ? '' : `WHERE v.status=$1`;
     const params = status === 'ALL' ? [] : [status];
     return this.dataSource.query(
-      `SELECT v.id,v."userId",v."companyId",v.context,v.relationship,v."partnerPercentage",v.status,v."submittedAt",v."createdAt",
-              COALESCE(u."socialName",u."displayName",u."fullName",u.email) AS "userName",u.email,u.phone,u."whatsappPhoneE164",
-              c.name AS "companyName",c."verificationStatus" AS "companyVerificationStatus",c."complianceStatus",c."complianceGraceDeadline",
+      `SELECT v.id,v."userId",v."companyId",v.context,v.relationship,v."declaresAtLeast25Percent",v."selectedQsaName",v.status,v."submittedAt",v."createdAt",
+              COALESCE(u."socialName",u."displayName",u."fullName",u.email) AS "userName",u.email,u.phone,u."whatsappPhoneE164",u."whatsappVerifiedAt",
+              c.name AS "companyName",c."legalName",c.cnpj,c."verificationStatus" AS "companyVerificationStatus",c."complianceStatus",
               COALESCE(dc.count,0)::int AS "documentCount"
        FROM identity_verifications v JOIN users u ON u.id=v."userId" LEFT JOIN companies c ON c.id=v."companyId"
        LEFT JOIN LATERAL (SELECT count(*) AS count FROM identity_verification_documents d WHERE d."verificationId"=v.id) dc ON true
@@ -240,9 +271,9 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
 
   async adminDetail(verificationId: string) {
     const rows = await this.dataSource.query(
-      `SELECT v.*,COALESCE(u."socialName",u."displayName",u."fullName",u.email) AS "userName",u.email,u.phone,u."whatsappPhoneE164",u.city,u.state,u.address,
-              c.name AS "companyName",c.cnpj,c.cpf,c.address AS "companyAddress",c.city AS "companyCity",c.state AS "companyState",
-              c."verificationStatus" AS "companyVerificationStatus",c."isVerified",c."complianceStatus",c."complianceGraceDeadline",
+      `SELECT v.*,COALESCE(u."socialName",u."displayName",u."fullName",u.email) AS "userName",u.email,u.phone,u."whatsappPhoneE164",u."whatsappVerifiedAt",u.city,u.state,u.address,
+              c.name AS "companyName",c."legalName",c."registryTradeName",c.cnpj,c."legalAddress",c."legalCity",c."legalState",c."legalZipCode",c."cnpjSituation",c."cnpjSnapshot",c."cnpjDataSource",c."cnpjDataCheckedAt",c."cnpjChangeAlert",
+              c.address AS "companyAddress",c.city AS "companyCity",c.state AS "companyState",c."verificationStatus" AS "companyVerificationStatus",c."isVerified",c."complianceStatus",
               m.role AS "membershipRole",m."isPartner",m.permissions
        FROM identity_verifications v JOIN users u ON u.id=v."userId" LEFT JOIN companies c ON c.id=v."companyId"
        LEFT JOIN company_memberships m ON m."companyId"=v."companyId" AND m."userId"=v."userId" AND m.status='ACTIVE'
@@ -250,13 +281,10 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
       [verificationId],
     );
     if (!rows[0]) throw new NotFoundException('Verificação não encontrada.');
-    const [documents, partners, logs] = await Promise.all([
-      this.dataSource.query(
-        `SELECT id,kind,"mimeType","originalName","sizeBytes",sha256,"uploadedAt" FROM identity_verification_documents WHERE "verificationId"=$1 ORDER BY kind`,
-        [verificationId],
-      ),
+    const [documents, auths, logs] = await Promise.all([
+      this.dataSource.query(`SELECT id,kind,"mimeType","originalName","sizeBytes",sha256,"uploadedAt" FROM identity_verification_documents WHERE "verificationId"=$1 ORDER BY kind`, [verificationId]),
       rows[0].companyId ? this.dataSource.query(
-        `SELECT id,name,email,phone,"participationPercentage","hasAdministrativePowers","isBeneficialOwner","confirmationStatus" FROM company_partner_declarations WHERE "companyId"=$1 ORDER BY "participationPercentage" DESC`,
+        `SELECT id,"partnerName","partnerEmail","partnerPhone","qsaQualification",status,"grantFullPowers",permissions,"submittedAt","reviewedAt","reviewReason" FROM company_verification_authorizations WHERE "companyId"=$1 ORDER BY "createdAt" DESC`,
         [rows[0].companyId],
       ) : Promise.resolve([]),
       this.dataSource.query(
@@ -266,30 +294,23 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
         [verificationId],
       ).catch(() => []),
     ]);
-    return { verification: this.presentVerification(rows[0]), profile: rows[0], documents, partners, accessLogs: logs };
+    return { verification: this.presentVerification(rows[0]), profile: rows[0], documents, authorizations: auths, accessLogs: logs };
   }
 
   async readDocument(actorUserId: string, documentId: string, ip?: string) {
     const rows = await this.dataSource.query(`SELECT * FROM identity_verification_documents WHERE id=$1 LIMIT 1`, [documentId]);
     const document = rows[0];
-    if (!document) throw new NotFoundException('Documento não encontrado.');
+    if (!document) throw new NotFoundException('Arquivo não encontrado.');
     const ciphertext = await readFile(join(this.vaultDir(), document.storageKey)).catch(() => null);
     if (!ciphertext) throw new NotFoundException('Arquivo criptografado não encontrado no cofre.');
     const decipher = createDecipheriv('aes-256-gcm', this.encryptionKey(), Buffer.from(document.ivBase64, 'base64'));
     decipher.setAuthTag(Buffer.from(document.tagBase64, 'base64'));
     let plaintext: Buffer;
-    try {
-      plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-    } catch {
-      throw new ServiceUnavailableException('Falha de integridade ao abrir o documento.');
-    }
-    const sha = createHash('sha256').update(plaintext).digest('hex');
-    if (sha !== document.sha256) throw new ServiceUnavailableException('O documento não passou na verificação de integridade.');
+    try { plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]); }
+    catch { throw new ServiceUnavailableException('Falha de integridade ao abrir o arquivo.'); }
+    if (createHash('sha256').update(plaintext).digest('hex') !== document.sha256) throw new ServiceUnavailableException('O arquivo não passou na verificação de integridade.');
     const ipHash = ip ? createHash('sha256').update(ip).digest('hex') : null;
-    await this.dataSource.query(
-      `INSERT INTO compliance_document_access_logs("documentId","actorUserId",action,"ipHash") VALUES ($1,$2,'VIEW',$3)`,
-      [documentId, actorUserId, ipHash],
-    ).catch(() => undefined);
+    await this.dataSource.query(`INSERT INTO compliance_document_access_logs("documentId","actorUserId",action,"ipHash") VALUES ($1,$2,'VIEW',$3)`, [documentId, actorUserId, ipHash]).catch(() => undefined);
     return { buffer: plaintext, mimeType: document.mimeType, originalName: document.originalName };
   }
 
@@ -306,23 +327,21 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
       `UPDATE identity_verifications SET status=$2,"reviewedAt"=now(),"reviewedByUserId"=$3,"reviewReason"=$4,"updatedAt"=now() WHERE id=$1 RETURNING *`,
       [verificationId, status, actorUserId, reason],
     );
+    if (decision === 'APPROVE') {
+      await this.dataSource.query(`UPDATE users SET "isVerified"=true,"updatedAt"=now() WHERE id=$1`, [current.userId]).catch(() => undefined);
+    }
     if (current.context === 'COMPANY' && current.companyId) {
       const membership = await this.assertMembership(current.userId, current.companyId).catch(() => null);
-      if (decision === 'APPROVE' && current.relationship === 'PARTNER' && membership?.role === 'PRIMARY_ADMIN') {
+      const validatesCompany = current.relationship === 'PARTNER' && current.declaresAtLeast25Percent === true && membership?.role === 'PRIMARY_ADMIN';
+      if (decision === 'APPROVE' && validatesCompany) {
+        await this.dataSource.query(`UPDATE company_memberships SET "isPartner"=true,"updatedAt"=now() WHERE "companyId"=$1 AND "userId"=$2`, [current.companyId, current.userId]);
         await this.dataSource.query(
-          `UPDATE company_memberships SET "isPartner"=true,"updatedAt"=now() WHERE "companyId"=$1 AND "userId"=$2`,
-          [current.companyId, current.userId],
-        );
-        await this.dataSource.query(
-          `UPDATE companies SET "complianceStatus"='APPROVED',"complianceGraceDeadline"=NULL,"complianceSuspendedAt"=NULL,"complianceSuspensionReason"=NULL WHERE id=$1`,
+          `UPDATE companies SET "verificationStatus"='VERIFIED',"isVerified"=true,"complianceStatus"='APPROVED',"complianceGraceDeadline"=NULL,"complianceSuspendedAt"=NULL,"complianceSuspensionReason"=NULL,"updatedAt"=now() WHERE id=$1`,
           [current.companyId],
         );
         await this.restoreCompanyResources(current.companyId);
-      } else if (decision !== 'APPROVE') {
-        const companies = await this.dataSource.query(`SELECT "complianceGraceDeadline" FROM companies WHERE id=$1 LIMIT 1`, [current.companyId]);
-        const deadline = companies[0]?.complianceGraceDeadline ? new Date(companies[0].complianceGraceDeadline).getTime() : 0;
-        await this.dataSource.query(`UPDATE companies SET "complianceStatus"='REJECTED' WHERE id=$1`, [current.companyId]);
-        if (deadline && deadline <= Date.now()) await this.suspendCompany(current.companyId, 'Validação cadastral do administrador principal não regularizada dentro do prazo.');
+      } else if (decision !== 'APPROVE' && validatesCompany) {
+        await this.dataSource.query(`UPDATE companies SET "complianceStatus"='REJECTED',"updatedAt"=now() WHERE id=$1`, [current.companyId]);
       }
     }
     return this.presentVerification(rows[0]);
@@ -331,112 +350,44 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
   async assertSellerEligible(uid: string, identity: { type?: string; company?: { id?: string } | null }) {
     if (identity?.type === 'COMPANY' && identity.company?.id) {
       const companyId = identity.company.id;
-      const companies = await this.dataSource.query(
-        `SELECT "complianceStatus","complianceGraceDeadline","verificationStatus","isVerified" FROM companies WHERE id=$1 LIMIT 1`,
-        [companyId],
-      );
+      const companies = await this.dataSource.query(`SELECT "verificationStatus","isVerified","complianceStatus" FROM companies WHERE id=$1 LIMIT 1`, [companyId]);
       const company = companies[0];
-      if (!company || !(company.isVerified || company.verificationStatus === 'VERIFIED')) {
-        throw new ForbiddenException('A empresa precisa estar verificada para publicar no Marketplace.');
+      if (!company || !(company.isVerified || company.verificationStatus === 'VERIFIED') || company.complianceStatus !== 'APPROVED') {
+        throw new ForbiddenException('A empresa precisa concluir a verificação simplificada antes de publicar no Marketplace.');
       }
-      if (company.complianceStatus === 'SUSPENDED') throw new ForbiddenException('A empresa está suspensa até regularizar a validação cadastral.');
-      const membership = await this.assertMembership(uid, companyId).catch(() => null);
-      if (!membership) throw new ForbiddenException('Seu vínculo com esta empresa não está ativo.');
-      if (membership.role === 'PRIMARY_ADMIN') {
-        if (company.complianceStatus === 'APPROVED') return true;
-        const deadline = company.complianceGraceDeadline ? new Date(company.complianceGraceDeadline).getTime() : 0;
-        if (['GRACE','PENDING','REJECTED','NOT_STARTED'].includes(company.complianceStatus) && (!deadline || deadline > Date.now())) return true;
-        throw new ForbiddenException('O administrador principal precisa regularizar a validação cadastral da empresa.');
-      }
-      const approved = await this.hasApprovedPersonalVerification(uid);
-      if (!approved) throw new ForbiddenException('Para publicar em nome da empresa, conclua sua verificação cadastral pessoal.');
+      const membership = await this.assertMembership(uid, companyId);
+      if (membership.status !== 'ACTIVE') throw new ForbiddenException('Seu vínculo com a empresa não está ativo.');
+      if (membership.permissions?.marketplace === false) throw new ForbiddenException('Seu perfil não possui permissão para publicar no Marketplace.');
       return true;
     }
-    if (!(await this.hasApprovedPersonalVerification(uid))) {
-      throw new ForbiddenException('Antes da primeira publicação, conclua a verificação cadastral com selfie, documento oficial e comprovante de endereço. A análise pode levar até 48 horas.');
+    if (!(await this.hasApprovedIdentity(uid))) {
+      throw new ForbiddenException('Antes da primeira publicação, conclua a verificação simples com selfie e telefone validado. A análise pode levar até 48 horas.');
     }
     return true;
   }
 
+  // Mantido por compatibilidade com chamadas antigas. O modelo simplificado não suspende
+  // empresas automaticamente por prazo documental.
   async enforceCompanyDeadlines() {
-    const companies = await this.dataSource.query(
-      `SELECT c.id,c."complianceGraceDeadline",m."userId" AS "primaryAdminUserId"
-       FROM companies c LEFT JOIN company_memberships m ON m."companyId"=c.id AND m.role='PRIMARY_ADMIN' AND m.status='ACTIVE'
-       WHERE c."complianceStatus" IN ('GRACE','REJECTED','NOT_STARTED')
-         AND c."complianceGraceDeadline" IS NOT NULL AND c."complianceGraceDeadline"<=now()`,
-    ).catch(() => []);
-    for (const company of companies) {
-      const submitted = company.primaryAdminUserId ? await this.dataSource.query(
-        `SELECT id,status FROM identity_verifications WHERE "userId"=$1 AND "companyId"=$2 AND context='COMPANY' AND relationship='PARTNER'
-         AND status IN ('PENDING','APPROVED') LIMIT 1`,
-        [company.primaryAdminUserId, company.id],
-      ).catch(() => []) : [];
-      if (submitted[0]?.status === 'APPROVED') {
-        await this.dataSource.query(`UPDATE companies SET "complianceStatus"='APPROVED',"complianceGraceDeadline"=NULL WHERE id=$1`, [company.id]).catch(() => undefined);
-        continue;
-      }
-      if (submitted[0]?.status === 'PENDING') {
-        await this.dataSource.query(`UPDATE companies SET "complianceStatus"='PENDING' WHERE id=$1`, [company.id]).catch(() => undefined);
-        continue;
-      }
-      await this.suspendCompany(company.id, 'Prazo de 15 dias encerrado sem envio da validação cadastral do administrador principal.').catch(() => undefined);
-    }
-    return { checked: companies.length };
-  }
-
-  private async suspendCompany(companyId: string, reason: string) {
-    await this.dataSource.transaction(async (manager) => {
-      await manager.query(
-        `INSERT INTO compliance_resource_suspensions("companyId","resourceType","resourceId","previousState")
-         SELECT $1,'CLASSIFIED_LISTING',id::text,jsonb_build_object('status',status) FROM classified_listings
-         WHERE "companyId"=$1 AND status='PUBLISHED'
-         ON CONFLICT DO NOTHING`,
-        [companyId],
-      ).catch(() => undefined);
-      await manager.query(`UPDATE classified_listings SET status='PAUSED',"updatedAt"=now() WHERE "companyId"=$1 AND status='PUBLISHED'`, [companyId]).catch(() => undefined);
-      await manager.query(
-        `INSERT INTO compliance_resource_suspensions("companyId","resourceType","resourceId","previousState")
-         SELECT $1,'JOB',id::text,jsonb_build_object('active',active) FROM jobs WHERE "companyId"=$1 AND active=true
-         ON CONFLICT DO NOTHING`,
-        [companyId],
-      ).catch(() => undefined);
-      await manager.query(`UPDATE jobs SET active=false WHERE "companyId"=$1 AND active=true`, [companyId]).catch(() => undefined);
-      await manager.query(
-        `INSERT INTO compliance_resource_suspensions("companyId","resourceType","resourceId","previousState")
-         SELECT $1,'COMPANY_PAGE',"companyId"::text,jsonb_build_object('status',status) FROM company_pages WHERE "companyId"=$1 AND status='PUBLISHED'
-         ON CONFLICT DO NOTHING`,
-        [companyId],
-      ).catch(() => undefined);
-      await manager.query(`UPDATE company_pages SET status='DRAFT',"updatedAt"=now() WHERE "companyId"=$1 AND status='PUBLISHED'`, [companyId]).catch(() => undefined);
-      await manager.query(
-        `UPDATE companies SET "complianceStatus"='SUSPENDED',"complianceSuspendedAt"=now(),"complianceSuspensionReason"=$2 WHERE id=$1`,
-        [companyId, reason],
-      );
-    });
+    return { checked: 0, disabledBySimplifiedFlow: true };
   }
 
   private async restoreCompanyResources(companyId: string) {
-    const rows = await this.dataSource.query(
-      `SELECT * FROM compliance_resource_suspensions WHERE "companyId"=$1 AND "restoredAt" IS NULL ORDER BY "suspendedAt" ASC`,
-      [companyId],
-    ).catch(() => []);
+    const rows = await this.dataSource.query(`SELECT * FROM compliance_resource_suspensions WHERE "companyId"=$1 AND "restoredAt" IS NULL ORDER BY "suspendedAt" ASC`, [companyId]).catch(() => []);
     for (const row of rows) {
       if (row.resourceType === 'CLASSIFIED_LISTING' && row.previousState?.status === 'PUBLISHED') {
         await this.dataSource.query(`UPDATE classified_listings SET status='PUBLISHED',"updatedAt"=now() WHERE id=$1::uuid AND status='PAUSED'`, [row.resourceId]).catch(() => undefined);
       } else if (row.resourceType === 'JOB' && row.previousState?.active === true) {
         await this.dataSource.query(`UPDATE jobs SET active=true WHERE id=$1::uuid AND active=false AND ("deadlineDate" IS NULL OR "deadlineDate">=CURRENT_DATE)`, [row.resourceId]).catch(() => undefined);
       } else if (row.resourceType === 'COMPANY_PAGE' && row.previousState?.status === 'PUBLISHED') {
-        await this.dataSource.query(`UPDATE company_pages SET status='PUBLISHED',"updatedAt"=now() WHERE "companyId"=$1::uuid AND status='DRAFT' AND published IS NOT NULL`, [row.resourceId]).catch(() => undefined);
+        await this.dataSource.query(`UPDATE company_pages SET status='PUBLISHED',"updatedAt"=now() WHERE "companyId"=$1::uuid AND status='DRAFT'`, [row.resourceId]).catch(() => undefined);
       }
       await this.dataSource.query(`UPDATE compliance_resource_suspensions SET "restoredAt"=now() WHERE id=$1`, [row.id]).catch(() => undefined);
     }
   }
 
-  private async hasApprovedPersonalVerification(uid: string) {
-    const rows = await this.dataSource.query(
-      `SELECT id FROM identity_verifications WHERE "userId"=$1 AND context='PERSONAL' AND status='APPROVED' LIMIT 1`,
-      [uid],
-    ).catch(() => []);
+  private async hasApprovedIdentity(uid: string) {
+    const rows = await this.dataSource.query(`SELECT id FROM identity_verifications WHERE "userId"=$1 AND status='APPROVED' LIMIT 1`, [uid]).catch(() => []);
     return Boolean(rows[0]);
   }
 
@@ -445,8 +396,7 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
       `INSERT INTO identity_verifications("userId","companyId",context,relationship)
        VALUES ($1,$2,$3,$4)
        ON CONFLICT ("userId",COALESCE("companyId",'00000000-0000-0000-0000-000000000000'::uuid),context)
-       DO UPDATE SET "updatedAt"=identity_verifications."updatedAt"
-       RETURNING *`,
+       DO UPDATE SET "updatedAt"=identity_verifications."updatedAt" RETURNING *`,
       [uid, companyId, context, context === 'PERSONAL' ? 'PERSONAL' : 'EMPLOYEE'],
     );
     return rows[0];
@@ -461,29 +411,22 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
   }
 
   private async assertMembership(uid: string, companyId: string) {
-    const rows = await this.dataSource.query(
-      `SELECT * FROM company_memberships WHERE "companyId"=$1 AND "userId"=$2 AND status='ACTIVE' LIMIT 1`,
+    const rows = await this.dataSource.query(`SELECT * FROM company_memberships WHERE "companyId"=$1 AND "userId"=$2 AND status='ACTIVE' LIMIT 1`, [companyId, uid]).catch(() => []);
+    if (rows[0]) return rows[0];
+    const companies = await this.dataSource.query(`SELECT "ownerId" FROM companies WHERE id=$1 LIMIT 1`, [companyId]);
+    if (companies[0]?.ownerId !== uid) throw new ForbiddenException('Seu vínculo com a empresa não está ativo.');
+    const inserted = await this.dataSource.query(
+      `INSERT INTO company_memberships("companyId","userId",role,"isPartner",permissions,status)
+       VALUES ($1,$2,'PRIMARY_ADMIN',false,'{"companyProfile":true,"recruitment":true,"marketplace":true,"finance":true,"team":true}'::jsonb,'ACTIVE')
+       ON CONFLICT ("companyId","userId") DO UPDATE SET status='ACTIVE' RETURNING *`,
       [companyId, uid],
-    ).catch(() => []);
-    if (!rows[0]) {
-      const companies = await this.dataSource.query(`SELECT "ownerId" FROM companies WHERE id=$1 LIMIT 1`, [companyId]);
-      if (companies[0]?.ownerId === uid) {
-        const inserted = await this.dataSource.query(
-          `INSERT INTO company_memberships("companyId","userId",role,"isPartner",permissions,status)
-           VALUES ($1,$2,'PRIMARY_ADMIN',false,'{"companyProfile":true,"recruitment":true,"marketplace":true,"finance":true,"team":true}'::jsonb,'ACTIVE')
-           ON CONFLICT ("companyId","userId") DO UPDATE SET status='ACTIVE' RETURNING *`,
-          [companyId, uid],
-        );
-        return inserted[0];
-      }
-      throw new ForbiddenException('Seu vínculo com a empresa não está ativo.');
-    }
-    return rows[0];
+    );
+    return inserted[0];
   }
 
   private async assertPrimaryAdmin(uid: string, companyId: string) {
     const membership = await this.assertMembership(uid, companyId);
-    if (membership.role !== 'PRIMARY_ADMIN') throw new ForbiddenException('Somente o administrador principal pode alterar a declaração societária.');
+    if (membership.role !== 'PRIMARY_ADMIN') throw new ForbiddenException('Somente o administrador principal pode alterar esses dados.');
     return membership;
   }
 
@@ -505,6 +448,10 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
     return Number(number.toFixed(4));
   }
 
+  private normalizeName(value: unknown) {
+    return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+  }
+
   private presentVerification(row: any) {
     return {
       id: row.id,
@@ -512,8 +459,9 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
       companyId: row.companyId || null,
       context: row.context,
       relationship: row.relationship,
-      partnerPercentage: row.partnerPercentage == null ? null : Number(row.partnerPercentage),
-      declaresRepresentationPowers: row.declaresRepresentationPowers === true,
+      selectedQsaName: row.selectedQsaName || null,
+      selectedQsaQualification: row.selectedQsaQualification || null,
+      declaresAtLeast25Percent: row.declaresAtLeast25Percent === true,
       status: row.status,
       consentVersion: row.consentVersion || null,
       consentAcceptedAt: row.consentAcceptedAt || null,
@@ -532,7 +480,7 @@ export class IdentityComplianceService implements OnModuleInit, OnModuleDestroy 
 
   private encryptionKey() {
     const raw = String(process.env.IDENTITY_VAULT_ENCRYPTION_KEY || '').trim();
-    if (!raw) throw new ServiceUnavailableException('IDENTITY_VAULT_ENCRYPTION_KEY não configurada. Gere uma chave aleatória de 32 bytes antes de habilitar KYC.');
+    if (!raw) throw new ServiceUnavailableException('IDENTITY_VAULT_ENCRYPTION_KEY não configurada. Gere uma chave aleatória de 32 bytes antes de habilitar verificação por selfie.');
     const candidates = [Buffer.from(raw, 'base64'), Buffer.from(raw, 'hex')];
     const key = candidates.find((item) => item.length === 32);
     if (!key) throw new ServiceUnavailableException('IDENTITY_VAULT_ENCRYPTION_KEY precisa representar exatamente 32 bytes em base64 ou hex.');
