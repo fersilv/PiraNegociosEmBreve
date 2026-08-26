@@ -17,24 +17,36 @@ export class CompanyVerificationAuthorizationService {
   ) {}
 
   async create(uid: string, body: Record<string, unknown>) {
-    const users = await this.dataSource.query(`SELECT "companyId",COALESCE("socialName","displayName","fullName",email) AS name FROM users WHERE id=$1 LIMIT 1`, [uid]);
+    const users = await this.dataSource.query(
+      `SELECT "companyId",COALESCE("socialName","displayName","fullName",email) AS name FROM users WHERE id=$1 LIMIT 1`,
+      [uid],
+    );
     const companyId = users[0]?.companyId;
     if (!companyId) throw new BadRequestException('Sua conta não está vinculada a uma empresa.');
     const membership = await this.primaryAdmin(uid, companyId);
-    const companies = await this.dataSource.query(`SELECT id,name,"legalName","cnpjSnapshot" FROM companies WHERE id=$1 LIMIT 1`, [companyId]);
+    const companies = await this.dataSource.query(
+      `SELECT id,name,"legalName","cnpjSnapshot" FROM companies WHERE id=$1 LIMIT 1`,
+      [companyId],
+    );
     const company = companies[0];
     if (!company?.cnpjSnapshot) throw new BadRequestException('Consulte e confirme o CNPJ antes de solicitar autorização ao sócio responsável.');
 
     const partnerName = String(body.partnerName || '').trim().slice(0, 180);
     const partnerEmail = String(body.partnerEmail || '').trim().toLowerCase().slice(0, 255);
-    const partnerPhone = String(body.partnerPhone || '').trim().slice(0, 40) || null;
-    if (!partnerName || !/^\S+@\S+\.\S+$/.test(partnerEmail)) throw new BadRequestException('Informe nome completo e e-mail válido do sócio responsável.');
+    const partnerPhone = String(body.partnerPhone || '').trim().slice(0, 40);
+    const phoneDigits = partnerPhone.replace(/\D/g, '');
+    if (!partnerName || !/^\S+@\S+\.\S+$/.test(partnerEmail) || phoneDigits.length < 10) {
+      throw new BadRequestException('Informe nome completo, e-mail válido e telefone/WhatsApp do sócio responsável.');
+    }
     const qsa = Array.isArray(company.cnpjSnapshot?.qsa) ? company.cnpjSnapshot.qsa : [];
     const qsaMember = qsa.find((item: any) => this.normalizeName(item?.name) === this.normalizeName(partnerName));
     if (!qsaMember) throw new BadRequestException('Selecione um nome que conste no QSA retornado pela consulta do CNPJ.');
 
     const grantFullPowers = body.grantFullPowers !== false;
     const permissions = grantFullPowers ? FULL_PERMISSIONS : this.permissions(body.permissions);
+    if (!grantFullPowers && !Object.values(permissions).some(Boolean)) {
+      throw new BadRequestException('Selecione pelo menos uma permissão para o administrador indicado.');
+    }
     const token = randomBytes(32).toString('base64url');
     const tokenHash = createHash('sha256').update(token).digest('hex');
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -63,7 +75,12 @@ export class CompanyVerificationAuthorizationService {
       `UPDATE companies SET "complianceStatus"='PENDING',"updatedAt"=now() WHERE id=$1 AND "complianceStatus"<>'APPROVED'`,
       [companyId],
     ).catch(() => undefined);
-    return { ...rows[0], inviteUrl: mail.status === 'NOT_CONFIGURED' ? inviteUrl : undefined, emailStatus: mail.status, membershipPermissions: membership.permissions };
+    return {
+      ...rows[0],
+      inviteUrl: mail.status === 'NOT_CONFIGURED' ? inviteUrl : undefined,
+      emailStatus: mail.status,
+      membershipPermissions: membership.permissions,
+    };
   }
 
   async publicInfo(token: string) {
@@ -82,6 +99,7 @@ export class CompanyVerificationAuthorizationService {
       status: current.status,
       partnerName: current.partnerName,
       partnerEmailMasked: this.maskEmail(current.partnerEmail),
+      partnerPhoneMasked: this.maskPhone(current.partnerPhone),
       qsaQualification: current.qsaQualification || null,
       grantFullPowers: current.grantFullPowers !== false,
       permissions: current.permissions || {},
@@ -175,10 +193,24 @@ export class CompanyVerificationAuthorizationService {
       [id],
     );
     if (!rows[0]) throw new NotFoundException('Autorização não encontrada.');
-    return { ...rows[0], selfieAvailable: Boolean(rows[0].selfieStorageKey), selfieStorageKey: undefined, selfieIvBase64: undefined, selfieTagBase64: undefined, selfieSha256: undefined };
+    const logs = await this.dataSource.query(
+      `SELECT l.action,l."createdAt",COALESCE(u."displayName",u."fullName",u.email) AS "actorName"
+       FROM company_verification_authorization_access_logs l LEFT JOIN users u ON u.id=l."actorUserId"
+       WHERE l."authorizationId"=$1 ORDER BY l."createdAt" DESC LIMIT 100`,
+      [id],
+    ).catch(() => []);
+    return {
+      ...rows[0],
+      accessLogs: logs,
+      selfieAvailable: Boolean(rows[0].selfieStorageKey),
+      selfieStorageKey: undefined,
+      selfieIvBase64: undefined,
+      selfieTagBase64: undefined,
+      selfieSha256: undefined,
+    };
   }
 
-  async adminSelfie(id: string) {
+  async adminSelfie(id: string, actorUid?: string, ip?: string) {
     const rows = await this.dataSource.query(`SELECT * FROM company_verification_authorizations WHERE id=$1 LIMIT 1`, [id]);
     const row = rows[0];
     if (!row?.selfieStorageKey) throw new NotFoundException('Selfie não encontrada.');
@@ -186,8 +218,20 @@ export class CompanyVerificationAuthorizationService {
     if (!ciphertext) throw new NotFoundException('Selfie criptografada não encontrada.');
     const decipher = createDecipheriv('aes-256-gcm', this.encryptionKey(), Buffer.from(row.selfieIvBase64, 'base64'));
     decipher.setAuthTag(Buffer.from(row.selfieTagBase64, 'base64'));
-    const buffer = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    } catch {
+      throw new ServiceUnavailableException('Falha de integridade ao abrir a selfie.');
+    }
     if (createHash('sha256').update(buffer).digest('hex') !== row.selfieSha256) throw new ServiceUnavailableException('Falha de integridade da selfie.');
+    if (actorUid) {
+      const ipHash = ip ? createHash('sha256').update(String(ip)).digest('hex') : null;
+      await this.dataSource.query(
+        `INSERT INTO company_verification_authorization_access_logs("authorizationId","actorUserId",action,"ipHash") VALUES ($1,$2,'VIEW_SELFIE',$3)`,
+        [id, actorUid, ipHash],
+      ).catch(() => undefined);
+    }
     return { buffer, mimeType: row.selfieMimeType || 'image/jpeg', originalName: row.selfieOriginalName || 'selfie.jpg' };
   }
 
@@ -215,12 +259,24 @@ export class CompanyVerificationAuthorizationService {
            "complianceSuspendedAt"=NULL,"complianceSuspensionReason"=NULL,"updatedAt"=now() WHERE id=$1`,
           [row.companyId],
         );
+        await manager.query(
+          `INSERT INTO company_verification_authorization_access_logs("authorizationId","actorUserId",action) VALUES ($1,$2,'REVIEW')`,
+          [id, actorUid],
+        ).catch(() => undefined);
       });
     } else {
       await this.dataSource.query(
         `UPDATE company_verification_authorizations SET status='REJECTED',"reviewedAt"=now(),"reviewedByUserId"=$2,"reviewReason"=$3,"updatedAt"=now() WHERE id=$1`,
         [id, actorUid, reason],
       );
+      await this.dataSource.query(
+        `UPDATE companies SET "complianceStatus"='REJECTED',"verificationStatus"='REJECTED',"isVerified"=false,"updatedAt"=now() WHERE id=$1`,
+        [row.companyId],
+      ).catch(() => undefined);
+      await this.dataSource.query(
+        `INSERT INTO company_verification_authorization_access_logs("authorizationId","actorUserId",action) VALUES ($1,$2,'REVIEW')`,
+        [id, actorUid],
+      ).catch(() => undefined);
     }
     return this.adminDetail(id);
   }
@@ -244,7 +300,10 @@ export class CompanyVerificationAuthorizationService {
   }
 
   private async primaryAdmin(uid: string, companyId: string) {
-    const rows = await this.dataSource.query(`SELECT * FROM company_memberships WHERE "companyId"=$1 AND "userId"=$2 AND role='PRIMARY_ADMIN' AND status='ACTIVE' LIMIT 1`, [companyId, uid]);
+    const rows = await this.dataSource.query(
+      `SELECT * FROM company_memberships WHERE "companyId"=$1 AND "userId"=$2 AND role='PRIMARY_ADMIN' AND status='ACTIVE' LIMIT 1`,
+      [companyId, uid],
+    );
     if (!rows[0]) throw new ForbiddenException('Somente o administrador principal pode solicitar autorização ao sócio responsável.');
     return rows[0];
   }
@@ -268,6 +327,12 @@ export class CompanyVerificationAuthorizationService {
     const [name, domain] = String(value || '').split('@');
     if (!domain) return '***';
     return `${name?.slice(0, 2) || '*'}***@${domain}`;
+  }
+
+  private maskPhone(value: string) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (digits.length < 4) return '***';
+    return `${'*'.repeat(Math.max(4, digits.length - 4))}${digits.slice(-4)}`;
   }
 
   private vaultDir() {
