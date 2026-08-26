@@ -68,7 +68,17 @@ patch('pages/ClassifiedsAuctionsLivePageV2.tsx', (input) => {
     if (!source.includes(bidAnchor)) throw new Error('Scheduled room bid gate anchor missing.');
     source = source.replace(bidAnchor, bidReplacement);
   }
-  if (!source.includes('Próximos leilões') || !source.includes('Este leilão está agendado')) throw new Error('Scheduled auction public UI patch incomplete.');
+  if (!source.includes('const imageScheduled =')) {
+    const imageOld = `function AuctionImage({ auction, large = false }: { auction: PublicClassifiedAuction; large?: boolean }) {\n  return <div className={\`relative overflow-hidden bg-[#201410] \${large ? 'min-h-[320px] sm:min-h-[430px]' : 'aspect-[1.35/1]'}\`}>{auction.image ? <img src={auction.image} alt={auction.title} className="absolute inset-0 h-full w-full object-cover" /> : <div className="absolute inset-0 flex items-center justify-center text-white/15"><ImageIcon className="h-14 w-14" /></div>}<div className="absolute inset-0 bg-gradient-to-t from-[#120a08]/85 via-transparent to-black/10" /><span className="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full bg-[#ff633c] px-3 py-1.5 text-[8px] font-black uppercase tracking-[.12em]"><span className="h-1.5 w-1.5 rounded-full bg-white" /> Ao vivo</span></div>;\n}`;
+    const imageNew = `function AuctionImage({ auction, large = false }: { auction: PublicClassifiedAuction; large?: boolean }) {\n  const imageScheduled = Boolean(auction.scheduled || new Date(auction.startsAt).getTime() > Date.now());\n  return <div className={\`relative overflow-hidden bg-[#201410] \${large ? 'min-h-[320px] sm:min-h-[430px]' : 'aspect-[1.35/1]'}\`}>{auction.image ? <img src={auction.image} alt={auction.title} className="absolute inset-0 h-full w-full object-cover" /> : <div className="absolute inset-0 flex items-center justify-center text-white/15"><ImageIcon className="h-14 w-14" /></div>}<div className="absolute inset-0 bg-gradient-to-t from-[#120a08]/85 via-transparent to-black/10" /><span className={\`absolute left-4 top-4 inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[8px] font-black uppercase tracking-[.12em] \${imageScheduled ? 'bg-blue-500 text-white' : 'bg-[#ff633c] text-white'}\`}><span className="h-1.5 w-1.5 rounded-full bg-white" /> {imageScheduled ? 'Agendado' : 'Ao vivo'}</span></div>;\n}`;
+    if (!source.includes(imageOld)) throw new Error('Auction image state anchor missing.');
+    source = source.replace(imageOld, imageNew);
+  }
+  source = source.replace(
+    `<div className="rounded-2xl border border-white/10 bg-white/[.04] p-4 text-sm font-black text-white/60">Este leilão encerrou. O resultado final será confirmado pelo servidor.</div>`,
+    `<div className="rounded-2xl border border-white/10 bg-white/[.04] p-4 text-sm font-black text-white/60"><p>Este leilão encerrou. O resultado final foi registrado pelo servidor.</p>{loggedIn && <Link to={\`/classificados/gestao/leiloes/\${auction.id}\`} className="mt-3 inline-flex rounded-xl bg-white px-4 py-2.5 text-xs font-black text-[#21130f]">Ver arrematação e negociação</Link>}</div>`,
+  );
+  if (!source.includes('Próximos leilões') || !source.includes('Este leilão está agendado') || !source.includes('imageScheduled') || !source.includes('Ver arrematação e negociação')) throw new Error('Scheduled auction public UI patch incomplete.');
   return source;
 });
 
