@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { ClassifiedsMarketplacePaymentsService } from './classifieds-marketplace-payments.service';
+import { ClassifiedsReceiptPreferencesService } from './classifieds-receipt-preferences.service';
 import { ClassifiedsSalesService } from './classifieds-sales.service';
 
 @Controller('classifieds')
@@ -9,6 +10,7 @@ export class ClassifiedsSalesController {
   constructor(
     private readonly sales: ClassifiedsSalesService,
     private readonly marketplacePayments: ClassifiedsMarketplacePaymentsService,
+    private readonly receiptPreferences: ClassifiedsReceiptPreferencesService,
   ) {}
 
   @Get('me/commerce/status')
@@ -49,6 +51,16 @@ export class ClassifiedsSalesController {
   @Get('me/payments/connections')
   paymentConnections(@Req() req: any) {
     return this.marketplacePayments.connections(req.user.uid);
+  }
+
+  @Get('me/payments/receipt-preferences')
+  receiptSettings(@Req() req: any) {
+    return this.receiptPreferences.get(req.user.uid);
+  }
+
+  @Patch('me/payments/receipt-preferences')
+  updateReceiptSettings(@Req() req: any, @Body() body: Record<string, unknown>) {
+    return this.receiptPreferences.update(req.user.uid, body || {});
   }
 
   @Post('me/payments/mercado-pago/oauth/start')
