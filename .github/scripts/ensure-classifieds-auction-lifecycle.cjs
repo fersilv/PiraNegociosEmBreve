@@ -62,7 +62,7 @@ patch('backend/src/classifieds/classifieds-auction.service.ts', (input) => {
     source = source.replace(anchor, addition);
   }
 
-  if (!source.includes('MAX_SCHEDULE_AHEAD_MS') || !source.includes('body.startsAt')) {
+  if (!source.includes('MAX_SCHEDULE_AHEAD_MS')) {
     throw new Error('Auction lifecycle constants were not prepared.');
   }
 
@@ -95,7 +95,7 @@ patch('backend/src/classifieds/classifieds-auction.service.ts', (input) => {
     source = source.replace(oldBroadcast, newBroadcast);
   }
 
-  if (!source.includes('quarentena de leilão') || !source.includes('clockStarted') || !source.includes('snapshot = {')) {
+  if (!source.includes('quarentena de leilão') || !source.includes('body.startsAt') || !source.includes('clockStarted') || !source.includes('snapshot = {')) {
     throw new Error('Auction lifecycle patch incomplete.');
   }
   return source;
