@@ -4,6 +4,16 @@ import { DataSource } from 'typeorm';
 import { PaymentProviderVaultService } from '../payments/payment-provider-vault.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
 
+type MercadoPagoSellerCredentials = {
+  accessToken: string;
+  refreshToken?: string | null;
+  publicKey?: string | null;
+  tokenType?: string | null;
+  userId?: string | null;
+  scope?: string | null;
+  obtainedAt: string;
+};
+
 @Injectable()
 export class ClassifiedsMarketplacePaymentsService {
   constructor(
@@ -27,6 +37,9 @@ export class ClassifiedsMarketplacePaymentsService {
     const clientId = this.env('MERCADO_PAGO_MARKETPLACE_CLIENT_ID');
     const redirectUri = this.env('MERCADO_PAGO_MARKETPLACE_REDIRECT_URI');
     const state = randomBytes(32).toString('base64url');
+    await this.dataSource.query(
+      `DELETE FROM company_classified_payment_oauth_states WHERE "expiresAt" <= now() OR "usedAt" IS NOT NULL`,
+    ).catch(() => undefined);
     await this.dataSource.query(
       `INSERT INTO company_classified_payment_oauth_states
        ("companyId","userId",provider,"stateHash","expiresAt")
@@ -60,7 +73,7 @@ export class ClassifiedsMarketplacePaymentsService {
     const token = await this.exchangeMercadoPagoCode(code);
     const expiresIn = Number(token.expires_in || 0);
     const tokenExpiresAt = expiresIn > 0 ? new Date(Date.now() + expiresIn * 1000) : null;
-    const encrypted = this.vault.encrypt({
+    const credentials: MercadoPagoSellerCredentials = {
       accessToken: String(token.access_token || ''),
       refreshToken: token.refresh_token ? String(token.refresh_token) : null,
       publicKey: token.public_key ? String(token.public_key) : null,
@@ -68,8 +81,9 @@ export class ClassifiedsMarketplacePaymentsService {
       userId: token.user_id == null ? null : String(token.user_id),
       scope: token.scope ? String(token.scope) : null,
       obtainedAt: new Date().toISOString(),
-    });
-    if (!String(token.access_token || '')) throw new ServiceUnavailableException('Mercado Pago não retornou credencial válida.');
+    };
+    if (!credentials.accessToken) throw new ServiceUnavailableException('Mercado Pago não retornou credencial válida.');
+    const encrypted = this.vault.encrypt(credentials as unknown as Record<string, unknown>);
 
     await this.dataSource.transaction(async (manager) => {
       await manager.query(
@@ -81,21 +95,100 @@ export class ClassifiedsMarketplacePaymentsService {
            "encryptedCredentials"=EXCLUDED."encryptedCredentials",scopes=EXCLUDED.scopes,
            "tokenExpiresAt"=EXCLUDED."tokenExpiresAt","connectedByUserId"=EXCLUDED."connectedByUserId",
            "connectedAt"=now(),"lastRefreshedAt"=now(),"updatedAt"=now()`,
-        [identity.company!.id, token.user_id == null ? null : String(token.user_id), encrypted, token.scope || null, tokenExpiresAt, uid],
+        [identity.company!.id, credentials.userId, encrypted, credentials.scope, tokenExpiresAt, uid],
       );
       await manager.query(`UPDATE company_classified_payment_oauth_states SET "usedAt" = now() WHERE id = $1`, [rows[0].id]);
     });
-    return { connected: true, provider: 'MERCADO_PAGO', externalUserId: token.user_id == null ? null : String(token.user_id), tokenExpiresAt };
+    return { connected: true, provider: 'MERCADO_PAGO', externalUserId: credentials.userId, tokenExpiresAt };
   }
 
   async disconnectMercadoPago(uid: string) {
     const identity = await this.assertVerifiedCompany(uid);
-    await this.dataSource.query(
-      `UPDATE company_classified_payment_connections SET status='REVOKED',"updatedAt"=now()
-       WHERE "companyId"=$1 AND provider='MERCADO_PAGO'`,
-      [identity.company!.id],
-    );
+    const companyId = identity.company!.id;
+    await this.dataSource.transaction(async (manager) => {
+      await manager.query(
+        `UPDATE company_classified_payment_connections SET status='REVOKED',"updatedAt"=now()
+         WHERE "companyId"=$1 AND provider='MERCADO_PAGO'`,
+        [companyId],
+      );
+      await manager.query(
+        `UPDATE classified_listings
+         SET "commerceConfig" = COALESCE("commerceConfig", '{}'::jsonb)
+           || jsonb_build_object(
+                'onlineCheckout',
+                COALESCE("commerceConfig"->'onlineCheckout', '{}'::jsonb) || '{"enabled":false}'::jsonb
+              ),
+             "updatedAt" = now()
+         WHERE "companyId" = $1
+           AND COALESCE(("commerceConfig"->'onlineCheckout'->>'enabled')::boolean, false) = true`,
+        [companyId],
+      );
+    });
     return { disconnected: true };
+  }
+
+  async sellerMercadoPagoCredentials(companyId: string) {
+    const rows = await this.dataSource.query(
+      `SELECT * FROM company_classified_payment_connections
+       WHERE "companyId" = $1 AND provider = 'MERCADO_PAGO' AND status = 'CONNECTED'
+       LIMIT 1`,
+      [companyId],
+    );
+    const connection = rows[0];
+    if (!connection) throw new BadRequestException('A empresa não possui Mercado Pago conectado.');
+    let credentials = this.vault.decrypt<MercadoPagoSellerCredentials>(connection.encryptedCredentials);
+    if (!credentials.accessToken) throw new BadRequestException('A conexão Mercado Pago está sem access token válido.');
+
+    const expiresAt = connection.tokenExpiresAt ? new Date(connection.tokenExpiresAt).getTime() : 0;
+    const refreshWindow = 7 * 24 * 60 * 60 * 1000;
+    if (expiresAt && expiresAt - Date.now() <= refreshWindow) {
+      if (!credentials.refreshToken) {
+        await this.markConnectionError(connection.id);
+        throw new BadRequestException('A autorização Mercado Pago precisa ser renovada pela empresa.');
+      }
+      credentials = await this.refreshMercadoPago(connection, credentials);
+    }
+    return credentials;
+  }
+
+  private async refreshMercadoPago(connection: any, current: MercadoPagoSellerCredentials) {
+    const response = await fetch('https://api.mercadopago.com/oauth/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+      body: new URLSearchParams({
+        client_id: this.env('MERCADO_PAGO_MARKETPLACE_CLIENT_ID'),
+        client_secret: this.env('MERCADO_PAGO_MARKETPLACE_CLIENT_SECRET'),
+        grant_type: 'refresh_token',
+        refresh_token: String(current.refreshToken || ''),
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      await this.markConnectionError(connection.id);
+      throw new ServiceUnavailableException(`Não foi possível renovar a autorização Mercado Pago (${response.status}).`);
+    }
+    let token: any;
+    try { token = JSON.parse(text || '{}'); } catch { throw new ServiceUnavailableException('Resposta de renovação inválida do Mercado Pago.'); }
+    const refreshed: MercadoPagoSellerCredentials = {
+      accessToken: String(token.access_token || current.accessToken || ''),
+      refreshToken: token.refresh_token ? String(token.refresh_token) : current.refreshToken || null,
+      publicKey: token.public_key ? String(token.public_key) : current.publicKey || null,
+      tokenType: token.token_type ? String(token.token_type) : current.tokenType || null,
+      userId: token.user_id == null ? current.userId || null : String(token.user_id),
+      scope: token.scope ? String(token.scope) : current.scope || null,
+      obtainedAt: new Date().toISOString(),
+    };
+    const expiresIn = Number(token.expires_in || 0);
+    const tokenExpiresAt = expiresIn > 0 ? new Date(Date.now() + expiresIn * 1000) : null;
+    await this.dataSource.query(
+      `UPDATE company_classified_payment_connections
+       SET "encryptedCredentials"=$2,"externalUserId"=$3,scopes=$4,"tokenExpiresAt"=$5,
+           "lastRefreshedAt"=now(),status='CONNECTED',"updatedAt"=now()
+       WHERE id=$1`,
+      [connection.id, this.vault.encrypt(refreshed as unknown as Record<string, unknown>), refreshed.userId, refreshed.scope, tokenExpiresAt],
+    );
+    return refreshed;
   }
 
   private async exchangeMercadoPagoCode(code: string) {
@@ -114,6 +207,13 @@ export class ClassifiedsMarketplacePaymentsService {
     const text = await response.text();
     if (!response.ok) throw new ServiceUnavailableException(`Mercado Pago recusou a conexão (${response.status}).`);
     try { return JSON.parse(text || '{}'); } catch { throw new ServiceUnavailableException('Resposta OAuth inválida do Mercado Pago.'); }
+  }
+
+  private async markConnectionError(id: string) {
+    await this.dataSource.query(
+      `UPDATE company_classified_payment_connections SET status='ERROR',"updatedAt"=now() WHERE id=$1`,
+      [id],
+    ).catch(() => undefined);
   }
 
   private async assertVerifiedCompany(uid: string) {
