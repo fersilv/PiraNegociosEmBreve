@@ -17,6 +17,7 @@ import {
 import { ResumeBuilderPage } from "./ResumeBuilderPage";
 import { useAuth } from "../contexts/AuthContext";
 import { api } from "../lib/api";
+import { PaymentCheckoutModal } from "../components/payments/PaymentCheckoutModal";
 
 type AiAction = "improve" | "apply" | null;
 
@@ -62,6 +63,7 @@ export function ResumeBuilderStudio() {
   const [proposal, setProposal] = useState<any>(null);
   const [selectedChanges, setSelectedChanges] = useState<Set<string>>(new Set());
   const [scoreResult, setScoreResult] = useState<ScoreResult | null>(null);
+  const [paymentProduct, setPaymentProduct] = useState<any | null>(null);
 
   const aiBusy = Boolean(aiAction);
   const progressMessages = aiAction ? AI_PROGRESS[aiAction] : [];
@@ -99,14 +101,18 @@ export function ResumeBuilderStudio() {
       setSelectedChanges(new Set(ids));
     } catch (error: any) {
       if (error?.response?.data?.code === "PAYMENT_REQUIRED") {
-        navigate("/user/pagamentos");
+        setPaymentProduct(error.response.data.product || {
+          code: error.response.data.productCode || "RESUME_AI_IMPROVEMENT",
+          name: "Otimização profissional com IA",
+          description: "Crédito para preparar uma nova proposta de melhoria do currículo.",
+        });
         return;
       }
       setAiError(apiMessage(error, "Não foi possível preparar as melhorias agora."));
     } finally {
       setAiAction(null);
     }
-  }, [aiBusy, navigate, profile]);
+  }, [aiBusy, profile]);
 
   const applyProposal = useCallback(async () => {
     if (!proposal?.id || selectedChanges.size === 0 || aiBusy) return;
@@ -412,6 +418,20 @@ export function ResumeBuilderStudio() {
           </button>
         </div>
       )}
+
+      <PaymentCheckoutModal
+        open={Boolean(paymentProduct)}
+        onClose={() => setPaymentProduct(null)}
+        title={paymentProduct?.name || "Otimização profissional com IA"}
+        description={paymentProduct?.description || "Adquira um crédito para continuar sem sair do seu currículo."}
+        amountCents={Number(paymentProduct?.effectivePriceCents ?? paymentProduct?.priceCents ?? 0)}
+        confirmLabel="Gerar Pix e continuar"
+        createCheckout={() => api.post("/payments/pix", { productCode: paymentProduct?.code || "RESUME_AI_IMPROVEMENT" })}
+        onCompleted={async () => {
+          setPaymentProduct(null);
+          window.setTimeout(() => void requestImprovement(), 0);
+        }}
+      />
     </div>
   );
 }
@@ -511,7 +531,6 @@ function ResumeStudioTheme() {
       .resume-studio-title { margin-top:2px; max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:Georgia,serif; font-size:22px; line-height:1.1; font-weight:800; color:#241914; }
       .resume-studio-title--mobile { display:none; }
 
-      /* Mantido como ponte interna para o widget de qualificação. Nunca aparece visualmente. */
       .resume-studio-ai-button { display:none !important; }
 
       .resume-studio-body > .min-h-screen.bg-stone-50.flex.flex-col > header { display:none !important; }
@@ -692,7 +711,6 @@ function ResumeStudioTheme() {
         .resume-studio-action span { display:none; }
         .resume-studio-action--evolution { display:none; }
 
-        /* PDF sai da segunda barra e entra na nav superior. */
         .resume-studio-body #resume-builder-sidebar > div:first-child {
           min-height:44px;
           padding:8px 14px !important;
