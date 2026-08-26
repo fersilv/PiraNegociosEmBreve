@@ -3,7 +3,6 @@ import {
   BadgeCheck,
   CalendarClock,
   Check,
-  CircleDollarSign,
   Crown,
   Loader2,
   ReceiptText,
@@ -16,6 +15,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { PaymentCheckoutModal } from '../components/payments/PaymentCheckoutModal';
 
 type PlanId = 'FREE' | 'PLUS' | 'ELITE';
 type Plan = {
@@ -100,7 +100,6 @@ export function CompanyPlansPage() {
   const [data, setData] = useState<PlansPayload>({});
   const [selected, setSelected] = useState<PlanId | null>(null);
   const [payer, setPayer] = useState({ name: '', document: '', email: '' });
-  const [checkout, setCheckout] = useState<any>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -130,41 +129,23 @@ export function CompanyPlansPage() {
     [data.plans, selected],
   );
 
-  const subscribe = async () => {
-    if (!selected || selected === 'FREE' || submitting) return;
-    setSubmitting(true);
-    setMessage(''); setError('');
-    try {
-      const response = await api.post('/company/plans/checkout', {
-        plan: selected,
-        payer: {
-          name: payer.name.trim() || undefined,
-          document: payer.document.replace(/\D/g, '') || undefined,
-          email: payer.email.trim() || undefined,
-        },
-      });
-      setCheckout(response.data || null);
-      if (response.data?.devSimulation) {
-        setMessage(response.data?.trialActivated
-          ? `Assinatura ${selected} autorizada. O período Elite gratuito começou agora.`
-          : `Plano ${selected} ativado em modo de desenvolvimento.`);
-        await load();
-      } else {
-        setMessage(response.data?.trialDays > 0
-          ? 'Assinatura criada. Conclua a autorização para iniciar o período gratuito e a recorrência.'
-          : 'Checkout criado. Conclua o pagamento ou autorização para ativar o plano.');
-      }
-    } catch (requestError: any) {
-      const payload = requestError?.response?.data;
-      setError(payload?.message || payload?.error || requestError?.message || 'Não foi possível iniciar a assinatura.');
-    } finally {
-      setSubmitting(false);
-    }
+  const createSubscriptionCheckout = () => {
+    if (!selected || selected === 'FREE') throw new Error('Selecione um plano pago.');
+    return api.post('/company/plans/checkout', {
+      plan: selected,
+      payer: {
+        name: payer.name.trim() || undefined,
+        document: payer.document.replace(/\D/g, '') || undefined,
+        email: payer.email.trim() || undefined,
+      },
+    });
   };
 
   const setRenewal = async (renew: boolean) => {
     if (submitting) return;
-    setSubmitting(true); setMessage(''); setError('');
+    setSubmitting(true);
+    setMessage('');
+    setError('');
     try {
       await api.patch('/company/plans/cancel-at-period-end', { enabled: !renew });
       setMessage(renew ? 'Renovação automática mantida.' : 'A renovação será encerrada ao final do período atual.');
@@ -221,7 +202,12 @@ export function CompanyPlansPage() {
         </div>
       </section>
 
-      {billing?.hasPaidSubscription && <section className="flex flex-col gap-4 rounded-[24px] bg-white p-5 ring-1 ring-stone-200 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-black text-stone-900">Renovação da assinatura</p><p className="mt-1 text-xs leading-5 text-stone-500">{billing.cancelAtPeriodEnd ? `Seu acesso pago permanece até ${formatDate(billing.periodEnd)} e depois volta ao Free.` : `A assinatura renova automaticamente em ${formatDate(billing.nextChargeAt || billing.periodEnd)}.`}</p></div><button disabled={submitting} onClick={() => void setRenewal(Boolean(billing.cancelAtPeriodEnd))} className={`shrink-0 rounded-xl px-4 py-2.5 text-xs font-black ${billing.cancelAtPeriodEnd ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-700'}`}>{billing.cancelAtPeriodEnd ? 'Manter renovação' : 'Cancelar renovação'}</button></section>}
+      {billing?.hasPaidSubscription && (
+        <section className="flex flex-col gap-4 rounded-[24px] bg-white p-5 ring-1 ring-stone-200 sm:flex-row sm:items-center sm:justify-between">
+          <div><p className="text-sm font-black text-stone-900">Renovação da assinatura</p><p className="mt-1 text-xs leading-5 text-stone-500">{billing.cancelAtPeriodEnd ? `Seu acesso pago permanece até ${formatDate(billing.periodEnd)} e depois volta ao Free.` : `A assinatura renova automaticamente em ${formatDate(billing.nextChargeAt || billing.periodEnd)}.`}</p></div>
+          <button disabled={submitting} onClick={() => void setRenewal(Boolean(billing.cancelAtPeriodEnd))} className={`shrink-0 rounded-xl px-4 py-2.5 text-xs font-black ${billing.cancelAtPeriodEnd ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-700'}`}>{billing.cancelAtPeriodEnd ? 'Manter renovação' : 'Cancelar renovação'}</button>
+        </section>
+      )}
 
       <section className="grid gap-4 lg:grid-cols-2">
         <ScopeCard icon={<UsersRound className="h-5 w-5" />} eyebrow="Módulo" title="Recrutamento" description={data.scopes?.recruitment?.summary || 'Recursos empresariais para vagas, candidatos e operação pelo WhatsApp.'} items={currentPlan?.features || []} />
@@ -233,18 +219,45 @@ export function CompanyPlansPage() {
         ]} />
       </section>
 
-      {billing?.latestCheckout && <section className="rounded-[24px] bg-white p-5 ring-1 ring-stone-200"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-stone-100 text-stone-500"><ReceiptText className="h-5 w-5" /></span><div><p className="text-[10px] font-black uppercase tracking-[.14em] text-stone-400">Último movimento de assinatura</p><p className="mt-1 text-sm font-black">{billing.latestCheckout.productName || 'Assinatura empresarial'} · {billing.latestCheckout.status || 'registrado'}</p><p className="mt-1 text-[10px] text-stone-400">Criado em {formatDateTime(billing.latestCheckout.createdAt)}{billing.latestCheckout.provider ? ` · ${billing.latestCheckout.provider}` : ''}</p></div></div></section>}
+      {billing?.latestCheckout && (
+        <section className="rounded-[24px] bg-white p-5 ring-1 ring-stone-200">
+          <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-stone-100 text-stone-500"><ReceiptText className="h-5 w-5" /></span><div><p className="text-[10px] font-black uppercase tracking-[.14em] text-stone-400">Último movimento de assinatura</p><p className="mt-1 text-sm font-black">{billing.latestCheckout.productName || 'Assinatura empresarial'} · {billing.latestCheckout.status || 'registrado'}</p><p className="mt-1 text-[10px] text-stone-400">Criado em {formatDateTime(billing.latestCheckout.createdAt)}{billing.latestCheckout.provider ? ` · ${billing.latestCheckout.provider}` : ''}</p></div></div>
+        </section>
+      )}
 
       <section>
         <div className="mb-4"><p className="text-[10px] font-black uppercase tracking-[.16em] text-stone-400">Comparar</p><h2 className="mt-1 font-serif text-3xl font-black">Todos os planos</h2><p className="mt-2 text-sm text-stone-500">Os preços abaixo são os valores vigentes configurados no PiraNegócios.</p></div>
         <div className="grid gap-4 lg:grid-cols-3">
-          {(data.plans || []).map((plan) => <PlanCard key={plan.id} plan={plan} currentPlanId={currentPlanId} isTrial={Boolean(billing?.isTrial)} trialTargetPlan={billing?.trialTargetPlan || null} onChoose={(id) => { setSelected(id); setCheckout(null); setMessage(''); setError(''); }} />)}
+          {(data.plans || []).map((plan) => <PlanCard key={plan.id} plan={plan} currentPlanId={currentPlanId} isTrial={Boolean(billing?.isTrial)} trialTargetPlan={billing?.trialTargetPlan || null} onChoose={(id) => { setSelected(id); setMessage(''); setError(''); }} />)}
         </div>
       </section>
 
-      {chosen && chosen.id !== 'FREE' && <section className="rounded-[28px] bg-white p-6 shadow-sm ring-1 ring-stone-200 sm:p-7"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[.16em] text-[#397c75]">Nova assinatura</p><h2 className="mt-1 font-serif text-3xl font-black">Assinar {chosen.name}</h2><p className="mt-2 text-sm text-stone-500">{money(chosen.effectivePriceCents ?? chosen.priceCents)} por mês{chosen.includesEliteTrial ? ` · primeiro acesso com ${chosen.eliteTrialDays || 15} dias de Elite conforme elegibilidade` : ''}.</p></div><button onClick={() => setSelected(null)} className="text-xs font-black text-stone-400">Fechar</button></div><div className="mt-5 grid gap-3 md:grid-cols-3"><Field label="Nome do pagador" value={payer.name} onChange={(value) => setPayer((current) => ({ ...current, name: value }))} placeholder="Nome completo" /><Field label="CPF" value={payer.document} onChange={(value) => setPayer((current) => ({ ...current, document: value }))} placeholder="000.000.000-00" /><Field label="E-mail financeiro" value={payer.email} onChange={(value) => setPayer((current) => ({ ...current, email: value }))} placeholder="financeiro@empresa.com" /></div><button disabled={submitting} onClick={() => void subscribe()} className="mt-5 inline-flex h-12 items-center gap-2 rounded-2xl bg-stone-950 px-5 text-xs font-black text-white disabled:opacity-50">{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CircleDollarSign className="h-4 w-4" />} Continuar assinatura</button></section>}
-
-      {checkout && !checkout.devSimulation && <section className="rounded-[28px] border border-emerald-200 bg-emerald-50 p-6"><p className="text-[10px] font-black uppercase tracking-[.16em] text-emerald-700">Checkout criado</p><h2 className="mt-1 font-serif text-2xl font-black text-emerald-950">Conclua a autorização do pagamento</h2>{checkout.metadata?.subscriptionCheckoutUrl && <a href={checkout.metadata.subscriptionCheckoutUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-black text-white">Abrir checkout</a>}</section>}
+      <PaymentCheckoutModal
+        open={Boolean(chosen && chosen.id !== 'FREE')}
+        onClose={() => setSelected(null)}
+        title={chosen ? `Assinar ${chosen.name}` : 'Nova assinatura'}
+        description={chosen ? `${money(chosen.effectivePriceCents ?? chosen.priceCents)} por mês${chosen.includesEliteTrial ? ` · ${chosen.eliteTrialDays || 15} dias de Elite conforme elegibilidade` : ''}.` : undefined}
+        amountCents={chosen?.effectivePriceCents ?? chosen?.priceCents ?? null}
+        confirmLabel="Continuar assinatura"
+        creatingLabel="Preparando autorização..."
+        createCheckout={createSubscriptionCheckout}
+        onCompleted={async () => {
+          setSelected(null);
+          setMessage('Assinatura confirmada. Plano e benefícios foram atualizados.');
+          window.dispatchEvent(new Event('piranegocios:payment-completed'));
+          await load();
+        }}
+      >
+        <div className="rounded-2xl border border-stone-200 bg-white p-4">
+          <p className="text-[10px] font-black uppercase tracking-[.14em] text-stone-400">Dados de cobrança</p>
+          <p className="mt-1 text-xs leading-5 text-stone-500">Preencha apenas o necessário para a autorização. A cobrança recorrente é concluída no ambiente seguro do provedor.</p>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <Field label="Nome do pagador" value={payer.name} onChange={(value) => setPayer((current) => ({ ...current, name: value }))} placeholder="Nome completo" />
+            <Field label="CPF" value={payer.document} onChange={(value) => setPayer((current) => ({ ...current, document: value }))} placeholder="000.000.000-00" />
+            <Field label="E-mail financeiro" value={payer.email} onChange={(value) => setPayer((current) => ({ ...current, email: value }))} placeholder="financeiro@empresa.com" />
+          </div>
+        </div>
+      </PaymentCheckoutModal>
     </div>
   );
 }
@@ -253,13 +266,24 @@ function PlanCard({ plan, currentPlanId, isTrial, trialTargetPlan, onChoose }: {
   const current = !isTrial && currentPlanId === plan.id;
   const trialBase = isTrial && trialTargetPlan === plan.id;
   const elite = plan.id === 'ELITE';
-  return <article className={`flex min-h-[500px] flex-col rounded-[28px] border p-6 ${elite ? 'border-violet-200 bg-gradient-to-b from-violet-50 to-white' : plan.id === 'PLUS' ? 'border-amber-200 bg-gradient-to-b from-amber-50 to-white' : 'border-stone-200 bg-white'}`}><div className="flex items-start justify-between gap-3"><span className={`flex h-11 w-11 items-center justify-center rounded-2xl ${elite ? 'bg-violet-900 text-white' : plan.id === 'PLUS' ? 'bg-amber-400 text-stone-950' : 'bg-stone-100 text-stone-600'}`}>{elite ? <Crown className="h-5 w-5" /> : plan.id === 'PLUS' ? <Zap className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}</span>{(current || trialBase) && <span className="rounded-full bg-stone-900 px-3 py-1 text-[9px] font-black uppercase text-white">{trialBase ? 'Assinatura-base' : 'Seu plano'}</span>}</div><h3 className="mt-5 font-serif text-3xl font-black">{plan.name}</h3><div className="mt-2 flex items-end gap-1"><span className="text-3xl font-black">{plan.priceCents ? money(plan.effectivePriceCents ?? plan.priceCents) : 'Grátis'}</span>{plan.monthly && <span className="pb-1 text-xs font-bold text-stone-400">/mês</span>}</div>{plan.promotionActive && plan.originalPriceCents && <p className="mt-1 text-xs font-bold text-stone-400 line-through">de {money(plan.originalPriceCents)}</p>}<p className="mt-3 text-sm leading-6 text-stone-500">{plan.description}</p>{plan.includesEliteTrial && <div className="mt-3 rounded-xl bg-violet-50 px-3 py-2 text-xs font-black text-violet-700"><Sparkles className="mr-1 inline h-3.5 w-3.5" /> {plan.eliteTrialDays || 15} dias de Elite conforme elegibilidade</div>}<div className="my-5 h-px bg-stone-200" /><ul className="flex-1 space-y-2.5">{plan.features.map((feature) => <li key={feature} className="flex gap-2 text-xs leading-5 text-stone-600"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />{feature}</li>)}</ul><button disabled={current || trialBase || plan.id === 'FREE'} onClick={() => onChoose(plan.id)} className="mt-5 rounded-2xl bg-stone-950 px-4 py-3 text-xs font-black text-white disabled:bg-stone-100 disabled:text-stone-400">{current ? 'Plano atual' : trialBase ? 'Assinatura em período gratuito' : plan.id === 'FREE' ? 'Plano gratuito' : `Assinar ${plan.name}`}</button></article>;
+  return (
+    <article className={`flex min-h-[500px] flex-col rounded-[28px] border p-6 ${elite ? 'border-violet-200 bg-gradient-to-b from-violet-50 to-white' : plan.id === 'PLUS' ? 'border-amber-200 bg-gradient-to-b from-amber-50 to-white' : 'border-stone-200 bg-white'}`}>
+      <div className="flex items-start justify-between gap-3"><span className={`flex h-11 w-11 items-center justify-center rounded-2xl ${elite ? 'bg-violet-900 text-white' : plan.id === 'PLUS' ? 'bg-amber-400 text-stone-950' : 'bg-stone-100 text-stone-600'}`}>{elite ? <Crown className="h-5 w-5" /> : plan.id === 'PLUS' ? <Zap className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}</span>{(current || trialBase) && <span className="rounded-full bg-stone-900 px-3 py-1 text-[9px] font-black uppercase text-white">{trialBase ? 'Assinatura-base' : 'Seu plano'}</span>}</div>
+      <h3 className="mt-5 font-serif text-3xl font-black">{plan.name}</h3>
+      <div className="mt-2 flex items-end gap-1"><span className="text-3xl font-black">{plan.priceCents ? money(plan.effectivePriceCents ?? plan.priceCents) : 'Grátis'}</span>{plan.monthly && <span className="pb-1 text-xs font-bold text-stone-400">/mês</span>}</div>
+      {plan.promotionActive && plan.originalPriceCents && <p className="mt-1 text-xs font-bold text-stone-400 line-through">de {money(plan.originalPriceCents)}</p>}
+      <p className="mt-3 text-sm leading-6 text-stone-500">{plan.description}</p>
+      {plan.includesEliteTrial && <div className="mt-3 rounded-xl bg-violet-50 px-3 py-2 text-xs font-black text-violet-700"><Sparkles className="mr-1 inline h-3.5 w-3.5" /> {plan.eliteTrialDays || 15} dias de Elite conforme elegibilidade</div>}
+      <div className="my-5 h-px bg-stone-200" />
+      <ul className="flex-1 space-y-2.5">{plan.features.map((feature) => <li key={feature} className="flex gap-2 text-xs leading-5 text-stone-600"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />{feature}</li>)}</ul>
+      <button disabled={current || trialBase || plan.id === 'FREE'} onClick={() => onChoose(plan.id)} className="mt-5 rounded-2xl bg-stone-950 px-4 py-3 text-xs font-black text-white disabled:bg-stone-100 disabled:text-stone-400">{current ? 'Plano atual' : trialBase ? 'Assinatura em período gratuito' : plan.id === 'FREE' ? 'Plano gratuito' : `Assinar ${plan.name}`}</button>
+    </article>
+  );
 }
 
 function ScopeCard({ icon, eyebrow, title, description, items }: { icon: React.ReactNode; eyebrow: string; title: string; description: string; items: string[] }) {
   return <article className="rounded-[26px] bg-white p-6 ring-1 ring-stone-200"><div className="flex items-start gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#eef8f6] text-[#397c75]">{icon}</span><div><p className="text-[9px] font-black uppercase tracking-[.14em] text-stone-400">{eyebrow}</p><h2 className="mt-1 font-serif text-2xl font-black">{title}</h2></div></div><p className="mt-4 text-sm leading-6 text-stone-500">{description}</p><ul className="mt-5 space-y-2.5">{items.map((item) => <li key={item} className="flex gap-2 text-xs leading-5 text-stone-600"><BadgeCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#397c75]" />{item}</li>)}</ul></article>;
 }
-
 function MiniInfo({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <div className="rounded-2xl bg-white/[.06] p-3"><div className="flex items-center gap-2 text-white/45">{icon}<span className="text-[9px] font-black uppercase tracking-[.1em]">{label}</span></div><p className="mt-2 text-xs font-black text-white/85">{value}</p></div>; }
 function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) { return <label className="text-xs font-black text-stone-500">{label}<input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="mt-2 h-12 w-full rounded-2xl border border-stone-200 px-4 text-sm font-semibold outline-none focus:border-stone-400" /></label>; }
 function money(cents: number) { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(cents || 0) / 100); }
