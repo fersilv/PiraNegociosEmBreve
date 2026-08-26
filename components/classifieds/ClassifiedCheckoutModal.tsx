@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Clipboard, Loader2, MapPin, PackageCheck, QrCode, ShieldCheck, ShoppingCart, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
@@ -13,11 +13,12 @@ type CheckoutConfig = {
   fulfillmentModes: Fulfillment[];
   stockQuantity: number | null;
   available: boolean;
-  buyer: { email?: string; name?: string };
+  buyer: { email?: string; name?: string; deliveryAddress?: string; city?: string; state?: string };
   terms: { version: string; accepted: boolean; url: string };
 };
 type OrderResult = {
   id: string;
+  paymentMethod?: string | null;
   paymentStatus: string;
   status: string;
   totalCents: number;
@@ -69,6 +70,7 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
   const [error, setError] = useState('');
   const [result, setResult] = useState<OrderResult | null>(null);
   const brickController = useRef<any>(null);
+  const idempotencyRef = useRef<string | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => () => { mounted.current = false; }, []);
@@ -77,13 +79,15 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
     if (!open) return;
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    setLoading(true); setError(''); setResult(null); setConfig(null); setBrickReady(false); setQuantity(1);
+    idempotencyRef.current = null;
+    setLoading(true); setError(''); setResult(null); setConfig(null); setBrickReady(false); setQuantity(1); setDeliveryAddress(''); setDeliveryNote('');
     api.get(`/classifieds/listings/${listingId}/checkout`)
       .then((response) => {
         if (!mounted.current) return;
         const next = response.data as CheckoutConfig;
         setConfig(next);
         setFulfillment(next.fulfillmentModes?.[0] || 'ARRANGE');
+        setDeliveryAddress(next.buyer?.deliveryAddress || '');
       })
       .catch((requestError: any) => mounted.current && setError(requestError?.response?.data?.message || 'Não foi possível preparar a compra online.'))
       .finally(() => mounted.current && setLoading(false));
@@ -111,6 +115,7 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
         brickController.current = await builder.create('payment', 'classified-payment-brick', {
           initialization: {
             amount,
+            marketplace: true,
             payer: { email: config.buyer?.email || undefined },
           },
           customization: {
@@ -124,7 +129,13 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
             onError: (brickError: any) => !cancelled && setError(brickError?.message || 'O Mercado Pago não conseguiu abrir o formulário de pagamento.'),
             onSubmit: async ({ formData }: any) => {
               if (submitting) return;
+              if (fulfillment === 'DELIVERY' && !deliveryAddress.trim()) {
+                setError('Informe o endereço de entrega antes de pagar.');
+                throw new Error('Endereço de entrega obrigatório.');
+              }
               setSubmitting(true); setError('');
+              const idempotencyKey = idempotencyRef.current || crypto.randomUUID().replace(/-/g, '');
+              idempotencyRef.current = idempotencyKey;
               try {
                 const payload: Record<string, any> = {
                   paymentMethod: method,
@@ -134,7 +145,7 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
                     address: fulfillment === 'DELIVERY' ? deliveryAddress.trim() : null,
                     note: deliveryNote.trim() || null,
                   },
-                  idempotencyKey: crypto.randomUUID().replace(/-/g, ''),
+                  idempotencyKey,
                   token: formData?.token,
                   paymentMethodId: formData?.payment_method_id,
                   issuerId: formData?.issuer_id,
@@ -144,7 +155,10 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
                 const response = await api.post(`/classifieds/listings/${listingId}/checkout`, payload);
                 setResult(response.data as OrderResult);
               } catch (requestError: any) {
-                setError(requestError?.response?.data?.message || 'O pagamento não pôde ser concluído.');
+                // Se o servidor respondeu, a tentativa teve desfecho conhecido e a próxima deve usar outra chave.
+                // Se foi falha de rede/timeout, mantém a mesma chave para um retry seguro.
+                if (requestError?.response) idempotencyRef.current = null;
+                setError(requestError?.response?.data?.message || 'O pagamento não pôde ser concluído. Se houve falha de conexão, tente novamente sem recarregar a página.');
                 throw requestError;
               } finally { setSubmitting(false); }
             },
@@ -162,7 +176,7 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
         brickController.current = null;
       }
     };
-  }, [canMountBrick, config?.publicKey, config?.terms.accepted, method, quantity, amount, fulfillment, listingId]);
+  }, [canMountBrick, config?.publicKey, config?.terms.accepted, method, quantity, amount, fulfillment, listingId, submitting, deliveryAddress, deliveryNote]);
 
   const maxQuantity = config?.stockQuantity == null ? 50 : Math.max(1, Math.min(50, config.stockQuantity));
   const accepted = Boolean(config?.terms.accepted);
