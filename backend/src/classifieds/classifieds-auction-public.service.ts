@@ -6,7 +6,6 @@ export class ClassifiedsAuctionPublicService {
   constructor(private readonly dataSource: DataSource) {}
 
   async list() {
-    await this.closeExpiredBestEffort();
     const rows = await this.dataSource.query(`
       SELECT
         a.id,
@@ -67,7 +66,6 @@ export class ClassifiedsAuctionPublicService {
   }
 
   async detail(auctionId: string) {
-    await this.closeExpiredBestEffort();
     const rows = await this.dataSource.query(
       `SELECT
         a.id,
@@ -215,16 +213,6 @@ export class ClassifiedsAuctionPublicService {
       nextMinimum: Number((row.currentBid == null ? Number(row.startPrice) : current + Number(row.minIncrement)).toFixed(2)),
       live: row.status === 'OPEN' && new Date(row.endsAt).getTime() > Date.now(),
     };
-  }
-
-  private async closeExpiredBestEffort() {
-    await this.dataSource.query(
-      `UPDATE classified_auctions
-       SET status = 'ENDED', "closedAt" = COALESCE("closedAt", now()), "updatedAt" = now()
-       WHERE status = 'OPEN' AND "endsAt" <= now() AND NOT EXISTS (
-         SELECT 1 FROM classified_auction_bids b WHERE b."auctionId" = classified_auctions.id
-       )`,
-    ).catch(() => undefined);
   }
 
   private maskName(value: unknown) {
