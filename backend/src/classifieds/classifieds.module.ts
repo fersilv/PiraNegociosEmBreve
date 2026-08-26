@@ -4,6 +4,7 @@ import { AdminGuard } from '../admin/admin.guard';
 import { AdminModule } from '../admin/admin.module';
 import { ChatModule } from '../chat/chat.module';
 import { Company } from '../companies/entities/company.entity';
+import { ComplianceModule } from '../compliance/compliance.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { User } from '../users/entities/user.entity';
@@ -51,6 +52,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
   imports: [
     AdminModule,
     ChatModule,
+    ComplianceModule,
     NotificationsModule,
     PaymentsModule,
     TypeOrmModule.forFeature([
