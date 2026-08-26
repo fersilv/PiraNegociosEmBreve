@@ -156,7 +156,7 @@ export class ClassifiedsIdentityService {
     return this.context(uid);
   }
 
-  async active(uid: string, requireReady = true): Promise<ActiveClassifiedIdentity> {
+  async active(uid: string, requireReady = false): Promise<ActiveClassifiedIdentity> {
     const { user, company, companyEligible, companyVerified } = await this.baseContext(uid);
     const preference = await this.preferences.findOne({ where: { userId: uid } });
     const hasTwoFaces = Boolean(company && companyEligible);
@@ -168,21 +168,27 @@ export class ClassifiedsIdentityService {
         preference?.personalTermsAcceptedAt && preference.personalTermsVersion === CLASSIFIEDS_TERMS_VERSION,
       );
       if (requireReady && !personalTermsCurrent) {
-        throw new ForbiddenException('Aceite os Termos de Uso para ativar o PiraNegócios Personal.');
+        throw new ForbiddenException('Aceite os Termos de Uso dos Classificados antes da sua primeira publicação.');
       }
       return { type, user, company: null, companyProfile: null };
     }
 
     if (!company || !companyEligible) throw new ForbiddenException('A identidade empresarial não está mais disponível para esta conta.');
-    if (!companyVerified) throw new ForbiddenException('A empresa precisa estar verificada para usar os Classificados.');
     const companyProfile = await this.companyProfiles.findOne({ where: { companyId: company.id } });
     const companyTermsCurrent = Boolean(
       companyProfile?.termsAcceptedAt && companyProfile.termsVersion === CLASSIFIEDS_TERMS_VERSION,
     );
+    if (requireReady && !companyVerified) {
+      throw new ForbiddenException('A empresa precisa estar verificada antes de publicar nos Classificados.');
+    }
     if (requireReady && (!companyTermsCurrent || companyProfile?.status !== 'ACTIVE')) {
-      throw new ForbiddenException('Conclua a adesão da empresa aos Classificados.');
+      throw new ForbiddenException('Conclua a adesão da empresa aos Classificados antes da primeira publicação.');
     }
     return { type, user, company, companyProfile };
+  }
+
+  async assertPublishingReady(uid: string) {
+    return this.active(uid, true);
   }
 
   async assertCompanyOperator(uid: string, companyId: string) {
