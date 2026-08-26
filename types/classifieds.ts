@@ -75,6 +75,46 @@ export interface ClassifiedCatalogConfig {
   pricingStrategy?: ClassifiedCatalogPricingStrategy;
 }
 
+export interface ClassifiedCommerceConfig {
+  promotion?: {
+    price: number;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    endAction?: 'REVERT' | 'PAUSE';
+  } | null;
+  paymentPricing?: {
+    pix?: {
+      enabled?: boolean;
+      discountType?: 'PERCENT' | 'FIXED';
+      discountValue?: number;
+    } | null;
+    card?: {
+      enabled?: boolean;
+      price?: number | null;
+      maxInstallments?: number;
+      interestFreeInstallments?: number;
+    } | null;
+  } | null;
+  onlineCheckout?: {
+    enabled?: boolean;
+    fulfillmentModes?: Array<'PICKUP' | 'DELIVERY'>;
+    stockQuantity?: number | null;
+    lowStockThreshold?: number | null;
+    orderWhatsappE164?: string | null;
+  } | null;
+}
+
+export interface ClassifiedEffectivePricing {
+  basePrice: number | null;
+  currentPrice: number | null;
+  promotionActive: boolean;
+  promotionEndsAt?: string | null;
+  pixPrice: number | null;
+  cardPrice: number | null;
+  maxInstallments: number;
+  interestFreeInstallments: number;
+}
+
 export interface ClassifiedListing {
   id: string;
   slug: string;
@@ -101,6 +141,7 @@ export interface ClassifiedListing {
   attributes?: Record<string, string | number | boolean | null> | null;
   publicationChannels?: ClassifiedPublicationChannel[];
   catalogConfig?: ClassifiedCatalogConfig | null;
+  commerceConfig?: ClassifiedCommerceConfig | null;
   contactPhone?: string | null;
   contactWhatsapp?: string | null;
   moderationReason?: string | null;
@@ -237,8 +278,41 @@ export interface ClassifiedOffer {
 
 export interface ClassifiedLimits {
   photoLimit: number;
-  plan: string;
+  plan: 'FREE' | 'PLUS' | 'ELITE' | string;
   paid: boolean;
+  auctionCreation?: boolean;
+}
+
+export interface ClassifiedCommerceFeeRule {
+  source: 'CUSTOM' | 'FREE' | 'PLUS' | 'ELITE' | string;
+  rateBps: number;
+  percentage: number;
+  minimumFeeCents: number;
+  maximumFeeCents: number | null;
+}
+
+export interface ClassifiedCommerceStatus {
+  business: boolean;
+  companyId?: string;
+  companyVerified?: boolean;
+  onlineSalesAvailable: boolean;
+  plan: string;
+  feeRule: ClassifiedCommerceFeeRule | null;
+  paymentConnections: Array<{
+    provider: 'MERCADO_PAGO' | 'EFI' | string;
+    status: string;
+    externalUserId?: string | null;
+    tokenExpiresAt?: string | null;
+    connectedAt?: string | null;
+    updatedAt?: string | null;
+  }>;
+}
+
+export interface ClassifiedSalesDashboard {
+  totals: { orders: number; paid: number; revenue: number; fees: number; net: number };
+  recentOrders: any[];
+  products: Array<{ id: string; title: string; slug: string; orders: number; units: number; revenue: number }>;
+  calendar: Array<{ day: string; orders: number; revenue: number }>;
 }
 
 export interface ClassifiedAnalytics {
