@@ -65,6 +65,13 @@ api.interceptors.response.use(
         config.__piraInlinePaymentRetried = true;
         return api.request(config);
       } catch {
+        if (error?.response?.data) {
+          error.response.data = {
+            ...payload,
+            code: 'PAYMENT_CANCELED',
+            message: 'Pagamento não concluído. A ação foi mantida sem alterações.',
+          };
+        }
         return Promise.reject(error);
       }
     }
