@@ -5,6 +5,7 @@ import { JobMatchModule } from '../job-match/job-match.module';
 import { Job } from '../jobs/entities/job.entity';
 import { User } from '../users/entities/user.entity';
 import { ApiKeyGuard } from './api-key.guard';
+import { ControlledAiAutomationService } from './controlled-ai-automation.service';
 import { ExternalApiAdminController } from './external-api-admin.controller';
 import { ExternalApiController } from './external-api.controller';
 import { ExternalApiV2Controller } from './external-api-v2.controller';
@@ -47,6 +48,7 @@ import { JobsOperationsService } from './jobs-operations.service';
   providers: [
     ApiKeyGuard,
     AdminGuard,
+    ControlledAiAutomationService,
     ExternalJobsService,
     JobsOperationsService,
     JobsOAuthGuard,
