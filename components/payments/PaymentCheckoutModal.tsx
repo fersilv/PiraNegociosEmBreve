@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { io, Socket } from 'socket.io-client';
 import {
   CheckCircle2,
   Clock3,
@@ -10,7 +11,8 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react';
-import { api } from '../../lib/api';
+import { useAuth } from '../../contexts/AuthContext';
+import { API_URL, SOCKET_PATH, api } from '../../lib/api';
 
 function money(cents?: number | null) {
   if (cents === null || cents === undefined) return '';
@@ -26,10 +28,39 @@ function providerName(code?: string | null) {
   return 'provedor de pagamento';
 }
 
+function objectValue(value: any) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
 function normalizeCheckout(raw: any) {
-  const data = raw && typeof raw === 'object' ? raw : {};
-  const paymentId = String(data.paymentId || data.id || '').trim() || null;
-  return paymentId ? { ...data, id: paymentId, paymentId } : data;
+  const root = objectValue(raw);
+  const data = Object.keys(objectValue(root.data)).length ? objectValue(root.data) : root;
+  const payment = objectValue(data.payment);
+  const providerCheckout = objectValue(data.checkout);
+  const result = objectValue(data.result);
+  const merged = {
+    ...payment,
+    ...providerCheckout,
+    ...result,
+    ...data,
+    metadata: {
+      ...objectValue(payment.metadata),
+      ...objectValue(providerCheckout.metadata),
+      ...objectValue(result.metadata),
+      ...objectValue(data.metadata),
+    },
+  };
+  const paymentId = String(
+    data.paymentId
+      || payment.paymentId
+      || payment.id
+      || data.id
+      || result.paymentId
+      || result.id
+      || providerCheckout.paymentId
+      || '',
+  ).trim() || null;
+  return paymentId ? { ...merged, id: paymentId, paymentId } : merged;
 }
 
 export type PaymentCheckoutModalProps = {
@@ -59,12 +90,14 @@ export function PaymentCheckoutModal({
   onCompleted,
   children,
 }: PaymentCheckoutModalProps) {
+  const { user } = useAuth();
   const [creating, setCreating] = useState(false);
   const [checkout, setCheckout] = useState<any>(null);
   const [error, setError] = useState('');
   const [pollError, setPollError] = useState('');
   const [copied, setCopied] = useState(false);
   const completedOnce = useRef(false);
+  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -113,6 +146,35 @@ export function PaymentCheckoutModal({
   }, [amountCents, checkout?.amountCents]);
 
   useEffect(() => {
+    if (!open || !paymentId || !user || completed || failed) return;
+    let active = true;
+
+    user.getIdToken().then((token) => {
+      if (!active) return;
+      const socket = io(API_URL, {
+        path: SOCKET_PATH,
+        auth: { token },
+        transports: ['websocket', 'polling'],
+      });
+      socket.on('payment:updated', (payload: any) => {
+        if (!active) return;
+        const next = normalizeCheckout(payload);
+        const nextPaymentId = String(next?.paymentId || next?.id || '').trim();
+        if (!nextPaymentId || nextPaymentId !== paymentId) return;
+        setPollError('');
+        setCheckout((current: any) => normalizeCheckout({ ...current, ...next }));
+      });
+      socketRef.current = socket;
+    }).catch(() => undefined);
+
+    return () => {
+      active = false;
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+    };
+  }, [completed, failed, open, paymentId, user]);
+
+  useEffect(() => {
     if (!open || !paymentId || completed || failed) return;
     let active = true;
     let busy = false;
@@ -140,7 +202,7 @@ export function PaymentCheckoutModal({
           const message = requestError?.response?.data?.message;
           setPollError(
             (Array.isArray(message) ? message.join(' · ') : message)
-            || 'Não conseguimos atualizar o Pix agora. A cobrança continua a mesma e vamos tentar novamente automaticamente.',
+            || 'O tempo real ficou indisponível e o fallback também não conseguiu atualizar agora. A cobrança continua a mesma e tentaremos novamente.',
           );
         }
       } finally {
@@ -149,7 +211,9 @@ export function PaymentCheckoutModal({
     };
 
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 2000);
+    // Socket.IO é o caminho principal. O polling continua apenas como fallback
+    // para proxies, bloqueadores ou redes que interrompam o WebSocket.
+    const timer = window.setInterval(() => void refresh(), 8000);
     return () => {
       active = false;
       window.clearInterval(timer);
@@ -162,18 +226,29 @@ export function PaymentCheckoutModal({
     void onCompleted?.(checkout);
   }, [checkout, completed, onCompleted]);
 
+  useEffect(() => () => {
+    socketRef.current?.disconnect();
+  }, []);
+
   if (!open || typeof document === 'undefined') return null;
 
   const recoverCheckout = async (rawInput: any) => {
     const raw = normalizeCheckout(rawInput);
-    if (raw?.id || !productCode) return raw;
+    if (raw?.id) return raw;
     try {
       const historyResponse = await api.get('/payments/me');
       const rows = Array.isArray(historyResponse.data) ? historyResponse.data : [];
-      const candidate = rows.find((item: any) => (
-        String(item?.productCode || '') === String(productCode)
-        && ['PENDING', 'PAID'].includes(String(item?.status || '').toUpperCase())
-      ));
+      const expectedProductCode = String(productCode || raw?.productCode || raw?.product?.code || '').trim();
+      const expectedAmount = Number(raw?.amountCents ?? amountCents);
+      const now = Date.now();
+      const candidate = rows.find((item: any) => {
+        if (!['PENDING', 'PAID'].includes(String(item?.status || '').toUpperCase())) return false;
+        const createdAt = new Date(item?.createdAt || 0).getTime();
+        if (!Number.isFinite(createdAt) || now - createdAt > 5 * 60 * 1000) return false;
+        if (expectedProductCode) return String(item?.productCode || '') === expectedProductCode;
+        if (Number.isFinite(expectedAmount) && expectedAmount > 0) return Number(item?.amountCents) === expectedAmount;
+        return false;
+      });
       if (!candidate?.id) return raw;
       return normalizeCheckout({
         ...candidate,
@@ -209,9 +284,9 @@ export function PaymentCheckoutModal({
         }
         return;
       }
-      if (!data?.id && !data?.paymentId && !data?.checkoutReady && !data?.metadata?.subscriptionCheckoutUrl) {
+      if (!data?.id && !data?.paymentId) {
         setCheckout(null);
-        setError('A cobrança foi criada, mas o servidor não devolveu o identificador local para acompanhamento. Atualize seu histórico financeiro antes de tentar novamente.');
+        setError('A cobrança foi criada, mas não apareceu no histórico da sua conta. Nenhuma nova cobrança será criada automaticamente. Atualize a página e consulte Transações financeiras.');
         return;
       }
       setCheckout(normalizeCheckout(data));
@@ -308,13 +383,13 @@ export function PaymentCheckoutModal({
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center">
                   <Loader2 className="mx-auto h-7 w-7 animate-spin text-amber-700" />
                   <h3 className="mt-3 font-bold text-stone-950">Preparando seu Pix...</h3>
-                  <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-stone-600">A cobrança já tem identificador. Estamos consultando o provedor até o QR Code ficar disponível, sem criar outra cobrança.</p>
+                  <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-stone-600">A cobrança já tem identificador. O servidor está acompanhando o provedor em tempo real até o QR Code ficar disponível, sem criar outra cobrança.</p>
                 </div>
               )}
 
               <div className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-stone-100 px-3 py-2.5 text-[10px] font-bold text-stone-500">
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-600" />
-                {recurring ? 'Aguardando autorização' : 'Aguardando confirmação do pagamento'}
+                {recurring ? 'Aguardando autorização em tempo real' : 'Aguardando confirmação em tempo real'}
               </div>
 
               {pollError && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-bold leading-5 text-amber-800">{pollError}</div>}
