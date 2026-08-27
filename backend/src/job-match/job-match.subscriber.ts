@@ -4,16 +4,6 @@ import { Job } from '../jobs/entities/job.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { JobMatchService } from './job-match.service';
 
-const MATCH_RELEVANT_COLUMNS = new Set([
-  'title',
-  'description',
-  'requirements',
-  'skills',
-  'type',
-  'workModel',
-  'active',
-]);
-
 @Injectable()
 @EventSubscriber()
 export class JobMatchSubscriber implements EntitySubscriberInterface<Job> {
@@ -29,22 +19,19 @@ export class JobMatchSubscriber implements EntitySubscriberInterface<Job> {
     return Job;
   }
 
-  private async safelyAnalyze(job: Job | undefined, notifyAsNew = false) {
-    if (!job?.active) return;
+  /**
+   * IMPORTANTE: este subscriber nunca deve gerar perfil de vaga com IA.
+   *
+   * O perfil de matching passa a ser preparado somente por request explícito
+   * (API/MCP/admin) e persistido em job_match_profiles. Aqui nós apenas
+   * reaproveitamos um perfil READY, quando ele já existir, para manter os
+   * alertas antecipados sem disparar modelo de IA em background.
+   */
+  private async safelyNotifyNewJob(job: Job | undefined) {
+    if (!job?.active || job.isInternal) return;
 
-    let profile: any = null;
     try {
-      profile = await this.jobMatch.analyzeActiveJob(job);
-    } catch (error) {
-      console.error(`Não foi possível preparar a vaga ${job.id} para o Match Inteligente:`, error);
-    }
-
-    if (!notifyAsNew || job.isInternal) return;
-
-    try {
-      const earlyRecipients = profile
-        ? await this.jobMatch.getEarlyAlertRecipientsForJob(job.id)
-        : [];
+      const earlyRecipients = await this.jobMatch.getEarlyAlertRecipientsForJob(job.id);
       await this.notifications.notifyNewJob({
         jobId: job.id,
         jobTitle: job.title,
@@ -64,14 +51,8 @@ export class JobMatchSubscriber implements EntitySubscriberInterface<Job> {
       .flatMap((column) => [column.propertyName, column.databaseName])
       .filter(Boolean);
 
-    // save(entity) entrega a entidade inteira em event.entity. Nessa situação,
-    // Object.keys(entity) NÃO representa o que mudou e faria qualquer auditoria
-    // parecer uma alteração de active/title/etc. Quando o TypeORM conhece as
-    // colunas modificadas, elas são a fonte de verdade.
     if (fromMetadata.length > 0) return new Set(fromMetadata);
 
-    // QueryBuilder/update parcial pode não preencher updatedColumns. Só nesse
-    // fallback usamos as chaves do payload parcial recebido pelo subscriber.
     const fromEntity = event.entity && typeof event.entity === 'object'
       ? Object.keys(event.entity)
       : [];
@@ -79,21 +60,21 @@ export class JobMatchSubscriber implements EntitySubscriberInterface<Job> {
   }
 
   async afterInsert(event: InsertEvent<Job>) {
-    await this.safelyAnalyze(event.entity, event.entity?.active === true);
+    if (event.entity?.active === true) await this.safelyNotifyNewJob(event.entity);
   }
 
   async afterUpdate(event: UpdateEvent<Job>) {
     const changed = this.changedColumns(event);
-    if (![...changed].some((column) => MATCH_RELEVANT_COLUMNS.has(column))) return;
+    if (!changed.has('active')) return;
 
     const partial = event.entity as Partial<Job> | undefined;
     const becameActive = partial?.active === true && event.databaseEntity?.active !== true;
+    if (!becameActive) return;
+
     const id = partial?.id || event.databaseEntity?.id;
     if (!id) return;
 
-    // UpdateEvent pode trazer somente os campos alterados. Recarregamos a vaga
-    // antes de calcular o fingerprint para nunca analisar um objeto parcial.
     const job = await event.manager.getRepository(Job).findOne({ where: { id } });
-    await this.safelyAnalyze(job || undefined, becameActive);
+    await this.safelyNotifyNewJob(job || undefined);
   }
 }
