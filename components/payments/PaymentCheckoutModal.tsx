@@ -143,6 +143,10 @@ export function PaymentCheckoutModal({
     ? new TextEncoder().encode(String(pixCopyPaste)).length
     : 0;
   const canRenderLocalQr = Boolean(pixCopyPaste && localQrByteLength <= 271);
+  const authorizationQrByteLength = authorizationUrl
+    ? new TextEncoder().encode(String(authorizationUrl)).length
+    : 0;
+  const canRenderAuthorizationQr = Boolean(authorizationUrl && authorizationQrByteLength <= 271);
   const checkoutReady = Boolean(pixCopyPaste || qrCodeBase64 || authorizationUrl || ticketUrl || checkout?.checkoutReady);
   const paymentId = String(checkout?.paymentId || checkout?.id || '').trim();
 
@@ -217,8 +221,6 @@ export function PaymentCheckoutModal({
     };
 
     void refresh();
-    // Socket.IO é o caminho principal. O polling continua apenas como fallback
-    // para proxies, bloqueadores ou redes que interrompam o WebSocket.
     const timer = window.setInterval(() => void refresh(), 8000);
     return () => {
       active = false;
@@ -381,12 +383,27 @@ export function PaymentCheckoutModal({
                   </div>
                 </div>
               ) : authorizationUrl ? (
-                <div className="rounded-2xl border border-violet-200 bg-violet-50 p-5 text-center">
-                  <img src="/brand/pix.svg" alt="Pix" className="mx-auto h-8 w-auto" />
-                  <p className="mt-4 text-[10px] font-black uppercase tracking-[.16em] text-violet-700">Assinatura do provedor</p>
-                  <h3 className="mt-1 font-bold text-stone-950">Conclua a assinatura no ambiente do provedor</h3>
-                  <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-stone-500">Este fluxo é uma assinatura hospedada e não um QR Code de Pix Automático. A modal continuará acompanhando o status em tempo real.</p>
-                  <a href={authorizationUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-violet-700 px-5 py-3 text-sm font-black text-white">Abrir assinatura <ExternalLink className="h-4 w-4" /></a>
+                <div className="rounded-2xl border border-violet-200 bg-violet-50 p-5">
+                  <div className="text-center">
+                    <img src="/brand/pix.svg" alt="Pix" className="mx-auto h-8 w-auto" />
+                    <p className="mt-4 text-[10px] font-black uppercase tracking-[.16em] text-violet-700">Autorização da assinatura</p>
+                    <h3 className="mt-1 font-bold text-stone-950">Autorize pelo celular ou abra o Mercado Pago</h3>
+                    <p className="mx-auto mt-2 max-w-lg text-xs leading-5 text-stone-500">O provedor devolveu uma jornada hospedada de autorização. O QR abaixo abre essa mesma autorização no celular. Quando o PSP devolver um BR Code Pix Automático real, ele aparece no lugar deste QR.</p>
+                  </div>
+                  <div className="mt-5 grid gap-4 md:grid-cols-[220px_1fr] md:items-center">
+                    <div className="flex min-h-[210px] items-center justify-center rounded-2xl border border-violet-100 bg-white p-3">
+                      {canRenderAuthorizationQr ? (
+                        <LocalQrCode value={String(authorizationUrl)} label="QR Code para abrir a autorização da assinatura" className="h-auto max-h-[190px] w-auto max-w-full" />
+                      ) : (
+                        <QrCode className="h-16 w-16 text-violet-300" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold leading-5 text-stone-700">Escaneie com a câmera do celular para abrir a autorização no ambiente do provedor.</p>
+                      <p className="mt-2 text-[10px] leading-4 text-stone-400">Este QR representa o link seguro de autorização hospedada. Ele não é rotulado como BR Code Pix Automático.</p>
+                      <a href={authorizationUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-violet-700 px-5 py-3 text-sm font-black text-white">Abrir autorização <ExternalLink className="h-4 w-4" /></a>
+                    </div>
+                  </div>
                 </div>
               ) : ticketUrl ? (
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center">
