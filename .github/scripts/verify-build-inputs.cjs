@@ -9,8 +9,10 @@ const requiredFiles = [
   'pages/ClassifiedsWorkspacePage.tsx',
   'backend/src/classifieds/classifieds-auction.service.ts',
   'backend/src/classifieds/classifieds-checkout.service.ts',
+  'backend/src/payments/payments.controller.ts',
   'backend/src/payments/payment-checkout-status.controller.ts',
   'backend/src/payments/payment-checkout-status.service.ts',
+  'backend/src/chat/chat.gateway.ts',
 ];
 
 for (const relativePath of requiredFiles) {
@@ -48,6 +50,9 @@ const tracksNormalizedPaymentId =
 if (!tracksCheckoutId && !tracksNormalizedPaymentId) {
   throw new Error('PaymentCheckoutModal precisa acompanhar a mesma cobrança pelo endpoint de status.');
 }
+if (!paymentModal.includes("socket.on('payment:updated'")) {
+  throw new Error('PaymentCheckoutModal precisa receber atualizações de pagamento em tempo real.');
+}
 
 const paymentStatusController = fs.readFileSync(
   path.join(root, 'backend/src/payments/payment-checkout-status.controller.ts'),
@@ -55,6 +60,30 @@ const paymentStatusController = fs.readFileSync(
 );
 if (!paymentStatusController.includes("@Get(':paymentId/status')")) {
   throw new Error('Endpoint autenticado de status do checkout não encontrado.');
+}
+
+const paymentsController = fs.readFileSync(
+  path.join(root, 'backend/src/payments/payments.controller.ts'),
+  'utf8',
+);
+if (!paymentsController.includes('paymentId,') || !paymentsController.includes('checkoutStatus.watchForUser')) {
+  throw new Error('Checkout Pix precisa devolver paymentId explícito e iniciar o acompanhamento realtime.');
+}
+
+const paymentStatusService = fs.readFileSync(
+  path.join(root, 'backend/src/payments/payment-checkout-status.service.ts'),
+  'utf8',
+);
+if (!paymentStatusService.includes("publishPaymentUpdate") || !paymentStatusService.includes('watchForUser')) {
+  throw new Error('Serviço de checkout precisa publicar atualizações realtime da cobrança.');
+}
+
+const chatGateway = fs.readFileSync(
+  path.join(root, 'backend/src/chat/chat.gateway.ts'),
+  'utf8',
+);
+if (!chatGateway.includes("emit('payment:updated'")) {
+  throw new Error('Gateway autenticado precisa publicar o evento payment:updated.');
 }
 
 console.log('Build inputs verified (read-only).');
