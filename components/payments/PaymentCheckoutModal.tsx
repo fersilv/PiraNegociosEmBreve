@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { API_URL, SOCKET_PATH, api } from '../../lib/api';
+import { LocalQrCode } from '../LocalQrCode';
 
 function money(cents?: number | null) {
   if (cents === null || cents === undefined) return '';
@@ -128,7 +129,8 @@ export function PaymentCheckoutModal({
   const recurring = checkout?.recurring === true
     || checkout?.billingType === 'RECURRING'
     || checkout?.product?.billingType === 'RECURRING'
-    || checkout?.metadata?.recurringApi === 'SUBSCRIPTIONS';
+    || checkout?.metadata?.recurringApi === 'SUBSCRIPTIONS'
+    || checkout?.metadata?.efiAutomaticPix === true;
   const authorizationUrl = recurring
     ? checkout?.authorizationUrl || checkout?.metadata?.subscriptionCheckoutUrl || null
     : null;
@@ -137,6 +139,10 @@ export function PaymentCheckoutModal({
     : null;
   const pixCopyPaste = checkout?.pixCopyPaste || null;
   const qrCodeBase64 = checkout?.qrCodeBase64 || null;
+  const localQrByteLength = pixCopyPaste
+    ? new TextEncoder().encode(String(pixCopyPaste)).length
+    : 0;
+  const canRenderLocalQr = Boolean(pixCopyPaste && localQrByteLength <= 271);
   const checkoutReady = Boolean(pixCopyPaste || qrCodeBase64 || authorizationUrl || ticketUrl || checkout?.checkoutReady);
   const paymentId = String(checkout?.paymentId || checkout?.id || '').trim();
 
@@ -348,33 +354,45 @@ export function PaymentCheckoutModal({
             <>
               {shownAmount !== null && <div className="mb-5 flex items-center justify-between gap-4 rounded-2xl bg-stone-950 px-5 py-4 text-white"><div><p className="text-[10px] font-black uppercase tracking-[.15em] text-white/45">Valor</p><p className="mt-1 text-xs text-white/55">{checkout.productName || title}</p></div><p className="text-2xl font-black">{money(shownAmount)}</p></div>}
 
-              {authorizationUrl ? (
+              {pixCopyPaste || qrCodeBase64 ? (
+                <div>
+                  {recurring && checkout?.metadata?.efiAutomaticPix === true && (
+                    <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center">
+                      <p className="text-[10px] font-black uppercase tracking-[.15em] text-emerald-700">Pix Automático</p>
+                      <p className="mt-1 text-xs font-semibold leading-5 text-emerald-950">Escaneie uma única vez para autorizar a recorrência. As próximas cobranças serão processadas automaticamente conforme o plano.</p>
+                    </div>
+                  )}
+                  <div className="grid gap-4 md:grid-cols-[220px_1fr] md:items-center">
+                    {qrCodeBase64 ? (
+                      <div className="flex min-h-[210px] items-center justify-center rounded-2xl border border-emerald-100 bg-white p-3">
+                        <img src={String(qrCodeBase64).startsWith('data:') ? qrCodeBase64 : `data:image/png;base64,${qrCodeBase64}`} alt={recurring ? 'QR Code de autorização do Pix Automático' : 'QR Code Pix'} className="h-auto max-h-[190px] w-auto max-w-full" />
+                      </div>
+                    ) : canRenderLocalQr ? (
+                      <div className="flex min-h-[210px] items-center justify-center rounded-2xl border border-emerald-100 bg-white p-3">
+                        <LocalQrCode value={String(pixCopyPaste)} label={recurring ? 'QR Code de autorização do Pix Automático' : 'QR Code Pix'} className="h-auto max-h-[190px] w-auto max-w-full" />
+                      </div>
+                    ) : (
+                      <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-emerald-200 bg-emerald-50 p-4 text-center text-xs text-stone-500"><QrCode className="mr-2 h-5 w-5 text-emerald-600" />O payload é maior que o QR local suportado. Use o Pix copia e cola ao lado.</div>
+                    )}
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[.14em] text-emerald-700">{recurring ? 'Pix Automático copia e cola' : 'Pix copia e cola'}</p>
+                      {pixCopyPaste ? <><div className="mt-2 max-h-28 overflow-auto break-all rounded-xl bg-white p-3 font-mono text-[11px] leading-5 text-stone-700 ring-1 ring-stone-200">{pixCopyPaste}</div><button type="button" onClick={() => void copyPix()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-black text-white"><Copy className="h-3.5 w-3.5" />{copied ? 'Copiado!' : recurring ? 'Copiar autorização Pix' : 'Copiar código Pix'}</button></> : <p className="mt-2 text-xs text-stone-500">O QR está disponível para leitura.</p>}
+                    </div>
+                  </div>
+                </div>
+              ) : authorizationUrl ? (
                 <div className="rounded-2xl border border-violet-200 bg-violet-50 p-5 text-center">
                   <img src="/brand/pix.svg" alt="Pix" className="mx-auto h-8 w-auto" />
-                  <p className="mt-4 text-[10px] font-black uppercase tracking-[.16em] text-violet-700">Autorização recorrente</p>
-                  <h3 className="mt-1 font-bold text-stone-950">Autorize a cobrança no ambiente seguro</h3>
-                  <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-stone-500">A janela pode ser aberta em outra aba. Esta modal continua acompanhando a autorização e será atualizada automaticamente.</p>
-                  <a href={authorizationUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-violet-700 px-5 py-3 text-sm font-black text-white">Abrir autorização <ExternalLink className="h-4 w-4" /></a>
-                </div>
-              ) : (pixCopyPaste || qrCodeBase64) ? (
-                <div className="grid gap-4 md:grid-cols-[220px_1fr] md:items-center">
-                  {qrCodeBase64 ? (
-                    <div className="flex min-h-[210px] items-center justify-center rounded-2xl border border-emerald-100 bg-white p-3">
-                      <img src={String(qrCodeBase64).startsWith('data:') ? qrCodeBase64 : `data:image/png;base64,${qrCodeBase64}`} alt="QR Code Pix" className="h-auto max-h-[190px] w-auto max-w-full" />
-                    </div>
-                  ) : (
-                    <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-emerald-200 bg-emerald-50 p-4 text-center text-xs text-stone-500"><QrCode className="mr-2 h-5 w-5 text-emerald-600" />Use o Pix copia e cola ao lado.</div>
-                  )}
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[.14em] text-emerald-700">Pix copia e cola</p>
-                    {pixCopyPaste ? <><div className="mt-2 max-h-28 overflow-auto break-all rounded-xl bg-white p-3 font-mono text-[11px] leading-5 text-stone-700 ring-1 ring-stone-200">{pixCopyPaste}</div><button type="button" onClick={() => void copyPix()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-black text-white"><Copy className="h-3.5 w-3.5" />{copied ? 'Copiado!' : 'Copiar código Pix'}</button></> : <p className="mt-2 text-xs text-stone-500">O QR está disponível para leitura.</p>}
-                  </div>
+                  <p className="mt-4 text-[10px] font-black uppercase tracking-[.16em] text-violet-700">Assinatura do provedor</p>
+                  <h3 className="mt-1 font-bold text-stone-950">Conclua a assinatura no ambiente do provedor</h3>
+                  <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-stone-500">Este fluxo é uma assinatura hospedada e não um QR Code de Pix Automático. A modal continuará acompanhando o status em tempo real.</p>
+                  <a href={authorizationUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-violet-700 px-5 py-3 text-sm font-black text-white">Abrir assinatura <ExternalLink className="h-4 w-4" /></a>
                 </div>
               ) : ticketUrl ? (
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center">
                   <QrCode className="mx-auto h-8 w-8 text-emerald-700" />
-                  <h3 className="mt-3 font-bold text-stone-950">Pix pronto no Mercado Pago</h3>
-                  <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-stone-500">O provedor retornou a página de instruções antes do QR bruto. Você pode abrir essa página enquanto continuamos tentando carregar o QR dentro da modal.</p>
+                  <h3 className="mt-3 font-bold text-stone-950">Pix pronto no provedor</h3>
+                  <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-stone-500">O provedor retornou uma página de instruções antes do QR bruto. Você pode abrir essa página enquanto continuamos tentando carregar o QR dentro da modal.</p>
                   <a href={ticketUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-5 py-3 text-sm font-black text-white">Abrir instruções do Pix <ExternalLink className="h-4 w-4" /></a>
                 </div>
               ) : checkoutReady ? (
