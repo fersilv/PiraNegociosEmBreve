@@ -1,7 +1,8 @@
 import { Body, Controller, Get, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
-import { PaymentCheckoutStatusService } from '../payments/payment-checkout-status.service';
 import type { PaymentCheckoutPayer } from '../payments/payment-provider-manager.service';
+import type { PurchaseMode } from '../payments/commercial-payments.service';
+import { CompanyPlanCommerceService } from './company-plan-commerce.service';
 import { CompanyPlansOverviewService } from './company-plans-overview.service';
 import { CompanyPlansService } from './company-plans.service';
 
@@ -11,12 +12,13 @@ export class CompanyPlansController {
   constructor(
     private readonly plans: CompanyPlansService,
     private readonly overview: CompanyPlansOverviewService,
-    private readonly checkoutStatus: PaymentCheckoutStatusService,
+    private readonly commerce: CompanyPlanCommerceService,
   ) {}
 
   @Get()
-  getPlans(@Req() req: any) {
-    return this.overview.getForUser(req.user.uid);
+  async getPlans(@Req() req: any) {
+    const base = await this.overview.getForUser(req.user.uid);
+    return this.commerce.enrichOverview(base);
   }
 
   @Get('checkout/latest')
@@ -25,16 +27,20 @@ export class CompanyPlansController {
   }
 
   @Post('checkout')
-  async checkout(
+  checkout(
     @Req() req: any,
-    @Body() body: { plan?: string; payer?: PaymentCheckoutPayer },
+    @Body() body: {
+      plan?: string;
+      purchaseMode?: PurchaseMode;
+      payer?: PaymentCheckoutPayer;
+    },
   ) {
-    const result: any = await this.plans.createCheckout(req.user.uid, body?.plan, body?.payer || {});
-    const paymentId = String(result?.paymentId || result?.id || '').trim();
-    if (paymentId && result?.paymentRequired !== false) {
-      this.checkoutStatus.watchForUser(req.user.uid, paymentId);
-    }
-    return paymentId ? { ...result, id: paymentId, paymentId } : result;
+    return this.commerce.createCheckout(
+      req.user.uid,
+      body?.plan,
+      body?.purchaseMode || 'SUBSCRIPTION',
+      body?.payer || {},
+    );
   }
 
   @Patch('cancel-at-period-end')
