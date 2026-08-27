@@ -9,7 +9,7 @@ import { PublishedResumeCompanyBridge } from "./components/PublishedResumeCompan
 import { PublicResumeAccountBridge } from "./components/PublicResumeAccountBridge";
 import { PublicResumeExitIntent } from "./components/PublicResumeExitIntent";
 import { PublicResumeResponsiveStyles } from "./components/PublicResumeResponsiveStyles";
-import { AuthenticatedProductFeedbackWidget } from "./components/AuthenticatedProductFeedbackWidget";
+import { AuthenticatedClassifiedsChatWidget } from "./components/AuthenticatedClassifiedsChatWidget";
 
 const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() => import("./pages/Login").then((module) => ({ default: module.Login })));
@@ -115,7 +115,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </Suspense>
-          {!isMinimalShell && <AuthenticatedProductFeedbackWidget />}
+          {!isMinimalShell && <AuthenticatedClassifiedsChatWidget />}
         </BrowserRouter>
       </AuthProvider>
     </FeedbackProvider>
