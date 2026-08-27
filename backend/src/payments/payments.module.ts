@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminGuard } from '../admin/admin.guard';
+import { ChatModule } from '../chat/chat.module';
 import { User } from '../users/entities/user.entity';
 import {
   PaymentsController,
@@ -22,7 +23,7 @@ import { PaymentProviderConfigService } from './payment-provider-config.service'
 import { PaymentProviderManagerService } from './payment-provider-manager.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User])],
+  imports: [TypeOrmModule.forFeature([User]), ChatModule],
   controllers: [
     PaymentsController,
     PaymentProviderPublicController,
