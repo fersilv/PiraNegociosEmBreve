@@ -14,11 +14,11 @@ import {
   Search,
   ShieldCheck,
   ShoppingCart,
-  Sparkles,
   Trash2,
   Zap,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { useFeedback } from '../contexts/FeedbackContext';
 
 type PlanKey = 'FREE' | 'PLUS' | 'ELITE';
 type PurchaseMode = 'SUBSCRIPTION' | 'ONE_TIME';
@@ -35,11 +35,22 @@ type Rule = {
   enabled: boolean;
 };
 type RuleDraft = { percentage: string; minimum: string; maximum: string; enabled: boolean };
+type Benefit = {
+  id: string;
+  label: string;
+  description: string;
+  category: 'WHATSAPP' | 'VISIBILITY';
+  minimumPlan: 'PLUS' | 'ELITE';
+};
+type BenefitCatalogPlan = { benefits: Benefit[]; defaultBenefitIds: string[] };
+type BenefitCatalog = Partial<Record<'PLUS' | 'ELITE', BenefitCatalogPlan>>;
 type CommercialDraft = {
   subscriptionEnabled: boolean;
   subscriptionPrice: string;
+  subscriptionBenefits: string[];
   oneTimeEnabled: boolean;
   oneTimePrice: string;
+  oneTimeBenefits: string[];
   preferredPurchaseMode: PurchaseMode;
   durationDays: number;
 };
@@ -65,21 +76,23 @@ const PLAN_META: Record<PlanKey, { label: string; eyebrow: string; description: 
   PLUS: {
     label: 'Plus',
     eyebrow: 'Empresarial',
-    description: 'Plano empresarial intermediário com preço recorrente e avulso independentes.',
+    description: 'Plano empresarial intermediário com preço e benefícios diferentes para recorrente e avulso.',
   },
   ELITE: {
     label: 'Elite',
     eyebrow: 'Empresarial premium',
-    description: 'Plano empresarial completo, com condições comerciais próprias e taxas de marketplace configuráveis.',
+    description: 'Plano empresarial completo, com condições e benefícios comerciais configuráveis por modalidade.',
   },
 };
 
 export default function AdminClassifiedCommercePage() {
+  const { toast, confirm } = useFeedback();
   const [saleRules, setSaleRules] = useState<Rule[]>([]);
   const [auctionRules, setAuctionRules] = useState<Rule[]>([]);
   const [saleDrafts, setSaleDrafts] = useState<Record<string, RuleDraft>>({});
   const [auctionDrafts, setAuctionDrafts] = useState<Record<string, RuleDraft>>({});
   const [commercialDrafts, setCommercialDrafts] = useState<Record<string, CommercialDraft>>({});
+  const [benefitCatalog, setBenefitCatalog] = useState<BenefitCatalog>({});
   const [routes, setRoutes] = useState<ProviderRoute[]>([]);
   const [query, setQuery] = useState('');
   const [companies, setCompanies] = useState<any[]>([]);
@@ -88,46 +101,49 @@ export default function AdminClassifiedCommercePage() {
   const [auctionCustom, setAuctionCustom] = useState<RuleDraft>({ ...EMPTY_RULE });
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState('');
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
 
   const load = async () => {
     setLoading(true);
-    setError('');
     try {
-      const [sales, auctions, products, routeResponse] = await Promise.all([
+      const [sales, auctions, products, routeResponse, benefitResponse] = await Promise.all([
         api.get('/admin/classifieds-commerce/fee-rules'),
         api.get('/admin/classifieds-commerce/auction-fee-rules'),
         api.get('/admin/payments/commercial-products'),
         api.get('/admin/payments/providers/routes'),
+        api.get('/admin/company-plans/benefit-catalog'),
       ]);
       const sr = Array.isArray(sales.data) ? sales.data : [];
       const ar = Array.isArray(auctions.data) ? auctions.data : [];
       const ps = Array.isArray(products.data) ? products.data : [];
+      const bc: BenefitCatalog = benefitResponse.data || {};
       setSaleRules(sr);
       setAuctionRules(ar);
+      setBenefitCatalog(bc);
       setRoutes(Array.isArray(routeResponse.data) ? routeResponse.data : []);
       setSaleDrafts(Object.fromEntries(PLANS.map((plan) => [plan, fromRule(sr.find((rule: Rule) => rule.scope === 'PLAN' && rule.plan === plan))])));
       setAuctionDrafts(Object.fromEntries(PLANS.map((plan) => [plan, fromRule(ar.find((rule: Rule) => rule.scope === 'PLAN' && rule.plan === plan), '0,99')])));
 
       const byCode = new Map(ps.map((product: any) => [product.code, product]));
       const nextCommercial: Record<string, CommercialDraft> = {};
-      for (const plan of ['PLUS', 'ELITE'] as PlanKey[]) {
+      for (const plan of ['PLUS', 'ELITE'] as const) {
         const product = byCode.get(PRODUCT_CODE[plan]) as any;
+        const defaults = bc[plan]?.defaultBenefitIds || [];
         const subscriptionEnabled = product?.subscriptionPriceCents !== null && product?.subscriptionPriceCents !== undefined;
         const oneTimeEnabled = product?.oneTimePriceCents !== null && product?.oneTimePriceCents !== undefined;
         nextCommercial[plan] = {
           subscriptionEnabled,
           subscriptionPrice: toReais(product?.subscriptionPriceCents || 0),
+          subscriptionBenefits: Array.isArray(product?.subscriptionBenefits) ? product.subscriptionBenefits : [...defaults],
           oneTimeEnabled,
           oneTimePrice: toReais(product?.oneTimePriceCents || 0),
+          oneTimeBenefits: Array.isArray(product?.oneTimeBenefits) ? product.oneTimeBenefits : [...defaults],
           preferredPurchaseMode: product?.preferredPurchaseMode === 'ONE_TIME' ? 'ONE_TIME' : 'SUBSCRIPTION',
           durationDays: Math.max(1, Number(product?.durationDays || 30)),
         };
       }
       setCommercialDrafts(nextCommercial);
     } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || 'Não foi possível carregar a central de monetização.');
+      toast(requestError?.response?.data?.message || 'Não foi possível carregar a central de monetização.', 'error');
     } finally {
       setLoading(false);
     }
@@ -179,8 +195,6 @@ export default function AdminClassifiedCommercePage() {
     const auction = auctionDrafts[plan] || { ...EMPTY_RULE, percentage: '0,99' };
     const commercial = commercialDrafts[plan];
     setWorking(`plan-${plan}`);
-    setMessage('');
-    setError('');
     try {
       const requests: Promise<any>[] = [
         api.patch(`/admin/classifieds-commerce/fee-rules/plans/${plan}`, rulePayload(sale)),
@@ -208,6 +222,8 @@ export default function AdminClassifiedCommercePage() {
           subscriptionPriceCents,
           oneTimePriceCents,
           preferredPurchaseMode,
+          subscriptionBenefits: commercial.subscriptionBenefits,
+          oneTimeBenefits: commercial.oneTimeBenefits,
         }));
         requests.push(api.patch(`/admin/payments/products/${PRODUCT_CODE[plan]}/duration`, {
           durationDays: Math.max(1, Number(commercial.durationDays || 30)),
@@ -215,10 +231,10 @@ export default function AdminClassifiedCommercePage() {
       }
 
       await Promise.all(requests);
-      setMessage(`${PLAN_META[plan].label}: preços, modalidades e taxas atualizados.`);
+      toast(`${PLAN_META[plan].label}: preços, benefícios e taxas atualizados.`, 'success');
       await load();
     } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || requestError?.message || 'Não foi possível salvar o plano.');
+      toast(requestError?.response?.data?.message || requestError?.message || 'Não foi possível salvar o plano.', 'error');
     } finally {
       setWorking('');
     }
@@ -235,31 +251,36 @@ export default function AdminClassifiedCommercePage() {
   const saveCustom = async (kind: RuleKind) => {
     if (!selected) return;
     setWorking(`${kind}-company`);
-    setMessage('');
-    setError('');
     try {
       const base = kind === 'SALE' ? 'fee-rules' : 'auction-fee-rules';
       const draft = kind === 'SALE' ? saleCustom : auctionCustom;
       await api.patch(`/admin/classifieds-commerce/${base}/companies/${selected.id}`, rulePayload(draft));
-      setMessage(`${kind === 'SALE' ? 'Comissão de venda' : 'Taxa de leilão'} custom de ${selected.name} salva.`);
+      toast(`${kind === 'SALE' ? 'Comissão de venda' : 'Taxa de leilão'} custom de ${selected.name} salva.`, 'success');
       await load();
     } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || 'Não foi possível salvar a regra custom.');
+      toast(requestError?.response?.data?.message || 'Não foi possível salvar a regra custom.', 'error');
     } finally {
       setWorking('');
     }
   };
 
   const removeCustom = async (kind: RuleKind, rule: Rule) => {
-    if (!rule.companyId || !window.confirm(`Remover a regra custom de ${rule.companyName || 'esta empresa'}?`)) return;
+    if (!rule.companyId) return;
+    const approved = await confirm({
+      title: 'Remover condição custom',
+      message: `Remover a regra custom de ${rule.companyName || 'esta empresa'}?`,
+      confirmText: 'Remover',
+      destructive: true,
+    });
+    if (!approved) return;
     setWorking(`delete-${kind}-${rule.companyId}`);
     try {
       const base = kind === 'SALE' ? 'fee-rules' : 'auction-fee-rules';
       await api.delete(`/admin/classifieds-commerce/${base}/companies/${rule.companyId}`);
-      setMessage('Regra custom removida.');
+      toast('Regra custom removida.', 'success');
       await load();
     } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || 'Não foi possível remover a regra custom.');
+      toast(requestError?.response?.data?.message || 'Não foi possível remover a regra custom.', 'error');
     } finally {
       setWorking('');
     }
@@ -283,12 +304,12 @@ export default function AdminClassifiedCommercePage() {
               <span className="rounded-full bg-[#c96847]/20 px-3 py-1.5 text-[9px] font-black uppercase tracking-[.18em] text-[#f3b79f]">Financeiro</span>
               <span className="rounded-full bg-white/[.06] px-3 py-1.5 text-[9px] font-black uppercase tracking-[.16em] text-white/45">Centro de monetização</span>
             </div>
-            <h1 className="mt-5 max-w-4xl font-serif text-4xl font-black tracking-tight sm:text-5xl">Planos, preços e taxas em um só lugar.</h1>
-            <p className="mt-4 max-w-3xl text-sm leading-6 text-white/55">Configure o que a empresa paga pelo plano e o que o PiraNegócios cobra nas transações dos Classificados. Assinatura, compra avulsa, comissão de venda e taxa de leilão são controles independentes.</p>
+            <h1 className="mt-5 max-w-4xl font-serif text-4xl font-black tracking-tight sm:text-5xl">Planos, benefícios, preços e taxas.</h1>
+            <p className="mt-4 max-w-3xl text-sm leading-6 text-white/55">Defina não só quanto custa cada modalidade, mas também o que o cliente recebe nela. A assinatura pode entregar mais valor que a compra avulsa, e essa diferença aparece antes do checkout.</p>
             <div className="mt-7 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-[.12em] text-white/60">
               <span className="rounded-xl bg-white/[.06] px-3 py-2">Planos empresariais</span>
+              <span className="rounded-xl bg-white/[.06] px-3 py-2">Benefícios por modalidade</span>
               <span className="rounded-xl bg-white/[.06] px-3 py-2">Classificados</span>
-              <span className="rounded-xl bg-white/[.06] px-3 py-2">Contratos custom</span>
             </div>
           </div>
           <div className="border-t border-white/[.08] bg-white/[.035] p-6 sm:p-8 lg:border-l lg:border-t-0">
@@ -302,16 +323,14 @@ export default function AdminClassifiedCommercePage() {
         </div>
       </section>
 
-      {(message || error) && <div className={`rounded-2xl border px-4 py-3 text-sm font-bold ${error ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>{error || message}</div>}
-
       <section>
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[.18em] text-[#c96847]">Planos empresariais + Classificados</p>
             <h2 className="mt-1 font-serif text-3xl font-black text-stone-950">Configuração por plano</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Cada card concentra tudo que pertence ao plano. Não é mais necessário caçar mensalidade em uma seção e taxa em outra.</p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Cada card concentra preço, benefícios e taxas do plano. O que for removido do avulso será mostrado ao cliente como vantagem perdida em relação à assinatura.</p>
           </div>
-          <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-xs text-stone-500 shadow-sm"><strong className="text-stone-800">Regra:</strong> desligar avulso não desliga recorrente, e vice-versa.</div>
+          <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-xs text-stone-500 shadow-sm"><strong className="text-stone-800">Regra:</strong> assinatura e avulso são ofertas independentes.</div>
         </div>
 
         <div className="grid gap-5 xl:grid-cols-3">
@@ -320,6 +339,7 @@ export default function AdminClassifiedCommercePage() {
               key={plan}
               plan={plan}
               commercial={commercialDrafts[plan]}
+              benefitOptions={plan === 'FREE' ? [] : benefitCatalog[plan]?.benefits || []}
               sale={saleDrafts[plan] || { ...EMPTY_RULE }}
               auction={auctionDrafts[plan] || { ...EMPTY_RULE, percentage: '0,99' }}
               automaticProvider={automaticRoute?.enabled ? automaticRoute.providerName || automaticRoute.providerCode || null : null}
@@ -352,10 +372,6 @@ export default function AdminClassifiedCommercePage() {
           <div className="mt-5 grid gap-5 lg:grid-cols-2"><CustomList title="Venda online" kind="SALE" rows={saleCustoms} onEdit={(rule) => choose({ id: rule.companyId, name: rule.companyName || rule.companyId })} onDelete={removeCustom} /><CustomList title="Leilão" kind="AUCTION" rows={auctionCustoms} onEdit={(rule) => choose({ id: rule.companyId, name: rule.companyName || rule.companyId })} onDelete={removeCustom} /></div>
         </div>
       </section>
-
-      <section className="rounded-[26px] border border-sky-200 bg-sky-50 p-5 text-xs leading-6 text-sky-950">
-        <strong>Mapa financeiro:</strong> preço da assinatura e preço avulso pertencem ao plano empresarial. Comissão de venda e taxa de leilão pertencem ao módulo Classificados. Uma empresa com contrato custom substitui apenas as taxas transacionais configuradas para ela.
-      </section>
     </div>
   );
 }
@@ -363,6 +379,7 @@ export default function AdminClassifiedCommercePage() {
 function PlanMonetizationCard({
   plan,
   commercial,
+  benefitOptions,
   sale,
   auction,
   automaticProvider,
@@ -376,6 +393,7 @@ function PlanMonetizationCard({
 }: {
   plan: PlanKey;
   commercial?: CommercialDraft;
+  benefitOptions: Benefit[];
   sale: RuleDraft;
   auction: RuleDraft;
   automaticProvider: string | null;
@@ -390,6 +408,9 @@ function PlanMonetizationCard({
   const meta = PLAN_META[plan];
   const elite = plan === 'ELITE';
   const plus = plan === 'PLUS';
+  const lostBenefits = commercial
+    ? commercial.subscriptionBenefits.filter((id) => !commercial.oneTimeBenefits.includes(id))
+    : [];
   return (
     <article className={`overflow-hidden rounded-[30px] border bg-white shadow-sm ${elite ? 'border-violet-200' : plus ? 'border-amber-200' : 'border-stone-200'}`}>
       <div className={`p-5 sm:p-6 ${elite ? 'bg-gradient-to-br from-violet-950 to-violet-800 text-white' : plus ? 'bg-gradient-to-br from-amber-300 to-amber-100 text-stone-950' : 'bg-gradient-to-br from-stone-900 to-stone-700 text-white'}`}>
@@ -405,35 +426,68 @@ function PlanMonetizationCard({
 
       <div className="space-y-5 p-5 sm:p-6">
         {plan !== 'FREE' && commercial ? (
-          <section>
-            <div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-[9px] font-black uppercase tracking-[.14em] text-[#c96847]">Preço do plano</p><h4 className="mt-1 text-sm font-black text-stone-950">Formas de contratação</h4></div><label className="text-right"><span className="block text-[8px] font-black uppercase tracking-[.1em] text-stone-400">Período</span><div className="mt-1 flex items-center gap-1"><input type="number" min={1} value={commercial.durationDays} onChange={(event) => onCommercialPatch({ durationDays: Math.max(1, Number(event.target.value || 30)) })} className="h-9 w-16 rounded-xl border border-stone-200 bg-stone-50 px-2 text-center text-xs font-black outline-none" /><span className="text-[10px] font-bold text-stone-400">dias</span></div></label></div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <PaymentModeBox
-                icon={<Repeat2 className="h-4 w-4" />}
-                title="Pix Automático"
-                caption="Assinatura recorrente"
-                provider={automaticProvider}
-                enabled={commercial.subscriptionEnabled}
-                price={commercial.subscriptionPrice}
-                preferred={commercial.preferredPurchaseMode === 'SUBSCRIPTION'}
-                onEnabled={(enabled) => onModeEnabled('SUBSCRIPTION', enabled)}
-                onPrice={(value) => onCommercialPatch({ subscriptionPrice: value })}
-                onPrefer={() => onCommercialPatch({ preferredPurchaseMode: 'SUBSCRIPTION' })}
-              />
-              <PaymentModeBox
-                icon={<Banknote className="h-4 w-4" />}
-                title="Pix avulso"
-                caption="Pagamento único"
-                provider={pixProvider}
-                enabled={commercial.oneTimeEnabled}
-                price={commercial.oneTimePrice}
-                preferred={commercial.preferredPurchaseMode === 'ONE_TIME'}
-                onEnabled={(enabled) => onModeEnabled('ONE_TIME', enabled)}
-                onPrice={(value) => onCommercialPatch({ oneTimePrice: value })}
-                onPrefer={() => onCommercialPatch({ preferredPurchaseMode: 'ONE_TIME' })}
-              />
-            </div>
-          </section>
+          <>
+            <section>
+              <div className="mb-3 flex items-center justify-between gap-3"><div><p className="text-[9px] font-black uppercase tracking-[.14em] text-[#c96847]">Preço do plano</p><h4 className="mt-1 text-sm font-black text-stone-950">Formas de contratação</h4></div><label className="text-right"><span className="block text-[8px] font-black uppercase tracking-[.1em] text-stone-400">Período</span><div className="mt-1 flex items-center gap-1"><input type="number" min={1} value={commercial.durationDays} onChange={(event) => onCommercialPatch({ durationDays: Math.max(1, Number(event.target.value || 30)) })} className="h-9 w-16 rounded-xl border border-stone-200 bg-stone-50 px-2 text-center text-xs font-black outline-none" /><span className="text-[10px] font-bold text-stone-400">dias</span></div></label></div>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                <PaymentModeBox
+                  icon={<Repeat2 className="h-4 w-4" />}
+                  title="Pix Automático"
+                  caption="Assinatura recorrente"
+                  provider={automaticProvider}
+                  enabled={commercial.subscriptionEnabled}
+                  price={commercial.subscriptionPrice}
+                  preferred={commercial.preferredPurchaseMode === 'SUBSCRIPTION'}
+                  onEnabled={(enabled) => onModeEnabled('SUBSCRIPTION', enabled)}
+                  onPrice={(value) => onCommercialPatch({ subscriptionPrice: value })}
+                  onPrefer={() => onCommercialPatch({ preferredPurchaseMode: 'SUBSCRIPTION' })}
+                />
+                <PaymentModeBox
+                  icon={<Banknote className="h-4 w-4" />}
+                  title="Pix avulso"
+                  caption="Pagamento único"
+                  provider={pixProvider}
+                  enabled={commercial.oneTimeEnabled}
+                  price={commercial.oneTimePrice}
+                  preferred={commercial.preferredPurchaseMode === 'ONE_TIME'}
+                  onEnabled={(enabled) => onModeEnabled('ONE_TIME', enabled)}
+                  onPrice={(value) => onCommercialPatch({ oneTimePrice: value })}
+                  onPrefer={() => onCommercialPatch({ preferredPurchaseMode: 'ONE_TIME' })}
+                />
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-stone-200 bg-stone-50/70 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div><p className="text-[9px] font-black uppercase tracking-[.14em] text-violet-700">Benefícios por modalidade</p><h4 className="mt-1 text-sm font-black text-stone-950">O que cada cliente leva</h4><p className="mt-1 text-[10px] leading-4 text-stone-500">O Free continua como base. Aqui você controla os benefícios premium deste plano.</p></div>
+                <span className={`rounded-full px-3 py-1.5 text-[9px] font-black ${lostBenefits.length ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>{lostBenefits.length ? `Avulso perde ${lostBenefits.length}` : 'Mesmos benefícios'}</span>
+              </div>
+              <div className="mt-4 grid gap-3 2xl:grid-cols-2">
+                <BenefitChecklist
+                  title="Na assinatura"
+                  subtitle="Benefícios do recorrente"
+                  options={benefitOptions}
+                  selected={commercial.subscriptionBenefits}
+                  onChange={(subscriptionBenefits) => onCommercialPatch({ subscriptionBenefits })}
+                  tone="violet"
+                />
+                <BenefitChecklist
+                  title="Na compra avulsa"
+                  subtitle="Benefícios sem renovação"
+                  options={benefitOptions}
+                  selected={commercial.oneTimeBenefits}
+                  onChange={(oneTimeBenefits) => onCommercialPatch({ oneTimeBenefits })}
+                  tone="stone"
+                />
+              </div>
+              {lostBenefits.length > 0 && (
+                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-[9px] font-black uppercase tracking-[.12em] text-amber-700">O cliente avulso verá que perde</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">{lostBenefits.map((id) => <span key={id} className="rounded-lg bg-white px-2 py-1 text-[9px] font-bold text-amber-900 ring-1 ring-amber-200">{benefitOptions.find((benefit) => benefit.id === id)?.label || id}</span>)}</div>
+                </div>
+              )}
+            </section>
+          </>
         ) : (
           <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4"><div className="flex items-center gap-2"><CreditCard className="h-4 w-4 text-stone-400" /><p className="text-xs font-black text-stone-800">Sem cobrança pelo plano</p></div><p className="mt-1 text-[10px] leading-4 text-stone-500">Free não possui assinatura nem compra avulsa.</p></div>
         )}
@@ -451,6 +505,24 @@ function PlanMonetizationCard({
         <button onClick={onSave} disabled={saving} className={`flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-sm font-black text-white transition disabled:opacity-50 ${elite ? 'bg-violet-800 hover:bg-violet-900' : plus ? 'bg-stone-950 hover:bg-black' : 'bg-stone-800 hover:bg-stone-950'}`}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Salvar configuração do {meta.label}</button>
       </div>
     </article>
+  );
+}
+
+function BenefitChecklist({ title, subtitle, options, selected, onChange, tone }: { title: string; subtitle: string; options: Benefit[]; selected: string[]; onChange: (ids: string[]) => void; tone: 'violet' | 'stone' }) {
+  const selectedSet = new Set(selected);
+  const toggle = (id: string) => {
+    onChange(selectedSet.has(id) ? selected.filter((item) => item !== id) : [...selected, id]);
+  };
+  return (
+    <div className={`rounded-2xl border bg-white p-3 ${tone === 'violet' ? 'border-violet-200' : 'border-stone-200'}`}>
+      <div className="flex items-center justify-between gap-2"><div><p className="text-xs font-black text-stone-950">{title}</p><p className="text-[9px] text-stone-400">{subtitle}</p></div><span className={`rounded-full px-2 py-1 text-[8px] font-black ${tone === 'violet' ? 'bg-violet-100 text-violet-700' : 'bg-stone-100 text-stone-600'}`}>{selected.length}/{options.length}</span></div>
+      <div className="mt-3 max-h-64 space-y-1.5 overflow-y-auto pr-1">
+        {options.map((benefit) => {
+          const active = selectedSet.has(benefit.id);
+          return <button key={benefit.id} type="button" onClick={() => toggle(benefit.id)} title={benefit.description} className={`flex w-full items-start gap-2 rounded-xl px-2.5 py-2 text-left transition ${active ? tone === 'violet' ? 'bg-violet-50 text-violet-950' : 'bg-emerald-50 text-emerald-950' : 'bg-stone-50 text-stone-400'}`}><span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded ${active ? tone === 'violet' ? 'bg-violet-600 text-white' : 'bg-emerald-600 text-white' : 'bg-stone-200 text-transparent'}`}><Check className="h-3 w-3" /></span><span className="text-[10px] font-bold leading-4">{benefit.label}</span></button>;
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -472,7 +544,7 @@ function CustomBox({ title, icon, draft, onChange, onSave, saving }: { title: st
 }
 
 function CustomList({ title, kind, rows, onEdit, onDelete }: { title: string; kind: RuleKind; rows: Rule[]; onEdit: (rule: Rule) => void; onDelete: (kind: RuleKind, rule: Rule) => void }) {
-  return <div><p className="text-[10px] font-black uppercase tracking-[.12em] text-stone-400">{title}</p>{rows.length ? <div className="mt-2 space-y-2">{rows.map((rule) => <div key={rule.id} className="flex items-center gap-3 rounded-2xl border border-stone-100 bg-stone-50 p-3"><div className="min-w-0 flex-1"><p className="truncate text-xs font-black text-stone-900">{rule.companyName || rule.companyId}</p><p className="mt-1 text-[9px] text-stone-500">{formatPercent(rule.percentage)}% · mín. {money(rule.minimumFeeCents)} · {rule.maximumFeeCents == null ? 'sem teto' : `teto ${money(rule.maximumFeeCents)}`}</p></div><button onClick={() => onEdit(rule)} className="rounded-xl bg-white px-3 py-2 text-[9px] font-black text-stone-600 ring-1 ring-stone-200">Editar</button><button onClick={() => onDelete(kind, rule)} className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50 text-red-600"><Trash2 className="h-4 w-4" /></button></div>)}</div> : <p className="mt-3 rounded-xl bg-stone-50 p-3 text-[10px] text-stone-400">Nenhuma regra custom.</p>}</div>;
+  return <div><p className="text-[10px] font-black uppercase tracking-[.12em] text-stone-400">{title}</p>{rows.length ? <div className="mt-2 space-y-2">{rows.map((rule) => <div key={rule.id} className="flex items-center gap-3 rounded-2xl border border-stone-100 bg-stone-50 p-3"><div className="min-w-0 flex-1"><p className="truncate text-xs font-black text-stone-900">{rule.companyName || rule.companyId}</p><p className="mt-1 text-[9px] text-stone-500">{formatPercent(rule.percentage)}% · mín. {money(rule.minimumFeeCents)} · {rule.maximumFeeCents == null ? 'sem teto' : `teto ${money(rule.maximumFeeCents)}`}</p></div><button onClick={() => onEdit(rule)} className="rounded-xl bg-white px-3 py-2 text-[9px] font-black text-stone-600 ring-1 ring-stone-200">Editar</button><button onClick={() => void onDelete(kind, rule)} className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50 text-red-600"><Trash2 className="h-4 w-4" /></button></div>)}</div> : <p className="mt-3 rounded-xl bg-stone-50 p-3 text-[10px] text-stone-400">Nenhuma regra custom.</p>}</div>;
 }
 
 function RuleFields({ draft, onChange }: { draft: RuleDraft; onChange: (draft: RuleDraft) => void }) {
