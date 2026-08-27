@@ -25,6 +25,17 @@ export class CommercialPaymentsService {
     return parsed;
   }
 
+  private benefitArray(value: unknown, current: unknown): string[] | null {
+    if (value === undefined) {
+      return Array.isArray(current)
+        ? Array.from(new Set(current.map((item) => String(item || '').trim()).filter(Boolean)))
+        : null;
+    }
+    if (value === null) return null;
+    if (!Array.isArray(value)) throw new BadRequestException('Benefícios devem ser enviados como uma lista.');
+    return Array.from(new Set(value.map((item) => String(item || '').trim().toUpperCase()).filter(Boolean)));
+  }
+
   private normalizeMode(value: unknown): PurchaseMode | null {
     const mode = String(value || '').trim().toUpperCase();
     if (!mode) return null;
@@ -60,11 +71,15 @@ export class CommercialPaymentsService {
 
     const oneTimePromo = oneTimePriceCents === null ? null : this.promotionPrice(product, 'ONE_TIME', oneTimePriceCents);
     const subscriptionPromo = subscriptionPriceCents === null ? null : this.promotionPrice(product, 'SUBSCRIPTION', subscriptionPriceCents);
+    const subscriptionBenefits = this.benefitArray(undefined, product.subscriptionBenefits);
+    const oneTimeBenefits = this.benefitArray(undefined, product.oneTimeBenefits);
 
     return {
       ...product,
       oneTimePriceCents,
       subscriptionPriceCents,
+      subscriptionBenefits,
+      oneTimeBenefits,
       preferredPurchaseMode,
       oneTimeAvailable: oneTimePriceCents !== null,
       subscriptionAvailable: subscriptionPriceCents !== null,
@@ -77,6 +92,7 @@ export class CommercialPaymentsService {
           promotionActive: subscriptionPromo !== null,
           paymentType: 'PIX_AUTOMATICO',
           recommended: preferredPurchaseMode === 'SUBSCRIPTION',
+          benefitIds: subscriptionBenefits,
         },
         oneTime: {
           mode: 'ONE_TIME' as const,
@@ -86,6 +102,7 @@ export class CommercialPaymentsService {
           promotionActive: oneTimePromo !== null,
           paymentType: 'PIX',
           recommended: preferredPurchaseMode === 'ONE_TIME',
+          benefitIds: oneTimeBenefits,
         },
       },
     };
@@ -115,6 +132,9 @@ export class CommercialPaymentsService {
       throw new BadRequestException('O produto precisa ter pelo menos uma modalidade comercial disponível.');
     }
 
+    const subscriptionBenefits = this.benefitArray(input.subscriptionBenefits, current.subscriptionBenefits);
+    const oneTimeBenefits = this.benefitArray(input.oneTimeBenefits, current.oneTimeBenefits);
+
     let preferredPurchaseMode: PurchaseMode = this.normalizeMode(input.preferredPurchaseMode)
       || (current.preferredPurchaseMode as PurchaseMode);
     if (preferredPurchaseMode === 'SUBSCRIPTION' && subscriptionPriceCents === null) preferredPurchaseMode = 'ONE_TIME';
@@ -132,10 +152,21 @@ export class CommercialPaymentsService {
            "preferredPurchaseMode" = $4,
            "priceCents" = $5,
            "billingType" = $6,
+           "subscriptionBenefits" = $7::jsonb,
+           "oneTimeBenefits" = $8::jsonb,
            "updatedAt" = now()
        WHERE code = $1
        RETURNING *`,
-      [code, oneTimePriceCents, subscriptionPriceCents, preferredPurchaseMode, legacyPrice, legacyBillingType],
+      [
+        code,
+        oneTimePriceCents,
+        subscriptionPriceCents,
+        preferredPurchaseMode,
+        legacyPrice,
+        legacyBillingType,
+        subscriptionBenefits === null ? null : JSON.stringify(subscriptionBenefits),
+        oneTimeBenefits === null ? null : JSON.stringify(oneTimeBenefits),
+      ],
     );
     return this.present(rows[0]);
   }
@@ -198,6 +229,7 @@ export class CommercialPaymentsService {
           purchaseMode,
           paymentType: offer.paymentType,
           promotionActive: offer.promotionActive === true,
+          benefitIds: offer.benefitIds,
         }),
       ],
     );
