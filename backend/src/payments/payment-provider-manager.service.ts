@@ -25,6 +25,15 @@ export class PaymentProviderManagerService {
     return code === 'EFI';
   }
 
+  private async efiAutomaticEnabled() {
+    try {
+      const config = await this.providerConfig.getSecretConfig<Record<string, any>>('EFI');
+      return config.pixAutomaticEnabled === true;
+    } catch {
+      return false;
+    }
+  }
+
   async list() {
     const providers = await this.providerConfig.listSafe();
     return providers.map((provider: any) => {
@@ -47,7 +56,10 @@ export class PaymentProviderManagerService {
   }
 
   async routes() {
-    const routes = await this.providerConfig.listRoutesSafe();
+    const [routes, efiAutomaticEnabled] = await Promise.all([
+      this.providerConfig.listRoutesSafe(),
+      this.efiAutomaticEnabled(),
+    ]);
     return routes.map((route: any) => {
       if (
         route.paymentType === 'PIX_AUTOMATICO'
@@ -64,6 +76,21 @@ export class PaymentProviderManagerService {
           message: 'A rota antiga apontava para uma assinatura do Mercado Pago, não para Pix Automático nativo.',
         };
       }
+      if (
+        route.paymentType === 'PIX_AUTOMATICO'
+        && route.enabled === true
+        && route.providerCode === 'EFI'
+        && !efiAutomaticEnabled
+      ) {
+        return {
+          ...route,
+          enabled: false,
+          providerCode: null,
+          providerName: null,
+          automaticPixDisabled: true,
+          message: 'A Efí está cadastrada, mas Pix Automático está desativado na configuração do provedor.',
+        };
+      }
       return route;
     });
   }
@@ -77,7 +104,11 @@ export class PaymentProviderManagerService {
             available: false,
             code: null,
             name: null,
-            reason: route.invalidLegacyRoute ? 'INVALID_LEGACY_ROUTE' : null,
+            reason: route.invalidLegacyRoute
+              ? 'INVALID_LEGACY_ROUTE'
+              : route.automaticPixDisabled
+                ? 'EFI_AUTOMATIC_PIX_DISABLED'
+                : null,
           };
       return result;
     }, {});
@@ -193,6 +224,11 @@ export class PaymentProviderManagerService {
     if (paymentType === 'PIX_AUTOMATICO' && !this.isNativeAutomaticPixProvider(active)) {
       throw new ServiceUnavailableException(
         'A rota de Pix Automático está apontando para uma integração de assinatura que não gera Pix Automático nativo. Selecione Efí Bank em Formas de pagamento.',
+      );
+    }
+    if (paymentType === 'PIX_AUTOMATICO' && !(await this.efiAutomaticEnabled())) {
+      throw new ServiceUnavailableException(
+        'Pix Automático da Efí está desativado. Ative o recurso na configuração da Efí antes de oferecer assinaturas.',
       );
     }
 
