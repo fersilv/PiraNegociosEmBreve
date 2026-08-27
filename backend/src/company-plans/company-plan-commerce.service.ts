@@ -7,7 +7,7 @@ import {
   type PaymentCheckoutPayer,
 } from '../payments/payment-provider-manager.service';
 import { PaymentsService } from '../payments/payments.service';
-import { CompanyPlansService, type CompanyPlan } from './company-plans.service';
+import { CompanyPlansService } from './company-plans.service';
 
 const ELITE_TRIAL_DAYS = 15;
 const PRODUCT_BY_PLAN: Record<'PLUS' | 'ELITE', string> = {
@@ -91,10 +91,18 @@ export class CompanyPlanCommerceService {
           const oneTime = product.offers?.oneTime || {};
           const subscriptionRoute = routes?.PIX_AUTOMATICO || {};
           const oneTimeRoute = routes?.PIX || {};
+          const subscriptionBenefitIds = this.plans.resolveCommercialBenefitIds(plan.id, product.subscriptionBenefits);
+          const oneTimeBenefitIds = this.plans.resolveCommercialBenefitIds(plan.id, product.oneTimeBenefits);
+          const subscriptionBenefits = this.plans.resolveCommercialBenefits(plan.id, subscriptionBenefitIds);
+          const oneTimeBenefits = this.plans.resolveCommercialBenefits(plan.id, oneTimeBenefitIds);
+          const oneTimeSet = new Set(oneTimeBenefitIds);
+          const lostComparedToSubscription = subscriptionBenefits.filter((benefit) => !oneTimeSet.has(benefit.id));
+
           return {
             ...plan,
             productCode: product.code,
             preferredPurchaseMode: product.preferredPurchaseMode,
+            durationDays: Number(product.durationDays || 30),
             priceCents: Number(subscription.effectivePriceCents ?? oneTime.effectivePriceCents ?? plan.priceCents ?? 0),
             effectivePriceCents: Number(subscription.effectivePriceCents ?? oneTime.effectivePriceCents ?? plan.effectivePriceCents ?? 0),
             offers: {
@@ -102,24 +110,25 @@ export class CompanyPlanCommerceService {
                 ...subscription,
                 enabled: subscription.enabled === true,
                 available: subscription.enabled === true && subscriptionRoute.available === true,
-                providerCode: subscriptionRoute.code || null,
-                providerName: subscriptionRoute.name || null,
+                benefitIds: subscriptionBenefitIds,
+                benefits: subscriptionBenefits,
                 unavailableReason: subscription.enabled !== true
-                  ? 'Assinatura desativada para este plano.'
+                  ? 'Assinatura indisponível para este plano.'
                   : subscriptionRoute.available !== true
-                    ? 'Pix Automático indisponível. Configure a Efí em Formas de pagamento.'
+                    ? 'Assinatura temporariamente indisponível.'
                     : null,
               },
               oneTime: {
                 ...oneTime,
                 enabled: oneTime.enabled === true,
                 available: oneTime.enabled === true && oneTimeRoute.available === true,
-                providerCode: oneTimeRoute.code || null,
-                providerName: oneTimeRoute.name || null,
+                benefitIds: oneTimeBenefitIds,
+                benefits: oneTimeBenefits,
+                lostComparedToSubscription,
                 unavailableReason: oneTime.enabled !== true
-                  ? 'Compra avulsa desativada para este plano.'
+                  ? 'Compra avulsa indisponível para este plano.'
                   : oneTimeRoute.available !== true
-                    ? 'Pix avulso indisponível. Selecione um gateway em Formas de pagamento.'
+                    ? 'Compra avulsa temporariamente indisponível.'
                     : null,
               },
             },
@@ -145,7 +154,6 @@ export class CompanyPlanCommerceService {
               : payload.billing.statusLabel,
           }
         : payload?.billing,
-      paymentRoutes: routes,
     };
   }
 
@@ -186,20 +194,24 @@ export class CompanyPlanCommerceService {
     if (!route?.available) {
       throw new ServiceUnavailableException(
         purchaseMode === 'SUBSCRIPTION'
-          ? 'Pix Automático indisponível. Ative e selecione a Efí em Formas de pagamento.'
-          : 'Pix avulso indisponível. Selecione Efí ou Mercado Pago como gateway do Pix avulso.',
+          ? 'A assinatura está temporariamente indisponível. Tente novamente mais tarde.'
+          : 'A compra avulsa está temporariamente indisponível. Tente novamente mais tarde.',
       );
     }
 
     const basePrice = Number(offer.priceCents);
     const amountCents = Number(offer.effectivePriceCents);
     if (!Number.isFinite(basePrice) || !Number.isFinite(amountCents) || basePrice <= 0 || amountCents <= 0) {
-      throw new BadRequestException('Esta modalidade não possui um preço válido. Configure o valor no painel de Pagamentos e monetização.');
+      throw new BadRequestException('Esta modalidade não possui um preço válido para cobrança.');
     }
     const trialDays = purchaseMode === 'SUBSCRIPTION' && trialRows.length === 0 && !current.hasPaidSubscription
       ? ELITE_TRIAL_DAYS
       : 0;
     const discountCents = Math.max(0, basePrice - amountCents);
+    const configuredBenefits = purchaseMode === 'SUBSCRIPTION'
+      ? product.subscriptionBenefits
+      : product.oneTimeBenefits;
+    const companyBenefitIds = this.plans.resolveCommercialBenefitIds(plan, configuredBenefits);
     const metadata = {
       companyId: company.id,
       companyName: company.name,
@@ -208,6 +220,7 @@ export class CompanyPlanCommerceService {
       companyPurchaseMode: purchaseMode,
       purchaseMode,
       paymentType,
+      companyBenefitIds,
       promotionActive: offer.promotionActive === true,
       companyEliteTrialDays: trialDays,
       companyEliteTrialPending: trialDays > 0,
@@ -253,6 +266,7 @@ export class CompanyPlanCommerceService {
           paymentId,
           plan,
           purchaseMode,
+          benefitIds: companyBenefitIds,
           trialDays,
           company: { id: company.id, name: company.name },
           paymentRequired: false,
@@ -269,6 +283,7 @@ export class CompanyPlanCommerceService {
         paymentId,
         plan,
         purchaseMode,
+        benefitIds: companyBenefitIds,
         trialDays: 0,
         company: { id: company.id, name: company.name },
         paymentRequired: false,
@@ -287,6 +302,7 @@ export class CompanyPlanCommerceService {
         paymentId,
         plan,
         purchaseMode,
+        benefitIds: companyBenefitIds,
         billingType: purchaseMode === 'SUBSCRIPTION' ? 'RECURRING' : 'ONE_TIME',
         product: providerProduct,
         trialDays,
