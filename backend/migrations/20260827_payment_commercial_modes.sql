@@ -127,8 +127,24 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Não tratar Mercado Pago Assinaturas (/preapproval) como Pix Automático.
--- Se uma versão anterior salvou essa rota, ela é desligada para impedir que o
--- botão "Assinar com Pix Automático" abra uma assinatura hospedada do Mercado Pago.
+-- Se uma versão anterior salvou essa rota e a Efí está saudável, migra a rota
+-- automaticamente para Efí. A aplicação ainda valida pixAutomaticEnabled=true
+-- antes de expor ou criar qualquer checkout recorrente.
+UPDATE payment_provider_routes r
+SET "providerCode" = 'EFI',
+    enabled = true,
+    "activatedAt" = now(),
+    "updatedAt" = now()
+WHERE r."paymentType" = 'PIX_AUTOMATICO'
+  AND r."providerCode" = 'MERCADO_PAGO'
+  AND EXISTS (
+    SELECT 1
+    FROM payment_providers p
+    WHERE p.code = 'EFI'
+      AND p."lastHealthCheckOk" = true
+  );
+
+-- Se não houver Efí saudável, desliga a rota em vez de abrir /preapproval do MP.
 UPDATE payment_provider_routes
 SET enabled = false,
     "providerCode" = NULL,
