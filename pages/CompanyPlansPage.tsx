@@ -3,6 +3,7 @@ import {
   BadgeCheck,
   CalendarClock,
   Check,
+  CircleMinus,
   Crown,
   Loader2,
   ReceiptText,
@@ -11,12 +12,12 @@ import {
   Sparkles,
   Store,
   UsersRound,
-  WalletCards,
   Zap,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { PaymentCheckoutModal } from '../components/payments/PaymentCheckoutModal';
 import { useAuth } from '../contexts/AuthContext';
+import { useFeedback } from '../contexts/FeedbackContext';
 import {
   cleanPaymentDocument,
   forgetRememberedPayerDocument,
@@ -29,6 +30,12 @@ import {
 
 type PlanId = 'FREE' | 'PLUS' | 'ELITE';
 type PurchaseMode = 'SUBSCRIPTION' | 'ONE_TIME';
+type Benefit = {
+  id: string;
+  label: string;
+  description?: string;
+  category?: 'WHATSAPP' | 'VISIBILITY';
+};
 type Offer = {
   mode?: PurchaseMode;
   enabled?: boolean;
@@ -38,8 +45,9 @@ type Offer = {
   promotionActive?: boolean;
   paymentType?: 'PIX' | 'PIX_AUTOMATICO';
   recommended?: boolean;
-  providerCode?: string | null;
-  providerName?: string | null;
+  benefitIds?: string[];
+  benefits?: Benefit[];
+  lostComparedToSubscription?: Benefit[];
   unavailableReason?: string | null;
 };
 type Plan = {
@@ -78,7 +86,6 @@ type Billing = {
   nextChargeCents?: number | null;
   cancelAtPeriodEnd: boolean;
   renewalEnabled: boolean;
-  provider?: string | null;
   isTrial: boolean;
   trialEndsAt?: string | null;
   trialTargetPlan?: PlanId | null;
@@ -91,7 +98,6 @@ type Billing = {
     productName?: string | null;
     createdAt?: string | null;
     paidAt?: string | null;
-    provider?: string | null;
     purchaseMode?: PurchaseMode | null;
   };
 };
@@ -111,6 +117,7 @@ type PlansPayload = {
     advertisingEligible?: boolean;
     jobHighlightEligible?: boolean;
     purchaseMode?: PurchaseMode | null;
+    benefits?: Benefit[];
   };
   plans?: Plan[];
   trial?: {
@@ -121,7 +128,6 @@ type PlansPayload = {
     restrictions?: string[];
   };
   billing?: Billing;
-  paymentRoutes?: Record<string, { available?: boolean; code?: string | null; name?: string | null }>;
   scopes?: {
     recruitment?: { label: string; summary: string };
     marketplace?: { label: string; summary: string; photoLimit?: number; onlineSales?: boolean; auctionCreation?: boolean };
@@ -134,23 +140,25 @@ type Selection = { planId: PlanId; purchaseMode: PurchaseMode } | null;
 
 export function CompanyPlansPage() {
   const { profile, user } = useAuth();
+  const { toast } = useFeedback();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [data, setData] = useState<PlansPayload>({});
   const [selection, setSelection] = useState<Selection>(null);
   const [payer, setPayer] = useState({ name: '', document: '', email: '', documentType: 'CPF' as PaymentDocumentType });
   const [rememberDocument, setRememberDocument] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
 
   const load = async () => {
     setLoading(true);
-    setError('');
     try {
       const response = await api.get('/company/plans');
-      setData(response.data || {});
+      const next = response.data || {};
+      setData(next);
+      if (Array.isArray(next.warnings)) {
+        next.warnings.forEach((warning: string) => toast(warning, 'warning'));
+      }
     } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || 'Não foi possível carregar os dados do plano da empresa.');
+      toast(requestError?.response?.data?.message || 'Não foi possível carregar os dados do plano da empresa.', 'error');
     } finally {
       setLoading(false);
     }
@@ -188,8 +196,6 @@ export function CompanyPlansPage() {
 
   const choose = (planId: PlanId, purchaseMode: PurchaseMode) => {
     setSelection({ planId, purchaseMode });
-    setMessage('');
-    setError('');
   };
 
   const createCheckout = () => {
@@ -219,14 +225,12 @@ export function CompanyPlansPage() {
   const setRenewal = async (renew: boolean) => {
     if (submitting || billing?.purchaseMode === 'ONE_TIME') return;
     setSubmitting(true);
-    setMessage('');
-    setError('');
     try {
       await api.patch('/company/plans/cancel-at-period-end', { enabled: !renew });
-      setMessage(renew ? 'Renovação automática mantida.' : 'A renovação será encerrada ao final do período atual.');
+      toast(renew ? 'Renovação automática mantida.' : 'A renovação será encerrada ao final do período atual.', 'success');
       await load();
     } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || 'Não foi possível alterar a renovação.');
+      toast(requestError?.response?.data?.message || 'Não foi possível alterar a renovação.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -236,32 +240,18 @@ export function CompanyPlansPage() {
     return <div className="flex min-h-[55vh] items-center justify-center text-stone-500"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Carregando planos e formas de compra...</div>;
   }
 
+  const currentBenefits = data.current?.benefits?.map((benefit) => benefit.label) || currentPlan?.features || [];
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-10">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[.18em] text-[#397c75]">Empresa · Financeiro</p>
           <h1 className="mt-1 font-serif text-4xl font-black text-stone-950">Plano e cobrança</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Assine com Pix Automático ou compre um período avulso por Pix. A assinatura continua em destaque, mas você escolhe a modalidade.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Escolha entre assinatura com renovação automática ou compra avulsa por período. A assinatura pode incluir benefícios exclusivos.</p>
         </div>
         <button type="button" onClick={() => void load()} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-white px-4 text-xs font-black text-stone-600 ring-1 ring-stone-200"><RefreshCw className="h-4 w-4" /> Atualizar dados</button>
       </header>
-
-      {(error || message) && <div className={`rounded-2xl px-4 py-3 text-sm font-bold ${error ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{error || message}</div>}
-      {data.warnings?.map((warning) => <div key={warning} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-800">{warning}</div>)}
-
-      <section className="grid gap-3 sm:grid-cols-2">
-        <PaymentRouteStatus
-          title="Gateway do Pix Automático"
-          subtitle="Usado somente nas assinaturas recorrentes"
-          route={data.paymentRoutes?.PIX_AUTOMATICO}
-        />
-        <PaymentRouteStatus
-          title="Gateway do Pix avulso"
-          subtitle="Usado nas compras sem renovação"
-          route={data.paymentRoutes?.PIX}
-        />
-      </section>
 
       <section className="overflow-hidden rounded-[30px] bg-[#172522] text-white shadow-xl">
         <div className="grid lg:grid-cols-[1.15fr_.85fr]">
@@ -269,10 +259,11 @@ export function CompanyPlansPage() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-white/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-[.14em] text-white/70">{billing?.statusLabel || 'Plano gratuito'}</span>
               {billing?.purchaseMode === 'ONE_TIME' && <span className="rounded-full bg-emerald-300/15 px-3 py-1.5 text-[9px] font-black uppercase tracking-[.14em] text-emerald-100">Compra avulsa</span>}
+              {billing?.purchaseMode === 'SUBSCRIPTION' && <span className="rounded-full bg-violet-300/15 px-3 py-1.5 text-[9px] font-black uppercase tracking-[.14em] text-violet-100">Assinatura</span>}
               {billing?.isTrial && <span className="rounded-full bg-violet-400/20 px-3 py-1.5 text-[9px] font-black uppercase tracking-[.14em] text-violet-100">Elite temporário</span>}
             </div>
             <p className="mt-5 text-[10px] font-black uppercase tracking-[.16em] text-white/40">Plano atual</p>
-            <div className="mt-1 flex flex-wrap items-end gap-3"><h2 className="font-serif text-5xl font-black">{billing?.isTrial ? 'Elite' : currentPlan?.name || currentPlanId}</h2><p className="pb-1 text-sm font-bold text-white/50">{billing?.purchaseMode === 'ONE_TIME' ? 'acesso por período' : billing?.priceCents ? `${money(billing.priceCents)}/mês` : 'sem mensalidade'}</p></div>
+            <div className="mt-1 flex flex-wrap items-end gap-3"><h2 className="font-serif text-5xl font-black">{billing?.isTrial ? 'Elite' : currentPlan?.name || currentPlanId}</h2><p className="pb-1 text-sm font-bold text-white/50">{billing?.purchaseMode === 'ONE_TIME' ? 'acesso por período' : billing?.priceCents ? `${money(billing.priceCents)}/período` : 'sem mensalidade'}</p></div>
             {billing?.isTrial && <p className="mt-3 max-w-2xl text-sm leading-6 text-violet-100/80">Você está usando recursos Elite durante o período gratuito. A assinatura-base é {billing.trialTargetPlan || currentPlanId}.</p>}
             {currentPlan?.description && <p className="mt-4 max-w-2xl text-sm leading-6 text-white/55">{currentPlan.description}</p>}
             {data.company?.name && <p className="mt-5 text-xs font-bold text-white/40">Acesso vinculado a {data.company.name}</p>}
@@ -284,8 +275,8 @@ export function CompanyPlansPage() {
             <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
               <MiniInfo icon={<CalendarClock className="h-4 w-4" />} label="Período vigente" value={periodLabel(billing)} />
               <MiniInfo icon={<RefreshCw className="h-4 w-4" />} label="Renovação" value={billing?.purchaseMode === 'ONE_TIME' ? 'Não renova' : billing?.renewalEnabled ? 'Automática' : billing?.cancelAtPeriodEnd ? 'Cancelada' : 'Não aplicável'} />
-              <MiniInfo icon={<WalletCards className="h-4 w-4" />} label="Provedor" value={billing?.provider || 'Não aplicável'} />
-              <MiniInfo icon={<ReceiptText className="h-4 w-4" />} label="Status" value={billing?.statusLabel || 'Gratuito'} />
+              <MiniInfo icon={<ReceiptText className="h-4 w-4" />} label="Modalidade" value={billing?.purchaseMode === 'ONE_TIME' ? 'Compra avulsa' : billing?.purchaseMode === 'SUBSCRIPTION' ? 'Assinatura' : 'Gratuito'} />
+              <MiniInfo icon={<BadgeCheck className="h-4 w-4" />} label="Status" value={billing?.statusLabel || 'Gratuito'} />
             </div>
           </div>
         </div>
@@ -299,23 +290,23 @@ export function CompanyPlansPage() {
       )}
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <ScopeCard icon={<UsersRound className="h-5 w-5" />} eyebrow="Módulo" title="Recrutamento" description={data.scopes?.recruitment?.summary || 'Recursos empresariais para vagas, candidatos e operação pelo WhatsApp.'} items={currentPlan?.features || []} />
+        <ScopeCard icon={<UsersRound className="h-5 w-5" />} eyebrow="Seu acesso" title="Benefícios ativos" description="Estes são os benefícios efetivamente vinculados à sua contratação atual." items={currentBenefits} />
         <ScopeCard icon={<Store className="h-5 w-5" />} eyebrow="Módulo" title="Marketplace" description={data.scopes?.marketplace?.summary || 'Recursos empresariais para anúncios e vendas.'} items={[
           `Até ${data.scopes?.marketplace?.photoLimit || 10} fotos por anúncio empresarial`,
           data.scopes?.marketplace?.onlineSales ? 'Recebimento online pode ser habilitado pela empresa' : 'Venda direta por chat e oferta',
-          data.scopes?.marketplace?.auctionCreation ? 'Criação de leilões liberada' : 'Leilões: criação disponível no Elite',
+          data.scopes?.marketplace?.auctionCreation ? 'Criação de leilões liberada' : 'Leilões: criação disponível conforme o plano',
           'Taxas de intermediação de vendas e leilões seguem a regra vigente do plano ou contrato da empresa',
         ]} />
       </section>
 
       {billing?.latestCheckout && (
         <section className="rounded-[24px] bg-white p-5 ring-1 ring-stone-200">
-          <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-stone-100 text-stone-500"><ReceiptText className="h-5 w-5" /></span><div><p className="text-[10px] font-black uppercase tracking-[.14em] text-stone-400">Último movimento financeiro</p><p className="mt-1 text-sm font-black">{billing.latestCheckout.productName || 'Plano empresarial'} · {billing.latestCheckout.status || 'registrado'}</p><p className="mt-1 text-[10px] text-stone-400">Criado em {formatDateTime(billing.latestCheckout.createdAt)}{billing.latestCheckout.provider ? ` · ${billing.latestCheckout.provider}` : ''}</p></div></div>
+          <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-stone-100 text-stone-500"><ReceiptText className="h-5 w-5" /></span><div><p className="text-[10px] font-black uppercase tracking-[.14em] text-stone-400">Último movimento financeiro</p><p className="mt-1 text-sm font-black">{billing.latestCheckout.productName || 'Plano empresarial'} · {billing.latestCheckout.status || 'registrado'}</p><p className="mt-1 text-[10px] text-stone-400">Criado em {formatDateTime(billing.latestCheckout.createdAt)}</p></div></div>
         </section>
       )}
 
       <section>
-        <div className="mb-4"><p className="text-[10px] font-black uppercase tracking-[.16em] text-stone-400">Comparar</p><h2 className="mt-1 font-serif text-3xl font-black">Todos os planos</h2><p className="mt-2 text-sm text-stone-500">Assinatura fica em primeiro plano quando disponível. A compra avulsa usa o preço configurado separadamente pelo administrador.</p></div>
+        <div className="mb-4"><p className="text-[10px] font-black uppercase tracking-[.16em] text-stone-400">Comparar</p><h2 className="mt-1 font-serif text-3xl font-black">Todos os planos</h2><p className="mt-2 text-sm text-stone-500">Compare preço e benefícios. Se o avulso tiver menos recursos, mostramos a diferença antes de você confirmar a compra.</p></div>
         <div className="grid gap-4 lg:grid-cols-3">
           {(data.plans || []).map((plan) => <PlanCard key={plan.id} plan={plan} currentPlanId={currentPlanId} isTrial={Boolean(billing?.isTrial)} trialTargetPlan={billing?.trialTargetPlan || null} onChoose={choose} />)}
         </div>
@@ -328,7 +319,7 @@ export function CompanyPlansPage() {
         description={chosen && chosenOffer?.effectivePriceCents !== null && chosenOffer?.effectivePriceCents !== undefined
           ? selection?.purchaseMode === 'ONE_TIME'
             ? `${money(Number(chosenOffer.effectivePriceCents))} em pagamento único, sem renovação automática.`
-            : `${money(Number(chosenOffer.effectivePriceCents))} por período com Pix Automático${chosen.includesEliteTrial ? ` · ${chosen.eliteTrialDays || 15} dias de Elite conforme elegibilidade` : ''}.`
+            : `${money(Number(chosenOffer.effectivePriceCents))} por período com renovação automática${chosen.includesEliteTrial ? ` · ${chosen.eliteTrialDays || 15} dias de Elite conforme elegibilidade` : ''}.`
           : undefined}
         amountCents={chosenOffer?.effectivePriceCents ?? null}
         productCode={chosen?.productCode || null}
@@ -338,31 +329,34 @@ export function CompanyPlansPage() {
         onCompleted={async () => {
           const completedMode = selection?.purchaseMode;
           setSelection(null);
-          setMessage(completedMode === 'ONE_TIME' ? 'Compra avulsa confirmada. O plano foi ativado sem renovação automática.' : 'Assinatura confirmada. Plano e benefícios foram atualizados.');
+          toast(completedMode === 'ONE_TIME' ? 'Compra avulsa confirmada. O plano foi ativado sem renovação automática.' : 'Assinatura confirmada. Plano e benefícios foram atualizados.', 'success');
           window.dispatchEvent(new Event('piranegocios:payment-completed'));
           await load();
         }}
       >
         {chosen && selection && (
-          <div className="mb-4 grid gap-2 sm:grid-cols-2">
-            <ModeChoice
-              active={selection.purchaseMode === 'SUBSCRIPTION'}
-              disabled={!chosen.offers?.subscription?.available}
-              title="Assinatura"
-              price={chosen.offers?.subscription?.effectivePriceCents}
-              caption={chosen.offers?.subscription?.available ? `Pix Automático · ${chosen.offers?.subscription?.providerName || 'gateway configurado'}` : chosen.offers?.subscription?.unavailableReason || 'Indisponível'}
-              recommended
-              onClick={() => setSelection({ planId: chosen.id, purchaseMode: 'SUBSCRIPTION' })}
-            />
-            <ModeChoice
-              active={selection.purchaseMode === 'ONE_TIME'}
-              disabled={!chosen.offers?.oneTime?.available}
-              title="Compra avulsa"
-              price={chosen.offers?.oneTime?.effectivePriceCents}
-              caption={chosen.offers?.oneTime?.available ? `Pix · ${chosen.offers?.oneTime?.providerName || 'gateway configurado'} · sem renovação` : chosen.offers?.oneTime?.unavailableReason || 'Indisponível'}
-              onClick={() => setSelection({ planId: chosen.id, purchaseMode: 'ONE_TIME' })}
-            />
-          </div>
+          <>
+            <div className="mb-4 grid gap-2 sm:grid-cols-2">
+              <ModeChoice
+                active={selection.purchaseMode === 'SUBSCRIPTION'}
+                disabled={!chosen.offers?.subscription?.available}
+                title="Assinatura"
+                price={chosen.offers?.subscription?.effectivePriceCents}
+                caption={chosen.offers?.subscription?.available ? 'Pix Automático · renovação automática' : chosen.offers?.subscription?.unavailableReason || 'Indisponível'}
+                recommended
+                onClick={() => setSelection({ planId: chosen.id, purchaseMode: 'SUBSCRIPTION' })}
+              />
+              <ModeChoice
+                active={selection.purchaseMode === 'ONE_TIME'}
+                disabled={!chosen.offers?.oneTime?.available}
+                title="Compra avulsa"
+                price={chosen.offers?.oneTime?.effectivePriceCents}
+                caption={chosen.offers?.oneTime?.available ? 'Pix · pagamento único · sem renovação' : chosen.offers?.oneTime?.unavailableReason || 'Indisponível'}
+                onClick={() => setSelection({ planId: chosen.id, purchaseMode: 'ONE_TIME' })}
+              />
+            </div>
+            <OfferBenefitComparison offer={chosenOffer} purchaseMode={selection.purchaseMode} />
+          </>
         )}
 
         <div className="rounded-2xl border border-stone-200 bg-white p-4">
@@ -389,36 +383,71 @@ function PlanCard({ plan, currentPlanId, isTrial, trialTargetPlan, onChoose }: {
   const oneTime = plan.offers?.oneTime;
   const subscriptionConfigured = Boolean(subscription?.enabled);
   const oneTimeConfigured = Boolean(oneTime?.enabled);
+  const recurringBenefits = subscription?.benefits || [];
+  const lostBenefits = oneTime?.lostComparedToSubscription || [];
   return (
-    <article className={`flex min-h-[540px] flex-col rounded-[28px] border p-6 ${elite ? 'border-violet-200 bg-gradient-to-b from-violet-50 to-white' : plan.id === 'PLUS' ? 'border-amber-200 bg-gradient-to-b from-amber-50 to-white' : 'border-stone-200 bg-white'}`}>
+    <article className={`flex min-h-[560px] flex-col rounded-[28px] border p-6 ${elite ? 'border-violet-200 bg-gradient-to-b from-violet-50 to-white' : plan.id === 'PLUS' ? 'border-amber-200 bg-gradient-to-b from-amber-50 to-white' : 'border-stone-200 bg-white'}`}>
       <div className="flex items-start justify-between gap-3"><span className={`flex h-11 w-11 items-center justify-center rounded-2xl ${elite ? 'bg-violet-900 text-white' : plan.id === 'PLUS' ? 'bg-amber-400 text-stone-950' : 'bg-stone-100 text-stone-600'}`}>{elite ? <Crown className="h-5 w-5" /> : plan.id === 'PLUS' ? <Zap className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}</span>{(current || trialBase) && <span className="rounded-full bg-stone-900 px-3 py-1 text-[9px] font-black uppercase text-white">{trialBase ? 'Período gratuito' : 'Seu plano'}</span>}</div>
       <h3 className="mt-5 font-serif text-3xl font-black">{plan.name}</h3>
-      {plan.id === 'FREE' ? <div className="mt-2 text-3xl font-black">Grátis</div> : subscriptionConfigured ? <div className="mt-2"><div className="flex items-end gap-1"><span className="text-3xl font-black">{money(Number(subscription?.effectivePriceCents || 0))}</span><span className="pb-1 text-xs font-bold text-stone-400">/período</span></div><p className="mt-1 text-[10px] font-black uppercase tracking-[.12em] text-violet-600">Assinatura · Pix Automático</p></div> : oneTimeConfigured ? <div className="mt-2"><div className="text-3xl font-black">{money(Number(oneTime?.effectivePriceCents || 0))}</div><p className="mt-1 text-[10px] font-black uppercase tracking-[.12em] text-emerald-700">Compra avulsa · Pix</p></div> : null}
+      {plan.id === 'FREE' ? <div className="mt-2 text-3xl font-black">Grátis</div> : subscriptionConfigured ? <div className="mt-2"><div className="flex items-end gap-1"><span className="text-3xl font-black">{money(Number(subscription?.effectivePriceCents || 0))}</span><span className="pb-1 text-xs font-bold text-stone-400">/período</span></div><p className="mt-1 text-[10px] font-black uppercase tracking-[.12em] text-violet-600">Assinatura · renovação automática</p></div> : oneTimeConfigured ? <div className="mt-2"><div className="text-3xl font-black">{money(Number(oneTime?.effectivePriceCents || 0))}</div><p className="mt-1 text-[10px] font-black uppercase tracking-[.12em] text-emerald-700">Compra avulsa · Pix</p></div> : null}
       <p className="mt-3 text-sm leading-6 text-stone-500">{plan.description}</p>
       {plan.includesEliteTrial && subscriptionConfigured && <div className="mt-3 rounded-xl bg-violet-50 px-3 py-2 text-xs font-black text-violet-700"><Sparkles className="mr-1 inline h-3.5 w-3.5" /> {plan.eliteTrialDays || 15} dias de Elite na assinatura, conforme elegibilidade</div>}
       <div className="my-5 h-px bg-stone-200" />
-      <ul className="flex-1 space-y-2.5">{plan.features.map((feature) => <li key={feature} className="flex gap-2 text-xs leading-5 text-stone-600"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />{feature}</li>)}</ul>
+
+      {plan.id === 'FREE' ? (
+        <ul className="flex-1 space-y-2.5">{plan.features.map((feature) => <li key={feature} className="flex gap-2 text-xs leading-5 text-stone-600"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />{feature}</li>)}</ul>
+      ) : (
+        <div className="flex-1">
+          <p className="text-[9px] font-black uppercase tracking-[.12em] text-stone-400">Na assinatura</p>
+          <ul className="mt-2 space-y-2">{recurringBenefits.map((benefit) => <li key={benefit.id} className="flex gap-2 text-xs leading-5 text-stone-600"><Check className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" />{benefit.label}</li>)}</ul>
+          {oneTimeConfigured && lostBenefits.length > 0 && (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-[9px] font-black uppercase tracking-[.12em] text-amber-700">Escolhendo avulso, você abre mão de</p>
+              <ul className="mt-2 space-y-1.5">{lostBenefits.map((benefit) => <li key={benefit.id} className="flex gap-2 text-[10px] leading-4 text-amber-900"><CircleMinus className="mt-0.5 h-3.5 w-3.5 shrink-0" />{benefit.label}</li>)}</ul>
+            </div>
+          )}
+          {oneTimeConfigured && lostBenefits.length === 0 && <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-[10px] font-bold text-emerald-700">O avulso mantém os mesmos benefícios configurados para a assinatura.</p>}
+        </div>
+      )}
+
       {plan.id === 'FREE' ? (
         <button disabled className="mt-5 rounded-2xl bg-stone-100 px-4 py-3 text-xs font-black text-stone-400">Plano gratuito</button>
       ) : (
         <div className="mt-5 space-y-2">
-          {subscriptionConfigured && <button disabled={!subscription?.available || current || trialBase} onClick={() => onChoose(plan.id, 'SUBSCRIPTION')} className="w-full rounded-2xl bg-violet-700 px-4 py-3 text-xs font-black text-white disabled:bg-stone-100 disabled:text-stone-400">{current ? 'Plano atual' : trialBase ? 'Assinatura em período gratuito' : subscription?.available ? `Assinar ${plan.name} com Pix Automático` : 'Pix Automático indisponível'}</button>}
-          {oneTimeConfigured && <button disabled={!oneTime?.available || current || trialBase} onClick={() => onChoose(plan.id, 'ONE_TIME')} className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-xs font-black text-stone-700 disabled:bg-stone-50 disabled:text-stone-300">{current ? 'Plano atual' : oneTime?.available ? `Comprar ${plan.name} avulso · ${money(Number(oneTime.effectivePriceCents || 0))}` : 'Pix avulso indisponível'}</button>}
-          {!subscriptionConfigured && !oneTimeConfigured && <p className="rounded-xl bg-amber-50 px-3 py-2 text-center text-[10px] font-bold text-amber-700">Este plano ainda não possui preço comercial configurado.</p>}
-          {subscriptionConfigured && !subscription?.available && <p className="text-center text-[10px] leading-4 text-amber-700">{subscription.unavailableReason}</p>}
-          {oneTimeConfigured && !oneTime?.available && <p className="text-center text-[10px] leading-4 text-amber-700">{oneTime.unavailableReason}</p>}
+          {subscriptionConfigured && <button disabled={!subscription?.available || current || trialBase} onClick={() => onChoose(plan.id, 'SUBSCRIPTION')} className="w-full rounded-2xl bg-violet-700 px-4 py-3 text-xs font-black text-white disabled:bg-stone-100 disabled:text-stone-400">{current ? 'Plano atual' : trialBase ? 'Assinatura em período gratuito' : subscription?.available ? `Assinar ${plan.name}` : 'Assinatura indisponível'}</button>}
+          {oneTimeConfigured && <button disabled={!oneTime?.available || current || trialBase} onClick={() => onChoose(plan.id, 'ONE_TIME')} className="w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-xs font-black text-stone-700 disabled:bg-stone-50 disabled:text-stone-300">{current ? 'Plano atual' : oneTime?.available ? `Comprar avulso · ${money(Number(oneTime.effectivePriceCents || 0))}` : 'Compra avulsa indisponível'}</button>}
+          {!subscriptionConfigured && !oneTimeConfigured && <p className="rounded-xl bg-amber-50 px-3 py-2 text-center text-[10px] font-bold text-amber-700">Este plano ainda não possui oferta disponível.</p>}
         </div>
       )}
     </article>
   );
 }
 
-function ModeChoice({ active, disabled, title, price, caption, recommended = false, onClick }: { active: boolean; disabled?: boolean; title: string; price?: number | null; caption: string; recommended?: boolean; onClick: () => void }) {
-  return <button type="button" disabled={disabled} onClick={onClick} className={`rounded-2xl border p-4 text-left transition ${active ? 'border-violet-400 bg-violet-50 ring-2 ring-violet-100' : 'border-stone-200 bg-white'} disabled:cursor-not-allowed disabled:opacity-45`}><div className="flex items-center justify-between gap-2"><p className="text-sm font-black text-stone-900">{title}</p>{recommended && <span className="rounded-full bg-violet-600 px-2 py-1 text-[8px] font-black uppercase text-white">Recomendado</span>}</div><p className="mt-2 text-xl font-black text-stone-950">{price !== null && price !== undefined ? money(Number(price)) : 'Indisponível'}</p><p className="mt-1 text-[10px] leading-4 text-stone-500">{caption}</p></button>;
+function OfferBenefitComparison({ offer, purchaseMode }: { offer?: Offer; purchaseMode: PurchaseMode }) {
+  if (!offer) return null;
+  const benefits = offer.benefits || [];
+  const lost = purchaseMode === 'ONE_TIME' ? offer.lostComparedToSubscription || [] : [];
+  return (
+    <div className="mb-4 rounded-2xl border border-stone-200 bg-stone-50 p-4">
+      <p className="text-[10px] font-black uppercase tracking-[.14em] text-stone-500">Benefícios desta escolha</p>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl bg-white p-3 ring-1 ring-stone-200">
+          <p className="text-xs font-black text-stone-900">Você recebe</p>
+          <ul className="mt-2 space-y-1.5">{benefits.map((benefit) => <li key={benefit.id} className="flex gap-2 text-[10px] leading-4 text-stone-600"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />{benefit.label}</li>)}</ul>
+        </div>
+        {purchaseMode === 'ONE_TIME' && (
+          <div className={`rounded-xl p-3 ring-1 ${lost.length ? 'bg-amber-50 ring-amber-200' : 'bg-emerald-50 ring-emerald-200'}`}>
+            <p className={`text-xs font-black ${lost.length ? 'text-amber-900' : 'text-emerald-900'}`}>{lost.length ? 'Você não leva do recorrente' : 'Sem perda de benefícios'}</p>
+            {lost.length ? <ul className="mt-2 space-y-1.5">{lost.map((benefit) => <li key={benefit.id} className="flex gap-2 text-[10px] leading-4 text-amber-900"><CircleMinus className="mt-0.5 h-3.5 w-3.5 shrink-0" />{benefit.label}</li>)}</ul> : <p className="mt-2 text-[10px] leading-4 text-emerald-800">Nesta configuração, a compra avulsa mantém os mesmos benefícios da assinatura.</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
-function PaymentRouteStatus({ title, subtitle, route }: { title: string; subtitle: string; route?: { available?: boolean; code?: string | null; name?: string | null } }) {
-  return <div className={`rounded-2xl border p-4 ${route?.available ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}><p className={`text-[10px] font-black uppercase tracking-[.14em] ${route?.available ? 'text-emerald-700' : 'text-amber-700'}`}>{route?.available ? 'Configurado' : 'Atenção'}</p><div className="mt-1 flex items-start justify-between gap-3"><div><p className="text-sm font-black text-stone-900">{title}</p><p className="mt-1 text-[10px] text-stone-500">{subtitle}</p></div><p className="text-xs font-black text-stone-700">{route?.available ? route.name || route.code || 'Ativo' : 'Não configurado'}</p></div></div>;
+function ModeChoice({ active, disabled, title, price, caption, recommended = false, onClick }: { active: boolean; disabled?: boolean; title: string; price?: number | null; caption: string; recommended?: boolean; onClick: () => void }) {
+  return <button type="button" disabled={disabled} onClick={onClick} className={`rounded-2xl border p-4 text-left transition ${active ? 'border-violet-400 bg-violet-50 ring-2 ring-violet-100' : 'border-stone-200 bg-white'} disabled:cursor-not-allowed disabled:opacity-45`}><div className="flex items-center justify-between gap-2"><p className="text-sm font-black text-stone-900">{title}</p>{recommended && <span className="rounded-full bg-violet-600 px-2 py-1 text-[8px] font-black uppercase text-white">Recomendado</span>}</div><p className="mt-2 text-xl font-black text-stone-950">{price !== null && price !== undefined ? money(Number(price)) : 'Indisponível'}</p><p className="mt-1 text-[10px] leading-4 text-stone-500">{caption}</p></button>;
 }
 
 function ScopeCard({ icon, eyebrow, title, description, items }: { icon: React.ReactNode; eyebrow: string; title: string; description: string; items: string[] }) {
