@@ -9,12 +9,13 @@ A regra passa a ser:
 1. **IA do usuário final / monetizada** continua no produto quando nasce de uma ação explícita da pessoa e, quando aplicável, respeita créditos, entitlement ou plano.
 2. **IA operacional do próprio sistema** não roda sozinha no backend.
 3. O backend mantém filas, contexto e operações de escrita determinísticas.
-4. Um agente externo pode consultar essas filas pelo MCP, executar a análise no provedor/modelo escolhido fora do PiraNegócios e devolver somente o resultado.
-5. O agendamento pertence ao orquestrador externo. O site deixa de ser responsável por acordar uma IA sozinho.
+4. Um agente externo consulta essas filas pelo MCP, executa a análise fora do PiraNegócios e devolve somente o resultado estruturado.
+5. O agendamento pertence ao orquestrador externo.
+6. **Cada ferramenta MCP possui um scope próprio.** Liberar leitura não libera escrita e liberar uma ferramenta de uma categoria não libera as demais.
 
 ## O que continua dentro do produto
 
-São recursos de uso explícito e importantes para o usuário ou para monetização:
+Recursos explícitos e importantes para o usuário ou monetização continuam internos:
 
 - importação/cadastro de currículo assistido por IA;
 - análise e revisão de currículo;
@@ -24,146 +25,253 @@ São recursos de uso explícito e importantes para o usuário ou para monetizaç
 - recursos de foto/documento acionados pela pessoa;
 - compatibilidade de candidato com vaga usando ficha de vaga já preparada;
 - concierge do WhatsApp quando uma pessoa envia uma mensagem;
-- funções de IA administrativas executadas manualmente por request.
+- funções administrativas de IA executadas manualmente por request.
 
-Essas funções não devem ser convertidas em jobs automáticos apenas por existirem no backend.
+Essas funções não devem virar jobs automáticos apenas por existirem no backend.
 
 ## Disparos automáticos removidos
 
-### 1. Ficha de matching de vaga
+### Ficha de matching de vaga
 
-**Antes:** criar, ativar ou editar uma vaga podia disparar a geração da ficha de matching por IA no subscriber.
+**Antes:** criar, ativar ou editar uma vaga podia disparar geração da ficha de matching por IA no subscriber.
 
-**Agora:** o subscriber apenas reutiliza uma ficha `READY`, se existir, para alertas. Ele nunca chama um modelo para fabricar a ficha.
+**Agora:** o subscriber nunca fabrica a ficha com modelo de IA. O fluxo externo é:
 
-Fluxo externo recomendado:
+1. `piranegocios_jobs_match_profile_status`;
+2. consultar a vaga;
+3. `piranegocios_jobs_match_profile_schema`;
+4. gerar a ficha externamente;
+5. `piranegocios_jobs_set_match_profile`.
 
-1. `piranegocios_jobs_match_profile_status` com `ready=false`;
-2. buscar os dados necessários da vaga;
-3. consultar `piranegocios_jobs_match_profile_schema`;
-4. gerar a ficha no agente externo;
-5. gravar com `piranegocios_jobs_set_match_profile`.
+Scopes correspondentes:
 
-### 2. Duplicidade de anúncio dos Classificados
+```text
+jobs:match:status:read
+jobs:match:schema:read
+jobs:match:write
+```
 
-**Antes:** publicar um anúncio chamava a IA do backend imediatamente para comparar com anúncios anteriores do mesmo vendedor.
+### Duplicidade de anúncio dos Classificados
 
-**Agora:** publicar não chama IA. O anúncio entra na fila operacional até uma revisão externa marcar a análise como concluída.
+**Antes:** publicar um anúncio chamava a IA do backend para comparar anúncios anteriores do mesmo vendedor.
 
-Fluxo externo recomendado:
+**Agora:** publicar não chama IA. O agente externo usa:
 
 1. `piranegocios_classifieds_listing_moderation_queue`;
 2. `piranegocios_classifieds_listing_moderation_context`;
-3. o agente externo compara anúncio e candidatos;
-4. `piranegocios_classifieds_apply_listing_moderation` com:
-   - `APPROVE`, ou
-   - `DUPLICATE` + `duplicateOfListingId`.
+3. compara externamente;
+4. `piranegocios_classifieds_apply_listing_moderation` com `APPROVE` ou `DUPLICATE`.
 
-A aplicação de `DUPLICATE` valida que o anúncio apontado pertence à mesma identidade antes de pausar o duplicado.
+Scopes:
 
-### 3. Moderação de avaliações dos Classificados
+```text
+automation:classifieds:listings:queue:read
+automation:classifieds:listings:context:read
+automation:classifieds:listings:moderation:write
+```
 
-**Antes:** enviar uma avaliação de compra chamava um modelo imediatamente para aprovar, reprovar ou pedir revisão manual.
+### Moderação de avaliações dos Classificados
 
-**Agora:** a avaliação é salva como `PENDING_MANUAL`, sem chamar provedor de IA.
+**Antes:** enviar avaliação de compra chamava um modelo imediatamente.
 
-Fluxo externo recomendado:
+**Agora:** a avaliação entra em `PENDING_MANUAL` e pode ser processada externamente:
 
-1. `piranegocios_classifieds_review_moderation_queue`;
-2. analisar texto, notas e URLs de imagens fora do backend;
-3. `piranegocios_classifieds_apply_review_moderation` com `APPROVE` ou `REJECT` e justificativa.
+```text
+piranegocios_classifieds_review_moderation_queue
+piranegocios_classifieds_apply_review_moderation
+```
 
-A moderação manual pelo painel administrativo continua válida como fallback.
+Scopes:
 
-### 4. Feedback de produto e FAQ
+```text
+automation:classifieds:reviews:queue:read
+automation:classifieds:reviews:moderation:write
+```
 
-**Antes:** o backend iniciava uma rotina cerca de 1 minuto depois de subir e depois repetia periodicamente, analisando feedbacks e gerando FAQs por IA.
+### Feedback de produto e FAQ
+
+**Antes:** o backend iniciava uma rotina após o boot e repetia periodicamente análise de feedback e geração de FAQ.
 
 **Agora:** não existe timer interno para essas chamadas.
 
-Fluxo de insights:
+Insights:
 
-1. `piranegocios_product_feedback_queue`;
-2. agrupar/priorizar externamente;
-3. `piranegocios_product_feedback_apply_insights`.
+```text
+piranegocios_product_feedback_queue
+piranegocios_product_feedback_apply_insights
+```
 
-Fluxo de FAQ:
+FAQ:
 
-1. `piranegocios_product_faq_source`;
-2. produzir artigos externamente;
-3. `piranegocios_product_feedback_apply_faqs`;
-4. os artigos permanecem como rascunho para revisão/publicação administrativa.
+```text
+piranegocios_product_faq_source
+piranegocios_product_feedback_apply_faqs
+```
 
-## MCP
+Scopes:
 
-### Endpoint
+```text
+automation:feedback:queue:read
+automation:feedback:insights:write
+automation:feedback:faq-source:read
+automation:feedback:faqs:write
+```
 
-O endpoint OAuth já existente continua sendo usado para compatibilidade:
+Os artigos produzidos externamente continuam como rascunho para revisão/publicação administrativa.
 
-`/api/jobs/mcp`
+## Modelo de autorização
 
-Apesar do caminho histórico conter `jobs`, o servidor MCP passa a representar operações controladas do PiraNegócios e inclui as novas filas de automação.
+### Endpoint MCP
 
-### Scopes recomendados para o perfil de automação externa
+```text
+https://piranegocios.com.br/api/jobs/mcp
+```
 
-Para um agente operacional completo, sem permissão de exclusão definitiva:
+O caminho histórico contém `jobs`, mas o servidor representa hoje as operações externas controladas do PiraNegócios.
+
+### Chaves
+
+A tabela `external_api_clients` diferencia:
+
+- `audience = api` para REST;
+- `audience = mcp` para o MCP.
+
+Uma chave REST não pode autorizar o MCP. O OAuth MCP exige uma chave com `audience = mcp`.
+
+A chave define o teto de permissões. Access e refresh tokens OAuth só continuam válidos enquanto os scopes permanecem efetivamente liberados na chave vinculada.
+
+### Política 1 ferramenta = 1 scope
+
+Novas chaves MCP não recebem mais `jobs:read` e `jobs:write` implicitamente.
+
+Scopes antigos continuam reconhecidos apenas para compatibilidade com vínculos existentes. Ao editar uma chave antiga no painel administrativo, seus scopes agrupados são expandidos para permissões individuais e o salvamento migra a chave para o modelo granular.
+
+## Catálogo gerencial MCP
+
+O catálogo atual possui 27 ferramentas com autorização individual.
+
+### Vagas · consulta
+
+```text
+jobs:list                         -> piranegocios_jobs_list
+jobs:detail                       -> piranegocios_jobs_get
+jobs:stats:read                   -> piranegocios_jobs_stats
+jobs:duplicates:check             -> piranegocios_jobs_check_duplicate
+```
+
+### Vagas · cadastro e auditoria
+
+```text
+jobs:create                       -> piranegocios_jobs_create_external
+jobs:update                       -> piranegocios_jobs_update_external
+jobs:verify                       -> piranegocios_jobs_verify_external
+jobs:review:read                  -> piranegocios_jobs_review_queue
+jobs:review:write                 -> piranegocios_jobs_set_review_status
+jobs:activate                     -> piranegocios_jobs_activate
+jobs:deactivate                   -> piranegocios_jobs_deactivate
+jobs:flag                         -> piranegocios_jobs_flag
+jobs:unflag                       -> piranegocios_jobs_unflag
+jobs:delete                       -> piranegocios_jobs_delete
+```
+
+`jobs:delete` é destrutivo e não faz parte do perfil recomendado.
+
+### Vagas · matching por IA externa
+
+```text
+jobs:match:schema:read            -> piranegocios_jobs_match_profile_schema
+jobs:match:status:read            -> piranegocios_jobs_match_profile_status
+jobs:match:write                  -> piranegocios_jobs_set_match_profile
+```
+
+### Operações externas · controle
+
+```text
+automation:status:read            -> piranegocios_ai_automation_status
+```
+
+### Classificados · anúncios
+
+```text
+automation:classifieds:listings:queue:read
+  -> piranegocios_classifieds_listing_moderation_queue
+
+automation:classifieds:listings:context:read
+  -> piranegocios_classifieds_listing_moderation_context
+
+automation:classifieds:listings:moderation:write
+  -> piranegocios_classifieds_apply_listing_moderation
+```
+
+### Classificados · avaliações
+
+```text
+automation:classifieds:reviews:queue:read
+  -> piranegocios_classifieds_review_moderation_queue
+
+automation:classifieds:reviews:moderation:write
+  -> piranegocios_classifieds_apply_review_moderation
+```
+
+### Produto & suporte · feedback
+
+```text
+automation:feedback:queue:read
+  -> piranegocios_product_feedback_queue
+
+automation:feedback:insights:write
+  -> piranegocios_product_feedback_apply_insights
+```
+
+### Produto & suporte · FAQ
+
+```text
+automation:feedback:faq-source:read
+  -> piranegocios_product_faq_source
+
+automation:feedback:faqs:write
+  -> piranegocios_product_feedback_apply_faqs
+```
+
+## Perfis sugeridos
+
+### Auditoria de vagas
 
 ```text
 jobs:list
 jobs:detail
 jobs:stats:read
-jobs:match:read
-jobs:match:write
 jobs:review:read
-jobs:review:write
+jobs:update
 jobs:verify
+jobs:review:write
 jobs:activate
 jobs:deactivate
 jobs:flag
 jobs:unflag
-automation:classifieds:read
-automation:classifieds:write
-automation:feedback:read
-automation:feedback:write
 ```
 
-`jobs:delete` deve continuar fora desse perfil salvo necessidade administrativa explícita.
+### Moderação externa dos Classificados
 
-### Ferramentas de IA operacional externa
+```text
+automation:status:read
+automation:classifieds:listings:queue:read
+automation:classifieds:listings:context:read
+automation:classifieds:listings:moderation:write
+automation:classifieds:reviews:queue:read
+automation:classifieds:reviews:moderation:write
+```
 
-#### Estado geral
+### Feedback e FAQ externos
 
-- `piranegocios_ai_automation_status`
+```text
+automation:feedback:queue:read
+automation:feedback:insights:write
+automation:feedback:faq-source:read
+automation:feedback:faqs:write
+```
 
-Mostra contagens das filas e expõe a política request-only. Não executa modelo.
-
-#### Vagas
-
-- `piranegocios_jobs_match_profile_schema`
-- `piranegocios_jobs_match_profile_status`
-- `piranegocios_jobs_set_match_profile`
-
-#### Classificados, anúncios
-
-- `piranegocios_classifieds_listing_moderation_queue`
-- `piranegocios_classifieds_listing_moderation_context`
-- `piranegocios_classifieds_apply_listing_moderation`
-
-#### Classificados, avaliações
-
-- `piranegocios_classifieds_review_moderation_queue`
-- `piranegocios_classifieds_apply_review_moderation`
-
-#### Produto e FAQ
-
-- `piranegocios_product_feedback_queue`
-- `piranegocios_product_feedback_apply_insights`
-- `piranegocios_product_faq_source`
-- `piranegocios_product_feedback_apply_faqs`
-
-## Perfil MCP sugerido
-
-Abaixo está o perfil conceitual para o agente que substituirá os processamentos internos. O agendamento deve existir fora do PiraNegócios.
+## Perfil MCP conceitual
 
 ```yaml
 name: piranegocios-operacoes-ia
@@ -171,12 +279,12 @@ endpoint: https://piranegocios.com.br/api/jobs/mcp
 auth: oauth2
 mode: request-only
 rules:
-  - nunca pedir ao backend para gerar IA operacional
-  - ler a fila antes de processar
+  - usar apenas ferramentas liberadas na chave MCP
+  - ler a fila antes de chamar qualquer modelo externo
   - processar lotes pequenos e idempotentes
   - devolver somente estrutura, decisão e justificativa
   - não alterar conteúdo fora do escopo da tarefa
-  - não usar jobs:delete
+  - não solicitar jobs:delete sem autorização administrativa explícita
 workflows:
   job_match_profile:
     read: piranegocios_jobs_match_profile_status
@@ -199,23 +307,34 @@ workflows:
 
 ## Cadência externa sugerida
 
-A cadência abaixo é apenas uma recomendação para o orquestrador externo e **não deve ser implementada como timer no backend**:
+A cadência pertence ao orquestrador externo e **não deve ser implementada como timer no backend**:
 
-- fichas de matching de vagas: a cada ciclo de coleta/auditoria ou em pequenos lotes frequentes;
-- duplicidade de anúncios: lotes frequentes para reduzir o tempo até revisão;
-- avaliações: lotes frequentes ou conforme volume;
+- matching de vagas: por ciclo de coleta/auditoria ou pequenos lotes frequentes;
+- duplicidade de anúncios: lotes frequentes;
+- avaliações: conforme volume;
 - insights de feedback: diariamente;
-- FAQ: diariamente ou semanalmente, conforme volume.
+- FAQ: diariamente ou semanalmente.
 
-O agente deve consultar a fila primeiro. Se estiver vazia, encerra sem chamar modelo.
+O agente consulta a fila primeiro. Se estiver vazia, encerra sem chamar modelo.
 
-## UI temporária
+## UI administrativa
+
+A aba **APIs & MCP** usa o catálogo do backend como fonte única de permissões.
+
+- API V1 mostra apenas o modo legado fixo;
+- API V2 mostra somente scopes que possuem rota REST V2;
+- MCP mostra somente funções disponíveis no servidor MCP;
+- funções são agrupadas por seção e subcategoria;
+- cada função possui checkbox próprio;
+- é possível selecionar seção/subcategoria, buscar por nome/scope/tool e aplicar presets;
+- o painel diferencia leitura, alteração e ação destrutiva;
+- chaves antigas são identificadas e podem ser migradas ao editar/salvar.
+
+## UI temporária de chat
 
 A antiga bolha global de suporte/IA foi retirada do `App.tsx`.
 
 No lugar existe `AuthenticatedClassifiedsChatWidget`, que apenas navega para `/classificados/conversas`. Ele não chama IA, não cria polling e não agenda tarefa.
-
-A infraestrutura antiga de suporte permanece no código para não destruir a funcionalidade durante esta correção, mas não é mais montada globalmente.
 
 ## O que não deve ser removido
 
@@ -232,12 +351,13 @@ A regra desta correção é eliminar **chamadas automáticas a modelos**, não p
 
 ## Regra para novas funcionalidades
 
-Uma nova integração com IA deve responder às perguntas abaixo antes de entrar em produção:
+Uma nova integração com IA deve responder:
 
 1. Quem pediu essa chamada agora?
-2. Ela é uma ação explícita do usuário/admin ou veio de um timer/hook?
-3. Existe entitlement/crédito/plano quando a função é monetizada?
-4. Se for operação interna, por que não pode ser uma fila MCP processada externamente?
-5. A chamada pode ser repetida sem necessidade por retry, atualização de entidade ou boot do servidor?
+2. Ela é ação explícita ou veio de timer/hook?
+3. Existe entitlement/crédito/plano quando monetizada?
+4. Se for operação interna, por que não pode ser fila MCP processada externamente?
+5. A chamada pode ser repetida sem necessidade por retry, atualização de entidade ou boot?
+6. A ferramenta externa possui scope próprio e pode ser revogada isoladamente?
 
-Se a resposta indicar IA operacional automática, o padrão é **fila + MCP externo**, não chamada direta do backend.
+Se indicar IA operacional automática, o padrão é **fila + MCP externo**, não chamada direta do backend.
