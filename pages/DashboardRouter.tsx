@@ -71,7 +71,8 @@ function AdminRoutes() {
       <Route path="criador-publico" element={<AdminPage><AdminPublicResumeBuilderPage /></AdminPage>} />
       <Route path="pagamentos" element={<AdminPage><AdminPaymentsPage /></AdminPage>} />
       <Route path="pagamentos/testes" element={<AdminPage><AdminMercadoPagoTestsPage /></AdminPage>} />
-      <Route path="pagamentos/classificados" element={<AdminPage><AdminClassifiedCommercePage /></AdminPage>} />
+      <Route path="pagamentos/monetizacao" element={<AdminPage><AdminClassifiedCommercePage /></AdminPage>} />
+      <Route path="pagamentos/classificados" element={<Navigate to="/admin/pagamentos/monetizacao" replace />} />
       <Route path="pagamentos/formas" element={<AdminPage><PaymentMethodsPage /></AdminPage>} />
       <Route path="pagamentos/suporte" element={<AdminPage><AdminBillingSupportPage /></AdminPage>} />
       <Route path="whatsapp" element={<AdminPage><AdminWhatsAppPage /></AdminPage>} />
