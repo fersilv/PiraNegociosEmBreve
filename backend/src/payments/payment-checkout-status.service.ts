@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { ChatGateway } from '../chat/chat.gateway';
 import { PaymentsService } from './payments.service';
 import {
   PaymentProviderConfigService,
@@ -8,10 +9,13 @@ import {
 
 @Injectable()
 export class PaymentCheckoutStatusService {
+  private readonly watches = new Map<string, Promise<void>>();
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly payments: PaymentsService,
     private readonly providerConfig: PaymentProviderConfigService,
+    private readonly realtime: ChatGateway,
   ) {}
 
   async getForUser(userId: string, paymentId: string) {
@@ -27,7 +31,35 @@ export class PaymentCheckoutStatusService {
       payment = await this.find(userId, paymentId) || payment;
     }
 
-    return this.present(payment);
+    const presented = this.present(payment);
+    this.realtime.publishPaymentUpdate(userId, presented);
+    return presented;
+  }
+
+  watchForUser(userId: string, paymentId: string) {
+    const safeUserId = String(userId || '').trim();
+    const safePaymentId = String(paymentId || '').trim();
+    if (!safeUserId || !safePaymentId) return;
+    const key = `${safeUserId}:${safePaymentId}`;
+    if (this.watches.has(key)) return;
+
+    const task = this.runWatch(safeUserId, safePaymentId)
+      .catch(() => undefined)
+      .finally(() => this.watches.delete(key));
+    this.watches.set(key, task);
+  }
+
+  private async runWatch(userId: string, paymentId: string) {
+    // Orders do Mercado Pago podem nascer em processing e ganhar QR Code alguns
+    // instantes depois. Por até dois minutos o backend reconcilia a mesma order
+    // e empurra as mudanças para a sala autenticada do usuário.
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const state = await this.getForUser(userId, paymentId).catch(() => null);
+      if (!state) return;
+      if (state.completed === true) return;
+      if (['CANCELED', 'EXPIRED', 'REFUNDED'].includes(String(state.status || '').toUpperCase())) return;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
   }
 
   private async find(userId: string, paymentId: string) {
@@ -130,7 +162,7 @@ export class PaymentCheckoutStatusService {
         mercadoPagoTransactionId: transaction?.id || null,
         mercadoPagoTransactionStatus: providerStatus,
         mercadoPagoStatusDetail: providerStatusDetail,
-        confirmationMode: 'MERCADO_PAGO_ORDER_STATUS_POLL',
+        confirmationMode: 'MERCADO_PAGO_ORDER_REALTIME_WATCH',
       }).catch(() => undefined);
     }
   }
