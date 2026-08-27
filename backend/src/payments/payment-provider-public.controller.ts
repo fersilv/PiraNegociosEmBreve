@@ -7,16 +7,18 @@ import { PaymentProviderManagerService } from './payment-provider-manager.servic
 export class PaymentProviderPublicController {
   constructor(private readonly providers: PaymentProviderManagerService) {}
 
-  @Get('provider')
-  async activeProvider() {
+  // /payments/provider é reservado às rotas por tipo de pagamento no PaymentsController.
+  // Este endpoint existe apenas para uma visão resumida do(s) provedor(es) ativos.
+  @Get('provider-summary')
+  async activeProviderSummary() {
     const providers = await this.providers.list();
-    const active = providers.find((item: any) => item.active === true) || null;
-    if (!active) return null;
-    return {
-      code: active.code,
-      name: active.name,
-      capabilities: active.config?.capabilities || [],
-      environment: active.config?.environment || null,
-    };
+    const active = providers.filter((item: any) => item.active === true);
+    return active.map((provider: any) => ({
+      code: provider.code,
+      name: provider.name,
+      activeFor: provider.activeFor || [],
+      capabilities: provider.config?.capabilities || [],
+      environment: provider.config?.environment || null,
+    }));
   }
 }
