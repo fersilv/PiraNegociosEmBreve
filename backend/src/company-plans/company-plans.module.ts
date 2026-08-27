@@ -39,6 +39,10 @@ import { CompanyWhatsAppPremiumService } from './company-whatsapp-premium.servic
     CompanyWhatsAppPremiumService,
     AdminGuard,
   ],
-  exports: [CompanyPlansService, CompanyWhatsAppPremiumService],
+  exports: [
+    CompanyPlansService,
+    CompanyPlansAdminService,
+    CompanyWhatsAppPremiumService,
+  ],
 })
 export class CompanyPlansModule {}
