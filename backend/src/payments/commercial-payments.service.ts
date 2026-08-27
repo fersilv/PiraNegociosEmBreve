@@ -53,10 +53,14 @@ export class CommercialPaymentsService {
     const subscriptionPriceCents = product.subscriptionPriceCents === null || product.subscriptionPriceCents === undefined
       ? (product.billingType === 'RECURRING' ? Number(product.priceCents || 0) : null)
       : Number(product.subscriptionPriceCents);
-    let preferredPurchaseMode = this.normalizeMode(product.preferredPurchaseMode)
+    let preferredPurchaseMode: PurchaseMode = this.normalizeMode(product.preferredPurchaseMode)
       || (subscriptionPriceCents !== null ? 'SUBSCRIPTION' : 'ONE_TIME');
     if (preferredPurchaseMode === 'SUBSCRIPTION' && subscriptionPriceCents === null) preferredPurchaseMode = 'ONE_TIME';
     if (preferredPurchaseMode === 'ONE_TIME' && oneTimePriceCents === null && subscriptionPriceCents !== null) preferredPurchaseMode = 'SUBSCRIPTION';
+
+    const oneTimePromo = oneTimePriceCents === null ? null : this.promotionPrice(product, 'ONE_TIME', oneTimePriceCents);
+    const subscriptionPromo = subscriptionPriceCents === null ? null : this.promotionPrice(product, 'SUBSCRIPTION', subscriptionPriceCents);
+
     return {
       ...product,
       oneTimePriceCents,
@@ -64,6 +68,26 @@ export class CommercialPaymentsService {
       preferredPurchaseMode,
       oneTimeAvailable: oneTimePriceCents !== null,
       subscriptionAvailable: subscriptionPriceCents !== null,
+      offers: {
+        subscription: {
+          mode: 'SUBSCRIPTION' as const,
+          enabled: subscriptionPriceCents !== null,
+          priceCents: subscriptionPriceCents,
+          effectivePriceCents: subscriptionPriceCents === null ? null : subscriptionPromo ?? subscriptionPriceCents,
+          promotionActive: subscriptionPromo !== null,
+          paymentType: 'PIX_AUTOMATICO',
+          recommended: preferredPurchaseMode === 'SUBSCRIPTION',
+        },
+        oneTime: {
+          mode: 'ONE_TIME' as const,
+          enabled: oneTimePriceCents !== null,
+          priceCents: oneTimePriceCents,
+          effectivePriceCents: oneTimePriceCents === null ? null : oneTimePromo ?? oneTimePriceCents,
+          promotionActive: oneTimePromo !== null,
+          paymentType: 'PIX',
+          recommended: preferredPurchaseMode === 'ONE_TIME',
+        },
+      },
     };
   }
 
@@ -91,7 +115,8 @@ export class CommercialPaymentsService {
       throw new BadRequestException('O produto precisa ter pelo menos uma modalidade comercial disponível.');
     }
 
-    let preferredPurchaseMode = this.normalizeMode(input.preferredPurchaseMode) || current.preferredPurchaseMode as PurchaseMode;
+    let preferredPurchaseMode: PurchaseMode = this.normalizeMode(input.preferredPurchaseMode)
+      || (current.preferredPurchaseMode as PurchaseMode);
     if (preferredPurchaseMode === 'SUBSCRIPTION' && subscriptionPriceCents === null) preferredPurchaseMode = 'ONE_TIME';
     if (preferredPurchaseMode === 'ONE_TIME' && oneTimePriceCents === null) preferredPurchaseMode = 'SUBSCRIPTION';
 
@@ -117,7 +142,9 @@ export class CommercialPaymentsService {
 
   private chooseMode(product: any, requested: unknown): PurchaseMode {
     const requestedMode = this.normalizeMode(requested);
-    const mode = requestedMode || product.preferredPurchaseMode || (product.subscriptionAvailable ? 'SUBSCRIPTION' : 'ONE_TIME');
+    const mode: PurchaseMode = requestedMode
+      || product.preferredPurchaseMode
+      || (product.subscriptionAvailable ? 'SUBSCRIPTION' : 'ONE_TIME');
     if (mode === 'SUBSCRIPTION' && !product.subscriptionAvailable) {
       throw new BadRequestException('Este produto não possui oferta por assinatura.');
     }
@@ -147,12 +174,12 @@ export class CommercialPaymentsService {
       };
     }
 
-    const basePrice = Number(purchaseMode === 'SUBSCRIPTION' ? product.subscriptionPriceCents : product.oneTimePriceCents);
-    if (!Number.isFinite(basePrice) || basePrice <= 0) {
+    const offer = purchaseMode === 'SUBSCRIPTION' ? product.offers.subscription : product.offers.oneTime;
+    const basePrice = Number(offer.priceCents);
+    const amountCents = Number(offer.effectivePriceCents);
+    if (!Number.isFinite(basePrice) || !Number.isFinite(amountCents) || basePrice <= 0 || amountCents <= 0) {
       throw new BadRequestException('Esta modalidade não possui um preço válido para cobrança.');
     }
-    const promo = this.promotionPrice(product, purchaseMode, basePrice);
-    const amountCents = promo ?? basePrice;
     const discountCents = Math.max(0, basePrice - amountCents);
 
     const inserted = await this.dataSource.query(
@@ -169,8 +196,8 @@ export class CommercialPaymentsService {
         purchaseMode,
         JSON.stringify({
           purchaseMode,
-          paymentType: purchaseMode === 'SUBSCRIPTION' ? 'PIX_AUTOMATICO' : 'PIX',
-          promotionActive: promo !== null,
+          paymentType: offer.paymentType,
+          promotionActive: offer.promotionActive === true,
         }),
       ],
     );
@@ -194,8 +221,6 @@ export class CommercialPaymentsService {
     }
 
     try {
-      // O adapter ainda recebe billingType por compatibilidade, mas ele é derivado
-      // da escolha da transação. O cadastro do produto não decide mais a rota.
       const providerPayment = {
         ...payment,
         purchaseMode,
