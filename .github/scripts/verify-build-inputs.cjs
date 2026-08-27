@@ -7,7 +7,9 @@ const requiredFiles = [
   'components/WorkspaceLayout.tsx',
   'components/payments/PaymentCheckoutModal.tsx',
   'pages/UserPaymentsPage.tsx',
+  'pages/CompanyPlansPage.tsx',
   'pages/AdminPaymentsPage.tsx',
+  'pages/PaymentMethodsPage.tsx',
   'pages/ClassifiedsWorkspacePage.tsx',
   'backend/src/classifieds/classifieds-auction.service.ts',
   'backend/src/classifieds/classifieds-checkout.service.ts',
@@ -18,7 +20,10 @@ const requiredFiles = [
   'backend/src/payments/commercial-payments.service.ts',
   'backend/src/payments/payment-checkout-status.controller.ts',
   'backend/src/payments/payment-checkout-status.service.ts',
+  'backend/src/company-plans/company-plan-commerce.service.ts',
+  'backend/src/company-plans/company-plans.controller.ts',
   'backend/migrations/20260827_payment_commercial_modes.sql',
+  'backend/migrations/20260827_company_plan_commercial_modes.sql',
   'backend/src/chat/chat.gateway.ts',
 ];
 
@@ -127,6 +132,41 @@ if (!commercialService.includes('subscriptionPriceCents') || !commercialService.
   throw new Error('Produtos precisam possuir preços independentes de assinatura e compra avulsa.');
 }
 
+const companyCommerce = fs.readFileSync(
+  path.join(root, 'backend/src/company-plans/company-plan-commerce.service.ts'),
+  'utf8',
+);
+if (!companyCommerce.includes("purchaseMode === 'SUBSCRIPTION' ? 'PIX_AUTOMATICO' : 'PIX'")) {
+  throw new Error('Plano empresarial precisa escolher PIX_AUTOMATICO ou PIX pela modalidade comercial.');
+}
+if (!companyCommerce.includes("this.commercial.getProduct(PRODUCT_BY_PLAN[plan], false)")) {
+  throw new Error('Checkout empresarial precisa usar os preços comerciais configurados para o plano.');
+}
+
+const companyPlansController = fs.readFileSync(
+  path.join(root, 'backend/src/company-plans/company-plans.controller.ts'),
+  'utf8',
+);
+if (!companyPlansController.includes('purchaseMode?: PurchaseMode') || !companyPlansController.includes('this.commerce.createCheckout')) {
+  throw new Error('/company/plans/checkout precisa aceitar assinatura ou compra avulsa.');
+}
+
+const companyPlansPage = fs.readFileSync(path.join(root, 'pages/CompanyPlansPage.tsx'), 'utf8');
+if (!companyPlansPage.includes("purchaseMode: selection.purchaseMode")) {
+  throw new Error('Tela de planos empresariais precisa enviar a modalidade selecionada ao checkout.');
+}
+if (!companyPlansPage.includes('Comprar ${plan.name} avulso') || !companyPlansPage.includes('Assinar ${plan.name} com Pix Automático')) {
+  throw new Error('Planos empresariais precisam mostrar CTAs distintos para assinatura e compra avulsa.');
+}
+
+const paymentMethodsPage = fs.readFileSync(path.join(root, 'pages/PaymentMethodsPage.tsx'), 'utf8');
+if (!paymentMethodsPage.includes('Gateway do Pix avulso') || !paymentMethodsPage.includes('Gateway do Pix Automático')) {
+  throw new Error('Admin precisa escolher gateways separados para Pix avulso e Pix Automático.');
+}
+if (!paymentMethodsPage.includes('return provider.code === "EFI" && provider.config?.pixAutomaticEnabled === true')) {
+  throw new Error('Tela de gateways não pode oferecer Mercado Pago como Pix Automático nativo.');
+}
+
 const userPayments = fs.readFileSync(path.join(root, 'pages/UserPaymentsPage.tsx'), 'utf8');
 if (!userPayments.includes("api.get('/payments/commercial/catalog')") || !userPayments.includes("api.post('/payments/commercial/checkout'")) {
   throw new Error('Área financeira do usuário precisa usar o catálogo/checkout comercial por modalidade.');
@@ -139,6 +179,9 @@ const adminPayments = fs.readFileSync(path.join(root, 'pages/AdminPaymentsPage.t
 if (!adminPayments.includes('/admin/payments/commercial-products')) {
   throw new Error('Admin financeiro precisa configurar preços comerciais separados.');
 }
+if (!adminPayments.includes('Preço da compra avulsa (R$)') || !adminPayments.includes('Preço da assinatura (R$)')) {
+  throw new Error('Admin precisa exibir campos separados para preço avulso e preço da assinatura.');
+}
 
 const commercialMigration = fs.readFileSync(
   path.join(root, 'backend/migrations/20260827_payment_commercial_modes.sql'),
@@ -149,6 +192,14 @@ if (!commercialMigration.includes('"purchaseMode"') || !commercialMigration.incl
 }
 if (!commercialMigration.includes('"paymentType" = \'PIX_AUTOMATICO\'') || !commercialMigration.includes('"providerCode" = \'MERCADO_PAGO\'')) {
   throw new Error('Migração precisa remover a rota legado Mercado Pago -> Pix Automático.');
+}
+
+const companyPlanMigration = fs.readFileSync(
+  path.join(root, 'backend/migrations/20260827_company_plan_commercial_modes.sql'),
+  'utf8',
+);
+if (!companyPlanMigration.includes("purchase_mode = 'ONE_TIME'") || !companyPlanMigration.includes('"cancelAtPeriodEnd"')) {
+  throw new Error('Compra avulsa empresarial precisa ativar acesso sem renovação automática.');
 }
 
 const paymentStatusService = fs.readFileSync(
