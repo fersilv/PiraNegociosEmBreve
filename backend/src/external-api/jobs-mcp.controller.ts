@@ -11,6 +11,7 @@ import {
   JOB_MATCH_ALGORITHM_VERSION,
   JobMatchService,
 } from '../job-match/job-match.service';
+import { ControlledAiAutomationService } from './controlled-ai-automation.service';
 import { ExternalJobsService } from './external-jobs.service';
 import type { ExternalJobInput, JobCatalogQuery } from './external-jobs.service';
 import { hasJobsScope } from './jobs-mcp.scopes';
@@ -26,6 +27,7 @@ export class JobsMcpController {
     private readonly jobs: ExternalJobsService,
     private readonly operations: JobsOperationsService,
     private readonly jobMatch: JobMatchService,
+    private readonly automation: ControlledAiAutomationService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -81,8 +83,8 @@ export class JobsMcpController {
 
     const handler = createMcpHandler(() => {
       const server = new McpServer({
-        name: 'PiraNegócios Vagas',
-        version: '2.0.0',
+        name: 'PiraNegócios Operações',
+        version: '2.1.0',
       });
 
       if (allowed('jobs:list')) {
@@ -166,7 +168,7 @@ export class JobsMcpController {
         server.registerTool(
           'piranegocios_jobs_match_profile_schema',
           {
-            description: 'Retorna o formato aceito em matchProfile para uma IA enviar a ficha estruturada da vaga.',
+            description: 'Retorna o formato aceito em matchProfile para uma IA externa preparar a ficha da vaga sem chamada de modelo no backend.',
             inputSchema: z.object({}),
           },
           async () => this.result(this.matchProfileSchema()),
@@ -175,7 +177,7 @@ export class JobsMcpController {
         server.registerTool(
           'piranegocios_jobs_match_profile_status',
           {
-            description: 'Lista o estado das fichas de matching e localiza vagas com perfil ausente ou desatualizado.',
+            description: 'Lista o estado das fichas de matching e localiza vagas com perfil ausente ou desatualizado para processamento externo.',
             inputSchema: z.object({
               ready: z.enum(['true', 'false', 'all']).optional(),
               active: z.enum(['true', 'false', 'all']).optional(),
@@ -185,6 +187,21 @@ export class JobsMcpController {
             }),
           },
           async (args: any) => this.result(await this.matchProfileStatus(args)),
+        );
+      }
+
+      if (allowed('jobs:match:write')) {
+        server.registerTool(
+          'piranegocios_jobs_set_match_profile',
+          {
+            description: 'Grava diretamente a ficha estruturada de matching produzida por uma IA externa. Não executa nenhum modelo no backend.',
+            inputSchema: z.object({
+              id: z.string().uuid(),
+              matchProfile: z.any(),
+            }),
+          },
+          async ({ id, matchProfile }: { id: string; matchProfile: unknown }) =>
+            this.result(await this.jobMatch.acceptProvidedProfile(id, matchProfile)),
         );
       }
 
@@ -316,6 +333,136 @@ export class JobsMcpController {
         );
       }
 
+      if (allowed('automation:classifieds:read')) {
+        server.registerTool(
+          'piranegocios_ai_automation_status',
+          {
+            description: 'Mostra as filas que substituem os antigos disparos automáticos de IA e confirma que a política é request-only.',
+            inputSchema: z.object({}),
+          },
+          async () => this.result(await this.automation.status()),
+        );
+
+        server.registerTool(
+          'piranegocios_classifieds_listing_moderation_queue',
+          {
+            description: 'Lista anúncios publicados ainda sem revisão de duplicidade. Apenas lê contexto; não chama IA.',
+            inputSchema: z.object({ limit: z.number().int().min(1).max(200).optional() }),
+          },
+          async ({ limit }: { limit?: number }) => this.result(await this.automation.listingModerationQueue(limit)),
+        );
+
+        server.registerTool(
+          'piranegocios_classifieds_listing_moderation_context',
+          {
+            description: 'Carrega um anúncio e anúncios anteriores da mesma identidade para um agente externo decidir se há duplicidade.',
+            inputSchema: z.object({
+              id: z.string().uuid(),
+              candidateLimit: z.number().int().min(1).max(50).optional(),
+            }),
+          },
+          async ({ id, candidateLimit }: { id: string; candidateLimit?: number }) =>
+            this.result(await this.automation.listingModerationContext(id, candidateLimit)),
+        );
+
+        server.registerTool(
+          'piranegocios_classifieds_review_moderation_queue',
+          {
+            description: 'Lista avaliações de compras aguardando moderação externa ou manual. Não chama IA.',
+            inputSchema: z.object({ limit: z.number().int().min(1).max(200).optional() }),
+          },
+          async ({ limit }: { limit?: number }) => this.result(await this.automation.reviewModerationQueue(limit)),
+        );
+      }
+
+      if (allowed('automation:classifieds:write')) {
+        server.registerTool(
+          'piranegocios_classifieds_apply_listing_moderation',
+          {
+            description: 'Aplica ao anúncio a decisão produzida por um agente externo. APPROVE marca revisado; DUPLICATE pausa o anúncio.',
+            inputSchema: z.object({
+              id: z.string().uuid(),
+              decision: z.enum(['APPROVE', 'DUPLICATE']),
+              reason: z.string().max(1200).optional(),
+              duplicateOfListingId: z.string().uuid().optional(),
+            }),
+          },
+          async ({ id, decision, reason, duplicateOfListingId }: any) =>
+            this.result(await this.automation.applyListingModeration(id, decision, reason, duplicateOfListingId)),
+        );
+
+        server.registerTool(
+          'piranegocios_classifieds_apply_review_moderation',
+          {
+            description: 'Aplica aprovação ou reprovação a uma avaliação após análise externa. Não executa modelo no backend.',
+            inputSchema: z.object({
+              id: z.string().uuid(),
+              decision: z.enum(['APPROVE', 'REJECT']),
+              reason: z.string().max(1200).optional(),
+            }),
+          },
+          async ({ id, decision, reason }: any) =>
+            this.result(await this.automation.applyReviewModeration(id, decision, reason)),
+        );
+      }
+
+      if (allowed('automation:feedback:read')) {
+        server.registerTool(
+          'piranegocios_product_feedback_queue',
+          {
+            description: 'Lê feedbacks abertos para agrupamento e priorização por um agente externo. Não executa IA interna.',
+            inputSchema: z.object({ limit: z.number().int().min(1).max(500).optional() }),
+          },
+          async ({ limit }: { limit?: number }) => this.result(await this.automation.feedbackQueue(limit)),
+        );
+
+        server.registerTool(
+          'piranegocios_product_faq_source',
+          {
+            description: 'Lê conversas recentes de suporte como fonte para um agente externo propor FAQs. Não executa IA interna.',
+            inputSchema: z.object({ limit: z.number().int().min(1).max(500).optional() }),
+          },
+          async ({ limit }: { limit?: number }) => this.result(await this.automation.faqSource(limit)),
+        );
+      }
+
+      if (allowed('automation:feedback:write')) {
+        server.registerTool(
+          'piranegocios_product_feedback_apply_insights',
+          {
+            description: 'Substitui os insights de feedback pelos agrupamentos preparados externamente, sem chamada de IA no backend.',
+            inputSchema: z.object({
+              clusters: z.array(z.object({
+                title: z.string().min(1).max(180),
+                summary: z.string().min(1).max(5000),
+                feedbackIds: z.array(z.string().uuid()).min(1).max(500),
+                score: z.number().min(0).max(100).optional(),
+                reason: z.string().max(2000).optional(),
+              })).max(100),
+            }),
+          },
+          async ({ clusters }: { clusters: Array<Record<string, unknown>> }) =>
+            this.result(await this.automation.applyFeedbackInsights(clusters)),
+        );
+
+        server.registerTool(
+          'piranegocios_product_feedback_apply_faqs',
+          {
+            description: 'Salva rascunhos de FAQ produzidos externamente. Publicação continua dependendo da revisão administrativa.',
+            inputSchema: z.object({
+              articles: z.array(z.object({
+                title: z.string().min(1).max(180),
+                summary: z.string().min(1).max(5000),
+                body: z.string().min(1).max(20000),
+                conversationIds: z.array(z.string().uuid()).min(1).max(500),
+              })).max(50),
+            }),
+          },
+          async ({ articles }: { articles: Array<Record<string, unknown>> }) =>
+            this.result(await this.automation.applyFaqs(articles)),
+        );
+      }
+
       if (allowed('jobs:delete')) {
         server.registerTool(
           'piranegocios_jobs_delete',
@@ -375,7 +522,7 @@ export class JobsMcpController {
     return {
       field: 'matchProfile',
       optional: true,
-      purpose: 'Permite que uma IA de ingestão envie a ficha estruturada da vaga e evite uma segunda chamada de IA interna quando a ficha for aceita.',
+      purpose: 'Permite que uma IA externa envie a ficha estruturada da vaga sem provocar uma segunda chamada de IA interna.',
       requiredFields: ['canonicalRole', 'occupationalFamily'],
       requirementTypes: ['SKILL', 'EXPERIENCE', 'EDUCATION', 'CERTIFICATION', 'LICENSE', 'OTHER'],
       schema: {
