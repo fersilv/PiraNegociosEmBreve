@@ -39,7 +39,13 @@ const paymentModal = fs.readFileSync(
 if (!paymentModal.includes("createPortal(modal, document.body)")) {
   throw new Error('PaymentCheckoutModal precisa renderizar por Portal no document.body.');
 }
-if (!paymentModal.includes('/payments/${checkout.id}/status')) {
+
+const tracksCheckoutId = paymentModal.includes('/payments/${checkout.id}/status');
+const tracksNormalizedPaymentId =
+  paymentModal.includes("const paymentId = String(checkout?.paymentId || checkout?.id || '').trim()")
+  && paymentModal.includes('/payments/${paymentId}/status');
+
+if (!tracksCheckoutId && !tracksNormalizedPaymentId) {
   throw new Error('PaymentCheckoutModal precisa acompanhar a mesma cobrança pelo endpoint de status.');
 }
 
