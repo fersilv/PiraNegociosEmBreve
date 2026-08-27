@@ -21,6 +21,12 @@ const tools = [
   ["piranegocios_jobs_create_external", "Cadastra uma nova vaga externa usando as regras atuais da API."],
   ["piranegocios_jobs_update_external", "Atualiza uma vaga externa pertencente à mesma origem de ingestão."],
   ["piranegocios_jobs_verify_external", "Registra disponibilidade, encerramento, expiração ou incerteza da vaga."],
+  ["piranegocios_jobs_review_queue", "Lista vagas pendentes ou que exigem rechecagem operacional."],
+  ["piranegocios_jobs_set_review_status", "Altera o estado de revisão depois da auditoria."],
+  ["piranegocios_jobs_activate", "Aprova e ativa uma vaga válida para publicação."],
+  ["piranegocios_jobs_deactivate", "Desativa uma vaga inválida, encerrada ou não verificável."],
+  ["piranegocios_jobs_flag", "Sinaliza uma vaga que exige atenção ou correção adicional."],
+  ["piranegocios_jobs_unflag", "Remove a sinalização depois que o problema foi resolvido."],
 ] as const;
 
 export function JobsMcpDocumentation() {
@@ -91,12 +97,20 @@ export function JobsMcpDocumentation() {
             </div>
             <div className="mt-3 space-y-2 text-sm text-stone-600">
               <div className="rounded-lg bg-white px-3 py-2">
-                <code className="text-xs font-black text-stone-900">jobs:read</code>
-                <p className="mt-1 text-xs">Consultar, pesquisar vagas e estado das fichas de matching.</p>
+                <code className="text-xs font-black text-stone-900">jobs:review:read + jobs:review:write</code>
+                <p className="mt-1 text-xs">Consultar a fila e registrar a decisão final da auditoria.</p>
               </div>
               <div className="rounded-lg bg-white px-3 py-2">
-                <code className="text-xs font-black text-stone-900">jobs:write</code>
-                <p className="mt-1 text-xs">Checar duplicidade, cadastrar, atualizar e verificar vagas externas.</p>
+                <code className="text-xs font-black text-stone-900">jobs:activate + jobs:deactivate</code>
+                <p className="mt-1 text-xs">Publicar vagas aprovadas ou retirar de publicação as inválidas.</p>
+              </div>
+              <div className="rounded-lg bg-white px-3 py-2">
+                <code className="text-xs font-black text-stone-900">jobs:flag + jobs:unflag</code>
+                <p className="mt-1 text-xs">Sinalizar problemas e limpar o alerta depois da correção.</p>
+              </div>
+              <div className="rounded-lg bg-white px-3 py-2">
+                <code className="text-xs font-black text-stone-900">jobs:update + jobs:verify</code>
+                <p className="mt-1 text-xs">Corrigir dados permitidos e registrar a verificação da fonte original.</p>
               </div>
               <div className="rounded-lg bg-white px-3 py-2">
                 <code className="text-xs font-black text-stone-900">offline_access</code>

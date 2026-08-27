@@ -38,6 +38,20 @@ type IntegrationKey = {
   createdAt: string;
 };
 
+const JOB_AUDIT_SCOPES = [
+  "jobs:list",
+  "jobs:detail",
+  "jobs:stats:read",
+  "jobs:review:read",
+  "jobs:update",
+  "jobs:verify",
+  "jobs:review:write",
+  "jobs:activate",
+  "jobs:deactivate",
+  "jobs:flag",
+  "jobs:unflag",
+] as const;
+
 const TAB_META: Record<Kind, { title: string; subtitle: string; endpoint: string }> = {
   v1: {
     title: "API V1",
@@ -223,6 +237,7 @@ export function AdminJobIntegrationsPage() {
           <div className="flex items-start gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-700"><KeyRound className="h-5 w-5" /></span><div><h2 className="font-black text-stone-950">Nova chave {meta.title}</h2><p className="mt-1 text-xs leading-5 text-stone-500">{kind === "v1" ? "A V1 mantém jobs:read + jobs:write para não quebrar clientes antigos." : "Escolha exatamente o que esta credencial poderá fazer."}</p></div></div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome da integração" className="rounded-xl border border-stone-200 px-3 py-2.5 text-sm" /><input value={sourceLabel} onChange={(e) => setSourceLabel(e.target.value)} placeholder="Origem / identificação" className="rounded-xl border border-stone-200 px-3 py-2.5 text-sm" /></div>
 
+          {kind === "mcp" && <div className="mt-4 rounded-2xl border border-violet-100 bg-violet-50/50 p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-black text-violet-900">Auditoria de vagas por IA</p><p className="mt-0.5 text-[10px] leading-4 text-violet-700">Libera consulta, correção, verificação, aprovação/publicação, desativação e sinalização. Não inclui exclusão definitiva.</p></div><button type="button" onClick={() => setScopes((current) => Array.from(new Set([...current, ...JOB_AUDIT_SCOPES])))} className="shrink-0 rounded-xl bg-violet-700 px-3 py-2 text-[10px] font-black text-white">Liberar auditoria completa</button></div></div>}
           {kind !== "v1" && <ScopeGroups groups={groups} selected={scopes} setSelected={setScopes} toggleGroup={toggleGroup} />}
           {kind === "v1" && <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50 p-4 text-sm text-sky-900"><div className="flex items-center gap-2 font-black"><ShieldCheck className="h-4 w-4" /> Compatibilidade fixa</div><p className="mt-1 text-xs leading-5 text-sky-800">Esta versão usa os dois scopes históricos. Para autorização fina, crie a chave na aba API V2 ou MCP.</p></div>}
 
@@ -245,6 +260,7 @@ export function AdminJobIntegrationsPage() {
                   <div className="mt-3 flex items-center justify-between text-[10px] text-stone-400"><span>Último uso: {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString("pt-BR") : "ainda não usada"}</span><div className="flex gap-1"><button title="Rotacionar" onClick={() => void run(`rotate:${key.id}`, async () => { const response = await api.post(`/admin/job-integrations/clients/${key.id}/rotate`); setRevealedKey(response.data?.apiKey || null); }, "Chave rotacionada. Copie a nova credencial.")} className="flex h-8 w-8 items-center justify-center rounded-lg border border-stone-200"><RotateCw className={`h-3.5 w-3.5 ${busy === `rotate:${key.id}` ? "animate-spin" : ""}`} /></button><button title={key.active ? "Desativar" : "Ativar"} onClick={() => void run(`active:${key.id}`, () => api.put(`/admin/job-integrations/clients/${key.id}`, { active: !key.active }))} className="flex h-8 w-8 items-center justify-center rounded-lg border border-stone-200">{key.active ? <WifiOff className="h-3.5 w-3.5" /> : <Wifi className="h-3.5 w-3.5" />}</button></div></div>
                 </> : <>
                   <div className="grid gap-2 sm:grid-cols-2"><input value={editingName} onChange={(e) => setEditingName(e.target.value)} className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-bold" /><input value={editingSource} onChange={(e) => setEditingSource(e.target.value)} className="rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm" /></div>
+                  {kind === "mcp" && <div className="mt-4 rounded-xl border border-violet-100 bg-white p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><p className="text-[10px] font-bold leading-4 text-violet-800">Auditoria completa sem permissão de exclusão definitiva.</p><button type="button" onClick={() => setEditingScopes((current) => Array.from(new Set([...current, ...JOB_AUDIT_SCOPES])))} className="shrink-0 rounded-lg bg-violet-700 px-2.5 py-1.5 text-[9px] font-black text-white">Liberar auditoria</button></div></div>}
                   {kind !== "v1" && <ScopeGroups groups={groups} selected={editingScopes} setSelected={setEditingScopes} toggleGroup={toggleGroup} compact />}
                   <div className="mt-4 flex gap-2"><button disabled={busy === `edit:${key.id}` || !editingName.trim() || (kind !== "v1" && editingScopes.length === 0)} onClick={() => void saveEdit()} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-violet-700 px-3 py-2.5 text-xs font-black text-white disabled:opacity-40">{busy === `edit:${key.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Salvar</button><button onClick={() => setEditingId(null)} className="rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-xs font-black text-stone-600">Cancelar</button></div>
                 </>}
