@@ -12,7 +12,11 @@ import {
   JobsOAuthCode,
   JobsOAuthToken,
 } from './entities/jobs-oauth.entity';
-import { JOBS_MCP_SCOPES } from './jobs-mcp.scopes';
+import {
+  expandLegacyJobsScopes,
+  JOBS_CAPABILITIES,
+  JOBS_MCP_SCOPES,
+} from './jobs-mcp.scopes';
 
 const ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
@@ -69,7 +73,7 @@ export class JobsOAuthService {
       authorization_servers: [this.issuer()],
       scopes_supported: [...JOBS_MCP_SCOPES],
       bearer_methods_supported: ['header'],
-      resource_name: 'PiraNegócios Vagas',
+      resource_name: 'PiraNegócios Operações',
     };
   }
 
@@ -109,13 +113,12 @@ export class JobsOAuthService {
   async buildAuthorizationPage(query: Record<string, unknown>) {
     const request = await this.validateAuthorizationRequest(query);
     const requestedScopes = this.requestedScopes(request.scope);
+    const labels = Object.fromEntries(
+      JOBS_CAPABILITIES.map((capability) => [capability.scope, capability.label]),
+    ) as Record<string, string>;
 
     const hidden = (name: string, value: string) =>
       `<input type="hidden" name="${this.escapeHtml(name)}" value="${this.escapeHtml(value)}">`;
-    const labels: Record<string, string> = {
-      'jobs:read': 'Consultar e pesquisar vagas externas',
-      'jobs:write': 'Cadastrar, atualizar e verificar vagas externas',
-    };
     const permissions = requestedScopes
       .filter((scope) => scope !== 'offline_access')
       .map((scope) => `<li>${this.escapeHtml(labels[scope] || scope)}</li>`)
@@ -126,16 +129,16 @@ export class JobsOAuthService {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Autorizar ChatGPT | PiraNegócios Vagas</title>
+<title>Autorizar MCP | PiraNegócios</title>
 <style>
-body{font-family:Inter,system-ui,-apple-system,sans-serif;background:#f6f7f9;color:#171717;margin:0;padding:32px 16px}.card{max-width:560px;margin:40px auto;background:#fff;border:1px solid #e5e7eb;border-radius:20px;padding:28px;box-shadow:0 18px 50px rgba(0,0,0,.08)}h1{font-size:24px;margin:0 0 8px}p{line-height:1.55;color:#52525b}.badge{display:inline-block;background:#f3e8ff;color:#6b21a8;padding:6px 10px;border-radius:999px;font-size:13px;font-weight:700;margin:8px 0 14px}ul{background:#f8fafc;border-radius:12px;padding:16px 16px 16px 34px;line-height:1.8}label{font-weight:700;display:block;margin:18px 0 8px}input[type=password]{width:100%;box-sizing:border-box;border:1px solid #d4d4d8;border-radius:12px;padding:13px;font-size:15px}button{width:100%;border:0;border-radius:12px;padding:14px 16px;background:#111827;color:#fff;font-size:15px;font-weight:800;cursor:pointer;margin-top:16px}.hint{font-size:13px;color:#71717a}.warn{font-size:13px;background:#fff7ed;color:#9a3412;padding:12px;border-radius:10px}</style>
+body{font-family:Inter,system-ui,-apple-system,sans-serif;background:#f6f7f9;color:#171717;margin:0;padding:32px 16px}.card{max-width:620px;margin:40px auto;background:#fff;border:1px solid #e5e7eb;border-radius:20px;padding:28px;box-shadow:0 18px 50px rgba(0,0,0,.08)}h1{font-size:24px;margin:0 0 8px}p{line-height:1.55;color:#52525b}.badge{display:inline-block;background:#f3e8ff;color:#6b21a8;padding:6px 10px;border-radius:999px;font-size:13px;font-weight:700;margin:8px 0 14px}ul{background:#f8fafc;border-radius:12px;padding:16px 16px 16px 34px;line-height:1.8;max-height:280px;overflow:auto}label{font-weight:700;display:block;margin:18px 0 8px}input[type=password]{width:100%;box-sizing:border-box;border:1px solid #d4d4d8;border-radius:12px;padding:13px;font-size:15px}button{width:100%;border:0;border-radius:12px;padding:14px 16px;background:#111827;color:#fff;font-size:15px;font-weight:800;cursor:pointer;margin-top:16px}.hint{font-size:13px;color:#71717a}.warn{font-size:13px;background:#fff7ed;color:#9a3412;padding:12px;border-radius:10px}</style>
 </head>
 <body><main class="card">
-<h1>Conectar ChatGPT às vagas do PiraNegócios</h1>
-<div class="badge">API de Vagas</div>
-<p><strong>${this.escapeHtml(request.client.clientName || 'ChatGPT')}</strong> está solicitando acesso à API externa de vagas.</p>
-<ul>${permissions || '<li>Consultar vagas</li>'}</ul>
-<p class="warn">O vínculo receberá somente as permissões que também existirem na chave de API usada para autorizar.</p>
+<h1>Conectar ao MCP do PiraNegócios</h1>
+<div class="badge">Permissões granulares</div>
+<p><strong>${this.escapeHtml(request.client.clientName || 'Cliente MCP')}</strong> está solicitando acesso às ferramentas externas do PiraNegócios.</p>
+<ul>${permissions || '<li>Nenhuma ferramenta solicitada</li>'}</ul>
+<p class="warn">A conexão receberá somente as permissões que também estiverem liberadas na chave MCP informada abaixo. Chaves das APIs REST não autorizam este MCP.</p>
 <form method="post" action="${this.publicBaseUrl()}/api/jobs/oauth/authorize">
 ${hidden('response_type', request.responseType)}
 ${hidden('client_id', request.client.clientId)}
@@ -145,10 +148,10 @@ ${hidden('state', request.state)}
 ${hidden('code_challenge', request.codeChallenge)}
 ${hidden('code_challenge_method', 'S256')}
 ${hidden('resource', request.resource)}
-<label for="api_key">Chave da API de vagas</label>
+<label for="api_key">Chave exclusiva do MCP</label>
 <input id="api_key" name="api_key" type="password" autocomplete="off" placeholder="pn_v1_..." required>
-<p class="hint">A chave só aprova o vínculo. O ChatGPT receberá access e refresh tokens OAuth próprios.</p>
-<button type="submit">Autorizar ChatGPT</button>
+<p class="hint">A chave serve para autorizar o vínculo. Depois disso, o cliente usa access token e refresh token OAuth próprios.</p>
+<button type="submit">Autorizar conexão</button>
 </form>
 </main></body></html>`;
   }
@@ -157,15 +160,14 @@ ${hidden('resource', request.resource)}
     const request = await this.validateAuthorizationRequest(body);
     const apiClient = await this.validateApiKey(String(body.api_key || '').trim());
     const requested = this.requestedScopes(request.scope);
+    const effectiveScopes = this.effectiveClientScopes(apiClient);
     const oauthScopes = requested.filter(
-      (scope) =>
-        scope !== 'offline_access' &&
-        apiClient.scopes.includes(scope),
+      (scope) => scope !== 'offline_access' && effectiveScopes.has(scope),
     );
 
     if (!oauthScopes.length) {
       throw new UnauthorizedException(
-        'A chave não autoriza nenhuma das permissões solicitadas.',
+        'A chave MCP não autoriza nenhuma das permissões solicitadas.',
       );
     }
 
@@ -219,13 +221,14 @@ ${hidden('resource', request.resource)}
     const apiClient = await this.apiClients.findOne({
       where: { id: token.apiClientId, active: true },
     });
-    if (!apiClient) {
+    if (!apiClient || apiClient.audience !== 'mcp') {
       throw new UnauthorizedException(
-        'A credencial da API vinculada foi revogada ou desativada.',
+        'A chave MCP vinculada foi revogada, desativada ou não possui a audiência correta.',
       );
     }
 
-    const scopes = token.scopes.filter((scope) => apiClient.scopes.includes(scope));
+    const effectiveScopes = this.effectiveClientScopes(apiClient);
+    const scopes = token.scopes.filter((scope) => effectiveScopes.has(scope));
     if (!scopes.length) {
       throw new UnauthorizedException('O vínculo OAuth não possui mais permissões válidas.');
     }
@@ -302,12 +305,11 @@ ${hidden('resource', request.resource)}
     const apiClient = await this.apiClients.findOne({
       where: { id: current.apiClientId, active: true },
     });
-    if (!apiClient) {
-      throw new BadRequestException('A chave de API vinculada foi revogada.');
+    if (!apiClient || apiClient.audience !== 'mcp') {
+      throw new BadRequestException('A chave MCP vinculada foi revogada ou é inválida.');
     }
-    const liveScopes = current.scopes.filter((scope) =>
-      apiClient.scopes.includes(scope),
-    );
+    const effectiveScopes = this.effectiveClientScopes(apiClient);
+    const liveScopes = current.scopes.filter((scope) => effectiveScopes.has(scope));
     if (!liveScopes.length) {
       throw new BadRequestException('O vínculo não possui mais permissões válidas.');
     }
@@ -377,7 +379,7 @@ ${hidden('resource', request.resource)}
       );
     }
     if (resource !== this.mcpResource()) {
-      throw new BadRequestException('resource não é o endpoint MCP de vagas canônico.');
+      throw new BadRequestException('resource não é o endpoint MCP canônico.');
     }
 
     const client = await this.requireClient(clientId);
@@ -417,7 +419,7 @@ ${hidden('resource', request.resource)}
 
   private async validateApiKey(rawKey: string) {
     if (!rawKey.startsWith('pn_v1_') || rawKey.length < 40) {
-      throw new UnauthorizedException('Chave da API de vagas inválida.');
+      throw new UnauthorizedException('Chave MCP inválida.');
     }
     const client = await this.apiClients.findOne({
       where: { keyPrefix: rawKey.slice(0, 20), active: true },
@@ -426,16 +428,24 @@ ${hidden('resource', request.resource)}
     const expected = Buffer.from(client?.keyHash || '0'.repeat(64));
     if (
       !client ||
+      client.audience !== 'mcp' ||
       supplied.length !== expected.length ||
       !timingSafeEqual(supplied, expected)
     ) {
       throw new UnauthorizedException(
-        'Chave da API de vagas inválida ou revogada.',
+        'Chave MCP inválida, revogada ou pertencente a outro tipo de integração.',
       );
     }
     client.lastUsedAt = new Date();
     void this.apiClients.save(client).catch(() => undefined);
     return client;
+  }
+
+  private effectiveClientScopes(client: ExternalApiClient) {
+    return new Set<string>([
+      ...(client.scopes || []),
+      ...expandLegacyJobsScopes(client.scopes || []),
+    ]);
   }
 
   private async requireClient(clientId: string) {
