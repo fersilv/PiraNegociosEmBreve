@@ -10,29 +10,18 @@ import {
   PaymentProviderManagerService,
   type PaymentCheckoutPayer,
 } from '../payments/payment-provider-manager.service';
+import {
+  benefitCatalogForPlan,
+  benefitDefinitions,
+  defaultBenefitIdsForPlan,
+  normalizeBenefitIds,
+  type CompanyPlanBenefitId,
+  type CompanyWhatsAppFeature,
+  type PaidCompanyPlan,
+} from './company-plan-benefits';
 
 export type CompanyPlan = 'FREE' | 'PLUS' | 'ELITE';
-
-/**
- * IMPORTANT: these entitlements apply only to operations performed by the
- * company through the WhatsApp concierge. They must never be used to hide or
- * block the existing company web dashboard functionality.
- */
-export type CompanyWhatsAppFeature =
-  | 'WHATSAPP_FREE'
-  | 'JOB_ACTIVATE'
-  | 'JOB_DEACTIVATE'
-  | 'JOB_CLOSE'
-  | 'CANDIDATES_DETAIL'
-  | 'CANDIDATE_PROFILE'
-  | 'APPLICATION_STATUS'
-  | 'APPLICATION_NOTE'
-  | 'CANDIDATE_INVITE'
-  | 'CANDIDATE_INVITE_CANCEL'
-  | 'TALENT_MANAGE'
-  | 'CANDIDATE_WHATSAPP'
-  | 'RECENT_APPLICATIONS'
-  | 'ADVANCED_JOB_STATS';
+export type { CompanyWhatsAppFeature } from './company-plan-benefits';
 
 const RANK: Record<CompanyPlan, number> = { FREE: 0, PLUS: 1, ELITE: 2 };
 const ELITE_TRIAL_DAYS = 15;
@@ -74,7 +63,7 @@ export const COMPANY_PLAN_CATALOG = [
     priceCents: 4990,
     monthly: true,
     productCode: 'COMPANY_ELITE_MONTHLY',
-    description: 'Gestão completa pelo WhatsApp, além dos benefícios promocionais exclusivos da assinatura paga.',
+    description: 'Gestão completa pelo WhatsApp, além dos benefícios promocionais exclusivos da contratação paga.',
     features: [
       'Tudo do Free e Plus no WhatsApp',
       'WhatsApp: mudar status da candidatura',
@@ -84,8 +73,8 @@ export const COMPANY_PLAN_CATALOG = [
       'WhatsApp: responder e gerenciar candidatos',
       'WhatsApp: consultar novas candidaturas por período',
       'WhatsApp: estatísticas avançadas das vagas',
-      'Elite pago: elegibilidade para destaque das vagas no PiraNegócios',
-      'Elite pago: elegibilidade aos destaques do PiraNegócios na Meta e Google',
+      'Elegibilidade para destaque das vagas no PiraNegócios',
+      'Elegibilidade aos destaques do PiraNegócios na Meta e Google',
     ],
   },
 ] as const;
@@ -120,6 +109,44 @@ export class CompanyPlansService {
     return plan === 'PLUS' || plan === 'ELITE' ? plan : 'FREE';
   }
 
+  private paidPlan(value: unknown): PaidCompanyPlan | null {
+    const plan = String(value || '').toUpperCase();
+    return plan === 'PLUS' || plan === 'ELITE' ? plan : null;
+  }
+
+  private metadataObject(value: unknown): Record<string, any> {
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, any>;
+    try { return JSON.parse(String(value || '{}')); } catch { return {}; }
+  }
+
+  commercialBenefitCatalog(plan?: PaidCompanyPlan) {
+    if (plan) {
+      return {
+        plan,
+        benefits: benefitCatalogForPlan(plan),
+        defaultBenefitIds: defaultBenefitIdsForPlan(plan),
+      };
+    }
+    return {
+      PLUS: {
+        benefits: benefitCatalogForPlan('PLUS'),
+        defaultBenefitIds: defaultBenefitIdsForPlan('PLUS'),
+      },
+      ELITE: {
+        benefits: benefitCatalogForPlan('ELITE'),
+        defaultBenefitIds: defaultBenefitIdsForPlan('ELITE'),
+      },
+    };
+  }
+
+  resolveCommercialBenefitIds(plan: PaidCompanyPlan, configured: unknown) {
+    return normalizeBenefitIds(plan, configured);
+  }
+
+  resolveCommercialBenefits(plan: PaidCompanyPlan, configured: unknown) {
+    return benefitDefinitions(this.resolveCommercialBenefitIds(plan, configured));
+  }
+
   async managedCompany(userId: string) {
     const rows = await this.dataSource.query(
       `SELECT c.*, u."isCompanyAdmin", u.type AS "userType"
@@ -151,6 +178,18 @@ export class CompanyPlansService {
     return rows[0] || null;
   }
 
+  private async configuredBenefitIds(plan: PaidCompanyPlan, purchaseMode: 'ONE_TIME' | 'SUBSCRIPTION') {
+    const productCode = plan === 'ELITE' ? 'COMPANY_ELITE_MONTHLY' : 'COMPANY_PLUS_MONTHLY';
+    const rows = await this.dataSource.query(
+      `SELECT "subscriptionBenefits", "oneTimeBenefits"
+       FROM payment_products WHERE code = $1 LIMIT 1`,
+      [productCode],
+    ).catch(() => []);
+    const row = rows[0] || {};
+    const configured = purchaseMode === 'ONE_TIME' ? row.oneTimeBenefits : row.subscriptionBenefits;
+    return this.resolveCommercialBenefitIds(plan, configured);
+  }
+
   async getCompanyPlan(companyId: string) {
     await this.dataSource.query(
       `UPDATE company_plan_subscriptions
@@ -169,11 +208,39 @@ export class CompanyPlansService {
       this.trialForCompany(companyId),
     ]);
     const subscription = subscriptionRows[0] || null;
+    const subscriptionMetadata = this.metadataObject(subscription?.metadata);
     const basePlan = subscription ? this.normalizePlan(subscription.plan) : 'FREE';
     const trialActive = Boolean(
       trial?.status === 'ACTIVE' && new Date(trial.endsAt).getTime() > Date.now(),
     );
     const plan: CompanyPlan = trialActive ? 'ELITE' : basePlan;
+
+    let purchaseMode: 'ONE_TIME' | 'SUBSCRIPTION' | null = null;
+    if (subscription) {
+      const explicit = String(subscriptionMetadata.purchaseMode || '').toUpperCase();
+      purchaseMode = explicit === 'ONE_TIME' || explicit === 'SUBSCRIPTION'
+        ? explicit
+        : subscription.cancelAtPeriodEnd === true
+          ? 'ONE_TIME'
+          : 'SUBSCRIPTION';
+    }
+
+    let benefitIds: CompanyPlanBenefitId[] = [];
+    if (trialActive) {
+      benefitIds = defaultBenefitIdsForPlan('ELITE').filter(
+        (benefit) => benefit !== 'JOB_HIGHLIGHT' && benefit !== 'AD_HIGHLIGHT',
+      );
+    } else {
+      const paidPlan = this.paidPlan(basePlan);
+      if (paidPlan && purchaseMode) {
+        const snapshot = Array.isArray(subscriptionMetadata.companyBenefitIds)
+          ? subscriptionMetadata.companyBenefitIds
+          : null;
+        benefitIds = snapshot
+          ? this.resolveCommercialBenefitIds(paidPlan, snapshot)
+          : await this.configuredBenefitIds(paidPlan, purchaseMode);
+      }
+    }
 
     return {
       plan,
@@ -192,8 +259,11 @@ export class CompanyPlansService {
       trialEndsAt: trialActive ? trial.endsAt : null,
       trialTargetPlan: trial?.targetPlan ? this.normalizePlan(trial.targetPlan) : null,
       hasPaidSubscription: Boolean(subscription),
-      advertisingEligible: !trialActive && basePlan === 'ELITE',
-      jobHighlightEligible: !trialActive && basePlan === 'ELITE',
+      purchaseMode,
+      benefitIds,
+      benefits: benefitDefinitions(benefitIds),
+      advertisingEligible: benefitIds.includes('AD_HIGHLIGHT'),
+      jobHighlightEligible: benefitIds.includes('JOB_HIGHLIGHT'),
     };
   }
 
@@ -248,21 +318,33 @@ export class CompanyPlansService {
     return WHATSAPP_FEATURE_PLAN[feature];
   }
 
+  private currentHasWhatsAppFeature(current: Awaited<ReturnType<CompanyPlansService['getCompanyPlan']>>, feature: CompanyWhatsAppFeature) {
+    const requiredPlan = WHATSAPP_FEATURE_PLAN[feature];
+    if (RANK[current.plan] < RANK[requiredPlan]) return false;
+    if (feature === 'WHATSAPP_FREE') return true;
+    if (current.isTrial) return true;
+    return current.benefitIds.includes(feature as CompanyPlanBenefitId);
+  }
+
   async hasWhatsAppFeature(companyId: string, feature: CompanyWhatsAppFeature) {
     const current = await this.getCompanyPlan(companyId);
-    return RANK[current.plan] >= RANK[WHATSAPP_FEATURE_PLAN[feature]];
+    return this.currentHasWhatsAppFeature(current, feature);
   }
 
   async assertWhatsAppFeature(companyId: string, feature: CompanyWhatsAppFeature) {
     const current = await this.getCompanyPlan(companyId);
     const requiredPlan = WHATSAPP_FEATURE_PLAN[feature];
-    if (RANK[current.plan] < RANK[requiredPlan]) {
+    if (!this.currentHasWhatsAppFeature(current, feature)) {
+      const rankInsufficient = RANK[current.plan] < RANK[requiredPlan];
       throw new ForbiddenException({
-        code: 'COMPANY_WHATSAPP_PLAN_REQUIRED',
-        message: `Este comando pelo WhatsApp exige o plano ${requiredPlan}.`,
+        code: rankInsufficient ? 'COMPANY_WHATSAPP_PLAN_REQUIRED' : 'COMPANY_PLAN_BENEFIT_NOT_INCLUDED',
+        message: rankInsufficient
+          ? `Este comando pelo WhatsApp exige o plano ${requiredPlan}.`
+          : 'Este recurso não faz parte da modalidade contratada atualmente. Consulte as opções do seu plano.',
         feature,
         currentPlan: current.plan,
         requiredPlan,
+        purchaseMode: current.purchaseMode,
         scope: 'WHATSAPP_ONLY',
         upgradeUrl: 'https://piranegocios.com.br/company/planos',
       });
