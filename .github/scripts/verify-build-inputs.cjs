@@ -12,6 +12,8 @@ const requiredFiles = [
   'backend/src/classifieds/classifieds-auction.service.ts',
   'backend/src/classifieds/classifieds-checkout.service.ts',
   'backend/src/payments/payments.controller.ts',
+  'backend/src/payments/payment-provider-public.controller.ts',
+  'backend/src/payments/payment-provider-manager.service.ts',
   'backend/src/payments/commercial-payments.controller.ts',
   'backend/src/payments/commercial-payments.service.ts',
   'backend/src/payments/payment-checkout-status.controller.ts',
@@ -74,6 +76,34 @@ const paymentsController = fs.readFileSync(
 if (!paymentsController.includes('paymentId,') || !paymentsController.includes('checkoutStatus.watchForUser')) {
   throw new Error('Checkout Pix legado precisa devolver paymentId explícito e iniciar o acompanhamento realtime.');
 }
+if (!paymentsController.includes("@Get('provider')") || !paymentsController.includes('publicRoutes()')) {
+  throw new Error('/payments/provider precisa devolver as rotas públicas por tipo de pagamento.');
+}
+
+const providerPublicController = fs.readFileSync(
+  path.join(root, 'backend/src/payments/payment-provider-public.controller.ts'),
+  'utf8',
+);
+if (providerPublicController.includes("@Get('provider')")) {
+  throw new Error('Não pode existir um segundo GET /payments/provider concorrendo com o endpoint de rotas.');
+}
+if (!providerPublicController.includes("@Get('provider-summary')")) {
+  throw new Error('Resumo dos provedores ativos precisa usar /payments/provider-summary.');
+}
+
+const providerManager = fs.readFileSync(
+  path.join(root, 'backend/src/payments/payment-provider-manager.service.ts'),
+  'utf8',
+);
+if (!providerManager.includes("paymentType === 'PIX_AUTOMATICO' && !this.isNativeAutomaticPixProvider(active)")) {
+  throw new Error('Checkout precisa bloquear provedor sem Pix Automático nativo.');
+}
+if (providerManager.includes('this.mercadoPago.createRecurringCheckout(')) {
+  throw new Error('Mercado Pago Assinaturas não pode ser usado como implementação de PIX_AUTOMATICO.');
+}
+if (!providerManager.includes("Mercado Pago Assinaturas não é Pix Automático")) {
+  throw new Error('Ativação administrativa precisa recusar Mercado Pago na rota Pix Automático.');
+}
 
 const commercialController = fs.readFileSync(
   path.join(root, 'backend/src/payments/commercial-payments.controller.ts'),
@@ -116,6 +146,9 @@ const commercialMigration = fs.readFileSync(
 );
 if (!commercialMigration.includes('"purchaseMode"') || !commercialMigration.includes('"subscriptionPriceCents"') || !commercialMigration.includes('"oneTimePriceCents"')) {
   throw new Error('Migração comercial precisa persistir modalidade e os dois preços.');
+}
+if (!commercialMigration.includes('"paymentType" = \'PIX_AUTOMATICO\'') || !commercialMigration.includes('"providerCode" = \'MERCADO_PAGO\'')) {
+  throw new Error('Migração precisa remover a rota legado Mercado Pago -> Pix Automático.');
 }
 
 const paymentStatusService = fs.readFileSync(
