@@ -6,12 +6,17 @@ const requiredFiles = [
   'App.tsx',
   'components/WorkspaceLayout.tsx',
   'components/payments/PaymentCheckoutModal.tsx',
+  'pages/UserPaymentsPage.tsx',
+  'pages/AdminPaymentsPage.tsx',
   'pages/ClassifiedsWorkspacePage.tsx',
   'backend/src/classifieds/classifieds-auction.service.ts',
   'backend/src/classifieds/classifieds-checkout.service.ts',
   'backend/src/payments/payments.controller.ts',
+  'backend/src/payments/commercial-payments.controller.ts',
+  'backend/src/payments/commercial-payments.service.ts',
   'backend/src/payments/payment-checkout-status.controller.ts',
   'backend/src/payments/payment-checkout-status.service.ts',
+  'backend/migrations/20260827_payment_commercial_modes.sql',
   'backend/src/chat/chat.gateway.ts',
 ];
 
@@ -67,7 +72,50 @@ const paymentsController = fs.readFileSync(
   'utf8',
 );
 if (!paymentsController.includes('paymentId,') || !paymentsController.includes('checkoutStatus.watchForUser')) {
-  throw new Error('Checkout Pix precisa devolver paymentId explícito e iniciar o acompanhamento realtime.');
+  throw new Error('Checkout Pix legado precisa devolver paymentId explícito e iniciar o acompanhamento realtime.');
+}
+
+const commercialController = fs.readFileSync(
+  path.join(root, 'backend/src/payments/commercial-payments.controller.ts'),
+  'utf8',
+);
+if (!commercialController.includes("@Get('catalog')") || !commercialController.includes("@Post('checkout')")) {
+  throw new Error('API comercial precisa expor catálogo e checkout por modalidade.');
+}
+if (!commercialController.includes("@Controller('admin/payments/commercial-products')")) {
+  throw new Error('Admin precisa possuir endpoint próprio para preços por modalidade.');
+}
+
+const commercialService = fs.readFileSync(
+  path.join(root, 'backend/src/payments/commercial-payments.service.ts'),
+  'utf8',
+);
+if (!commercialService.includes("purchaseMode === 'SUBSCRIPTION' ? 'RECURRING' : 'ONE_TIME'")) {
+  throw new Error('Checkout comercial precisa derivar a rota de pagamento da modalidade escolhida.');
+}
+if (!commercialService.includes('subscriptionPriceCents') || !commercialService.includes('oneTimePriceCents')) {
+  throw new Error('Produtos precisam possuir preços independentes de assinatura e compra avulsa.');
+}
+
+const userPayments = fs.readFileSync(path.join(root, 'pages/UserPaymentsPage.tsx'), 'utf8');
+if (!userPayments.includes("api.get('/payments/commercial/catalog')") || !userPayments.includes("api.post('/payments/commercial/checkout'")) {
+  throw new Error('Área financeira do usuário precisa usar o catálogo/checkout comercial por modalidade.');
+}
+if (!userPayments.includes("'SUBSCRIPTION'") || !userPayments.includes("'ONE_TIME'")) {
+  throw new Error('Usuário precisa poder escolher assinatura ou compra avulsa.');
+}
+
+const adminPayments = fs.readFileSync(path.join(root, 'pages/AdminPaymentsPage.tsx'), 'utf8');
+if (!adminPayments.includes('/admin/payments/commercial-products')) {
+  throw new Error('Admin financeiro precisa configurar preços comerciais separados.');
+}
+
+const commercialMigration = fs.readFileSync(
+  path.join(root, 'backend/migrations/20260827_payment_commercial_modes.sql'),
+  'utf8',
+);
+if (!commercialMigration.includes('"purchaseMode"') || !commercialMigration.includes('"subscriptionPriceCents"') || !commercialMigration.includes('"oneTimePriceCents"')) {
+  throw new Error('Migração comercial precisa persistir modalidade e os dois preços.');
 }
 
 const paymentStatusService = fs.readFileSync(
@@ -76,6 +124,9 @@ const paymentStatusService = fs.readFileSync(
 );
 if (!paymentStatusService.includes("publishPaymentUpdate") || !paymentStatusService.includes('watchForUser')) {
   throw new Error('Serviço de checkout precisa publicar atualizações realtime da cobrança.');
+}
+if (!paymentStatusService.includes("payment.purchaseMode === 'SUBSCRIPTION'")) {
+  throw new Error('Status do checkout precisa respeitar a modalidade escolhida na transação.');
 }
 
 const chatGateway = fs.readFileSync(
