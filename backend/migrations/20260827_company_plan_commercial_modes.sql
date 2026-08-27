@@ -133,7 +133,12 @@ BEGIN
   VALUES
     (company_id, plan_code = 'ELITE', '["META","GOOGLE"]'::jsonb,
      CASE WHEN plan_code = 'ELITE' THEN period_end ELSE NULL END,
-     CASE WHEN purchase_mode = 'ONE_TIME' THEN 'COMPANY_ELITE_ONE_TIME' ELSE 'COMPANY_ELITE' END,
+     CASE
+       WHEN plan_code = 'ELITE' AND purchase_mode = 'ONE_TIME' THEN 'COMPANY_ELITE_ONE_TIME'
+       WHEN plan_code = 'ELITE' THEN 'COMPANY_ELITE'
+       WHEN purchase_mode = 'ONE_TIME' THEN 'COMPANY_PLUS_ONE_TIME'
+       ELSE 'COMPANY_PLUS'
+     END,
      now())
   ON CONFLICT ("companyId") DO UPDATE SET
     eligible = EXCLUDED.eligible,
