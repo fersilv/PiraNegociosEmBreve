@@ -179,8 +179,8 @@ const adminPayments = fs.readFileSync(path.join(root, 'pages/AdminPaymentsPage.t
 if (!adminPayments.includes('/admin/payments/commercial-products')) {
   throw new Error('Admin financeiro precisa configurar preços comerciais separados.');
 }
-if (!adminPayments.includes('Preço da compra avulsa (R$)') || !adminPayments.includes('Preço da assinatura (R$)')) {
-  throw new Error('Admin precisa exibir campos separados para preço avulso e preço da assinatura.');
+if (!adminPayments.includes('subscriptionPrice') || !adminPayments.includes('oneTimePrice') || !adminPayments.includes('title="Compra avulsa"')) {
+  throw new Error('Admin precisa manter editores independentes para preço avulso e preço da assinatura.');
 }
 
 const commercialMigration = fs.readFileSync(
