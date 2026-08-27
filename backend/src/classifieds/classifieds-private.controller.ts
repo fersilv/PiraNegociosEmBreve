@@ -149,17 +149,10 @@ export class ClassifiedsPrivateController {
     await this.identities.assertPublishingReady(req.user.uid);
     const identity = await this.identities.active(req.user.uid);
     await this.compliance.assertSellerEligible(req.user.uid, identity);
-    const listing = await this.classifieds.publish(req.user.uid, id);
-    const moderation = await this.commerce.moderatePublishedListing(req.user.uid, id);
-    if ((moderation as any)?.status === 'PAUSED') {
-      return {
-        ...listing,
-        status: 'PAUSED',
-        moderationReason: (moderation as any).reason || 'Possível anúncio duplicado.',
-        duplicateOfListingId: (moderation as any).duplicateListingId || null,
-      };
-    }
-    return listing;
+
+    // A publicação não dispara mais moderação por IA automaticamente.
+    // Revisões operacionais devem ser executadas sob demanda por API/MCP.
+    return this.classifieds.publish(req.user.uid, id);
   }
 
   @Post('me/listings/:id/status')
