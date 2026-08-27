@@ -19,18 +19,21 @@ ALTER TABLE payment_products
   ADD CONSTRAINT payment_products_preferred_purchase_mode_check
     CHECK ("preferredPurchaseMode" IN ('ONE_TIME','SUBSCRIPTION'));
 
--- Migração conservadora: preserva exatamente a modalidade que cada produto tinha antes.
+-- Backfill apenas para produtos que ainda não receberam nenhuma configuração comercial.
+-- Assim, executar novamente esta migração não reativa uma modalidade que o admin desligou.
 UPDATE payment_products
 SET "subscriptionPriceCents" = "priceCents",
     "preferredPurchaseMode" = 'SUBSCRIPTION'
 WHERE "billingType" = 'RECURRING'
+  AND "oneTimePriceCents" IS NULL
   AND "subscriptionPriceCents" IS NULL;
 
 UPDATE payment_products
 SET "oneTimePriceCents" = "priceCents",
     "preferredPurchaseMode" = 'ONE_TIME'
 WHERE "billingType" <> 'RECURRING'
-  AND "oneTimePriceCents" IS NULL;
+  AND "oneTimePriceCents" IS NULL
+  AND "subscriptionPriceCents" IS NULL;
 
 ALTER TABLE payments
   ADD COLUMN IF NOT EXISTS "purchaseMode" varchar(16) NOT NULL DEFAULT 'ONE_TIME';
@@ -41,10 +44,12 @@ ALTER TABLE payments
   ADD CONSTRAINT payments_purchase_mode_check
     CHECK ("purchaseMode" IN ('ONE_TIME','SUBSCRIPTION'));
 
+-- Só converte pagamentos legados ainda sem marcação comercial explícita.
 UPDATE payments p
 SET "purchaseMode" = CASE WHEN pp."billingType" = 'RECURRING' THEN 'SUBSCRIPTION' ELSE 'ONE_TIME' END
 FROM payment_products pp
-WHERE pp.code = p."productCode";
+WHERE pp.code = p."productCode"
+  AND coalesce(p.metadata->>'purchaseMode', '') = '';
 
 CREATE OR REPLACE FUNCTION settle_paid_product_benefits()
 RETURNS trigger AS $$
