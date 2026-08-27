@@ -8,7 +8,9 @@ import {
   type PaymentType,
 } from './payment-provider-config.service';
 
-export interface PaymentCheckoutPayer extends EfiPayerInput, MercadoPagoPayerInput {}
+export interface PaymentCheckoutPayer extends EfiPayerInput, MercadoPagoPayerInput {
+  documentType?: 'CPF' | 'CNPJ';
+}
 
 @Injectable()
 export class PaymentProviderManagerService {
@@ -136,13 +138,30 @@ export class PaymentProviderManagerService {
       [payment.userId],
     );
     const user = userRows[0] || {};
-    const payer = {
+    const document = String(payerInput.document || '').replace(/\D/g, '');
+    const requestedType = String(payerInput.documentType || '').toUpperCase();
+    const documentType: 'CPF' | 'CNPJ' = requestedType === 'CNPJ' || (!requestedType && document.length === 14)
+      ? 'CNPJ'
+      : 'CPF';
+
+    if (document && ((documentType === 'CPF' && document.length !== 11) || (documentType === 'CNPJ' && document.length !== 14))) {
+      throw new BadRequestException(`Informe um ${documentType} válido.`);
+    }
+
+    const payer: PaymentCheckoutPayer = {
       ...payerInput,
+      document: document || undefined,
+      documentType,
       email: String(payerInput.email || user.email || '').trim(),
       name: String(payerInput.name || user.fullName || user.displayName || '').trim(),
     };
 
     if (active === 'EFI') {
+      if (paymentType === 'PIX_AUTOMATICO' && payer.documentType === 'CNPJ') {
+        throw new BadRequestException(
+          'A rota atual de Pix Automático está usando Efí e este fluxo está configurado para CPF. Para pagar com CNPJ, use uma rota Mercado Pago ou informe um CPF.',
+        );
+      }
       return paymentType === 'PIX_AUTOMATICO'
         ? this.efi.createMonthlyAutomaticCharge(
             Number(payment.amountCents),
