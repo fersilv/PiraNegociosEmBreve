@@ -43,4 +43,9 @@ export class ChatGateway implements OnGatewayConnection {
   publishMobileUploadReady(recipientId: string, payload: unknown) {
     this.server.to(`user:${recipientId}`).emit('mobile-upload:ready', payload);
   }
+
+  publishPaymentUpdate(recipientId: string, payload: unknown) {
+    if (!recipientId) return;
+    this.server.to(`user:${recipientId}`).emit('payment:updated', payload);
+  }
 }
