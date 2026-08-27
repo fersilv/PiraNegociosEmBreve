@@ -9,6 +9,7 @@ const requiredFiles = [
   'pages/UserPaymentsPage.tsx',
   'pages/CompanyPlansPage.tsx',
   'pages/AdminPaymentsPage.tsx',
+  'pages/AdminClassifiedCommercePage.tsx',
   'pages/PaymentMethodsPage.tsx',
   'pages/ClassifiedsWorkspacePage.tsx',
   'backend/src/classifieds/classifieds-auction.service.ts',
@@ -20,8 +21,11 @@ const requiredFiles = [
   'backend/src/payments/commercial-payments.service.ts',
   'backend/src/payments/payment-checkout-status.controller.ts',
   'backend/src/payments/payment-checkout-status.service.ts',
+  'backend/src/company-plans/company-plan-benefits.ts',
   'backend/src/company-plans/company-plan-commerce.service.ts',
+  'backend/src/company-plans/company-plans.service.ts',
   'backend/src/company-plans/company-plans.controller.ts',
+  'backend/src/company-plans/company-plans-admin.controller.ts',
   'backend/migrations/20260827_payment_commercial_modes.sql',
   'backend/migrations/20260827_company_plan_commercial_modes.sql',
   'backend/src/chat/chat.gateway.ts',
@@ -50,7 +54,7 @@ const paymentModal = fs.readFileSync(
   path.join(root, 'components/payments/PaymentCheckoutModal.tsx'),
   'utf8',
 );
-if (!paymentModal.includes("createPortal(modal, document.body)")) {
+if (!paymentModal.includes('createPortal(modal, document.body)')) {
   throw new Error('PaymentCheckoutModal precisa renderizar por Portal no document.body.');
 }
 
@@ -106,7 +110,7 @@ if (!providerManager.includes("paymentType === 'PIX_AUTOMATICO' && !this.isNativ
 if (providerManager.includes('this.mercadoPago.createRecurringCheckout(')) {
   throw new Error('Mercado Pago Assinaturas não pode ser usado como implementação de PIX_AUTOMATICO.');
 }
-if (!providerManager.includes("Mercado Pago Assinaturas não é Pix Automático")) {
+if (!providerManager.includes('Mercado Pago Assinaturas não é Pix Automático')) {
   throw new Error('Ativação administrativa precisa recusar Mercado Pago na rota Pix Automático.');
 }
 
@@ -131,6 +135,25 @@ if (!commercialService.includes("purchaseMode === 'SUBSCRIPTION' ? 'RECURRING' :
 if (!commercialService.includes('subscriptionPriceCents') || !commercialService.includes('oneTimePriceCents')) {
   throw new Error('Produtos precisam possuir preços independentes de assinatura e compra avulsa.');
 }
+if (!commercialService.includes('subscriptionBenefits') || !commercialService.includes('oneTimeBenefits')) {
+  throw new Error('Produtos precisam persistir benefícios independentes de assinatura e compra avulsa.');
+}
+
+const benefitCatalog = fs.readFileSync(
+  path.join(root, 'backend/src/company-plans/company-plan-benefits.ts'),
+  'utf8',
+);
+if (!benefitCatalog.includes('COMPANY_PLAN_BENEFIT_CATALOG') || !benefitCatalog.includes('defaultBenefitIdsForPlan')) {
+  throw new Error('Planos empresariais precisam ter catálogo central de benefícios comerciais.');
+}
+
+const companyPlansService = fs.readFileSync(
+  path.join(root, 'backend/src/company-plans/company-plans.service.ts'),
+  'utf8',
+);
+if (!companyPlansService.includes('companyBenefitIds') || !companyPlansService.includes('COMPANY_PLAN_BENEFIT_NOT_INCLUDED')) {
+  throw new Error('Autorização do plano precisa respeitar o snapshot de benefícios da modalidade comprada.');
+}
 
 const companyCommerce = fs.readFileSync(
   path.join(root, 'backend/src/company-plans/company-plan-commerce.service.ts'),
@@ -142,6 +165,9 @@ if (!companyCommerce.includes("purchaseMode === 'SUBSCRIPTION' ? 'PIX_AUTOMATICO
 if (!companyCommerce.includes("this.commercial.getProduct(PRODUCT_BY_PLAN[plan], false)")) {
   throw new Error('Checkout empresarial precisa usar os preços comerciais configurados para o plano.');
 }
+if (!companyCommerce.includes('lostComparedToSubscription') || !companyCommerce.includes('companyBenefitIds')) {
+  throw new Error('Checkout empresarial precisa comparar e fotografar os benefícios da modalidade escolhida.');
+}
 
 const companyPlansController = fs.readFileSync(
   path.join(root, 'backend/src/company-plans/company-plans.controller.ts'),
@@ -151,12 +177,40 @@ if (!companyPlansController.includes('purchaseMode?: PurchaseMode') || !companyP
   throw new Error('/company/plans/checkout precisa aceitar assinatura ou compra avulsa.');
 }
 
+const companyPlansAdminController = fs.readFileSync(
+  path.join(root, 'backend/src/company-plans/company-plans-admin.controller.ts'),
+  'utf8',
+);
+if (!companyPlansAdminController.includes("@Get('benefit-catalog')")) {
+  throw new Error('Admin precisa consultar o catálogo de benefícios dos planos.');
+}
+
 const companyPlansPage = fs.readFileSync(path.join(root, 'pages/CompanyPlansPage.tsx'), 'utf8');
-if (!companyPlansPage.includes("purchaseMode: selection.purchaseMode")) {
+if (!companyPlansPage.includes('purchaseMode: selection.purchaseMode')) {
   throw new Error('Tela de planos empresariais precisa enviar a modalidade selecionada ao checkout.');
 }
-if (!companyPlansPage.includes('Comprar ${plan.name} avulso') || !companyPlansPage.includes('Assinar ${plan.name} com Pix Automático')) {
+if (!companyPlansPage.includes('Comprar avulso') || !companyPlansPage.includes('Assinar ${plan.name}')) {
   throw new Error('Planos empresariais precisam mostrar CTAs distintos para assinatura e compra avulsa.');
+}
+if (!companyPlansPage.includes('useFeedback') || !companyPlansPage.includes("toast(completedMode")) {
+  throw new Error('Notificações da tela de planos precisam usar toast.');
+}
+if (companyPlansPage.includes('Gateway do Pix Automático') || companyPlansPage.includes('Gateway do Pix avulso')) {
+  throw new Error('A tela do cliente não pode expor configuração interna de gateway.');
+}
+if (!companyPlansPage.includes('Você não leva do recorrente') || !companyPlansPage.includes('lostComparedToSubscription')) {
+  throw new Error('Cliente precisa visualizar o que perde ao escolher compra avulsa.');
+}
+
+const adminMonetization = fs.readFileSync(path.join(root, 'pages/AdminClassifiedCommercePage.tsx'), 'utf8');
+if (!adminMonetization.includes('/admin/company-plans/benefit-catalog')) {
+  throw new Error('Central de monetização precisa carregar o catálogo de benefícios.');
+}
+if (!adminMonetization.includes('subscriptionBenefits') || !adminMonetization.includes('oneTimeBenefits')) {
+  throw new Error('Admin precisa escolher benefícios distintos para assinatura e avulso.');
+}
+if (!adminMonetization.includes('useFeedback') || !adminMonetization.includes("toast(`${PLAN_META[plan].label}")) {
+  throw new Error('Central de monetização precisa usar toast para feedback de salvamento.');
 }
 
 const paymentMethodsPage = fs.readFileSync(path.join(root, 'pages/PaymentMethodsPage.tsx'), 'utf8');
@@ -190,6 +244,9 @@ const commercialMigration = fs.readFileSync(
 if (!commercialMigration.includes('"purchaseMode"') || !commercialMigration.includes('"subscriptionPriceCents"') || !commercialMigration.includes('"oneTimePriceCents"')) {
   throw new Error('Migração comercial precisa persistir modalidade e os dois preços.');
 }
+if (!commercialMigration.includes('"subscriptionBenefits"') || !commercialMigration.includes('"oneTimeBenefits"')) {
+  throw new Error('Migração comercial precisa persistir benefícios por modalidade.');
+}
 if (!commercialMigration.includes('"paymentType" = \'PIX_AUTOMATICO\'') || !commercialMigration.includes('"providerCode" = \'MERCADO_PAGO\'')) {
   throw new Error('Migração precisa remover a rota legado Mercado Pago -> Pix Automático.');
 }
@@ -206,7 +263,7 @@ const paymentStatusService = fs.readFileSync(
   path.join(root, 'backend/src/payments/payment-checkout-status.service.ts'),
   'utf8',
 );
-if (!paymentStatusService.includes("publishPaymentUpdate") || !paymentStatusService.includes('watchForUser')) {
+if (!paymentStatusService.includes('publishPaymentUpdate') || !paymentStatusService.includes('watchForUser')) {
   throw new Error('Serviço de checkout precisa publicar atualizações realtime da cobrança.');
 }
 if (!paymentStatusService.includes("payment.purchaseMode === 'SUBSCRIPTION'")) {
