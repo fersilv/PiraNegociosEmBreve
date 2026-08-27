@@ -10,6 +10,7 @@ import { CompanyTalentRecord } from '../companies/entities/company-talent-record
 import { Job } from '../jobs/entities/job.entity';
 import { PaymentsModule } from '../payments/payments.module';
 import { User } from '../users/entities/user.entity';
+import { CompanyPlanCommerceService } from './company-plan-commerce.service';
 import { CompanyPlansAdminController } from './company-plans-admin.controller';
 import { CompanyPlansAdminService } from './company-plans-admin.service';
 import { CompanyPlansController } from './company-plans.controller';
@@ -34,6 +35,7 @@ import { CompanyWhatsAppPremiumService } from './company-whatsapp-premium.servic
   controllers: [CompanyPlansController, CompanyPlansAdminController],
   providers: [
     CompanyPlansService,
+    CompanyPlanCommerceService,
     CompanyPlansOverviewService,
     CompanyPlansAdminService,
     CompanyWhatsAppPremiumService,
@@ -41,6 +43,7 @@ import { CompanyWhatsAppPremiumService } from './company-whatsapp-premium.servic
   ],
   exports: [
     CompanyPlansService,
+    CompanyPlanCommerceService,
     CompanyPlansAdminService,
     CompanyWhatsAppPremiumService,
   ],
