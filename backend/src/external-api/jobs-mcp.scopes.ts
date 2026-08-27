@@ -17,7 +17,8 @@ export const JOBS_CAPABILITIES: JobsCapability[] = [
   { scope: 'jobs:detail', category: 'Vagas · Consulta', label: 'Consultar vaga por ID', description: 'Lê os dados completos de uma vaga específica.', risk: 'read', defaultMcp: true },
   { scope: 'jobs:stats:read', category: 'Vagas · Consulta', label: 'Consultar estatísticas', description: 'Consulta totais de vagas por atividade, moderação, revisão e alertas.', risk: 'read', defaultMcp: true },
   { scope: 'jobs:duplicates:check', category: 'Vagas · Consulta', label: 'Checar duplicidade', description: 'Pesquisa possíveis duplicidades antes de criar ou atualizar uma vaga.', risk: 'read', defaultMcp: true },
-  { scope: 'jobs:match:read', category: 'Vagas · Consulta', label: 'Consultar perfil de aderência', description: 'Consulta schema e estado do mecanismo de compatibilidade de vagas.', risk: 'read', defaultMcp: true },
+  { scope: 'jobs:match:read', category: 'Vagas · IA externa', label: 'Consultar perfis de aderência', description: 'Consulta schema e fila de fichas de vaga ainda não preparadas para matching.', risk: 'read', defaultMcp: true },
+  { scope: 'jobs:match:write', category: 'Vagas · IA externa', label: 'Gravar perfil de aderência', description: 'Permite que uma IA externa entregue a ficha estruturada da vaga sem executar modelo no backend.', risk: 'write', defaultMcp: true },
   { scope: 'jobs:review:read', category: 'Vagas · Revisão', label: 'Consultar fila de revisão', description: 'Lista vagas pelo novo estado operacional de revisão.', risk: 'read', defaultMcp: true },
   { scope: 'jobs:create', category: 'Vagas · Cadastro', label: 'Criar vaga', description: 'Cadastra nova vaga externa usando o fluxo normal de validação e deduplicação.', risk: 'write', defaultMcp: true },
   { scope: 'jobs:update', category: 'Vagas · Cadastro', label: 'Atualizar vaga', description: 'Atualiza conteúdo permitido de uma vaga existente.', risk: 'write', defaultMcp: true },
@@ -28,6 +29,10 @@ export const JOBS_CAPABILITIES: JobsCapability[] = [
   { scope: 'jobs:flag', category: 'Vagas · Alertas', label: 'Sinalizar vaga', description: 'Cria ou atualiza um alerta operacional na vaga.', risk: 'write', defaultMcp: true },
   { scope: 'jobs:unflag', category: 'Vagas · Alertas', label: 'Limpar alerta', description: 'Limpa o alerta sem devolver uma vaga já revisada para a fila de vagas novas.', risk: 'write', defaultMcp: true },
   { scope: 'jobs:delete', category: 'Vagas · Manutenção', label: 'Excluir vaga definitivamente', description: 'Remove definitivamente uma vaga. Deve ser liberado apenas para integrações administrativas confiáveis.', risk: 'destructive' },
+  { scope: 'automation:classifieds:read', category: 'Automação externa · Classificados', label: 'Consultar filas de moderação', description: 'Lê anúncios e avaliações que aguardam análise externa, sem executar IA no backend.', risk: 'read', defaultMcp: true },
+  { scope: 'automation:classifieds:write', category: 'Automação externa · Classificados', label: 'Aplicar decisões de moderação', description: 'Grava decisões produzidas por um agente externo para anúncios e avaliações.', risk: 'write', defaultMcp: true },
+  { scope: 'automation:feedback:read', category: 'Automação externa · Produto', label: 'Consultar feedback e FAQ', description: 'Lê feedbacks e perguntas que podem ser agrupados por uma IA externa.', risk: 'read', defaultMcp: true },
+  { scope: 'automation:feedback:write', category: 'Automação externa · Produto', label: 'Gravar insights e FAQ', description: 'Recebe agrupamentos e rascunhos gerados externamente, sem chamar IA interna.', risk: 'write', defaultMcp: true },
 ];
 
 export const JOBS_MCP_SCOPES = JOBS_CAPABILITIES.map((capability) => capability.scope);
@@ -60,7 +65,7 @@ export function hasJobsScope(scopes: Iterable<string>, scope: string) {
 
   // OAuths/clients antigos continuam vendo exatamente o conjunto de funções
   // que existia antes. O umbrella legado nunca concede ativação, desativação,
-  // revisão, flags ou exclusão introduzidas na V2.
+  // revisão, flags, automações externas ou exclusão introduzidas na V2.
   if (values.has('jobs:read') && LEGACY_READ_EQUIVALENTS.has(scope)) return true;
   if (values.has('jobs:write') && LEGACY_WRITE_EQUIVALENTS.has(scope)) return true;
   return false;
