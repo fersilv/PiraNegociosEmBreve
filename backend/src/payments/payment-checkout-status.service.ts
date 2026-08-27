@@ -176,6 +176,7 @@ export class PaymentCheckoutStatusService {
 
     return {
       id: payment.id,
+      paymentId: payment.id,
       productCode: payment.productCode,
       productName: payment.productName || payment.productCode,
       productDescription: payment.productDescription || null,
