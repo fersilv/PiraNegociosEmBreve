@@ -3,8 +3,6 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  OnModuleDestroy,
-  OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -27,9 +25,8 @@ type SupportMessage = {
 };
 
 @Injectable()
-export class ProductFeedbackService implements OnModuleInit, OnModuleDestroy {
+export class ProductFeedbackService {
   private tablesReady: Promise<void> | null = null;
-  private analysisTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly dataSource: DataSource,
@@ -38,29 +35,11 @@ export class ProductFeedbackService implements OnModuleInit, OnModuleDestroy {
     private readonly notifications: NotificationsService,
   ) {}
 
-  onModuleInit() {
-    const firstRun = setTimeout(() => {
-      void this.runDailyAutomation();
-    }, 60_000);
-    firstRun.unref?.();
-    this.analysisTimer = setInterval(() => {
-      void this.runDailyAutomation();
-    }, 60 * 60 * 1000);
-    this.analysisTimer.unref?.();
-  }
-
-  private async runDailyAutomation() {
-    await this.analyze(false).catch((error) =>
-      console.warn('Análise diária de sugestões não executada:', error),
-    );
-    await this.generateFaqs(false).catch((error) =>
-      console.warn('Geração diária de FAQs não executada:', error),
-    );
-  }
-
-  onModuleDestroy() {
-    if (this.analysisTimer) clearInterval(this.analysisTimer);
-  }
+  /**
+   * Não existe scheduler interno para análise de feedback ou geração de FAQ.
+   * As rotinas analyze() e generateFaqs() permanecem disponíveis apenas por
+   * request explícito (admin/API e, futuramente, MCP externo controlado).
+   */
 
   private async ensureTables() {
     if (!this.tablesReady) {
