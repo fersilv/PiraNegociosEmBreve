@@ -19,6 +19,7 @@ import { ProductDurationService } from './product-duration.service';
 import { EfiPixService } from './efi-pix.service';
 import { MercadoPagoService } from './mercado-pago.service';
 import { MercadoPagoTestLabService } from './mercado-pago-test-lab.service';
+import { PaymentCheckoutStatusService } from './payment-checkout-status.service';
 import {
   PaymentProviderManagerService,
   type PaymentCheckoutPayer,
@@ -31,6 +32,7 @@ export class PaymentsController {
     private readonly payments: PaymentsService,
     private readonly billingSupport: BillingSupportService,
     private readonly providers: PaymentProviderManagerService,
+    private readonly checkoutStatus: PaymentCheckoutStatusService,
   ) {}
 
   @Get('catalog')
@@ -77,12 +79,15 @@ export class PaymentsController {
     }
 
     const payment = await this.payments.createPixPayment(req.user.uid, productCode);
+    const paymentId = String(payment.id);
     const devMode = await this.payments.getDevMode();
     if (devMode.enabled) {
-      const settled = await this.payments.simulatePayment(payment.id, req.user.uid);
+      const settled = await this.payments.simulatePayment(paymentId, req.user.uid);
       return {
         ...payment,
         ...settled,
+        id: paymentId,
+        paymentId,
         product: payment.product,
         paymentRequired: false,
         checkoutReady: false,
@@ -94,10 +99,12 @@ export class PaymentsController {
 
     try {
       const checkout = await this.providers.createCheckout(payment, body?.payer || {});
-      const stored = await this.payments.attachProviderCheckout(payment.id, checkout);
+      const stored = await this.payments.attachProviderCheckout(paymentId, checkout);
       const metadata = stored.metadata as any;
-      return {
+      const response = {
         ...stored,
+        id: paymentId,
+        paymentId,
         product: payment.product,
         checkoutReady: Boolean(
           stored.pixCopyPaste
@@ -108,8 +115,10 @@ export class PaymentsController {
         providerConfigured: true,
         paymentRequired: true,
       };
+      this.checkoutStatus.watchForUser(req.user.uid, paymentId);
+      return response;
     } catch (error) {
-      await this.payments.cancelProviderCheckout(payment.id, error).catch(() => undefined);
+      await this.payments.cancelProviderCheckout(paymentId, error).catch(() => undefined);
       throw error;
     }
   }
