@@ -22,11 +22,11 @@ export const JOBS_CAPABILITIES: JobsCapability[] = [
   { scope: 'jobs:create', category: 'Vagas · Cadastro', label: 'Criar vaga', description: 'Cadastra nova vaga externa usando o fluxo normal de validação e deduplicação.', risk: 'write', defaultMcp: true },
   { scope: 'jobs:update', category: 'Vagas · Cadastro', label: 'Atualizar vaga', description: 'Atualiza conteúdo permitido de uma vaga existente.', risk: 'write', defaultMcp: true },
   { scope: 'jobs:verify', category: 'Vagas · Revisão', label: 'Registrar verificação', description: 'Registra disponibilidade, fechamento, expiração, ausência ou incerteza da fonte.', risk: 'write', defaultMcp: true },
-  { scope: 'jobs:review:write', category: 'Vagas · Revisão', label: 'Alterar estado de revisão', description: 'Marca a vaga como revisada, para rechecagem, exigindo desativação ou resolvida.', risk: 'write' },
-  { scope: 'jobs:activate', category: 'Vagas · Publicação', label: 'Ativar vaga', description: 'Ativa uma vaga para publicação e registra a decisão operacional.', risk: 'write' },
-  { scope: 'jobs:deactivate', category: 'Vagas · Publicação', label: 'Desativar vaga', description: 'Desativa uma vaga e encerra o estado operacional pendente quando apropriado.', risk: 'destructive' },
-  { scope: 'jobs:flag', category: 'Vagas · Alertas', label: 'Sinalizar vaga', description: 'Cria ou atualiza um alerta operacional na vaga.', risk: 'write' },
-  { scope: 'jobs:unflag', category: 'Vagas · Alertas', label: 'Limpar alerta', description: 'Limpa o alerta sem devolver uma vaga já revisada para a fila de vagas novas.', risk: 'write' },
+  { scope: 'jobs:review:write', category: 'Vagas · Revisão', label: 'Alterar estado de revisão', description: 'Marca a vaga como revisada, para rechecagem, exigindo desativação ou resolvida.', risk: 'write', defaultMcp: true },
+  { scope: 'jobs:activate', category: 'Vagas · Publicação', label: 'Ativar vaga', description: 'Ativa uma vaga para publicação e registra a decisão operacional.', risk: 'write', defaultMcp: true },
+  { scope: 'jobs:deactivate', category: 'Vagas · Publicação', label: 'Desativar vaga', description: 'Desativa uma vaga e encerra o estado operacional pendente quando apropriado.', risk: 'destructive', defaultMcp: true },
+  { scope: 'jobs:flag', category: 'Vagas · Alertas', label: 'Sinalizar vaga', description: 'Cria ou atualiza um alerta operacional na vaga.', risk: 'write', defaultMcp: true },
+  { scope: 'jobs:unflag', category: 'Vagas · Alertas', label: 'Limpar alerta', description: 'Limpa o alerta sem devolver uma vaga já revisada para a fila de vagas novas.', risk: 'write', defaultMcp: true },
   { scope: 'jobs:delete', category: 'Vagas · Manutenção', label: 'Excluir vaga definitivamente', description: 'Remove definitivamente uma vaga. Deve ser liberado apenas para integrações administrativas confiáveis.', risk: 'destructive' },
 ];
 
