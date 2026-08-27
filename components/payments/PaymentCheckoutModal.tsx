@@ -26,6 +26,12 @@ function providerName(code?: string | null) {
   return 'provedor de pagamento';
 }
 
+function normalizeCheckout(raw: any) {
+  const data = raw && typeof raw === 'object' ? raw : {};
+  const paymentId = String(data.paymentId || data.id || '').trim() || null;
+  return paymentId ? { ...data, id: paymentId, paymentId } : data;
+}
+
 export type PaymentCheckoutModalProps = {
   open: boolean;
   onClose: () => void;
@@ -99,6 +105,7 @@ export function PaymentCheckoutModal({
   const pixCopyPaste = checkout?.pixCopyPaste || null;
   const qrCodeBase64 = checkout?.qrCodeBase64 || null;
   const checkoutReady = Boolean(pixCopyPaste || qrCodeBase64 || authorizationUrl || ticketUrl || checkout?.checkoutReady);
+  const paymentId = String(checkout?.paymentId || checkout?.id || '').trim();
 
   const shownAmount = useMemo(() => {
     if (checkout?.amountCents !== undefined && checkout?.amountCents !== null) return Number(checkout.amountCents);
@@ -106,7 +113,7 @@ export function PaymentCheckoutModal({
   }, [amountCents, checkout?.amountCents]);
 
   useEffect(() => {
-    if (!open || !checkout?.id || completed || failed) return;
+    if (!open || !paymentId || completed || failed) return;
     let active = true;
     let busy = false;
     let failures = 0;
@@ -115,12 +122,12 @@ export function PaymentCheckoutModal({
       if (busy) return;
       busy = true;
       try {
-        const response = await api.get(`/payments/${checkout.id}/status`);
+        const response = await api.get(`/payments/${paymentId}/status`);
         if (!active) return;
         failures = 0;
         setPollError('');
-        const next = response.data || {};
-        setCheckout((current: any) => ({ ...current, ...next }));
+        const next = normalizeCheckout(response.data || {});
+        setCheckout((current: any) => normalizeCheckout({ ...current, ...next }));
         if (next.completed === true || next.status === 'PAID') {
           if (!completedOnce.current) {
             completedOnce.current = true;
@@ -147,7 +154,7 @@ export function PaymentCheckoutModal({
       active = false;
       window.clearInterval(timer);
     };
-  }, [checkout?.id, completed, failed, onCompleted, open]);
+  }, [paymentId, completed, failed, onCompleted, open]);
 
   useEffect(() => {
     if (!completed || completedOnce.current) return;
@@ -157,7 +164,8 @@ export function PaymentCheckoutModal({
 
   if (!open || typeof document === 'undefined') return null;
 
-  const recoverCheckout = async (raw: any) => {
+  const recoverCheckout = async (rawInput: any) => {
+    const raw = normalizeCheckout(rawInput);
     if (raw?.id || !productCode) return raw;
     try {
       const historyResponse = await api.get('/payments/me');
@@ -167,16 +175,17 @@ export function PaymentCheckoutModal({
         && ['PENDING', 'PAID'].includes(String(item?.status || '').toUpperCase())
       ));
       if (!candidate?.id) return raw;
-      return {
+      return normalizeCheckout({
         ...candidate,
         ...raw,
         id: candidate.id,
+        paymentId: candidate.id,
         provider: raw?.provider || candidate.provider || null,
         providerPaymentId: raw?.providerPaymentId || candidate.providerPaymentId || null,
         pixCopyPaste: raw?.pixCopyPaste || candidate.pixCopyPaste || null,
         qrCodeBase64: raw?.qrCodeBase64 || candidate.qrCodeBase64 || null,
         metadata: { ...(candidate.metadata || {}), ...(raw?.metadata || {}) },
-      };
+      });
     } catch {
       return raw;
     }
@@ -192,7 +201,7 @@ export function PaymentCheckoutModal({
       const raw = result?.data ?? result ?? {};
       const data = await recoverCheckout(raw);
       if (data?.paymentRequired === false) {
-        const done = { ...data, completed: true, status: data.status || 'PAID' };
+        const done = normalizeCheckout({ ...data, completed: true, status: data.status || 'PAID' });
         setCheckout(done);
         if (!completedOnce.current) {
           completedOnce.current = true;
@@ -200,12 +209,12 @@ export function PaymentCheckoutModal({
         }
         return;
       }
-      if (!data?.id && !data?.checkoutReady && !data?.metadata?.subscriptionCheckoutUrl) {
+      if (!data?.id && !data?.paymentId && !data?.checkoutReady && !data?.metadata?.subscriptionCheckoutUrl) {
         setCheckout(null);
-        setError('A cobrança foi iniciada, mas não conseguimos recuperar o identificador para acompanhá-la. Nenhuma nova cobrança foi criada. Feche e atualize a página para consultar seu histórico antes de tentar novamente.');
+        setError('A cobrança foi criada, mas o servidor não devolveu o identificador local para acompanhamento. Atualize seu histórico financeiro antes de tentar novamente.');
         return;
       }
-      setCheckout(data);
+      setCheckout(normalizeCheckout(data));
     } catch (requestError: any) {
       const raw = requestError?.response?.data?.message;
       setError(Array.isArray(raw) ? raw.join(' · ') : raw || requestError?.message || 'Não foi possível iniciar o pagamento agora.');
