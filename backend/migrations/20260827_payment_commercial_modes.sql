@@ -125,3 +125,14 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Não tratar Mercado Pago Assinaturas (/preapproval) como Pix Automático.
+-- Se uma versão anterior salvou essa rota, ela é desligada para impedir que o
+-- botão "Assinar com Pix Automático" abra uma assinatura hospedada do Mercado Pago.
+UPDATE payment_provider_routes
+SET enabled = false,
+    "providerCode" = NULL,
+    "activatedAt" = NULL,
+    "updatedAt" = now()
+WHERE "paymentType" = 'PIX_AUTOMATICO'
+  AND "providerCode" = 'MERCADO_PAGO';
