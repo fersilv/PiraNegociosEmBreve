@@ -1,13 +1,9 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { ClassifiedsReviewModerationService } from './classifieds-review-moderation.service';
 
 @Injectable()
 export class ClassifiedsReviewsService {
-  constructor(
-    private readonly dataSource: DataSource,
-    private readonly moderation: ClassifiedsReviewModerationService,
-  ) {}
+  constructor(private readonly dataSource: DataSource) {}
 
   async eligible(uid: string) {
     const rows = await this.dataSource.query(
@@ -77,24 +73,16 @@ export class ClassifiedsReviewsService {
     }
     const comment = String(body.comment || '').trim().slice(0, 3000) || null;
     const photoUrls = this.photos(body.photoUrls);
-    const result = await this.moderation.moderate({
-      comment,
-      photoUrls,
-      ratings: { productRating, serviceRating, companyRating },
-    });
-    const status = result.decision === 'REJECT'
-      ? 'REJECTED'
-      : result.decision === 'APPROVE'
-        ? 'APPROVED'
-        : result.checked
-          ? 'PENDING_MANUAL'
-          : 'PENDING_AI';
+
+    // Nenhum modelo de IA é chamado no envio da avaliação. Ela entra na fila
+    // para moderação manual ou por agente externo via API/MCP controlado.
+    const status = 'PENDING_MANUAL';
+    const moderationReason = 'Aguardando moderação externa ou manual.';
     const submittedAt = new Date();
     const publishAt = new Date(submittedAt.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     const params = [orderId, order.listingId, order.companyId, uid, productRating, serviceRating, companyRating, comment, JSON.stringify(photoUrls), status,
-      result.reason, result.provider || null, result.model || null, result.checked ? submittedAt : null, status === 'APPROVED' ? submittedAt : null,
-      status === 'REJECTED' ? submittedAt : null, submittedAt, publishAt];
+      moderationReason, null, null, null, null, null, submittedAt, publishAt];
     let rows: any[];
     if (existing) {
       rows = await this.dataSource.query(
