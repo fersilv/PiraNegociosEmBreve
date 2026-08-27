@@ -4,12 +4,16 @@
 ALTER TABLE payment_products
   ADD COLUMN IF NOT EXISTS "oneTimePriceCents" integer NULL,
   ADD COLUMN IF NOT EXISTS "subscriptionPriceCents" integer NULL,
-  ADD COLUMN IF NOT EXISTS "preferredPurchaseMode" varchar(16) NOT NULL DEFAULT 'SUBSCRIPTION';
+  ADD COLUMN IF NOT EXISTS "preferredPurchaseMode" varchar(16) NOT NULL DEFAULT 'SUBSCRIPTION',
+  ADD COLUMN IF NOT EXISTS "subscriptionBenefits" jsonb NULL,
+  ADD COLUMN IF NOT EXISTS "oneTimeBenefits" jsonb NULL;
 
 ALTER TABLE payment_products
   DROP CONSTRAINT IF EXISTS payment_products_one_time_price_check,
   DROP CONSTRAINT IF EXISTS payment_products_subscription_price_check,
-  DROP CONSTRAINT IF EXISTS payment_products_preferred_purchase_mode_check;
+  DROP CONSTRAINT IF EXISTS payment_products_preferred_purchase_mode_check,
+  DROP CONSTRAINT IF EXISTS payment_products_subscription_benefits_check,
+  DROP CONSTRAINT IF EXISTS payment_products_one_time_benefits_check;
 
 ALTER TABLE payment_products
   ADD CONSTRAINT payment_products_one_time_price_check
@@ -17,7 +21,11 @@ ALTER TABLE payment_products
   ADD CONSTRAINT payment_products_subscription_price_check
     CHECK ("subscriptionPriceCents" IS NULL OR "subscriptionPriceCents" >= 0),
   ADD CONSTRAINT payment_products_preferred_purchase_mode_check
-    CHECK ("preferredPurchaseMode" IN ('ONE_TIME','SUBSCRIPTION'));
+    CHECK ("preferredPurchaseMode" IN ('ONE_TIME','SUBSCRIPTION')),
+  ADD CONSTRAINT payment_products_subscription_benefits_check
+    CHECK ("subscriptionBenefits" IS NULL OR jsonb_typeof("subscriptionBenefits") = 'array'),
+  ADD CONSTRAINT payment_products_one_time_benefits_check
+    CHECK ("oneTimeBenefits" IS NULL OR jsonb_typeof("oneTimeBenefits") = 'array');
 
 -- Backfill apenas para produtos que ainda não receberam nenhuma configuração comercial.
 -- Assim, executar novamente esta migração não reativa uma modalidade que o admin desligou.
