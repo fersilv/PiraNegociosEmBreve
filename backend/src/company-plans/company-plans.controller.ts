@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
+import { PaymentCheckoutStatusService } from '../payments/payment-checkout-status.service';
 import type { PaymentCheckoutPayer } from '../payments/payment-provider-manager.service';
 import { CompanyPlansOverviewService } from './company-plans-overview.service';
 import { CompanyPlansService } from './company-plans.service';
@@ -10,6 +11,7 @@ export class CompanyPlansController {
   constructor(
     private readonly plans: CompanyPlansService,
     private readonly overview: CompanyPlansOverviewService,
+    private readonly checkoutStatus: PaymentCheckoutStatusService,
   ) {}
 
   @Get()
@@ -23,11 +25,16 @@ export class CompanyPlansController {
   }
 
   @Post('checkout')
-  checkout(
+  async checkout(
     @Req() req: any,
     @Body() body: { plan?: string; payer?: PaymentCheckoutPayer },
   ) {
-    return this.plans.createCheckout(req.user.uid, body?.plan, body?.payer || {});
+    const result: any = await this.plans.createCheckout(req.user.uid, body?.plan, body?.payer || {});
+    const paymentId = String(result?.paymentId || result?.id || '').trim();
+    if (paymentId && result?.paymentRequired !== false) {
+      this.checkoutStatus.watchForUser(req.user.uid, paymentId);
+    }
+    return paymentId ? { ...result, id: paymentId, paymentId } : result;
   }
 
   @Patch('cancel-at-period-end')
