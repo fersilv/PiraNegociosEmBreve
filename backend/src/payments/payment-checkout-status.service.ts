@@ -50,9 +50,6 @@ export class PaymentCheckoutStatusService {
   }
 
   private async runWatch(userId: string, paymentId: string) {
-    // Orders do Mercado Pago podem nascer em processing e ganhar QR Code alguns
-    // instantes depois. Por até dois minutos o backend reconcilia a mesma order
-    // e empurra as mudanças para a sala autenticada do usuário.
     for (let attempt = 0; attempt < 60; attempt += 1) {
       const state = await this.getForUser(userId, paymentId).catch(() => null);
       if (!state) return;
@@ -65,7 +62,7 @@ export class PaymentCheckoutStatusService {
   private async find(userId: string, paymentId: string) {
     const rows = await this.dataSource.query(
       `SELECT p.*, pp.name AS "productName", pp.description AS "productDescription",
-              pp."billingType", pp."durationDays"
+              pp."billingType" AS "productBillingType", pp."durationDays"
        FROM payments p
        LEFT JOIN payment_products pp ON pp.code = p."productCode"
        WHERE p.id = $1 AND p."userId" = $2
@@ -80,17 +77,22 @@ export class PaymentCheckoutStatusService {
     try { return JSON.parse(String(payment?.metadata || '{}')); } catch { return {}; }
   }
 
+  private isRecurring(payment: any, metadata = this.metadata(payment)) {
+    return payment.purchaseMode === 'SUBSCRIPTION'
+      || metadata.purchaseMode === 'SUBSCRIPTION'
+      || metadata.paymentType === 'PIX_AUTOMATICO'
+      || metadata.recurringApi === 'SUBSCRIPTIONS'
+      || metadata.efiAutomaticPix === true
+      || Boolean(metadata.mercadoPagoSubscriptionId);
+  }
+
   private async reconcileMercadoPago(payment: any) {
     const config = await this.providerConfig.getSecretConfig<MercadoPagoProviderConfig>('MERCADO_PAGO');
     const token = String(config.accessToken || '').trim();
     if (!token) return;
 
     const metadata = this.metadata(payment);
-    const recurring = payment.billingType === 'RECURRING'
-      || metadata.recurringApi === 'SUBSCRIPTIONS'
-      || Boolean(metadata.mercadoPagoSubscriptionId);
-
-    if (recurring) {
+    if (this.isRecurring(payment, metadata)) {
       await this.reconcileSubscription(payment, token);
       return;
     }
@@ -179,6 +181,8 @@ export class PaymentCheckoutStatusService {
       `UPDATE payments SET metadata = coalesce(metadata,'{}'::jsonb) || $2::jsonb, "updatedAt" = now()
        WHERE id = $1`,
       [payment.id, JSON.stringify({
+        purchaseMode: 'SUBSCRIPTION',
+        paymentType: 'PIX_AUTOMATICO',
         mercadoPagoSubscriptionId: subscriptionId,
         mercadoPagoSubscriptionStatus: status || null,
         mercadoPagoNextPaymentDate: subscription?.next_payment_date || null,
@@ -197,10 +201,9 @@ export class PaymentCheckoutStatusService {
 
   private present(payment: any) {
     const metadata = this.metadata(payment);
-    const recurring = payment.billingType === 'RECURRING'
-      || metadata.recurringApi === 'SUBSCRIPTIONS'
-      || Boolean(metadata.mercadoPagoSubscriptionId);
-    const subscriptionStatus = String(metadata.mercadoPagoSubscriptionStatus || '').toLowerCase();
+    const recurring = this.isRecurring(payment, metadata);
+    const purchaseMode = recurring ? 'SUBSCRIPTION' : 'ONE_TIME';
+    const subscriptionStatus = String(metadata.mercadoPagoSubscriptionStatus || metadata.efiRecurrenceStatus || '').toLowerCase();
     const authorizationUrl = recurring ? metadata.subscriptionCheckoutUrl || null : null;
     const ticketUrl = !recurring ? metadata.ticketUrl || null : null;
     const completed = payment.status === 'PAID'
@@ -212,7 +215,8 @@ export class PaymentCheckoutStatusService {
       productCode: payment.productCode,
       productName: payment.productName || payment.productCode,
       productDescription: payment.productDescription || null,
-      billingType: payment.billingType || 'ONE_TIME',
+      purchaseMode,
+      billingType: recurring ? 'RECURRING' : 'ONE_TIME',
       amountCents: Number(payment.amountCents || 0),
       originalAmountCents: Number(payment.originalAmountCents || payment.amountCents || 0),
       discountCents: Number(payment.discountCents || 0),
@@ -228,14 +232,17 @@ export class PaymentCheckoutStatusService {
       ticketUrl,
       recurring,
       subscriptionStatus: subscriptionStatus || null,
-      authorizationComplete: recurring && subscriptionStatus === 'authorized',
-      providerStatus: metadata.mercadoPagoTransactionStatus || metadata.mercadoPagoOrderStatus || null,
+      authorizationComplete: recurring && ['authorized', 'ativa', 'active'].includes(subscriptionStatus),
+      providerStatus: metadata.mercadoPagoTransactionStatus || metadata.mercadoPagoOrderStatus || metadata.efiRecurrenceStatus || null,
       providerStatusDetail: metadata.mercadoPagoStatusDetail || null,
       completed,
       awaitingPayment: !completed && payment.status === 'PENDING',
       metadata: {
+        purchaseMode,
+        paymentType: recurring ? 'PIX_AUTOMATICO' : 'PIX',
         checkoutApi: metadata.checkoutApi || null,
         recurringApi: metadata.recurringApi || null,
+        efiAutomaticPix: metadata.efiAutomaticPix === true,
       },
     };
   }
