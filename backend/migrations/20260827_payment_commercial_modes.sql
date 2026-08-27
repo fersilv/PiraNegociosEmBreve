@@ -35,6 +35,16 @@ WHERE "billingType" <> 'RECURRING'
   AND "oneTimePriceCents" IS NULL
   AND "subscriptionPriceCents" IS NULL;
 
+-- Migrações antigas ainda escrevem billingType/priceCents. Depois delas, este arquivo
+-- restaura os campos legados a partir da modalidade principal escolhida pelo admin.
+UPDATE payment_products
+SET "billingType" = CASE WHEN "preferredPurchaseMode" = 'SUBSCRIPTION' THEN 'RECURRING' ELSE 'ONE_TIME' END,
+    "priceCents" = CASE
+      WHEN "preferredPurchaseMode" = 'SUBSCRIPTION' THEN COALESCE("subscriptionPriceCents", "oneTimePriceCents", "priceCents")
+      ELSE COALESCE("oneTimePriceCents", "subscriptionPriceCents", "priceCents")
+    END
+WHERE "oneTimePriceCents" IS NOT NULL OR "subscriptionPriceCents" IS NOT NULL;
+
 ALTER TABLE payments
   ADD COLUMN IF NOT EXISTS "purchaseMode" varchar(16) NOT NULL DEFAULT 'ONE_TIME';
 
