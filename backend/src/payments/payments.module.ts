@@ -9,6 +9,11 @@ import {
   EfiPaymentsWebhookController,
   MercadoPagoPaymentsWebhookController,
 } from './payments.controller';
+import {
+  AdminCommercialPaymentsController,
+  CommercialPaymentsController,
+} from './commercial-payments.controller';
+import { CommercialPaymentsService } from './commercial-payments.service';
 import { PaymentProviderPublicController } from './payment-provider-public.controller';
 import { PaymentCheckoutStatusController } from './payment-checkout-status.controller';
 import { PaymentsService } from './payments.service';
@@ -26,6 +31,8 @@ import { PaymentProviderManagerService } from './payment-provider-manager.servic
   imports: [TypeOrmModule.forFeature([User]), ChatModule],
   controllers: [
     PaymentsController,
+    CommercialPaymentsController,
+    AdminCommercialPaymentsController,
     PaymentProviderPublicController,
     PaymentCheckoutStatusController,
     EfiPaymentsWebhookController,
@@ -34,6 +41,7 @@ import { PaymentProviderManagerService } from './payment-provider-manager.servic
   ],
   providers: [
     PaymentsService,
+    CommercialPaymentsService,
     BillingSupportService,
     ProductDurationService,
     PaymentProviderVaultService,
@@ -47,6 +55,7 @@ import { PaymentProviderManagerService } from './payment-provider-manager.servic
   ],
   exports: [
     PaymentsService,
+    CommercialPaymentsService,
     BillingSupportService,
     ProductDurationService,
     PaymentProviderConfigService,
