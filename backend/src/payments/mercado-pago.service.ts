@@ -14,6 +14,7 @@ import {
 export interface MercadoPagoPayerInput {
   name?: string;
   document?: string;
+  documentType?: 'CPF' | 'CNPJ';
   email?: string;
 }
 
@@ -132,6 +133,20 @@ export class MercadoPagoService {
     return Number.isFinite(parsed) ? Math.round(parsed * 100) : -1;
   }
 
+  private normalizePayerDocument(payer: MercadoPagoPayerInput) {
+    const document = String(payer.document || '').replace(/\D/g, '');
+    if (!document) return null;
+    const requestedType = String(payer.documentType || '').toUpperCase();
+    const type: 'CPF' | 'CNPJ' = requestedType === 'CNPJ' || (!requestedType && document.length === 14)
+      ? 'CNPJ'
+      : 'CPF';
+    const expectedLength = type === 'CNPJ' ? 14 : 11;
+    if (document.length !== expectedLength) {
+      throw new BadRequestException(`Informe um ${type} válido para o pagador.`);
+    }
+    return { type, number: document };
+  }
+
   async createImmediateCharge(
     amountCents: number,
     paymentId: string,
@@ -143,6 +158,7 @@ export class MercadoPagoService {
     if (!email || !email.includes('@')) {
       throw new BadRequestException('O Mercado Pago exige o e-mail do pagador para gerar o Pix.');
     }
+    const identification = this.normalizePayerDocument(payer);
 
     const amount = this.amount(amountCents);
     const order: any = await this.request<any>(
@@ -161,7 +177,10 @@ export class MercadoPagoService {
             expiration_time: 'PT1H',
           }],
         },
-        payer: { email },
+        payer: {
+          email,
+          ...(identification ? { identification } : {}),
+        },
       },
       paymentId,
     );
@@ -185,6 +204,7 @@ export class MercadoPagoService {
         ticketUrl: paymentMethod.ticket_url || null,
         externalReference: paymentId,
         checkoutApi: 'ORDERS',
+        payerDocumentType: identification?.type || null,
       },
     };
   }
