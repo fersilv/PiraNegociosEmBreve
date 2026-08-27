@@ -16,6 +16,16 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { PaymentCheckoutModal } from '../components/payments/PaymentCheckoutModal';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  cleanPaymentDocument,
+  forgetRememberedPayerDocument,
+  isValidPaymentDocumentLength,
+  loadRememberedPayerDocument,
+  paymentDocumentPlaceholder,
+  saveRememberedPayerDocument,
+  type PaymentDocumentType,
+} from '../lib/paymentPayer';
 
 type PlanId = 'FREE' | 'PLUS' | 'ELITE';
 type Plan = {
@@ -95,11 +105,13 @@ type PlansPayload = {
 };
 
 export function CompanyPlansPage() {
+  const { profile, user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [data, setData] = useState<PlansPayload>({});
   const [selected, setSelected] = useState<PlanId | null>(null);
-  const [payer, setPayer] = useState({ name: '', document: '', email: '' });
+  const [payer, setPayer] = useState({ name: '', document: '', email: '', documentType: 'CPF' as PaymentDocumentType });
+  const [rememberDocument, setRememberDocument] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -118,6 +130,20 @@ export function CompanyPlansPage() {
 
   useEffect(() => { void load(); }, []);
 
+  useEffect(() => {
+    const accountName = String(profile?.fullName || profile?.displayName || profile?.name || '').trim();
+    const accountEmail = String(profile?.email || user?.email || '').trim();
+    const remembered = loadRememberedPayerDocument();
+    setPayer((current) => ({
+      ...current,
+      name: current.name || accountName,
+      email: current.email || accountEmail,
+      document: current.document || remembered?.document || '',
+      documentType: current.document ? current.documentType : remembered?.type || current.documentType,
+    }));
+    setRememberDocument(Boolean(remembered));
+  }, [profile?.displayName, profile?.email, profile?.fullName, profile?.name, user?.email]);
+
   const billing = data.billing;
   const currentPlanId = billing?.plan || data.current?.basePlan || data.current?.plan || 'FREE';
   const currentPlan = useMemo(
@@ -131,12 +157,23 @@ export function CompanyPlansPage() {
 
   const createSubscriptionCheckout = () => {
     if (!selected || selected === 'FREE') throw new Error('Selecione um plano pago.');
+    const name = payer.name.trim();
+    const email = payer.email.trim();
+    const document = cleanPaymentDocument(payer.document);
+    if (name.length < 3) throw new Error('Informe o nome completo do pagador.');
+    if (!email || !email.includes('@')) throw new Error('Informe um e-mail válido para a cobrança.');
+    if (!isValidPaymentDocumentLength(payer.documentType, document)) {
+      throw new Error(`Informe um ${payer.documentType} válido com ${payer.documentType === 'CNPJ' ? 14 : 11} dígitos.`);
+    }
+    if (rememberDocument) saveRememberedPayerDocument(payer.documentType, document);
+    else forgetRememberedPayerDocument();
     return api.post('/company/plans/checkout', {
       plan: selected,
       payer: {
-        name: payer.name.trim() || undefined,
-        document: payer.document.replace(/\D/g, '') || undefined,
-        email: payer.email.trim() || undefined,
+        name,
+        document,
+        documentType: payer.documentType,
+        email,
       },
     });
   };
@@ -250,12 +287,14 @@ export function CompanyPlansPage() {
       >
         <div className="rounded-2xl border border-stone-200 bg-white p-4">
           <p className="text-[10px] font-black uppercase tracking-[.14em] text-stone-400">Dados de cobrança</p>
-          <p className="mt-1 text-xs leading-5 text-stone-500">Preencha apenas o necessário para a autorização. A cobrança recorrente é concluída no ambiente seguro do provedor.</p>
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <p className="mt-1 text-xs leading-5 text-stone-500">Nome e e-mail já vêm da sua conta, mas continuam editáveis para esta cobrança.</p>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
             <Field label="Nome do pagador" value={payer.name} onChange={(value) => setPayer((current) => ({ ...current, name: value }))} placeholder="Nome completo" />
-            <Field label="CPF" value={payer.document} onChange={(value) => setPayer((current) => ({ ...current, document: value }))} placeholder="000.000.000-00" />
-            <Field label="E-mail financeiro" value={payer.email} onChange={(value) => setPayer((current) => ({ ...current, email: value }))} placeholder="financeiro@empresa.com" />
+            <Field label="E-mail financeiro" value={payer.email} onChange={(value) => setPayer((current) => ({ ...current, email: value }))} placeholder="financeiro@empresa.com" type="email" />
+            <label className="text-xs font-black text-stone-500">Tipo de documento<select value={payer.documentType} onChange={(event) => setPayer((current) => ({ ...current, documentType: event.target.value as PaymentDocumentType, document: '' }))} className="mt-2 h-12 w-full rounded-2xl border border-stone-200 bg-white px-4 text-sm font-semibold outline-none focus:border-stone-400"><option value="CPF">CPF</option><option value="CNPJ">CNPJ</option></select></label>
+            <Field label={payer.documentType} value={payer.document} onChange={(value) => setPayer((current) => ({ ...current, document: value }))} placeholder={paymentDocumentPlaceholder(payer.documentType)} inputMode="numeric" />
           </div>
+          <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs font-semibold leading-5 text-stone-600"><input type="checkbox" checked={rememberDocument} onChange={(event) => setRememberDocument(event.target.checked)} className="mt-1 h-4 w-4 rounded border-stone-300" /><span>Lembrar este documento neste dispositivo nas próximas transações.</span></label>
         </div>
       </PaymentCheckoutModal>
     </div>
@@ -285,7 +324,7 @@ function ScopeCard({ icon, eyebrow, title, description, items }: { icon: React.R
   return <article className="rounded-[26px] bg-white p-6 ring-1 ring-stone-200"><div className="flex items-start gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#eef8f6] text-[#397c75]">{icon}</span><div><p className="text-[9px] font-black uppercase tracking-[.14em] text-stone-400">{eyebrow}</p><h2 className="mt-1 font-serif text-2xl font-black">{title}</h2></div></div><p className="mt-4 text-sm leading-6 text-stone-500">{description}</p><ul className="mt-5 space-y-2.5">{items.map((item) => <li key={item} className="flex gap-2 text-xs leading-5 text-stone-600"><BadgeCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#397c75]" />{item}</li>)}</ul></article>;
 }
 function MiniInfo({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <div className="rounded-2xl bg-white/[.06] p-3"><div className="flex items-center gap-2 text-white/45">{icon}<span className="text-[9px] font-black uppercase tracking-[.1em]">{label}</span></div><p className="mt-2 text-xs font-black text-white/85">{value}</p></div>; }
-function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) { return <label className="text-xs font-black text-stone-500">{label}<input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="mt-2 h-12 w-full rounded-2xl border border-stone-200 px-4 text-sm font-semibold outline-none focus:border-stone-400" /></label>; }
+function Field({ label, value, onChange, placeholder, type = 'text', inputMode }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; type?: string; inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'] }) { return <label className="text-xs font-black text-stone-500">{label}<input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} type={type} inputMode={inputMode} className="mt-2 h-12 w-full rounded-2xl border border-stone-200 px-4 text-sm font-semibold outline-none focus:border-stone-400" /></label>; }
 function money(cents: number) { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(cents || 0) / 100); }
 function formatDate(value?: string | null) { if (!value) return '—'; const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleDateString('pt-BR') : '—'; }
 function formatDateLong(value?: string | null) { if (!value) return '—'; const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'; }
