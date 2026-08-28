@@ -17,6 +17,7 @@ import { signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { RegionalLoader } from '../components/RegionalLoader';
 
 type InvitePreview = {
   invite: {
@@ -144,9 +145,7 @@ export default function TalentInvitePage() {
   if (loading || authLoading) {
     return (
       <InviteShell>
-        <div className="flex min-h-[420px] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-terracotta-600" />
-        </div>
+        <RegionalLoader context="jobs" label="Preparando o convite da vaga..." compact />
       </InviteShell>
     );
   }
