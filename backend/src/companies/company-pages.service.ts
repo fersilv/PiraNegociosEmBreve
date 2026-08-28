@@ -14,12 +14,11 @@ export const BUILT_IN_COMPANY_TEMPLATES = [
   'noir',
 ] as const;
 
-const REQUIRED_SECTION_TYPES = ['identity', 'jobs'] as const;
+const REQUIRED_SECTION_TYPES = ['identity'] as const;
 const REQUIRED_CODE_COMPONENTS = [
   { tag: 'pn-company-name', label: 'nome da empresa' },
   { tag: 'pn-company-address', label: 'endereço' },
   { tag: 'pn-verification-badge', label: 'selo de verificação' },
-  { tag: 'pn-jobs', label: 'vagas abertas' },
 ] as const;
 const MAX_CONFIG_BYTES = 4_500_000;
 const PREVIEW_MINUTES = 60;
@@ -86,7 +85,7 @@ export class CompanyPagesService {
         { id: 'about', type: 'about', enabled: true },
         { id: 'contact', type: 'contact', enabled: true },
         { id: 'socials', type: 'socials', enabled: true },
-        { id: 'jobs', type: 'jobs', enabled: true, locked: true },
+        { id: 'jobs', type: 'jobs', enabled: true },
         { id: 'legal', type: 'legal', enabled: true },
       ],
       codePage: {
@@ -232,9 +231,6 @@ export class CompanyPagesService {
           .map((section: any) => String(section.type || section.id || '').trim()),
       );
       missingSections = REQUIRED_SECTION_TYPES.filter((type) => !activeTypes.has(type));
-      if (missingSections.includes('jobs')) {
-        warnings.push('O componente de vagas é obrigatório e precisa estar ativo antes da publicação.');
-      }
       if (missingSections.includes('identity')) {
         warnings.push('A identidade obrigatória da empresa precisa estar ativa antes da publicação.');
       }
@@ -255,7 +251,7 @@ export class CompanyPagesService {
       missingCodeComponents,
       missingCompanyData,
       warnings,
-      lockedComponents: ['companyName', 'address', 'verificationBadge', 'jobs'],
+      lockedComponents: ['companyName', 'address', 'verificationBadge'],
       requiredCodeTags: REQUIRED_CODE_COMPONENTS.map(({ tag }) => tag),
     };
   }
@@ -282,7 +278,7 @@ export class CompanyPagesService {
     return {
       ...fallback,
       ...input,
-      version: 2,
+      version: Math.max(2, Number(input.version || fallback.version || 2)),
       editorMode,
       templateKey,
       templateVersion: Math.max(1, Number(input.templateVersion || 2)),
