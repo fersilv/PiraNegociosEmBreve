@@ -9,6 +9,8 @@ export type PurchaseMode = 'ONE_TIME' | 'SUBSCRIPTION';
 
 @Injectable()
 export class CommercialPaymentsService {
+  private commercialProductSchemaReady: Promise<void> | null = null;
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly payments: PaymentsService,
@@ -16,6 +18,67 @@ export class CommercialPaymentsService {
     private readonly providers: PaymentProviderManagerService,
     private readonly checkoutStatus: PaymentCheckoutStatusService,
   ) {}
+
+  /**
+   * Keeps the commercial-product editor compatible with deployments where the
+   * application code reached the server before the 20260827 migration did.
+   * The migration remains the source of truth for constraints/triggers; this
+   * only guarantees the columns required by the admin PATCH are present and
+   * performs the same safe legacy backfill.
+   */
+  private ensureCommercialProductSchema() {
+    if (!this.commercialProductSchemaReady) {
+      this.commercialProductSchemaReady = (async () => {
+        const requiredColumns = [
+          'oneTimePriceCents',
+          'subscriptionPriceCents',
+          'preferredPurchaseMode',
+          'subscriptionBenefits',
+          'oneTimeBenefits',
+        ];
+        const existing = await this.dataSource.query(
+          `SELECT column_name
+           FROM information_schema.columns
+           WHERE table_schema = current_schema()
+             AND table_name = 'payment_products'
+             AND column_name = ANY($1::text[])`,
+          [requiredColumns],
+        );
+        if (existing.length === requiredColumns.length) return;
+
+        await this.dataSource.query(
+          `ALTER TABLE payment_products
+             ADD COLUMN IF NOT EXISTS "oneTimePriceCents" integer NULL,
+             ADD COLUMN IF NOT EXISTS "subscriptionPriceCents" integer NULL,
+             ADD COLUMN IF NOT EXISTS "preferredPurchaseMode" varchar(16) NOT NULL DEFAULT 'SUBSCRIPTION',
+             ADD COLUMN IF NOT EXISTS "subscriptionBenefits" jsonb NULL,
+             ADD COLUMN IF NOT EXISTS "oneTimeBenefits" jsonb NULL`,
+        );
+
+        await this.dataSource.query(
+          `UPDATE payment_products
+           SET "subscriptionPriceCents" = "priceCents",
+               "preferredPurchaseMode" = 'SUBSCRIPTION'
+           WHERE "billingType" = 'RECURRING'
+             AND "oneTimePriceCents" IS NULL
+             AND "subscriptionPriceCents" IS NULL`,
+        );
+
+        await this.dataSource.query(
+          `UPDATE payment_products
+           SET "oneTimePriceCents" = "priceCents",
+               "preferredPurchaseMode" = 'ONE_TIME'
+           WHERE "billingType" <> 'RECURRING'
+             AND "oneTimePriceCents" IS NULL
+             AND "subscriptionPriceCents" IS NULL`,
+        );
+      })().catch((error) => {
+        this.commercialProductSchemaReady = null;
+        throw error;
+      });
+    }
+    return this.commercialProductSchemaReady;
+  }
 
   private nullablePrice(value: unknown, current: unknown) {
     if (value === undefined) return current === null || current === undefined ? null : Number(current);
@@ -125,6 +188,7 @@ export class CommercialPaymentsService {
   }
 
   async updateProduct(code: string, input: Record<string, unknown>) {
+    await this.ensureCommercialProductSchema();
     const current = await this.getProduct(code, true);
     const oneTimePriceCents = this.nullablePrice(input.oneTimePriceCents, current.oneTimePriceCents);
     const subscriptionPriceCents = this.nullablePrice(input.subscriptionPriceCents, current.subscriptionPriceCents);
