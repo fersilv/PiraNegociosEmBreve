@@ -39,8 +39,8 @@ export class ClassifiedsCatalogAdminController {
   }
 
   @Delete('listings/:id')
-  deleteListing(@Param('id') id: string) {
-    return this.catalog.deleteListing(id);
+  deleteListing(@Req() req: any, @Param('id') id: string) {
+    return this.catalog.deleteListing(id, req.user.uid);
   }
 
   @Get('auctions')
@@ -64,7 +64,7 @@ export class ClassifiedsCatalogAdminController {
   }
 
   @Delete('auctions/:id')
-  deleteAuction(@Param('id') id: string) {
-    return this.catalog.deleteAuction(id);
+  deleteAuction(@Req() req: any, @Param('id') id: string) {
+    return this.catalog.deleteAuction(id, req.user.uid);
   }
 }
