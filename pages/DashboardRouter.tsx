@@ -30,6 +30,7 @@ import { AdminRegistrationPage } from "./AdminRegistrationPage";
 import { AdminPaymentsPage } from "./AdminPaymentsPage";
 import AdminMercadoPagoTestsPage from "./AdminMercadoPagoTestsPage";
 import AdminClassifiedCommercePage from "./AdminClassifiedCommercePage";
+import AdminClassifiedCatalogPage from "./AdminClassifiedCatalogPage";
 import { AdminBillingSupportPage } from "./AdminBillingSupportPage";
 import { AdminPublicResumeBuilderPage } from "./AdminPublicResumeBuilderPage";
 import { AdminJobIntegrationsPage } from "./AdminJobIntegrationsPage";
@@ -61,6 +62,7 @@ function AdminRoutes() {
       <Route index element={<AdminPage><AdminOverview /></AdminPage>} />
       <Route path="empresas" element={<AdminPage><AdminDashboard mode="moderation" section="companies" /></AdminPage>} />
       <Route path="validacao-cadastral" element={<AdminPage><AdminIdentityVerificationsPage /></AdminPage>} />
+      <Route path="classificados" element={<AdminPage><AdminClassifiedCatalogPage /></AdminPage>} />
       <Route path="avaliacoes-classificados" element={<AdminPage><AdminClassifiedReviewsPage /></AdminPage>} />
       <Route path="vagas" element={<AdminPage><AdminDashboard mode="moderation" section="jobs" /></AdminPage>} />
       <Route path="vagas/sinalizadas" element={<AdminPage><AdminFlaggedJobsPage /></AdminPage>} />
@@ -182,6 +184,7 @@ function LegacyDashboardRedirect() {
   const path = location.pathname;
   const adminMap: Array<[string, string]> = [
     ["/dashboard/admin/empresas", "/admin/empresas"],
+    ["/dashboard/admin/classificados", "/admin/classificados"],
     ["/dashboard/admin/vagas", "/admin/vagas"],
     ["/dashboard/admin/usuarios", "/admin/usuarios"],
     ["/dashboard/admin/vinculos", "/admin/vinculos"],
