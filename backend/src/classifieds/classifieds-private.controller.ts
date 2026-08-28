@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { ChatGateway } from '../chat/chat.gateway';
 import { IdentityComplianceService } from '../compliance/identity-compliance.service';
