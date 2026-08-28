@@ -1,2 +1,2 @@
-export { CompanyPageBuilderV3 as CompanyPageBuilder } from './CompanyPageBuilderV3';
-export { default } from './CompanyPageBuilderV3';
+export { CompanyPageBuilderV4 as CompanyPageBuilder } from './CompanyPageBuilderV4';
+export { default } from './CompanyPageBuilderV4';
