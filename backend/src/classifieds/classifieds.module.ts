@@ -35,6 +35,7 @@ import { ClassifiedsEntitlementsService } from './classifieds-entitlements.servi
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
 import { ClassifiedsLifecycleController } from './classifieds-lifecycle.controller';
 import { ClassifiedsLifecycleService } from './classifieds-lifecycle.service';
+import { ClassifiedsListingLifecycleSchemaService } from './classifieds-listing-lifecycle-schema.service';
 import { ClassifiedsLocationService } from './classifieds-location.service';
 import { ClassifiedsMarketplacePaymentsService } from './classifieds-marketplace-payments.service';
 import { ClassifiedsOfferChatService } from './classifieds-offer-chat.service';
@@ -99,6 +100,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsCategoryTaxonomyService,
     ClassifiedsCatalogAdminService,
     ClassifiedsLifecycleService,
+    ClassifiedsListingLifecycleSchemaService,
     ClassifiedsIdentityService,
     ClassifiedsLocationService,
     ClassifiedsChatService,
