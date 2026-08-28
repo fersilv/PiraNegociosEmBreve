@@ -232,14 +232,22 @@ export function Dashboard() {
   const isCompanyRoute = location.pathname === "/company" || location.pathname.startsWith("/company/");
   const isUserRoute = location.pathname === "/user" || location.pathname.startsWith("/user/");
   const isResumeStudioRoute = location.pathname === "/user/curriculo";
+  const isAdmin = profile?.type === "ADMIN";
 
-  if (profile && !profile.phone && !location.pathname.includes("/onboarding")) return <Navigate to={profile.type === "ADMIN" ? "/admin/onboarding" : "/user/onboarding"} replace />;
-  if (profile?.type === "ADMIN") {
-    if (!isAdminRoute) return <Navigate to="/admin" replace />;
+  if (profile && !profile.phone && !location.pathname.includes("/onboarding")) return <Navigate to={isAdmin ? "/admin/onboarding" : "/user/onboarding"} replace />;
+
+  if (isAdminRoute) {
+    if (!isAdmin) return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
     return <AdminWorkspaceLayout><AdminRoutes /></AdminWorkspaceLayout>;
   }
-  if (isAdminRoute) return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
-  if (isCompanyRoute) return <WorkspaceLayout workspace="company"><CompanyRoutes companyId={profile?.companyId} /></WorkspaceLayout>;
+
+  if (isCompanyRoute) {
+    if (isAdmin || profile?.companyId || location.pathname === "/company/comercial" || location.pathname === "/company/perfil") {
+      return <WorkspaceLayout workspace="company"><CompanyRoutes companyId={profile?.companyId} /></WorkspaceLayout>;
+    }
+    return <Navigate to="/company/comercial" replace />;
+  }
+
   if (isResumeStudioRoute)
     return (
       <>
@@ -248,6 +256,11 @@ export function Dashboard() {
         <ResumeWorkspace />
       </>
     );
+
   if (isUserRoute) return <WorkspaceLayout workspace="user"><ResumeImportEntitlementOrchestrator /><BoostVisibilityBanner /><UserRoutes /></WorkspaceLayout>;
+
+  // Administração continua sendo a casa principal do administrador. A diferença é
+  // que, quando ele escolhe explicitamente outro workspace, o roteador não o expulsa de lá.
+  if (isAdmin) return <Navigate to="/admin" replace />;
   return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
 }
