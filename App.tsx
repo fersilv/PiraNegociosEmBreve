@@ -10,6 +10,7 @@ import { PublicResumeAccountBridge } from "./components/PublicResumeAccountBridg
 import { PublicResumeExitIntent } from "./components/PublicResumeExitIntent";
 import { PublicResumeResponsiveStyles } from "./components/PublicResumeResponsiveStyles";
 import { AuthenticatedClassifiedsChatWidget } from "./components/AuthenticatedClassifiedsChatWidget";
+import { RegionalLoader } from "./components/RegionalLoader";
 
 const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() => import("./pages/Login").then((module) => ({ default: module.Login })));
@@ -33,7 +34,7 @@ const ClassifiedsPublicRouteGate = lazy(() => import("./pages/ClassifiedsPublicR
 const CompanyLegalPage = lazy(() => import("./pages/CompanyLegalPage").then((module) => ({ default: module.CompanyLegalPage })));
 
 function RouteLoader() {
-  return <div className="min-h-screen flex items-center justify-center text-stone-500">Carregando...</div>;
+  return <RegionalLoader className="min-h-screen" />;
 }
 
 export default function App() {
