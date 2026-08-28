@@ -11,6 +11,7 @@ import { User } from '../users/entities/user.entity';
 import { ClassifiedsAiReviewService } from './classifieds-ai-review.service';
 import { ClassifiedsArchivedAwareAuctionService } from './classifieds-archived-aware-auction.service';
 import { ClassifiedsArchivedAwareCommerceService } from './classifieds-archived-aware-commerce.service';
+import { ClassifiedsArchivedAwareSalesService } from './classifieds-archived-aware-sales.service';
 import { ClassifiedsAuctionEngagementService } from './classifieds-auction-engagement.service';
 import { ClassifiedsAuctionExtrasController } from './classifieds-auction-extras.controller';
 import { ClassifiedsAuctionGateway } from './classifieds-auction.gateway';
@@ -108,7 +109,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsAuctionSettlementService,
     ClassifiedsAuctionPaymentPolicyService,
     ClassifiedsReceiptPreferencesService,
-    ClassifiedsSalesService,
+    { provide: ClassifiedsSalesService, useClass: ClassifiedsArchivedAwareSalesService },
     ClassifiedsMarketplacePaymentsService,
     ClassifiedsOfferChatService,
     ClassifiedsMarketplaceTermsService,
