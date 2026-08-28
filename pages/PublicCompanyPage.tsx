@@ -87,6 +87,7 @@ export default function PublicCompanyPage() {
   }
 
   const description = `${company.name}${company.cityState ? ` em ${company.cityState}` : ", Pirassununga e região"}. ${company.description?.slice(0, 120) || "Conheça a empresa, suas oportunidades, produtos e serviços."}`;
+  const storeTheme = String(page?.templateKey || '') === 'loja';
 
   return (
     <>
@@ -97,7 +98,7 @@ export default function PublicCompanyPage() {
         structuredData={structuredData}
       />
       <CompanySiteRenderer company={company} jobs={jobs} page={page} />
-      <CompanyClassifiedsShowcase companyId={company.id} companyName={company.name} />
+      <CompanyClassifiedsShowcase companyId={company.id} companyName={company.name} variant={storeTheme ? 'store' : 'default'} />
     </>
   );
 }
