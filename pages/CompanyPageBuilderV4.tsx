@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BadgeCheck, Code2, Eye, GripVertical, Image as ImageIcon, LayoutTemplate, Loader2, Monitor, Palette, Plus, Save, Send, Settings2, ShoppingBag, Trash2 } from 'lucide-react';
+import CodeMirror from '@uiw/react-codemirror';
+import { html } from '@codemirror/lang-html';
+import { css } from '@codemirror/lang-css';
+import { javascript } from '@codemirror/lang-javascript';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
 import {
@@ -297,7 +301,57 @@ function ContentPanel({ config, onChange, jobsCount }: { config: CompanyPageConf
 
 function AdvancedPanel({ config, onChange }: { config: CompanyPageConfig; onChange: (next: CompanyPageConfig) => void }) {
   const codeMode = config.editorMode === 'code';
-  return <><Heading title="Código personalizado" text="Preservado para páginas que já usam HTML/CSS/JS próprio." /><Toggle checked={codeMode} onChange={(enabled) => onChange({ ...config, editorMode: enabled ? 'code' : 'visual' })} label="Usar página HTML personalizada" />{codeMode ? <><Label>HTML</Label><Textarea value={config.codePage?.html || ''} onChange={(event) => onChange(merge(config, 'codePage', { html: event.target.value }))} className="font-mono" /><Label>CSS</Label><Textarea value={config.codePage?.css || ''} onChange={(event) => onChange(merge(config, 'codePage', { css: event.target.value }))} className="font-mono" /><Label>JavaScript</Label><Textarea value={config.codePage?.js || ''} onChange={(event) => onChange(merge(config, 'codePage', { js: event.target.value }))} className="font-mono" /></> : <div className="mt-4 rounded-2xl bg-stone-50 p-4 text-xs leading-5 text-stone-500">No modo visual, cada família de tema usa seu próprio renderer. O PiraNegócios aparece apenas no rodapé de integração.</div>}</>;
+  return (
+    <>
+      <Heading title="Código personalizado" text="Para empresas que desejam criar uma experiência totalmente customizada." />
+      <Toggle checked={codeMode} onChange={(enabled) => onChange({ ...config, editorMode: enabled ? 'code' : 'visual' })} label="Usar código personalizado (HTML/CSS/JS)" />
+      {codeMode ? (
+        <div className="mt-4 space-y-4">
+          <div>
+            <Label>HTML</Label>
+            <div className="overflow-hidden rounded-xl border border-stone-200">
+              <CodeMirror
+                value={config.codePage?.html || ''}
+                height="200px"
+                extensions={[html()]}
+                onChange={(value) => onChange(merge(config, 'codePage', { html: value }))}
+                className="text-sm"
+              />
+            </div>
+          </div>
+          <div>
+            <Label>CSS</Label>
+            <div className="overflow-hidden rounded-xl border border-stone-200">
+              <CodeMirror
+                value={config.codePage?.css || ''}
+                height="150px"
+                extensions={[css()]}
+                onChange={(value) => onChange(merge(config, 'codePage', { css: value }))}
+                className="text-sm"
+              />
+            </div>
+          </div>
+          <div>
+            <Label>JavaScript</Label>
+            <div className="overflow-hidden rounded-xl border border-stone-200">
+              <CodeMirror
+                value={config.codePage?.js || ''}
+                height="150px"
+                extensions={[javascript({ jsx: false })]}
+                onChange={(value) => onChange(merge(config, 'codePage', { js: value }))}
+                className="text-sm"
+              />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 rounded-2xl bg-stone-50 p-4 text-xs leading-5 text-stone-500">
+          No modo visual, a página é renderizada automaticamente usando o motor de temas. 
+          Alterne para o modo de código para assumir o controle total da página HTML.
+        </div>
+      )}
+    </>
+  );
 }
 
 export default CompanyPageBuilderV4;

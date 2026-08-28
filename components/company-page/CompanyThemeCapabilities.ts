@@ -1,4 +1,6 @@
-export type CompanyThemeFamily = 'institutional' | 'commerce' | 'classifieds' | 'services' | 'food' | 'fashion' | 'creative';
+import { THEME_CATALOG, THEME_MIGRATION_MAP, type ThemeKey, type ThemeCategory } from './themes';
+
+export type CompanyThemeFamily = ThemeCategory;
 
 export type CompanyThemeFeature =
   | 'palette'
@@ -38,42 +40,38 @@ const FULL_FEATURES: Record<CompanyThemeFeature, boolean> = {
   commerceLayout: false,
 };
 
-const FAMILY_BY_THEME: Record<string, CompanyThemeFamily> = {
-  aurora: 'institutional', atlas: 'institutional', pulse: 'institutional', canvas: 'institutional', noir: 'institutional',
-  institucional: 'institutional', 'institucional-pro': 'institutional',
-  loja: 'commerce', vitrine: 'commerce', marketplace: 'commerce', catalogo: 'commerce',
-  mercado: 'classifieds', gazeta: 'classifieds', mosaico: 'classifieds', radar: 'classifieds', pregao: 'classifieds', 'classificados-pro': 'classifieds',
-  pro: 'services', oficio: 'services', care: 'services', studio: 'services', local: 'services', 'servicos-pro': 'services',
-  bistro: 'food', brasa: 'food', jardim: 'food', diner: 'food', degustacao: 'food',
-  runway: 'fashion', street: 'fashion', boutique: 'fashion', lookbook: 'fashion', atelier: 'fashion',
-  festival: 'creative', terra: 'creative', cosmos: 'creative', heritage: 'creative', mono: 'creative', editorial: 'creative',
-};
-
 const RECOMMENDED: Record<CompanyThemeFamily, string[]> = {
   institutional: ['identity', 'categories', 'about', 'jobs', 'contact', 'socials', 'legal'],
   commerce: ['identity', 'categories', 'classifieds', 'about', 'contact', 'socials', 'jobs', 'legal'],
-  classifieds: ['identity', 'categories', 'classifieds', 'contact', 'about', 'socials', 'jobs', 'legal'],
-  services: ['identity', 'categories', 'about', 'contact', 'socials', 'jobs', 'legal'],
   food: ['identity', 'categories', 'about', 'contact', 'socials', 'legal'],
+  services: ['identity', 'categories', 'about', 'contact', 'socials', 'jobs', 'legal'],
   fashion: ['identity', 'categories', 'about', 'contact', 'socials', 'legal'],
+  tech: ['identity', 'categories', 'about', 'jobs', 'contact', 'socials', 'legal'],
+  nature: ['identity', 'categories', 'about', 'contact', 'socials', 'legal'],
+  events: ['identity', 'about', 'categories', 'contact', 'socials', 'jobs', 'legal'],
   creative: ['identity', 'about', 'categories', 'contact', 'socials', 'jobs', 'legal'],
+  universal: ['identity', 'categories', 'about', 'jobs', 'contact', 'socials', 'legal'],
 };
 
-export function getCompanyThemeCapabilities(themeKey?: string | null): CompanyThemeCapabilities {
-  const family = FAMILY_BY_THEME[String(themeKey || 'aurora')] || 'institutional';
-  const commerce = family === 'commerce' || family === 'classifieds';
+export function getCompanyThemeCapabilities(rawThemeKey?: string | null): CompanyThemeCapabilities {
+  // Resolve legacy themes to new themes
+  const key = String(rawThemeKey || 'horizon').toLowerCase();
+  const themeKey = (THEME_CATALOG.find(t => t.key === key)?.key || THEME_MIGRATION_MAP[key] || 'horizon') as ThemeKey;
+  
+  const catalogItem = THEME_CATALOG.find(t => t.key === themeKey);
+  const family = catalogItem?.category || 'institutional';
+  const commerce = family === 'commerce';
 
   return {
     family,
     features: {
       ...FULL_FEATURES,
       commerceLayout: commerce,
-      heroLayout: commerce ? false : FULL_FEATURES.heroLayout,
-      heroSizing: commerce ? false : FULL_FEATURES.heroSizing,
-      sectionSizing: commerce ? false : FULL_FEATURES.sectionSizing,
+      // For new themes, all features are enabled (the engine handles variations gracefully)
+      // except commerce specific options
     },
     requiredSections: ['identity'],
-    recommendedSections: [...RECOMMENDED[family]],
+    recommendedSections: [...(RECOMMENDED[family] || RECOMMENDED.institutional)],
   };
 }
 
