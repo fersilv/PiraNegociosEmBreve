@@ -33,6 +33,8 @@ import { ClassifiedsCommerceAdminController } from './classifieds-commerce-admin
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
 import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
+import { ClassifiedsLifecycleController } from './classifieds-lifecycle.controller';
+import { ClassifiedsLifecycleService } from './classifieds-lifecycle.service';
 import { ClassifiedsLocationService } from './classifieds-location.service';
 import { ClassifiedsMarketplacePaymentsService } from './classifieds-marketplace-payments.service';
 import { ClassifiedsOfferChatService } from './classifieds-offer-chat.service';
@@ -80,6 +82,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsAuctionPublicController,
     ClassifiedsAuctionManagementController,
     ClassifiedsPrivateController,
+    ClassifiedsLifecycleController,
     ClassifiedsSalesController,
     ClassifiedsCheckoutController,
     ClassifiedsCheckoutWebhookController,
@@ -95,6 +98,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsService,
     ClassifiedsCategoryTaxonomyService,
     ClassifiedsCatalogAdminService,
+    ClassifiedsLifecycleService,
     ClassifiedsIdentityService,
     ClassifiedsLocationService,
     ClassifiedsChatService,
@@ -121,6 +125,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsService,
     ClassifiedsCategoryTaxonomyService,
     ClassifiedsIdentityService,
+    ClassifiedsLifecycleService,
     ClassifiedsLocationService,
     ClassifiedsCommerceService,
     ClassifiedsEntitlementsService,
