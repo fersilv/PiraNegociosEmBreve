@@ -11,6 +11,7 @@ import { PublicResumeExitIntent } from "./components/PublicResumeExitIntent";
 import { PublicResumeResponsiveStyles } from "./components/PublicResumeResponsiveStyles";
 import { AuthenticatedClassifiedsChatWidget } from "./components/AuthenticatedClassifiedsChatWidget";
 import { RegionalLoader } from "./components/RegionalLoader";
+import { AdminWorkspaceReturn } from "./components/AdminWorkspaceReturn";
 
 const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() => import("./pages/Login").then((module) => ({ default: module.Login })));
@@ -57,6 +58,7 @@ export default function App() {
           <PublicResumeResponsiveStyles />
           <PublicResumeExitIntent />
           {!isMinimalShell && <PublishedResumeCompanyBridge />}
+          {!isMinimalShell && <AdminWorkspaceReturn />}
           <Suspense fallback={<RouteLoader />}>
             <Routes>
               <Route path="/" element={<Home />} />
