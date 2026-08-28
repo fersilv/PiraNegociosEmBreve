@@ -176,7 +176,7 @@ export class ClassifiedsIdentityService {
          LIMIT 1`,
         [uid],
       ).catch(() => []);
-      if (rows[0]?.id) company = this.companies.create(rows[0]);
+      if (rows[0]?.id) company = rows[0] as Company;
     }
 
     let membership = company ? await this.membership(uid, company.id) : null;
