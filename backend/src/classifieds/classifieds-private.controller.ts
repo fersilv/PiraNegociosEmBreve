@@ -3,6 +3,7 @@ import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { ChatGateway } from '../chat/chat.gateway';
 import { IdentityComplianceService } from '../compliance/identity-compliance.service';
 import { ClassifiedsAuctionService } from './classifieds-auction.service';
+import { ClassifiedsCategoryTaxonomyService } from './classifieds-category-taxonomy.service';
 import { ClassifiedsChatService } from './classifieds-chat.service';
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
 import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
@@ -15,6 +16,7 @@ import { ClassifiedsService } from './classifieds.service';
 export class ClassifiedsPrivateController {
   constructor(
     private readonly classifieds: ClassifiedsService,
+    private readonly taxonomy: ClassifiedsCategoryTaxonomyService,
     private readonly identities: ClassifiedsIdentityService,
     private readonly chats: ClassifiedsChatService,
     private readonly commerce: ClassifiedsCommerceService,
@@ -134,12 +136,16 @@ export class ClassifiedsPrivateController {
 
   @Post('me/listings')
   async create(@Req() req: any, @Body() body: Record<string, unknown>) {
+    await this.taxonomy.assertCompatible(body.categorySlug, body.listingType, body.attributes);
     await this.entitlements.assertImageLimit(req.user.uid, body.images);
     return this.classifieds.create(req.user.uid, normalizeOptionalPublicContacts(body));
   }
 
   @Patch('me/listings/:id')
   async update(@Req() req: any, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    if (body.categorySlug !== undefined && body.listingType !== undefined) {
+      await this.taxonomy.assertCompatible(body.categorySlug, body.listingType, body.attributes);
+    }
     if (Array.isArray(body.images)) await this.entitlements.assertImageLimit(req.user.uid, body.images);
     return this.classifieds.update(req.user.uid, id, body);
   }
