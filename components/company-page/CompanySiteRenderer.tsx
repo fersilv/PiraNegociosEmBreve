@@ -17,6 +17,7 @@ import {
   isExtraCompanyTheme,
 } from './ReferenceCompanyThemes';
 import type { CompanyThemeCatalogItem, CompanyThemeCategory, ExtraCompanyThemeKey } from './ReferenceCompanyThemes';
+import { ConfigurableExtraCompanyThemeRenderer } from './ConfigurableReferenceThemes';
 import {
   INSTITUTIONAL_V2_PRESETS,
   INSTITUTIONAL_V2_TEMPLATES,
@@ -26,6 +27,13 @@ import {
 } from './InstitutionalCompanyThemes';
 import { STORE_COMPANY_THEME_PRESET, applyStoreCompanyThemePreset } from './StoreCompanyTheme';
 import { FlexibleCompanyThemeRenderer } from './FlexibleCompanyThemeRenderer';
+import {
+  CommerceCompanyThemeRenderer,
+  isCommerceCompanyTheme,
+  type CommerceCompanyThemeKey,
+} from './CommerceCompanyThemeRenderer';
+
+export { isCommerceCompanyTheme } from './CommerceCompanyThemeRenderer';
 
 export type {
   CompanyEditorMode,
@@ -41,30 +49,30 @@ export type {
   InstitutionalThemeKey,
 };
 
-export type CompanyTemplateKey = InstitutionalThemeKey | ExtraCompanyThemeKey | 'loja' | 'marketplace' | 'catalogo' | 'institucional-pro' | 'classificados-pro' | 'servicos-pro' | 'essencial' | 'institucional' | 'vitrine' | 'editorial';
+export type CompanyTemplateKey = InstitutionalThemeKey | ExtraCompanyThemeKey | CommerceCompanyThemeKey | 'institucional-pro' | 'servicos-pro' | 'essencial' | 'institucional' | 'editorial';
 
 export const COMPANY_PAGE_THEME_CATEGORIES = COMPANY_THEME_CATEGORIES;
 
 const FLEX_TEMPLATES: CompanyThemeCatalogItem[] = [
   {
-    key: 'loja', category: 'classifieds', name: 'Loja', eyebrow: 'Storefront',
-    description: 'Vitrine comercial com hero de marca, atalhos, conteúdo modular e conversão direta.',
-    bestFor: 'Lojas, presentes, tecnologia, varejo e catálogos próprios',
+    key: 'loja', category: 'classifieds', name: 'Loja', eyebrow: 'DTC Store',
+    description: 'Loja de marca com banner de campanha, categorias visuais, prateleiras e serviços integrados.',
+    bestFor: 'Beleza, presentes, tecnologia, varejo e marcas próprias',
   },
   {
-    key: 'marketplace', category: 'classifieds', name: 'Marketplace', eyebrow: 'Multi-vitrine',
-    description: 'Arquitetura de descoberta para muitas categorias, ofertas e caminhos de navegação.',
+    key: 'marketplace', category: 'classifieds', name: 'Marketplace', eyebrow: 'Discovery commerce',
+    description: 'Busca dominante, categorias circulares e várias prateleiras para catálogos extensos.',
     bestFor: 'Marketplaces, galerias comerciais e negócios com muitos departamentos',
   },
   {
-    key: 'catalogo', category: 'classifieds', name: 'Catálogo', eyebrow: 'Product catalog',
-    description: 'Modelo visual para apresentar linhas, coleções, serviços e atalhos como catálogo próprio.',
-    bestFor: 'Indústrias, distribuidores, lojas e catálogos B2B',
+    key: 'catalogo', category: 'classifieds', name: 'Catálogo', eyebrow: 'Editorial catalog',
+    description: 'Catálogo editorial com imagem grande, tipografia sofisticada e grade limpa de produtos.',
+    bestFor: 'Indústrias, distribuidores, design, móveis e catálogos B2B',
   },
   {
-    key: 'classificados-pro', category: 'classifieds', name: 'Classificados Pro', eyebrow: 'Listings',
-    description: 'Modelo denso para anúncios, categorias, oportunidades e navegação rápida.',
-    bestFor: 'Imóveis, veículos, equipamentos, brechós e classificados especializados',
+    key: 'classificados-pro', category: 'classifieds', name: 'Classificados Pro', eyebrow: 'Listing portal',
+    description: 'Busca, filtros visuais e anúncios em linhas densas para comparar muita informação rapidamente.',
+    bestFor: 'Imóveis, veículos, equipamentos e classificados especializados',
   },
   {
     key: 'institucional-pro', category: 'institutional', name: 'Institucional Pro', eyebrow: 'Corporate',
@@ -108,16 +116,19 @@ export const COMPANY_PAGE_TEMPLATES = {
 
 const FLEX_PRESETS: Record<string, any> = {
   marketplace: {
-    width: 'full', theme: { primary: '#172554', accent: '#2563eb', background: '#f8fafc', text: '#0f172a' },
+    width: 'full', theme: { primary: '#ffe600', accent: '#3483fa', background: '#f5f5f5', text: '#222222' },
     branding: { typography: 'clean', logoSize: 'medium', corners: 'soft' }, hero: { layout: 'split' }, jobs: { layout: 'grid' }, navigation: { sticky: true, transparent: false },
+    storefront: { showSearch: true, bannerStyle: 'compact', categoryStyle: 'circles', productsLayout: 'carousel', cardsPerRow: 4, featuredTitle: 'Destaques para você' },
   },
   catalogo: {
     width: 'wide', theme: { primary: '#292524', accent: '#a16207', background: '#fafaf9', text: '#1c1917' },
     branding: { typography: 'editorial', logoSize: 'large', corners: 'square' }, hero: { layout: 'minimal' }, jobs: { layout: 'grid' }, navigation: { sticky: true, transparent: false },
+    storefront: { showSearch: false, bannerStyle: 'editorial', categoryStyle: 'tiles', productsLayout: 'grid', cardsPerRow: 4, featuredTitle: 'Catálogo' },
   },
   'classificados-pro': {
     width: 'full', theme: { primary: '#111827', accent: '#f97316', background: '#f3f4f6', text: '#111827' },
     branding: { typography: 'clean', logoSize: 'medium', corners: 'soft' }, hero: { layout: 'split' }, jobs: { layout: 'compact' }, navigation: { sticky: true, transparent: false },
+    storefront: { showSearch: true, bannerStyle: 'compact', categoryStyle: 'chips', productsLayout: 'list', cardsPerRow: 4, featuredTitle: 'Anúncios em destaque' },
   },
   'institucional-pro': {
     width: 'wide', theme: { primary: '#0f172a', accent: '#0f766e', background: '#ffffff', text: '#0f172a' },
@@ -172,14 +183,24 @@ function institutionalKey(value?: string): InstitutionalThemeKey {
   return 'aurora';
 }
 
-function isFlexibleTheme(key: string) {
-  return key === 'loja' || key === 'marketplace' || key === 'catalogo' || key === 'classificados-pro' || key === 'institucional-pro' || key === 'servicos-pro' || key === 'vitrine' || isExtraCompanyTheme(key);
+function isModernFlexibleTheme(key: string) {
+  return key === 'institucional-pro' || key === 'servicos-pro';
+}
+
+function ensureCommerceSection(config: CompanyPageConfig): CompanyPageConfig {
+  const sections = Array.isArray(config.sections) ? config.sections.map((section) => ({ ...section })) : [];
+  if (sections.length && !sections.some((section) => section.type === 'classifieds')) {
+    const categoriesIndex = sections.findIndex((section) => section.type === 'categories');
+    const insertAt = categoriesIndex >= 0 ? categoriesIndex + 1 : Math.min(1, sections.length);
+    sections.splice(insertAt, 0, { id: 'classifieds', type: 'classifieds', enabled: true });
+  }
+  return sections.length ? { ...config, sections } : config;
 }
 
 function applyGenericPreset(config: CompanyPageConfig, key: string): CompanyPageConfig {
   const preset = FLEX_PRESETS[key];
   if (!preset) return config;
-  return {
+  return ensureCommerceSection({
     ...config,
     templateKey: key,
     width: preset.width,
@@ -188,14 +209,18 @@ function applyGenericPreset(config: CompanyPageConfig, key: string): CompanyPage
     hero: { ...(config.hero || {}), ...preset.hero },
     jobs: { ...(config.jobs || {}), ...preset.jobs },
     navigation: { ...(config.navigation || {}), ...preset.navigation },
-  } as CompanyPageConfig;
+    storefront: preset.storefront ? { ...(config.storefront || {}), ...preset.storefront } : config.storefront,
+  } as CompanyPageConfig);
 }
 
 export function applyCompanyThemePreset(config: CompanyPageConfig, key: string): CompanyPageConfig {
-  if (key === 'loja') return applyStoreCompanyThemePreset(config);
+  if (key === 'loja') return ensureCommerceSection(applyStoreCompanyThemePreset(config));
   if (FLEX_PRESETS[key]) return applyGenericPreset(config, key);
-  if (key === 'vitrine') return applyGenericPreset(config, 'marketplace') as CompanyPageConfig & { templateKey?: string };
-  if (isExtraCompanyTheme(key)) return applyExtraCompanyThemePreset(config, key) as CompanyPageConfig;
+  if (key === 'vitrine') return { ...applyGenericPreset(config, 'marketplace'), templateKey: 'vitrine' };
+  if (isExtraCompanyTheme(key)) {
+    const next = applyExtraCompanyThemePreset(config, key) as CompanyPageConfig;
+    return isCommerceCompanyTheme(key) ? ensureCommerceSection(next) : next;
+  }
   if (isInstitutionalTheme(key)) return applyInstitutionalV2Preset(config, key);
   return { ...config, templateKey: key };
 }
@@ -214,15 +239,23 @@ export function CompanySiteRenderer({ company, jobs, page, preview = false }: { 
 
   if (config.editorMode === 'code') {
     rendered = <LegacyCompanySiteRenderer company={company} jobs={jobs} page={config} preview={preview} />;
-  } else if (isFlexibleTheme(key)) {
+  } else if (isCommerceCompanyTheme(key)) {
     let visualPage = config;
     if (isUntouchedLegacyConfig(config)) {
-      if (key === 'loja') visualPage = applyStoreCompanyThemePreset(config);
+      if (key === 'loja') visualPage = ensureCommerceSection(applyStoreCompanyThemePreset(config));
       else if (FLEX_PRESETS[key]) visualPage = applyGenericPreset(config, key);
       else if (key === 'vitrine') visualPage = { ...applyGenericPreset(config, 'marketplace'), templateKey: 'vitrine' };
-      else if (isExtraCompanyTheme(key)) visualPage = applyExtraCompanyThemePreset(config, key) as CompanyPageConfig;
+      else if (isExtraCompanyTheme(key)) visualPage = ensureCommerceSection(applyExtraCompanyThemePreset(config, key) as CompanyPageConfig);
+    } else {
+      visualPage = ensureCommerceSection(config);
     }
+    rendered = <CommerceCompanyThemeRenderer themeKey={key} company={company} jobs={jobs} config={visualPage} preview={preview} />;
+  } else if (isModernFlexibleTheme(key)) {
+    const visualPage = isUntouchedLegacyConfig(config) && FLEX_PRESETS[key] ? applyGenericPreset(config, key) : config;
     rendered = <FlexibleCompanyThemeRenderer themeKey={key} company={company} jobs={jobs} config={visualPage} preview={preview} />;
+  } else if (isExtraCompanyTheme(key)) {
+    const visualPage = isUntouchedLegacyConfig(config) ? applyExtraCompanyThemePreset(config, key) as CompanyPageConfig : config;
+    rendered = <ConfigurableExtraCompanyThemeRenderer themeKey={key} company={company} jobs={jobs} config={visualPage} preview={preview} />;
   } else {
     const resolvedKey = institutionalKey(key);
     const visualPage = isUntouchedLegacyConfig(config) ? applyInstitutionalV2Preset(config, resolvedKey) : config;
