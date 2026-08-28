@@ -14,19 +14,19 @@ export class ClassifiedsCatalogAdminService {
     const [listingRows, auctionRows] = await Promise.all([
       this.dataSource.query(`
         SELECT
-          count(*) FILTER (WHERE "listingType"='PRODUCT' AND status<>'ARCHIVED')::int AS products,
-          count(*) FILTER (WHERE "listingType"='SERVICE' AND status<>'ARCHIVED')::int AS services,
-          count(*) FILTER (WHERE status='PUBLISHED')::int AS published,
-          count(*) FILTER (WHERE status='PAUSED')::int AS paused,
-          count(*) FILTER (WHERE status='PENDING_REVIEW')::int AS pending_review,
-          count(*) FILTER (WHERE status='ARCHIVED')::int AS archived
+          count(*) FILTER (WHERE "listingType"='PRODUCT' AND status<>'ARCHIVED' AND "deletedAt" IS NULL)::int AS products,
+          count(*) FILTER (WHERE "listingType"='SERVICE' AND status<>'ARCHIVED' AND "deletedAt" IS NULL)::int AS services,
+          count(*) FILTER (WHERE status='PUBLISHED' AND "deletedAt" IS NULL)::int AS published,
+          count(*) FILTER (WHERE status='PAUSED' AND "deletedAt" IS NULL)::int AS paused,
+          count(*) FILTER (WHERE status='PENDING_REVIEW' AND "deletedAt" IS NULL)::int AS pending_review,
+          count(*) FILTER (WHERE status='ARCHIVED' AND "deletedAt" IS NULL)::int AS archived
         FROM classified_listings
       `),
       this.dataSource.query(`
         SELECT
-          count(*) FILTER (WHERE "archivedAt" IS NULL)::int AS auctions,
-          count(*) FILTER (WHERE "archivedAt" IS NULL AND status IN ('SCHEDULED','OPEN'))::int AS active_auctions,
-          count(*) FILTER (WHERE "archivedAt" IS NOT NULL)::int AS archived_auctions
+          count(*) FILTER (WHERE "archivedAt" IS NULL AND "deletedAt" IS NULL)::int AS auctions,
+          count(*) FILTER (WHERE "archivedAt" IS NULL AND "deletedAt" IS NULL AND status IN ('SCHEDULED','OPEN'))::int AS active_auctions,
+          count(*) FILTER (WHERE "archivedAt" IS NOT NULL AND "deletedAt" IS NULL)::int AS archived_auctions
         FROM classified_auctions
       `).catch(() => [{ auctions: 0, active_auctions: 0, archived_auctions: 0 }]),
     ]);
@@ -55,26 +55,29 @@ export class ClassifiedsCatalogAdminService {
     const pageSize = Math.max(10, Math.min(100, Number(query.pageSize) || 30));
     const offset = (page - 1) * pageSize;
 
-    const filters: string[] = [archived ? `l.status='ARCHIVED'` : `l.status<>'ARCHIVED'`];
+    const filters: string[] = [
+      `l."deletedAt" IS NULL`,
+      archived ? `l.status='ARCHIVED'` : `l.status<>'ARCHIVED'`,
+    ];
     const params: unknown[] = [];
     if (typeRaw !== 'ALL') {
       if (!LISTING_TYPES.has(typeRaw)) throw new BadRequestException('Tipo de anúncio inválido.');
       params.push(typeRaw);
-      filters.push(`l."listingType"=$${params.length}`);
+      filters.push(`l."listingType"=$${params.length}::varchar`);
     }
     if (statusRaw !== 'ALL') {
       if (!LISTING_STATUSES.has(statusRaw)) throw new BadRequestException('Status de anúncio inválido.');
       params.push(statusRaw);
-      filters.push(`l.status=$${params.length}`);
+      filters.push(`l.status=$${params.length}::varchar`);
     }
     if (q) {
       params.push(`%${q}%`);
       filters.push(`(
-        l.title ILIKE $${params.length}
-        OR l.description ILIKE $${params.length}
-        OR COALESCE(c.name,'') ILIKE $${params.length}
-        OR COALESCE(u.email,'') ILIKE $${params.length}
-        OR COALESCE(u."displayName",u."fullName",u."socialName",'') ILIKE $${params.length}
+        l.title ILIKE $${params.length}::text
+        OR l.description ILIKE $${params.length}::text
+        OR COALESCE(c.name,'') ILIKE $${params.length}::text
+        OR COALESCE(u.email,'') ILIKE $${params.length}::text
+        OR COALESCE(u."displayName",u."fullName",u."socialName",'') ILIKE $${params.length}::text
       )`);
     }
     params.push(pageSize, offset);
@@ -84,8 +87,9 @@ export class ClassifiedsCatalogAdminService {
     const rows = await this.dataSource.query(`
       SELECT
         l.id,l.slug,l."sellerUserId",l."companyId",l."categorySlug",l."listingType",l.title,l.description,
-        l.price,l."priceType",l.condition,l.city,l.state,l.status,l."isFeatured",l."moderationReason",
+        l.price,l."priceType",l.condition,l.city,l.state,l.status,l."isFeatured",l."moderationReason",l.attributes,
         l."moderationReviewedAt",l."publishedAt",l."createdAt",l."updatedAt",l."archivedAt",l."archivedByUserId",
+        l."deletedAt",l."deletedByUserId",
         cat.name AS "categoryName",
         c.name AS "companyName",
         COALESCE(u."socialName",u."displayName",u."fullName",u.email,'Usuário') AS "sellerName",
@@ -93,7 +97,7 @@ export class ClassifiedsCatalogAdminService {
         img.url AS image,
         EXISTS(
           SELECT 1 FROM classified_auctions a
-          WHERE a."listingId"=l.id AND a."archivedAt" IS NULL
+          WHERE a."listingId"=l.id AND a."archivedAt" IS NULL AND a."deletedAt" IS NULL
         ) AS "hasAuction",
         count(*) OVER()::int AS "totalCount"
       FROM classified_listings l
@@ -106,7 +110,7 @@ export class ClassifiedsCatalogAdminService {
       ) img ON true
       WHERE ${filters.join(' AND ')}
       ORDER BY l."updatedAt" DESC
-      LIMIT $${limitIndex} OFFSET $${offsetIndex}
+      LIMIT $${limitIndex}::int OFFSET $${offsetIndex}::int
     `, params);
 
     const total = Number(rows[0]?.totalCount || 0);
@@ -131,7 +135,7 @@ export class ClassifiedsCatalogAdminService {
         SELECT json_agg(json_build_object('id',id,'url',url,'sortOrder',"sortOrder",'isPrimary',"isPrimary") ORDER BY "sortOrder") AS images
         FROM classified_listing_images WHERE "listingId"=l.id
       ) img ON true
-      WHERE l.id=$1 LIMIT 1
+      WHERE l.id=$1::uuid LIMIT 1
     `, [id]);
     if (!rows[0]) throw new NotFoundException('Anúncio não encontrado.');
     return rows[0];
@@ -140,6 +144,7 @@ export class ClassifiedsCatalogAdminService {
   async updateListing(id: string, adminUserId: string, body: Record<string, unknown>) {
     await this.ensureSchema();
     const current = await this.listing(id);
+    if (current.deletedAt) throw new BadRequestException('Este anúncio foi excluído e permanece somente para preservar o histórico.');
     const nextType = body.listingType === undefined ? String(current.listingType) : String(body.listingType || '').toUpperCase();
     const nextStatus = body.status === undefined ? String(current.status) : String(body.status || '').toUpperCase();
     if (!LISTING_TYPES.has(nextType)) throw new BadRequestException('Tipo de anúncio inválido.');
@@ -152,7 +157,7 @@ export class ClassifiedsCatalogAdminService {
     if (!title) throw new BadRequestException('O título não pode ficar vazio.');
     if (!description) throw new BadRequestException('A descrição não pode ficar vazia.');
     if (!categorySlug) throw new BadRequestException('A categoria não pode ficar vazia.');
-    const category = await this.dataSource.query(`SELECT slug FROM classified_categories WHERE slug=$1 AND "isActive"=true LIMIT 1`, [categorySlug]);
+    const category = await this.dataSource.query(`SELECT slug FROM classified_categories WHERE slug=$1::varchar AND "isActive"=true LIMIT 1`, [categorySlug]);
     if (!category[0]) throw new BadRequestException('Categoria inválida ou inativa.');
 
     let price: string | null = current.price == null ? null : String(current.price);
@@ -174,18 +179,27 @@ export class ClassifiedsCatalogAdminService {
 
     await this.dataSource.query(`
       UPDATE classified_listings SET
-        title=$2,description=$3,"categorySlug"=$4,"listingType"=$5,price=$6,city=$7,state=$8,status=$9,
-        "moderationReason"=$10,"moderationReviewedAt"=now(),"isFeatured"=$11,
-        "publishedAt"=CASE WHEN $9='PUBLISHED' THEN COALESCE("publishedAt",now()) ELSE "publishedAt" END,
+        title=$2::varchar,
+        description=$3::text,
+        "categorySlug"=$4::varchar,
+        "listingType"=$5::varchar,
+        price=$6::numeric,
+        city=$7::varchar,
+        state=$8::varchar,
+        status=$9::varchar,
+        "moderationReason"=$10::text,
+        "moderationReviewedAt"=now(),
+        "isFeatured"=$11::boolean,
+        "publishedAt"=CASE WHEN $9::varchar='PUBLISHED' THEN COALESCE("publishedAt",now()) ELSE "publishedAt" END,
         "archivedAt"=NULL,"archivedByUserId"=NULL,"archivedPreviousStatus"=NULL,
         "updatedAt"=now()
-      WHERE id=$1
+      WHERE id=$1::uuid
     `, [id, title, description, categorySlug, nextType, price, city, state, nextStatus, moderationReason, isFeatured]);
 
     if (nextStatus !== 'PUBLISHED') {
       await this.dataSource.query(`
         UPDATE classified_auctions SET status='CANCELED',"closedAt"=COALESCE("closedAt",now()),"updatedAt"=now()
-        WHERE "listingId"=$1 AND status IN ('SCHEDULED','OPEN')
+        WHERE "listingId"=$1::uuid AND status IN ('SCHEDULED','OPEN') AND "deletedAt" IS NULL
       `, [id]).catch(() => undefined);
     }
     return this.listing(id);
@@ -196,18 +210,18 @@ export class ClassifiedsCatalogAdminService {
     const rows = await this.dataSource.query(`
       UPDATE classified_listings SET
         "archivedPreviousStatus"=CASE WHEN status<>'ARCHIVED' THEN status ELSE COALESCE("archivedPreviousStatus",'PAUSED') END,
-        status='ARCHIVED',"archivedAt"=COALESCE("archivedAt",now()),"archivedByUserId"=$2,
+        status='ARCHIVED',"archivedAt"=COALESCE("archivedAt",now()),"archivedByUserId"=$2::varchar,
         "moderationReviewedAt"=now(),"updatedAt"=now()
-      WHERE id=$1 RETURNING id
+      WHERE id=$1::uuid AND "deletedAt" IS NULL RETURNING id
     `, [id, adminUserId]);
-    if (!rows[0]) throw new NotFoundException('Anúncio não encontrado.');
+    if (!rows[0]) throw new NotFoundException('Anúncio não encontrado ou já excluído.');
     await this.dataSource.query(`
       UPDATE classified_auctions SET
         "archivedPreviousStatus"=COALESCE("archivedPreviousStatus",status),
         status=CASE WHEN status IN ('SCHEDULED','OPEN') THEN 'CANCELED' ELSE status END,
         "closedAt"=CASE WHEN status IN ('SCHEDULED','OPEN') THEN COALESCE("closedAt",now()) ELSE "closedAt" END,
-        "archivedAt"=COALESCE("archivedAt",now()),"archivedByUserId"=$2,"updatedAt"=now()
-      WHERE "listingId"=$1 AND "archivedAt" IS NULL
+        "archivedAt"=COALESCE("archivedAt",now()),"archivedByUserId"=$2::varchar,"updatedAt"=now()
+      WHERE "listingId"=$1::uuid AND "archivedAt" IS NULL AND "deletedAt" IS NULL
     `, [id, adminUserId]).catch(() => undefined);
     return this.listing(id);
   }
@@ -221,25 +235,41 @@ export class ClassifiedsCatalogAdminService {
           ELSE 'PAUSED'
         END,
         "archivedAt"=NULL,"archivedByUserId"=NULL,"archivedPreviousStatus"=NULL,"updatedAt"=now()
-      WHERE id=$1 AND status='ARCHIVED' RETURNING id
+      WHERE id=$1::uuid AND status='ARCHIVED' AND "deletedAt" IS NULL RETURNING id
     `, [id]);
-    if (!rows[0]) throw new BadRequestException('Este anúncio não está arquivado ou não foi encontrado.');
+    if (!rows[0]) throw new BadRequestException('Este anúncio não está arquivado, foi excluído ou não foi encontrado.');
     return this.listing(id);
   }
 
-  async deleteListing(id: string) {
+  async deleteListing(id: string, adminUserId?: string) {
     await this.ensureSchema();
-    const rows = await this.dataSource.query(`SELECT id,title FROM classified_listings WHERE id=$1 LIMIT 1`, [id]);
+    const rows = await this.dataSource.query(`
+      UPDATE classified_listings SET
+        "archivedPreviousStatus"=CASE WHEN status<>'ARCHIVED' THEN status ELSE COALESCE("archivedPreviousStatus",'PAUSED') END,
+        status='ARCHIVED',
+        "archivedAt"=COALESCE("archivedAt",now()),
+        "archivedByUserId"=COALESCE("archivedByUserId",$2::varchar),
+        "deletedAt"=COALESCE("deletedAt",now()),
+        "deletedByUserId"=COALESCE("deletedByUserId",$2::varchar),
+        attributes=COALESCE(attributes,'{}'::jsonb) || jsonb_build_object('softDeleted',true,'softDeletedAt',now()),
+        "updatedAt"=now()
+      WHERE id=$1::uuid
+      RETURNING id,title,"deletedAt"
+    `, [id, adminUserId || null]);
     if (!rows[0]) throw new NotFoundException('Anúncio não encontrado.');
-    try {
-      await this.dataSource.query(`DELETE FROM classified_listings WHERE id=$1`, [id]);
-      return { deleted: true, id, title: rows[0].title };
-    } catch (error: any) {
-      if (String(error?.code || '').startsWith('23')) {
-        throw new BadRequestException('Este anúncio possui histórico protegido por outra operação. Arquive-o em vez de excluir permanentemente.');
-      }
-      throw error;
-    }
+    await this.dataSource.query(`
+      UPDATE classified_auctions SET
+        "archivedPreviousStatus"=COALESCE("archivedPreviousStatus",status),
+        status=CASE WHEN status IN ('SCHEDULED','OPEN') THEN 'CANCELED' ELSE status END,
+        "closedAt"=CASE WHEN status IN ('SCHEDULED','OPEN') THEN COALESCE("closedAt",now()) ELSE "closedAt" END,
+        "archivedAt"=COALESCE("archivedAt",now()),
+        "archivedByUserId"=COALESCE("archivedByUserId",$2::varchar),
+        "deletedAt"=COALESCE("deletedAt",now()),
+        "deletedByUserId"=COALESCE("deletedByUserId",$2::varchar),
+        "updatedAt"=now()
+      WHERE "listingId"=$1::uuid AND "deletedAt" IS NULL
+    `, [id, adminUserId || null]).catch(() => undefined);
+    return { deleted: true, soft: true, id: rows[0].id, title: rows[0].title, deletedAt: rows[0].deletedAt };
   }
 
   async auctions(query: Record<string, unknown>) {
@@ -250,16 +280,19 @@ export class ClassifiedsCatalogAdminService {
     const page = Math.max(1, Number(query.page) || 1);
     const pageSize = Math.max(10, Math.min(100, Number(query.pageSize) || 30));
     const offset = (page - 1) * pageSize;
-    const filters = [archived ? `a."archivedAt" IS NOT NULL` : `a."archivedAt" IS NULL`];
+    const filters = [
+      `a."deletedAt" IS NULL`,
+      archived ? `a."archivedAt" IS NOT NULL` : `a."archivedAt" IS NULL`,
+    ];
     const params: unknown[] = [];
     if (statusRaw !== 'ALL') {
       if (!AUCTION_STATUSES.has(statusRaw)) throw new BadRequestException('Status de leilão inválido.');
       params.push(statusRaw);
-      filters.push(`a.status=$${params.length}`);
+      filters.push(`a.status=$${params.length}::varchar`);
     }
     if (q) {
       params.push(`%${q}%`);
-      filters.push(`(l.title ILIKE $${params.length} OR c.name ILIKE $${params.length})`);
+      filters.push(`(l.title ILIKE $${params.length}::text OR c.name ILIKE $${params.length}::text)`);
     }
     params.push(pageSize, offset);
     const limitIndex = params.length - 1;
@@ -281,7 +314,7 @@ export class ClassifiedsCatalogAdminService {
       ) img ON true
       WHERE ${filters.join(' AND ')}
       ORDER BY a."updatedAt" DESC
-      LIMIT $${limitIndex} OFFSET $${offsetIndex}
+      LIMIT $${limitIndex}::int OFFSET $${offsetIndex}::int
     `, params);
     const total = Number(rows[0]?.totalCount || 0);
     return {
@@ -297,10 +330,10 @@ export class ClassifiedsCatalogAdminService {
         "archivedPreviousStatus"=COALESCE("archivedPreviousStatus",status),
         status=CASE WHEN status IN ('SCHEDULED','OPEN') THEN 'CANCELED' ELSE status END,
         "closedAt"=CASE WHEN status IN ('SCHEDULED','OPEN') THEN COALESCE("closedAt",now()) ELSE "closedAt" END,
-        "archivedAt"=COALESCE("archivedAt",now()),"archivedByUserId"=$2,"updatedAt"=now()
-      WHERE id=$1 RETURNING *
+        "archivedAt"=COALESCE("archivedAt",now()),"archivedByUserId"=$2::varchar,"updatedAt"=now()
+      WHERE id=$1::uuid AND "deletedAt" IS NULL RETURNING *
     `, [id, adminUserId]);
-    if (!rows[0]) throw new NotFoundException('Leilão não encontrado.');
+    if (!rows[0]) throw new NotFoundException('Leilão não encontrado ou já excluído.');
     return rows[0];
   }
 
@@ -308,9 +341,9 @@ export class ClassifiedsCatalogAdminService {
     await this.ensureSchema();
     const rows = await this.dataSource.query(`
       UPDATE classified_auctions SET "archivedAt"=NULL,"archivedByUserId"=NULL,"archivedPreviousStatus"=NULL,"updatedAt"=now()
-      WHERE id=$1 AND "archivedAt" IS NOT NULL RETURNING *
+      WHERE id=$1::uuid AND "archivedAt" IS NOT NULL AND "deletedAt" IS NULL RETURNING *
     `, [id]);
-    if (!rows[0]) throw new BadRequestException('Este leilão não está arquivado ou não foi encontrado.');
+    if (!rows[0]) throw new BadRequestException('Este leilão não está arquivado, foi excluído ou não foi encontrado.');
     return rows[0];
   }
 
@@ -318,35 +351,45 @@ export class ClassifiedsCatalogAdminService {
     await this.ensureSchema();
     const rows = await this.dataSource.query(`
       UPDATE classified_auctions SET status='CANCELED',"closedAt"=COALESCE("closedAt",now()),"updatedAt"=now()
-      WHERE id=$1 AND status IN ('SCHEDULED','OPEN') AND "archivedAt" IS NULL RETURNING *
+      WHERE id=$1::uuid AND status IN ('SCHEDULED','OPEN') AND "archivedAt" IS NULL AND "deletedAt" IS NULL RETURNING *
     `, [id]);
     if (!rows[0]) throw new BadRequestException('O leilão não está ativo ou não foi encontrado.');
     return rows[0];
   }
 
-  async deleteAuction(id: string) {
+  async deleteAuction(id: string, adminUserId?: string) {
     await this.ensureSchema();
-    const rows = await this.dataSource.query(`SELECT id,"listingId" FROM classified_auctions WHERE id=$1 LIMIT 1`, [id]);
+    const rows = await this.dataSource.query(`
+      UPDATE classified_auctions SET
+        "archivedPreviousStatus"=COALESCE("archivedPreviousStatus",status),
+        status=CASE WHEN status IN ('SCHEDULED','OPEN') THEN 'CANCELED' ELSE status END,
+        "closedAt"=CASE WHEN status IN ('SCHEDULED','OPEN') THEN COALESCE("closedAt",now()) ELSE "closedAt" END,
+        "archivedAt"=COALESCE("archivedAt",now()),
+        "archivedByUserId"=COALESCE("archivedByUserId",$2::varchar),
+        "deletedAt"=COALESCE("deletedAt",now()),
+        "deletedByUserId"=COALESCE("deletedByUserId",$2::varchar),
+        "updatedAt"=now()
+      WHERE id=$1::uuid
+      RETURNING id,"listingId","deletedAt"
+    `, [id, adminUserId || null]);
     if (!rows[0]) throw new NotFoundException('Leilão não encontrado.');
-    try {
-      await this.dataSource.query(`DELETE FROM classified_auctions WHERE id=$1`, [id]);
-      return { deleted: true, id, listingId: rows[0].listingId };
-    } catch (error: any) {
-      if (String(error?.code || '').startsWith('23')) {
-        throw new BadRequestException('Este leilão possui histórico financeiro protegido. Arquive-o em vez de excluir permanentemente.');
-      }
-      throw error;
-    }
+    return { deleted: true, soft: true, id: rows[0].id, listingId: rows[0].listingId, deletedAt: rows[0].deletedAt };
   }
 
   private async ensureSchema() {
     await this.dataSource.query(`ALTER TABLE classified_listings ADD COLUMN IF NOT EXISTS "archivedAt" timestamptz NULL`).catch(() => undefined);
     await this.dataSource.query(`ALTER TABLE classified_listings ADD COLUMN IF NOT EXISTS "archivedByUserId" varchar NULL`).catch(() => undefined);
     await this.dataSource.query(`ALTER TABLE classified_listings ADD COLUMN IF NOT EXISTS "archivedPreviousStatus" varchar(24) NULL`).catch(() => undefined);
+    await this.dataSource.query(`ALTER TABLE classified_listings ADD COLUMN IF NOT EXISTS "deletedAt" timestamptz NULL`).catch(() => undefined);
+    await this.dataSource.query(`ALTER TABLE classified_listings ADD COLUMN IF NOT EXISTS "deletedByUserId" varchar NULL`).catch(() => undefined);
     await this.dataSource.query(`ALTER TABLE classified_auctions ADD COLUMN IF NOT EXISTS "archivedAt" timestamptz NULL`).catch(() => undefined);
     await this.dataSource.query(`ALTER TABLE classified_auctions ADD COLUMN IF NOT EXISTS "archivedByUserId" varchar NULL`).catch(() => undefined);
     await this.dataSource.query(`ALTER TABLE classified_auctions ADD COLUMN IF NOT EXISTS "archivedPreviousStatus" varchar(24) NULL`).catch(() => undefined);
+    await this.dataSource.query(`ALTER TABLE classified_auctions ADD COLUMN IF NOT EXISTS "deletedAt" timestamptz NULL`).catch(() => undefined);
+    await this.dataSource.query(`ALTER TABLE classified_auctions ADD COLUMN IF NOT EXISTS "deletedByUserId" varchar NULL`).catch(() => undefined);
     await this.dataSource.query(`CREATE INDEX IF NOT EXISTS classified_listings_admin_archived_idx ON classified_listings(status,"updatedAt" DESC)`).catch(() => undefined);
+    await this.dataSource.query(`CREATE INDEX IF NOT EXISTS classified_listings_deleted_idx ON classified_listings("deletedAt","updatedAt" DESC)`).catch(() => undefined);
     await this.dataSource.query(`CREATE INDEX IF NOT EXISTS classified_auctions_admin_archived_idx ON classified_auctions("archivedAt","updatedAt" DESC)`).catch(() => undefined);
+    await this.dataSource.query(`CREATE INDEX IF NOT EXISTS classified_auctions_deleted_idx ON classified_auctions("deletedAt","updatedAt" DESC)`).catch(() => undefined);
   }
 }
