@@ -19,6 +19,7 @@ import { ClassifiedsAuctionPublicController } from './classifieds-auction-public
 import { ClassifiedsAuctionPublicService } from './classifieds-auction-public.service';
 import { ClassifiedsAuctionService } from './classifieds-auction.service';
 import { ClassifiedsAuctionSettlementService } from './classifieds-auction-settlement.service';
+import { ClassifiedsCategoryTaxonomyService } from './classifieds-category-taxonomy.service';
 import { ClassifiedsChatService } from './classifieds-chat.service';
 import { ClassifiedsCheckoutController } from './classifieds-checkout.controller';
 import { ClassifiedsCheckoutService } from './classifieds-checkout.service';
@@ -86,6 +87,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
   providers: [
     AdminGuard,
     ClassifiedsService,
+    ClassifiedsCategoryTaxonomyService,
     ClassifiedsIdentityService,
     ClassifiedsLocationService,
     ClassifiedsChatService,
@@ -110,6 +112,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
   ],
   exports: [
     ClassifiedsService,
+    ClassifiedsCategoryTaxonomyService,
     ClassifiedsIdentityService,
     ClassifiedsLocationService,
     ClassifiedsCommerceService,
