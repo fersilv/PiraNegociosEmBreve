@@ -31,6 +31,11 @@ import {
   applyInstitutionalV2Preset,
   type InstitutionalThemeKey,
 } from './InstitutionalCompanyThemes';
+import {
+  STORE_COMPANY_THEME_PRESET,
+  StoreCompanyTheme,
+  applyStoreCompanyThemePreset,
+} from './StoreCompanyTheme';
 
 export type {
   CompanyEditorMode,
@@ -49,12 +54,23 @@ export type {
 export type CompanyTemplateKey =
   | InstitutionalThemeKey
   | ExtraCompanyThemeKey
+  | 'loja'
   | 'essencial' | 'institucional' | 'vitrine' | 'editorial';
 
 export const COMPANY_PAGE_THEME_CATEGORIES = COMPANY_THEME_CATEGORIES;
 
+const STORE_TEMPLATE: CompanyThemeCatalogItem = {
+  key: 'loja',
+  category: 'classifieds',
+  name: 'Loja',
+  eyebrow: 'Storefront',
+  description: 'Página escura de varejo com hero de marca, atalhos, vitrine integrada e conversão direta para produtos, serviços e chat.',
+  bestFor: 'Lojas, presentes, personalização, tecnologia, varejo e catálogos próprios',
+};
+
 const ALL_TEMPLATES: CompanyThemeCatalogItem[] = [
   ...INSTITUTIONAL_V2_TEMPLATES.map((template) => ({ ...template, category: 'institutional' as const })),
+  STORE_TEMPLATE,
   ...EXTRA_COMPANY_PAGE_TEMPLATES,
 ];
 
@@ -82,6 +98,7 @@ export const COMPANY_PAGE_TEMPLATES = {
 
 export const COMPANY_PAGE_THEME_PRESETS = {
   ...INSTITUTIONAL_V2_PRESETS,
+  loja: STORE_COMPANY_THEME_PRESET,
   ...EXTRA_THEME_PRESETS,
 };
 
@@ -134,6 +151,7 @@ function institutionalKey(value?: string): InstitutionalThemeKey {
 }
 
 export function applyCompanyThemePreset(config: CompanyPageConfig, key: string): CompanyPageConfig {
+  if (key === 'loja') return applyStoreCompanyThemePreset(config);
   if (isExtraCompanyTheme(key)) return applyExtraCompanyThemePreset(config, key) as CompanyPageConfig;
   if (isInstitutionalTheme(key)) return applyInstitutionalV2Preset(config, key);
   return config;
@@ -155,6 +173,13 @@ export function CompanySiteRenderer({
 
   if (config.editorMode === 'code') {
     return <LegacyCompanySiteRenderer company={company} jobs={jobs} page={config} preview={preview} />;
+  }
+
+  if (key === 'loja') {
+    const visualPage = isUntouchedLegacyConfig(config)
+      ? applyStoreCompanyThemePreset(config)
+      : config;
+    return <StoreCompanyTheme company={company} jobs={jobs} config={visualPage} preview={preview} />;
   }
 
   if (isExtraCompanyTheme(key)) {
