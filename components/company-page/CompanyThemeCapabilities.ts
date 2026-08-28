@@ -61,9 +61,17 @@ const RECOMMENDED: Record<CompanyThemeFamily, string[]> = {
 
 export function getCompanyThemeCapabilities(themeKey?: string | null): CompanyThemeCapabilities {
   const family = FAMILY_BY_THEME[String(themeKey || 'aurora')] || 'institutional';
+  const commerce = family === 'commerce' || family === 'classifieds';
+
   return {
     family,
-    features: { ...FULL_FEATURES, commerceLayout: family === 'commerce' || family === 'classifieds' },
+    features: {
+      ...FULL_FEATURES,
+      commerceLayout: commerce,
+      heroLayout: commerce ? false : FULL_FEATURES.heroLayout,
+      heroSizing: commerce ? false : FULL_FEATURES.heroSizing,
+      sectionSizing: commerce ? false : FULL_FEATURES.sectionSizing,
+    },
     requiredSections: ['identity'],
     recommendedSections: [...RECOMMENDED[family]],
   };
