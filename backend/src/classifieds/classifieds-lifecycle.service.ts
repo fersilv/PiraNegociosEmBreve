@@ -60,10 +60,10 @@ export class ClassifiedsLifecycleService {
     await this.ensureSchema();
     const listing = await this.assertListingOwner(uid, id);
     if (listing.deletedAt) throw new BadRequestException('Um anúncio excluído não pode ser republicado.');
-    if (String(listing.status) === 'PENDING_REVIEW') {
+    if (String(listing.status) === 'PENDING_REVIEW' || String(listing.archivedPreviousStatus || '') === 'PENDING_REVIEW') {
       throw new BadRequestException('Este anúncio está em revisão e precisa ser liberado pela moderação antes de voltar à vitrine.');
     }
-    if (listing.moderationReason && String(listing.status) === 'PAUSED') {
+    if (listing.moderationReason && (String(listing.status) === 'PAUSED' || String(listing.archivedPreviousStatus || '') === 'PAUSED')) {
       throw new BadRequestException('Este anúncio possui uma pendência de moderação e precisa ser revisado antes de voltar à vitrine.');
     }
     if (!listing.title || !listing.description || !listing.city || !listing.state) {
