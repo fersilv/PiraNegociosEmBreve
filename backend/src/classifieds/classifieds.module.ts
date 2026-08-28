@@ -9,6 +9,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { User } from '../users/entities/user.entity';
 import { ClassifiedsAiReviewService } from './classifieds-ai-review.service';
+import { ClassifiedsArchivedAwareCommerceService } from './classifieds-archived-aware-commerce.service';
 import { ClassifiedsAuctionEngagementService } from './classifieds-auction-engagement.service';
 import { ClassifiedsAuctionExtrasController } from './classifieds-auction-extras.controller';
 import { ClassifiedsAuctionGateway } from './classifieds-auction.gateway';
@@ -96,7 +97,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsLocationService,
     ClassifiedsChatService,
     ClassifiedsAiReviewService,
-    ClassifiedsCommerceService,
+    { provide: ClassifiedsCommerceService, useClass: ClassifiedsArchivedAwareCommerceService },
     ClassifiedsEntitlementsService,
     ClassifiedsAuctionGateway,
     ClassifiedsAuctionService,
