@@ -164,7 +164,36 @@ export class ClassifiedsIdentityService {
     const user = await this.users.findOne({ where: { id: uid } });
     if (!user) throw new ForbiddenException('Usuário não encontrado.');
     const company = user.companyId ? await this.companies.findOne({ where: { id: user.companyId } }) : await this.companies.findOne({ where: { ownerId: uid } });
-    const membership = company ? await this.membership(uid, company.id) : null;
+    let membership = company ? await this.membership(uid, company.id) : null;
+
+    // Migração transparente para contas empresariais criadas antes de company_memberships.
+    // O Classificados já reconhecia estes administradores por companyId + isCompanyAdmin;
+    // persistimos a mesma autorização no modelo novo para que a validação de compliance
+    // e a seleção da identidade usem exatamente a mesma fonte de permissão.
+    const legacyCompanyAdmin = Boolean(
+      company && !membership && user.companyId === company.id && user.isCompanyAdmin,
+    );
+    if (company && legacyCompanyAdmin) {
+      const permissions = {
+        companyProfile: true,
+        recruitment: true,
+        marketplace: true,
+        finance: true,
+        team: true,
+      };
+      const rows = await this.dataSource.query(
+        `INSERT INTO company_memberships("companyId","userId",role,"isPartner",permissions,status)
+         VALUES ($1,$2,'PRIMARY_ADMIN',false,$3::jsonb,'ACTIVE')
+         ON CONFLICT ("companyId","userId") DO UPDATE SET
+           role='PRIMARY_ADMIN',
+           status='ACTIVE',
+           permissions=COALESCE(company_memberships.permissions,'{}'::jsonb) || EXCLUDED.permissions
+         RETURNING role,permissions,status`,
+        [company.id, uid, JSON.stringify(permissions)],
+      ).catch(() => []);
+      membership = rows[0] || null;
+    }
+
     const companyEligible = Boolean(company && (
       company.ownerId === uid ||
       membership?.role === 'PRIMARY_ADMIN' ||
