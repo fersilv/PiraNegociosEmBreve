@@ -8,6 +8,7 @@ import { AdminWorkspaceLayout } from "../components/AdminWorkspaceLayout";
 import { BoostVisibilityBanner } from "../components/BoostVisibilityBanner";
 import { ResumeImportEntitlementOrchestrator } from "../components/ResumeImportEntitlementOrchestrator";
 import { ResumeQualificationWidget } from "../components/ResumeQualificationWidget";
+import { RegionalLoader } from "../components/RegionalLoader";
 import { CompanyJobsManagementPage } from "./CompanyJobsManagementPage";
 import { CompanyHomePage } from "./CompanyHomePage";
 import { CompanyNewJobPage } from "./CompanyNewJobPage";
@@ -220,7 +221,7 @@ function LegacyDashboardRedirect() {
 export function Dashboard() {
   const { user, profile, loading } = useAuth();
   const location = useLocation();
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Carregando...</div>;
+  if (loading) return <RegionalLoader context="auth" className="min-h-screen" />;
   if (!user) return <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   if (location.pathname.startsWith("/dashboard")) return <LegacyDashboardRedirect />;
 
