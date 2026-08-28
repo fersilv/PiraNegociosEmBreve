@@ -156,20 +156,34 @@ export class ClassifiedsIdentityService {
     if (!user || !company) throw new ForbiddenException('Empresa ou usuário não encontrado.');
     if (company.ownerId === uid) return { user, company };
     const membership = await this.membership(uid, companyId);
-    if (!membership || (membership.role !== 'PRIMARY_ADMIN' && membership.permissions?.marketplace !== true)) throw new ForbiddenException('Seu perfil não tem permissão para administrar o Marketplace desta empresa.');
+    if (!membership || (membership.role !== 'PRIMARY_ADMIN' && membership.role !== 'ADMIN' && membership.permissions?.marketplace !== true)) throw new ForbiddenException('Seu perfil não tem permissão para administrar o Marketplace desta empresa.');
     return { user, company };
   }
 
   private async baseContext(uid: string) {
     const user = await this.users.findOne({ where: { id: uid } });
     if (!user) throw new ForbiddenException('Usuário não encontrado.');
-    const company = user.companyId ? await this.companies.findOne({ where: { id: user.companyId } }) : await this.companies.findOne({ where: { ownerId: uid } });
+
+    let company = user.companyId ? await this.companies.findOne({ where: { id: user.companyId } }) : null;
+    if (!company) company = await this.companies.findOne({ where: { ownerId: uid } });
+    if (!company) {
+      const rows = await this.dataSource.query(
+        `SELECT c.*
+         FROM company_memberships m
+         JOIN companies c ON c.id=m."companyId"
+         WHERE m."userId"=$1 AND m.status='ACTIVE'
+         ORDER BY CASE m.role WHEN 'PRIMARY_ADMIN' THEN 0 WHEN 'ADMIN' THEN 1 ELSE 2 END,m."updatedAt" DESC
+         LIMIT 1`,
+        [uid],
+      ).catch(() => []);
+      if (rows[0]?.id) company = this.companies.create(rows[0]);
+    }
+
     let membership = company ? await this.membership(uid, company.id) : null;
 
     // Migração transparente para contas empresariais criadas antes de company_memberships.
-    // O Classificados já reconhecia estes administradores por companyId + isCompanyAdmin;
-    // persistimos a mesma autorização no modelo novo para que a validação de compliance
-    // e a seleção da identidade usem exatamente a mesma fonte de permissão.
+    // PRIMARY_ADMIN é reservado ao proprietário. Outros administradores legados entram
+    // como ADMIN para não colidir com o índice que permite um único admin principal ativo.
     const legacyCompanyAdmin = Boolean(
       company && !membership && user.companyId === company.id && user.isCompanyAdmin,
     );
@@ -181,22 +195,37 @@ export class ClassifiedsIdentityService {
         finance: true,
         team: true,
       };
+      const role = company.ownerId === uid ? 'PRIMARY_ADMIN' : 'ADMIN';
       const rows = await this.dataSource.query(
         `INSERT INTO company_memberships("companyId","userId",role,"isPartner",permissions,status)
-         VALUES ($1,$2,'PRIMARY_ADMIN',false,$3::jsonb,'ACTIVE')
+         VALUES ($1,$2,$3,false,$4::jsonb,'ACTIVE')
          ON CONFLICT ("companyId","userId") DO UPDATE SET
-           role='PRIMARY_ADMIN',
+           role=EXCLUDED.role,
            status='ACTIVE',
-           permissions=COALESCE(company_memberships.permissions,'{}'::jsonb) || EXCLUDED.permissions
+           permissions=COALESCE(company_memberships.permissions,'{}'::jsonb) || EXCLUDED.permissions,
+           "updatedAt"=now()
          RETURNING role,permissions,status`,
-        [company.id, uid, JSON.stringify(permissions)],
+        [company.id, uid, role, JSON.stringify(permissions)],
       ).catch(() => []);
       membership = rows[0] || null;
+    }
+
+    // Quando a empresa foi recuperada pelo ownerId ou pela tabela nova de vínculos,
+    // repara os campos legados que ainda abastecem algumas telas antigas.
+    if (company && !user.companyId && (company.ownerId === uid || membership)) {
+      await this.dataSource.query(
+        `UPDATE users SET "companyId"=$2,"companyName"=$3,"isCompanyAdmin"=$4,"updatedAt"=now() WHERE id=$1`,
+        [uid, company.id, company.name, company.ownerId === uid || membership?.role === 'PRIMARY_ADMIN' || membership?.role === 'ADMIN'],
+      ).catch(() => undefined);
+      user.companyId = company.id;
+      user.companyName = company.name;
+      user.isCompanyAdmin = company.ownerId === uid || membership?.role === 'PRIMARY_ADMIN' || membership?.role === 'ADMIN';
     }
 
     const companyEligible = Boolean(company && (
       company.ownerId === uid ||
       membership?.role === 'PRIMARY_ADMIN' ||
+      membership?.role === 'ADMIN' ||
       membership?.permissions?.marketplace === true ||
       (!membership && user.companyId === company.id && user.isCompanyAdmin)
     ));
