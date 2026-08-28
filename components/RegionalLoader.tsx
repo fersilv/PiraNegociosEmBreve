@@ -34,12 +34,12 @@ const contextLabels: Record<RegionalLoaderContext, string> = {
 };
 
 const iconClasses = [
-  "pn-loader-icon pn-loader-icon-1",
-  "pn-loader-icon pn-loader-icon-2",
-  "pn-loader-icon pn-loader-icon-3",
-  "pn-loader-icon pn-loader-icon-4",
-  "pn-loader-icon pn-loader-icon-5",
-  "pn-loader-icon pn-loader-icon-6",
+  "pn-loader-icon pn-loader-icon-1 absolute left-1/2 top-1/2 h-7 w-7",
+  "pn-loader-icon pn-loader-icon-2 absolute left-1/2 top-1/2 h-7 w-7",
+  "pn-loader-icon pn-loader-icon-3 absolute left-1/2 top-1/2 h-7 w-7",
+  "pn-loader-icon pn-loader-icon-4 absolute left-1/2 top-1/2 h-7 w-7",
+  "pn-loader-icon pn-loader-icon-5 absolute left-1/2 top-1/2 h-7 w-7",
+  "pn-loader-icon pn-loader-icon-6 absolute left-1/2 top-1/2 h-7 w-7",
 ];
 
 export function RegionalLoader({
@@ -90,7 +90,7 @@ export function RegionalLoader({
             className="absolute left-1/2 top-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-[#66261b] shadow-[0_12px_28px_rgba(102,38,27,.24)]"
             style={{ animation: "pnLoaderPulse 1.8s ease-in-out infinite" }}
           />
-          <div className="absolute left-1/2 top-1/2 text-white">
+          <div className="absolute inset-0 text-white">
             <BriefcaseBusiness className={iconClasses[0]} />
             <Home className={iconClasses[1]} />
             <CarFront className={iconClasses[2]} />
