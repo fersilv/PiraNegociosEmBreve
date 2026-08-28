@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { JobsMcpDocumentation } from "../components/JobsMcpDocumentation";
 import { api } from "../lib/api";
+import { RegionalLoader } from "../components/RegionalLoader";
 
 type Kind = "v1" | "v2" | "mcp";
 type Risk = "read" | "write" | "destructive";
@@ -236,11 +237,7 @@ export function AdminJobIntegrationsPage() {
   const meta = TAB_META[kind];
 
   if (loading) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center text-stone-500">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Carregando integrações...
-      </div>
-    );
+    return <RegionalLoader context="dashboard" label="Carregando integrações de vagas..." />;
   }
 
   return (
