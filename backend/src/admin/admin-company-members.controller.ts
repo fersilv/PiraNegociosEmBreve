@@ -55,7 +55,7 @@ export class AdminCompanyMembersController {
     if (!email) throw new BadRequestException('Informe o e-mail do usuário que será vinculado.');
 
     const users = await this.dataSource.query(
-      `SELECT id,email,"displayName","fullName","socialName" FROM users WHERE lower(email)=lower($1) LIMIT 1`,
+      `SELECT id,email,"displayName","fullName","socialName" FROM users WHERE lower(email)=lower($1::text) LIMIT 1`,
       [email],
     );
     const user = users[0];
@@ -70,7 +70,7 @@ export class AdminCompanyMembersController {
 
     await this.dataSource.query(
       `INSERT INTO company_memberships("companyId","userId",role,"isPartner",permissions,status)
-       VALUES ($1,$2,$3,$4,$5::jsonb,'ACTIVE')
+       VALUES ($1::uuid,$2::varchar,$3::varchar,$4::boolean,$5::jsonb,'ACTIVE')
        ON CONFLICT ("companyId","userId") DO UPDATE SET
          role=EXCLUDED.role,
          "isPartner"=EXCLUDED."isPartner",
@@ -92,7 +92,7 @@ export class AdminCompanyMembersController {
     const company = await this.company(companyId);
     await this.bootstrapLegacyMemberships(company);
     const existing = (await this.dataSource.query(
-      `SELECT * FROM company_memberships WHERE "companyId"=$1 AND "userId"=$2 LIMIT 1`,
+      `SELECT * FROM company_memberships WHERE "companyId"=$1::uuid AND "userId"=$2::varchar LIMIT 1`,
       [companyId, userId],
     ))[0];
     if (!existing) throw new NotFoundException('Vínculo empresarial não encontrado.');
@@ -108,8 +108,8 @@ export class AdminCompanyMembersController {
 
     await this.dataSource.query(
       `UPDATE company_memberships SET
-         role=$3,"isPartner"=$4,permissions=$5::jsonb,status=$6,"updatedAt"=now()
-       WHERE "companyId"=$1 AND "userId"=$2`,
+         role=$3::varchar,"isPartner"=$4::boolean,permissions=$5::jsonb,status=$6::varchar,"updatedAt"=now()
+       WHERE "companyId"=$1::uuid AND "userId"=$2::varchar`,
       [companyId, userId, role, isPartner, JSON.stringify(permissions), status],
     );
     await this.syncLegacyUser(userId, company, role, status);
@@ -124,7 +124,7 @@ export class AdminCompanyMembersController {
     const company = await this.company(companyId);
     await this.bootstrapLegacyMemberships(company);
     const target = (await this.dataSource.query(
-      `SELECT * FROM company_memberships WHERE "companyId"=$1 AND "userId"=$2 LIMIT 1`,
+      `SELECT * FROM company_memberships WHERE "companyId"=$1::uuid AND "userId"=$2::varchar LIMIT 1`,
       [companyId, userId],
     ))[0];
     if (!target || target.status !== 'ACTIVE') {
@@ -137,23 +137,26 @@ export class AdminCompanyMembersController {
       await manager.query(
         `UPDATE company_memberships
          SET role='ADMIN',permissions=$2::jsonb,"updatedAt"=now()
-         WHERE "companyId"=$1 AND role='PRIMARY_ADMIN' AND status='ACTIVE'`,
+         WHERE "companyId"=$1::uuid AND role='PRIMARY_ADMIN' AND status='ACTIVE'`,
         [companyId, JSON.stringify(FULL_PERMISSIONS)],
       );
       await manager.query(
         `UPDATE company_memberships
          SET role='PRIMARY_ADMIN',"isPartner"=true,permissions=$3::jsonb,status='ACTIVE',"updatedAt"=now()
-         WHERE "companyId"=$1 AND "userId"=$2`,
+         WHERE "companyId"=$1::uuid AND "userId"=$2::varchar`,
         [companyId, userId, JSON.stringify(FULL_PERMISSIONS)],
       );
-      await manager.query(`UPDATE companies SET "ownerId"=$2,"updatedAt"=now() WHERE id=$1`, [companyId, userId]);
       await manager.query(
-        `UPDATE users SET "companyId"=$2,"companyName"=$3,"isCompanyAdmin"=true,"updatedAt"=now() WHERE id=$1`,
+        `UPDATE companies SET "ownerId"=$2::varchar,"updatedAt"=now() WHERE id=$1::uuid`,
+        [companyId, userId],
+      );
+      await manager.query(
+        `UPDATE users SET "companyId"=$2::varchar,"companyName"=$3::text,"isCompanyAdmin"=true,"updatedAt"=now() WHERE id=$1::varchar`,
         [userId, companyId, company.name],
       );
       if (oldOwnerId && oldOwnerId !== userId) {
         await manager.query(
-          `UPDATE users SET "companyId"=$2,"companyName"=$3,"isCompanyAdmin"=true,"updatedAt"=now() WHERE id=$1`,
+          `UPDATE users SET "companyId"=$2::varchar,"companyName"=$3::text,"isCompanyAdmin"=true,"updatedAt"=now() WHERE id=$1::varchar`,
           [oldOwnerId, companyId, company.name],
         );
       }
@@ -163,7 +166,7 @@ export class AdminCompanyMembersController {
 
   private async company(companyId: string) {
     const rows = await this.dataSource.query(
-      `SELECT id,name,"ownerId" FROM companies WHERE id=$1 LIMIT 1`,
+      `SELECT id,name,"ownerId" FROM companies WHERE id=$1::uuid LIMIT 1`,
       [companyId],
     );
     if (!rows[0]) throw new NotFoundException('Empresa não encontrada.');
@@ -171,35 +174,43 @@ export class AdminCompanyMembersController {
   }
 
   private async bootstrapLegacyMemberships(company: any) {
-    const companyId = company.id;
-    const ownerId = company.ownerId;
+    const companyId = String(company.id);
+    const ownerId = company.ownerId ? String(company.ownerId) : null;
     await this.dataSource.transaction(async (manager) => {
       if (ownerId) {
         await manager.query(
           `UPDATE company_memberships SET role='ADMIN',"updatedAt"=now()
-           WHERE "companyId"=$1 AND role='PRIMARY_ADMIN' AND status='ACTIVE' AND "userId"<>$2`,
+           WHERE "companyId"=$1::uuid AND role='PRIMARY_ADMIN' AND status='ACTIVE' AND "userId"<>$2::varchar`,
           [companyId, ownerId],
         );
         await manager.query(
           `INSERT INTO company_memberships("companyId","userId",role,"isPartner",permissions,status)
-           VALUES ($1,$2,'PRIMARY_ADMIN',false,$3::jsonb,'ACTIVE')
+           VALUES ($1::uuid,$2::varchar,'PRIMARY_ADMIN',false,$3::jsonb,'ACTIVE')
            ON CONFLICT ("companyId","userId") DO UPDATE SET
              role='PRIMARY_ADMIN',status='ACTIVE',permissions=$3::jsonb,"updatedAt"=now()`,
           [companyId, ownerId, JSON.stringify(FULL_PERMISSIONS)],
         );
       }
 
+      // company_memberships.companyId is UUID, while the legacy users.companyId column is varchar.
+      // Keep them as different bind parameters so PostgreSQL never has to infer one $n as both uuid and text.
       await manager.query(
         `INSERT INTO company_memberships("companyId","userId",role,"isPartner",permissions,status)
-         SELECT $1,u.id,
+         SELECT $1::uuid,u.id,
                 CASE WHEN u."isCompanyAdmin"=true THEN 'ADMIN' ELSE 'EMPLOYEE' END,
                 false,
                 CASE WHEN u."isCompanyAdmin"=true THEN $2::jsonb ELSE $3::jsonb END,
                 'ACTIVE'
          FROM users u
-         WHERE u."companyId"=$1 AND ($4::varchar IS NULL OR u.id<>$4)
+         WHERE u."companyId"=$5::varchar AND ($4::varchar IS NULL OR u.id<>$4::varchar)
          ON CONFLICT ("companyId","userId") DO NOTHING`,
-        [companyId, JSON.stringify(FULL_PERMISSIONS), JSON.stringify(EMPLOYEE_PERMISSIONS), ownerId || null],
+        [
+          companyId,
+          JSON.stringify(FULL_PERMISSIONS),
+          JSON.stringify(EMPLOYEE_PERMISSIONS),
+          ownerId,
+          companyId,
+        ],
       );
     });
   }
@@ -214,7 +225,7 @@ export class AdminCompanyMembersController {
        FROM company_memberships m
        JOIN users u ON u.id=m."userId"
        JOIN companies c ON c.id=m."companyId"
-       WHERE m."companyId"=$1
+       WHERE m."companyId"=$1::uuid
        ORDER BY (c."ownerId"=m."userId") DESC,
                 CASE m.role WHEN 'PRIMARY_ADMIN' THEN 0 WHEN 'ADMIN' THEN 1 ELSE 2 END,
                 COALESCE(u."displayName",u."fullName",u."socialName",u.email) ASC`,
@@ -225,15 +236,15 @@ export class AdminCompanyMembersController {
   private async syncLegacyUser(userId: string, company: any, role: CompanyRole, status: MembershipStatus) {
     if (status === 'ACTIVE') {
       await this.dataSource.query(
-        `UPDATE users SET "companyId"=$2,"companyName"=$3,"isCompanyAdmin"=$4,"updatedAt"=now() WHERE id=$1`,
-        [userId, company.id, company.name, role === 'PRIMARY_ADMIN' || role === 'ADMIN'],
+        `UPDATE users SET "companyId"=$2::varchar,"companyName"=$3::text,"isCompanyAdmin"=$4::boolean,"updatedAt"=now() WHERE id=$1::varchar`,
+        [userId, String(company.id), company.name, role === 'PRIMARY_ADMIN' || role === 'ADMIN'],
       );
       return;
     }
     await this.dataSource.query(
       `UPDATE users SET "companyId"=NULL,"companyName"=NULL,"isCompanyAdmin"=false,"updatedAt"=now()
-       WHERE id=$1 AND "companyId"=$2`,
-      [userId, company.id],
+       WHERE id=$1::varchar AND "companyId"=$2::varchar`,
+      [userId, String(company.id)],
     );
   }
 
