@@ -8,6 +8,7 @@ import { ClassifiedsChatService } from './classifieds-chat.service';
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
 import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
+import { ClassifiedsLifecycleService } from './classifieds-lifecycle.service';
 import { ClassifiedsOfferChatService } from './classifieds-offer-chat.service';
 import { ClassifiedsService } from './classifieds.service';
 
@@ -18,6 +19,7 @@ export class ClassifiedsPrivateController {
     private readonly classifieds: ClassifiedsService,
     private readonly taxonomy: ClassifiedsCategoryTaxonomyService,
     private readonly identities: ClassifiedsIdentityService,
+    private readonly lifecycle: ClassifiedsLifecycleService,
     private readonly chats: ClassifiedsChatService,
     private readonly commerce: ClassifiedsCommerceService,
     private readonly entitlements: ClassifiedsEntitlementsService,
@@ -163,9 +165,13 @@ export class ClassifiedsPrivateController {
 
   @Post('me/listings/:id/status')
   async status(@Req() req: any, @Param('id') id: string, @Body() body: { status?: unknown }) {
-    if (String(body?.status || '').toUpperCase() === 'PUBLISHED') {
+    const status = String(body?.status || '').toUpperCase();
+    if (status === 'PUBLISHED') {
       const identity = await this.identities.active(req.user.uid);
       await this.compliance.assertSellerEligible(req.user.uid, identity);
+    }
+    if (status === 'SOLD') {
+      return this.lifecycle.markSold(req.user.uid, id);
     }
     return this.classifieds.setStatus(req.user.uid, id, body?.status);
   }
