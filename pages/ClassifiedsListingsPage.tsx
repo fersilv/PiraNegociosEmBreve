@@ -106,7 +106,6 @@ export default function ClassifiedsListingsPage({ listingType }: { listingType: 
         <div><p className="text-[10px] font-black uppercase tracking-[.18em] text-[#b06448]">Sua vitrine</p><h1 className="mt-1 font-serif text-3xl font-black">{products ? 'Meus anúncios' : 'Meus serviços'}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">{products ? 'Produtos podem continuar na vitrine depois de uma venda. Somente itens marcados como únicos saem automaticamente ao serem vendidos.' : 'Gerencie separadamente os serviços que você oferece nos Classificados.'}</p></div>
         <Link to="/classificados/publicar" className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[#c96847] px-5 text-sm font-black text-white"><Plus className="h-4 w-4" /> {products ? 'Novo produto' : 'Novo serviço'}</Link>
       </header>
-
       {error && <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
       {message && <div className="flex items-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800"><CheckCircle2 className="h-4 w-4" />{message}</div>}
 
@@ -133,7 +132,7 @@ function ListingRow({ listing, working, menuOpen, onMenu, setStatus, lifecycle }
   const image = listing.images?.[0]?.url;
   const promotionActive = isPromotionActive(listing);
   const uniqueItem = listing.attributes?.uniqueItem === true;
-  const canRepublish = listing.status !== 'PUBLISHED' && !listing.moderationReason;
+  const canRepublish = listing.status !== 'PUBLISHED' && listing.status !== 'PENDING_REVIEW' && !listing.moderationReason;
 
   return <article className="relative overflow-visible rounded-[24px] bg-white shadow-sm ring-1 ring-stone-200">
     {listing.moderationReason && <div className="flex gap-3 rounded-t-[24px] border-b border-amber-100 bg-amber-50 px-4 py-3 text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><div><p className="text-xs font-black">Anúncio com pendência de moderação</p><p className="mt-1 text-xs leading-5">{listing.moderationReason}</p></div></div>}
