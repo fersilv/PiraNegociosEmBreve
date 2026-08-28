@@ -33,7 +33,6 @@ import {
   STORE_COMPANY_THEME_PRESET,
   applyStoreCompanyThemePreset,
 } from './StoreCompanyTheme';
-import { FlexibleCompanyThemeRenderer } from './FlexibleCompanyThemeRenderer';
 import {
   CommerceCompanyThemeRenderer,
   isCommerceCompanyTheme,
@@ -60,21 +59,19 @@ export type CompanyTemplateKey =
   | InstitutionalThemeKey
   | ExtraCompanyThemeKey
   | CommerceCompanyThemeKey
-  | 'institucional-pro'
-  | 'servicos-pro'
   | 'essencial'
   | 'institucional'
   | 'editorial';
 
 export const COMPANY_PAGE_THEME_CATEGORIES = COMPANY_THEME_CATEGORIES;
 
-const FLEX_TEMPLATES: CompanyThemeCatalogItem[] = [
+const COMMERCE_TEMPLATES: CompanyThemeCatalogItem[] = [
   {
     key: 'loja',
     category: 'classifieds',
     name: 'Loja',
     eyebrow: 'DTC Store',
-    description: 'Loja de marca com campanha, categorias visuais, prateleiras e serviços integrados.',
+    description: 'Loja de marca com banner de campanha, categorias visuais, prateleiras e serviços integrados.',
     bestFor: 'Beleza, presentes, tecnologia, varejo e marcas próprias',
   },
   {
@@ -82,7 +79,7 @@ const FLEX_TEMPLATES: CompanyThemeCatalogItem[] = [
     category: 'classifieds',
     name: 'Marketplace',
     eyebrow: 'Discovery commerce',
-    description: 'Busca dominante, categorias circulares e prateleiras para catálogos extensos.',
+    description: 'Busca dominante, categorias circulares e várias prateleiras para catálogos extensos.',
     bestFor: 'Marketplaces, galerias comerciais e negócios com muitos departamentos',
   },
   {
@@ -90,7 +87,7 @@ const FLEX_TEMPLATES: CompanyThemeCatalogItem[] = [
     category: 'classifieds',
     name: 'Catálogo',
     eyebrow: 'Editorial catalog',
-    description: 'Catálogo editorial com imagem grande, tipografia sofisticada e grade limpa.',
+    description: 'Catálogo editorial com imagem grande, tipografia sofisticada e grade limpa de produtos.',
     bestFor: 'Indústrias, distribuidores, design, móveis e catálogos B2B',
   },
   {
@@ -98,47 +95,23 @@ const FLEX_TEMPLATES: CompanyThemeCatalogItem[] = [
     category: 'classifieds',
     name: 'Classificados Pro',
     eyebrow: 'Listing portal',
-    description: 'Busca, filtros visuais e anúncios densos para comparar muita informação.',
+    description: 'Busca, filtros visuais e anúncios em linhas densas para comparar muita informação rapidamente.',
     bestFor: 'Imóveis, veículos, equipamentos e classificados especializados',
-  },
-  {
-    key: 'institucional-pro',
-    category: 'institutional',
-    name: 'Institucional Pro',
-    eyebrow: 'Corporate',
-    description: 'Site corporativo independente, com marca forte, conteúdo amplo e blocos reorganizáveis.',
-    bestFor: 'Empresas, indústrias, escritórios, tecnologia e negócios B2B',
-  },
-  {
-    key: 'servicos-pro',
-    category: 'services',
-    name: 'Serviços Pro',
-    eyebrow: 'Service conversion',
-    description: 'Foco em apresentação, confiança, canais de contato e conversão para atendimento.',
-    bestFor: 'Clínicas, oficinas, consultorias, salões, escolas e profissionais',
   },
 ];
 
 const ALL_TEMPLATES: CompanyThemeCatalogItem[] = [
   ...INSTITUTIONAL_V2_TEMPLATES.map((template) => ({ ...template, category: 'institutional' as const })),
-  ...FLEX_TEMPLATES,
+  ...COMMERCE_TEMPLATES,
   ...EXTRA_COMPANY_PAGE_TEMPLATES,
 ];
 
 export const COMPANY_PAGE_TEMPLATES = {
-  map(
-    callback: (
-      template: CompanyThemeCatalogItem,
-      index: number,
-      array: CompanyThemeCatalogItem[],
-    ) => React.ReactNode,
-  ): React.ReactNode[] {
+  map(callback: (template: CompanyThemeCatalogItem, index: number, array: CompanyThemeCatalogItem[]) => React.ReactNode): React.ReactNode[] {
     const output: React.ReactNode[] = [];
-
     COMPANY_THEME_CATEGORIES.forEach((category) => {
       const items = ALL_TEMPLATES.filter((template) => template.category === category.id);
       if (!items.length) return;
-
       output.push(
         <div key={`category-${category.id}`} className="px-2 pb-2 pt-5 first:pt-2">
           <div className="flex items-center gap-2">
@@ -149,17 +122,26 @@ export const COMPANY_PAGE_TEMPLATES = {
           <p className="mt-1 text-[10px] leading-4 text-stone-400">{category.description}</p>
         </div>,
       );
-
-      items.forEach((template) => output.push(
-        callback(template, ALL_TEMPLATES.indexOf(template), ALL_TEMPLATES),
-      ));
+      items.forEach((template) => output.push(callback(template, ALL_TEMPLATES.indexOf(template), ALL_TEMPLATES)));
     });
-
     return output;
   },
 };
 
-const FLEX_PRESETS: Record<string, any> = {
+const COMMERCE_STOREFRONT_DEFAULTS: Record<string, NonNullable<CompanyPageConfig['storefront']>> = {
+  loja: { showSearch: false, bannerStyle: 'full', categoryStyle: 'image-tiles', productsLayout: 'carousel', cardsPerRow: 4, featuredTitle: 'Escolhas da marca', showProducts: true, showServices: true },
+  vitrine: { showSearch: false, bannerStyle: 'split', categoryStyle: 'image-tiles', productsLayout: 'grid', cardsPerRow: 4, featuredTitle: 'Vitrine', showProducts: true, showServices: true },
+  marketplace: { showSearch: true, bannerStyle: 'compact', categoryStyle: 'circles', productsLayout: 'carousel', cardsPerRow: 4, featuredTitle: 'Destaques para você', showProducts: true, showServices: true },
+  catalogo: { showSearch: false, bannerStyle: 'editorial', categoryStyle: 'tiles', productsLayout: 'grid', cardsPerRow: 4, featuredTitle: 'Catálogo', showProducts: true, showServices: true },
+  'classificados-pro': { showSearch: true, bannerStyle: 'compact', categoryStyle: 'chips', productsLayout: 'list', cardsPerRow: 4, featuredTitle: 'Anúncios em destaque', showProducts: true, showServices: true },
+  mercado: { showSearch: true, bannerStyle: 'split', categoryStyle: 'circles', productsLayout: 'carousel', cardsPerRow: 4, featuredTitle: 'Ofertas da loja', showProducts: true, showServices: true },
+  gazeta: { showSearch: false, bannerStyle: 'editorial', categoryStyle: 'chips', productsLayout: 'list', cardsPerRow: 4, featuredTitle: 'Classificados', showProducts: true, showServices: true },
+  mosaico: { showSearch: false, bannerStyle: 'full', categoryStyle: 'image-tiles', productsLayout: 'masonry', cardsPerRow: 4, featuredTitle: 'Descobertas', showProducts: true, showServices: true },
+  radar: { showSearch: true, bannerStyle: 'split', categoryStyle: 'tiles', productsLayout: 'grid', cardsPerRow: 4, featuredTitle: 'Perto de você', showProducts: true, showServices: true },
+  pregao: { showSearch: true, bannerStyle: 'compact', categoryStyle: 'chips', productsLayout: 'list', cardsPerRow: 4, featuredTitle: 'Oportunidades abertas', showProducts: true, showServices: true },
+};
+
+const COMMERCE_PRESETS: Record<string, any> = {
   marketplace: {
     width: 'full',
     theme: { primary: '#ffe600', accent: '#3483fa', background: '#f5f5f5', text: '#222222' },
@@ -167,14 +149,6 @@ const FLEX_PRESETS: Record<string, any> = {
     hero: { layout: 'split' },
     jobs: { layout: 'grid' },
     navigation: { sticky: true, transparent: false },
-    storefront: {
-      showSearch: true,
-      bannerStyle: 'compact',
-      categoryStyle: 'circles',
-      productsLayout: 'carousel',
-      cardsPerRow: 4,
-      featuredTitle: 'Destaques para você',
-    },
   },
   catalogo: {
     width: 'wide',
@@ -183,14 +157,6 @@ const FLEX_PRESETS: Record<string, any> = {
     hero: { layout: 'minimal' },
     jobs: { layout: 'grid' },
     navigation: { sticky: true, transparent: false },
-    storefront: {
-      showSearch: false,
-      bannerStyle: 'editorial',
-      categoryStyle: 'tiles',
-      productsLayout: 'grid',
-      cardsPerRow: 4,
-      featuredTitle: 'Catálogo',
-    },
   },
   'classificados-pro': {
     width: 'full',
@@ -199,37 +165,13 @@ const FLEX_PRESETS: Record<string, any> = {
     hero: { layout: 'split' },
     jobs: { layout: 'compact' },
     navigation: { sticky: true, transparent: false },
-    storefront: {
-      showSearch: true,
-      bannerStyle: 'compact',
-      categoryStyle: 'chips',
-      productsLayout: 'list',
-      cardsPerRow: 4,
-      featuredTitle: 'Anúncios em destaque',
-    },
-  },
-  'institucional-pro': {
-    width: 'wide',
-    theme: { primary: '#0f172a', accent: '#0f766e', background: '#ffffff', text: '#0f172a' },
-    branding: { typography: 'clean', logoSize: 'large', corners: 'soft' },
-    hero: { layout: 'split' },
-    jobs: { layout: 'list' },
-    navigation: { sticky: true, transparent: false },
-  },
-  'servicos-pro': {
-    width: 'wide',
-    theme: { primary: '#3f3f46', accent: '#7c3aed', background: '#fafafa', text: '#18181b' },
-    branding: { typography: 'human', logoSize: 'medium', corners: 'round' },
-    hero: { layout: 'centered' },
-    jobs: { layout: 'list' },
-    navigation: { sticky: true, transparent: false },
   },
 };
 
 export const COMPANY_PAGE_THEME_PRESETS = {
   ...INSTITUTIONAL_V2_PRESETS,
   loja: STORE_COMPANY_THEME_PRESET,
-  ...FLEX_PRESETS,
+  ...COMMERCE_PRESETS,
   ...EXTRA_THEME_PRESETS,
 };
 
@@ -239,10 +181,7 @@ function normalizeHex(value?: string) {
   return color;
 }
 
-function paletteMatches(
-  theme: CompanyPageConfig['theme'],
-  palette: { primary?: string; accent?: string; background?: string; text?: string },
-) {
+function paletteMatches(theme: CompanyPageConfig['theme'], palette: { primary?: string; accent?: string; background?: string; text?: string }) {
   if (!theme) return false;
   return normalizeHex(theme.primary) === normalizeHex(palette.primary)
     && normalizeHex(theme.accent) === normalizeHex(palette.accent)
@@ -252,16 +191,8 @@ function paletteMatches(
 
 function isUntouchedLegacyConfig(page?: CompanyPageConfig | null) {
   if (!page) return true;
-
-  const neutralPalette = !page.theme || paletteMatches(page.theme, {
-    primary: '#111111',
-    accent: '#555555',
-    background: '#ffffff',
-    text: '#171717',
-  });
-
+  const neutralPalette = !page.theme || paletteMatches(page.theme, { primary: '#111111', accent: '#555555', background: '#ffffff', text: '#171717' });
   if (!neutralPalette) return false;
-
   return (page.width || 'wide') === 'wide'
     && (page.branding?.typography || 'clean') === 'clean'
     && (page.branding?.logoSize || 'large') === 'large'
@@ -275,11 +206,7 @@ function isUntouchedLegacyConfig(page?: CompanyPageConfig | null) {
 }
 
 function isInstitutionalTheme(value?: string): value is InstitutionalThemeKey {
-  return value === 'aurora'
-    || value === 'atlas'
-    || value === 'pulse'
-    || value === 'canvas'
-    || value === 'noir';
+  return value === 'aurora' || value === 'atlas' || value === 'pulse' || value === 'canvas' || value === 'noir';
 }
 
 function institutionalKey(value?: string): InstitutionalThemeKey {
@@ -289,209 +216,110 @@ function institutionalKey(value?: string): InstitutionalThemeKey {
   return 'aurora';
 }
 
-function isModernFlexibleTheme(key: string) {
-  return key === 'institucional-pro' || key === 'servicos-pro';
-}
-
-function ensureCommerceSection(
-  config: CompanyPageConfig,
-  force = false,
-): CompanyPageConfig {
-  if (!force && Number(config.version || 0) >= 6) return config;
-
-  const sections = Array.isArray(config.sections)
-    ? config.sections.map((section) => ({ ...section }))
-    : [];
-
+function ensureCommerceSection(config: CompanyPageConfig): CompanyPageConfig {
+  const sections = Array.isArray(config.sections) ? config.sections.map((section) => ({ ...section })) : [];
   if (sections.length && !sections.some((section) => section.type === 'classifieds')) {
     const categoriesIndex = sections.findIndex((section) => section.type === 'categories');
     const insertAt = categoriesIndex >= 0 ? categoriesIndex + 1 : Math.min(1, sections.length);
-    sections.splice(insertAt, 0, {
-      id: 'classifieds',
-      type: 'classifieds',
-      enabled: true,
-    });
+    sections.splice(insertAt, 0, { id: 'classifieds', type: 'classifieds', enabled: true });
   }
-
   return sections.length ? { ...config, sections } : config;
 }
 
-function applyGenericPreset(config: CompanyPageConfig, key: string): CompanyPageConfig {
-  const preset = FLEX_PRESETS[key];
-  if (!preset) return config;
-
-  return ensureCommerceSection({
-    ...config,
-    version: Math.max(6, Number(config.version || 0)),
-    templateKey: key,
-    width: preset.width,
-    theme: { ...(config.theme || {}), ...preset.theme },
-    branding: { ...(config.branding || {}), ...preset.branding },
-    hero: { ...(config.hero || {}), ...preset.hero },
-    jobs: { ...(config.jobs || {}), ...preset.jobs },
-    navigation: { ...(config.navigation || {}), ...preset.navigation },
-    storefront: preset.storefront
-      ? { ...(config.storefront || {}), ...preset.storefront }
-      : config.storefront,
-  } as CompanyPageConfig, true);
+function withStorefrontDefaults(config: CompanyPageConfig, key: string) {
+  const defaults = COMMERCE_STOREFRONT_DEFAULTS[key];
+  if (!defaults) return config;
+  return { ...config, storefront: { ...(config.storefront || {}), ...defaults } } as CompanyPageConfig;
 }
 
-export function applyCompanyThemePreset(
-  config: CompanyPageConfig,
-  key: string,
-): CompanyPageConfig {
-  if (key === 'loja') {
-    return ensureCommerceSection({
-      ...applyStoreCompanyThemePreset(config),
-      version: Math.max(6, Number(config.version || 0)),
-      templateKey: 'loja',
-    }, true);
-  }
-
-  if (FLEX_PRESETS[key]) return applyGenericPreset(config, key);
-
-  if (key === 'vitrine') {
-    return {
-      ...applyGenericPreset(config, 'marketplace'),
-      templateKey: 'vitrine',
-    };
-  }
-
-  if (isExtraCompanyTheme(key)) {
-    const next = {
-      ...(applyExtraCompanyThemePreset(config, key) as CompanyPageConfig),
-      version: Math.max(6, Number(config.version || 0)),
+function applyCommercePreset(config: CompanyPageConfig, key: string): CompanyPageConfig {
+  const preset = COMMERCE_PRESETS[key];
+  if (!preset) return withStorefrontDefaults(ensureCommerceSection(config), key);
+  return withStorefrontDefaults(
+    ensureCommerceSection({
+      ...config,
       templateKey: key,
-    };
+      width: preset.width,
+      theme: { ...(config.theme || {}), ...preset.theme },
+      branding: { ...(config.branding || {}), ...preset.branding },
+      hero: { ...(config.hero || {}), ...preset.hero },
+      jobs: { ...(config.jobs || {}), ...preset.jobs },
+      navigation: { ...(config.navigation || {}), ...preset.navigation },
+    } as CompanyPageConfig),
+    key,
+  );
+}
 
+export function applyCompanyThemePreset(config: CompanyPageConfig, key: string): CompanyPageConfig {
+  if (key === 'loja') return withStorefrontDefaults(ensureCommerceSection(applyStoreCompanyThemePreset(config)), key);
+  if (COMMERCE_PRESETS[key]) return applyCommercePreset(config, key);
+  if (key === 'vitrine') return { ...applyCommercePreset(config, 'vitrine'), templateKey: 'vitrine' };
+  if (isExtraCompanyTheme(key)) {
+    const next = applyExtraCompanyThemePreset(config, key) as CompanyPageConfig;
     return isCommerceCompanyTheme(key)
-      ? ensureCommerceSection(next, true)
+      ? withStorefrontDefaults(ensureCommerceSection(next), key)
       : next;
   }
-
-  if (isInstitutionalTheme(key)) {
-    return {
-      ...applyInstitutionalV2Preset(config, key),
-      version: Math.max(6, Number(config.version || 0)),
-      templateKey: key,
-    };
-  }
-
-  return {
-    ...config,
-    version: Math.max(6, Number(config.version || 0)),
-    templateKey: key,
-  };
+  if (isInstitutionalTheme(key)) return applyInstitutionalV2Preset(config, key);
+  return { ...config, templateKey: key };
 }
 
 function PlatformFooter() {
-  return <div className="pn-platform-footer">
-    <style>{`
-      .pn-company-renderer .pn-rendered-theme footer a[href="/"]{display:none!important}
-      .pn-platform-footer{display:flex;align-items:center;justify-content:center;gap:9px;min-height:54px;padding:12px 20px;border-top:1px solid rgba(120,113,108,.18);background:#fff;color:#78716c;font:600 11px/1.2 Inter,ui-sans-serif,system-ui,sans-serif;letter-spacing:.02em}
-      .pn-platform-footer img{width:22px;height:22px;object-fit:contain}
-      .pn-platform-footer a{display:inline-flex;align-items:center;gap:9px;color:inherit;text-decoration:none}
-      .pn-platform-footer strong{color:#44403c}
-    `}</style>
-    <Link to="/" aria-label="PiraNegócios">
-      <img src="/brand/symbol-terracotta.png" alt="" />
-      <span>Integrado ao <strong>PiraNegócios</strong></span>
-    </Link>
-  </div>;
+  return (
+    <div className="pn-platform-footer">
+      <style>{`
+        .pn-company-renderer .pn-rendered-theme footer a[href="/"]{display:none!important}
+        .pn-company-renderer .pc-section-catalog:not(:has(.pc-catalog-body)):not(:has(.pc-loading)){display:none!important}
+        .pn-platform-footer{display:flex;align-items:center;justify-content:center;gap:9px;min-height:54px;padding:12px 20px;border-top:1px solid rgba(120,113,108,.18);background:#fff;color:#78716c;font:600 11px/1.2 Inter,ui-sans-serif,system-ui,sans-serif;letter-spacing:.02em}
+        .pn-platform-footer img{width:22px;height:22px;object-fit:contain}
+        .pn-platform-footer a{display:inline-flex;align-items:center;gap:9px;color:inherit;text-decoration:none}
+        .pn-platform-footer strong{color:#44403c}
+      `}</style>
+      <Link to="/" aria-label="PiraNegócios">
+        <img src="/brand/symbol-terracotta.png" alt="" />
+        <span>Integrado ao <strong>PiraNegócios</strong></span>
+      </Link>
+    </div>
+  );
 }
 
-export function CompanySiteRenderer({
-  company,
-  jobs,
-  page,
-  preview = false,
-}: {
-  company: PublicCompanyLike;
-  jobs: PublicJobLike[];
-  page?: CompanyPageConfig | null;
-  preview?: boolean;
-}) {
+export function CompanySiteRenderer({ company, jobs, page, preview = false }: { company: PublicCompanyLike; jobs: PublicJobLike[]; page?: CompanyPageConfig | null; preview?: boolean }) {
   const config = page || {};
   const key = String(config.templateKey || 'aurora');
   let rendered: React.ReactNode;
 
   if (config.editorMode === 'code') {
-    rendered = <LegacyCompanySiteRenderer
-      company={company}
-      jobs={jobs}
-      page={config}
-      preview={preview}
-    />;
+    rendered = <LegacyCompanySiteRenderer company={company} jobs={jobs} page={config} preview={preview} />;
   } else if (isCommerceCompanyTheme(key)) {
-    let visualPage = config;
-
+    let visualPage = ensureCommerceSection(config);
     if (isUntouchedLegacyConfig(config)) {
       if (key === 'loja') {
-        visualPage = ensureCommerceSection(applyStoreCompanyThemePreset(config));
-      } else if (FLEX_PRESETS[key]) {
-        visualPage = applyGenericPreset(config, key);
+        visualPage = withStorefrontDefaults(ensureCommerceSection(applyStoreCompanyThemePreset(config)), key);
+      } else if (COMMERCE_PRESETS[key]) {
+        visualPage = applyCommercePreset(config, key);
       } else if (key === 'vitrine') {
-        visualPage = {
-          ...applyGenericPreset(config, 'marketplace'),
-          templateKey: 'vitrine',
-        };
+        visualPage = applyCommercePreset(config, 'vitrine');
       } else if (isExtraCompanyTheme(key)) {
-        visualPage = ensureCommerceSection(
-          applyExtraCompanyThemePreset(config, key) as CompanyPageConfig,
+        visualPage = withStorefrontDefaults(
+          ensureCommerceSection(applyExtraCompanyThemePreset(config, key) as CompanyPageConfig),
+          key,
         );
       }
-    } else {
-      visualPage = ensureCommerceSection(config);
     }
-
-    rendered = <CommerceCompanyThemeRenderer
-      themeKey={key}
-      company={company}
-      jobs={jobs}
-      config={visualPage}
-      preview={preview}
-    />;
-  } else if (isModernFlexibleTheme(key)) {
-    const visualPage = isUntouchedLegacyConfig(config) && FLEX_PRESETS[key]
-      ? applyGenericPreset(config, key)
-      : config;
-
-    rendered = <FlexibleCompanyThemeRenderer
-      themeKey={key}
-      company={company}
-      jobs={jobs}
-      config={visualPage}
-      preview={preview}
-    />;
+    rendered = <CommerceCompanyThemeRenderer themeKey={key} company={company} jobs={jobs} config={visualPage} preview={preview} />;
   } else if (isExtraCompanyTheme(key)) {
-    const visualPage = isUntouchedLegacyConfig(config)
-      ? applyExtraCompanyThemePreset(config, key) as CompanyPageConfig
-      : config;
-
-    rendered = <ConfigurableExtraCompanyThemeRenderer
-      themeKey={key}
-      company={company}
-      jobs={jobs}
-      config={visualPage}
-      preview={preview}
-    />;
+    const visualPage = isUntouchedLegacyConfig(config) ? applyExtraCompanyThemePreset(config, key) as CompanyPageConfig : config;
+    rendered = <ConfigurableExtraCompanyThemeRenderer themeKey={key} company={company} jobs={jobs} config={visualPage} preview={preview} />;
   } else {
     const resolvedKey = institutionalKey(key);
-    const visualPage = isUntouchedLegacyConfig(config)
-      ? applyInstitutionalV2Preset(config, resolvedKey)
-      : config;
-
-    rendered = <InstitutionalCompanyThemes
-      themeKey={resolvedKey}
-      company={company}
-      jobs={jobs}
-      config={visualPage}
-      preview={preview}
-    />;
+    const visualPage = isUntouchedLegacyConfig(config) ? applyInstitutionalV2Preset(config, resolvedKey) : config;
+    rendered = <InstitutionalCompanyThemes themeKey={resolvedKey} company={company} jobs={jobs} config={visualPage} preview={preview} />;
   }
 
-  return <div className="pn-company-renderer">
-    <div className="pn-rendered-theme">{rendered}</div>
-    <PlatformFooter />
-  </div>;
+  return (
+    <div className="pn-company-renderer">
+      <div className="pn-rendered-theme">{rendered}</div>
+      <PlatformFooter />
+    </div>
+  );
 }
