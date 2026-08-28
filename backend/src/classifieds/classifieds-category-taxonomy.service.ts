@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 const SERVICE_CATEGORIES = [
@@ -27,6 +27,40 @@ export class ClassifiedsCategoryTaxonomyService {
        WHERE "isActive"=true
        ORDER BY "sortOrder" ASC,name ASC`,
     );
+  }
+
+  async assertCompatible(categorySlugRaw: unknown, listingTypeRaw: unknown, attributesRaw?: unknown) {
+    await this.ensureServiceTaxonomy();
+    const categorySlug = String(categorySlugRaw || '').trim();
+    const listingType = String(listingTypeRaw || '').trim().toUpperCase();
+    if (!categorySlug || !['PRODUCT', 'SERVICE'].includes(listingType)) {
+      throw new BadRequestException('Informe o tipo e a categoria do anúncio.');
+    }
+
+    const rows = await this.dataSource.query(
+      `SELECT slug,"parentSlug","isActive" FROM classified_categories WHERE slug=$1 LIMIT 1`,
+      [categorySlug],
+    );
+    const category = rows[0];
+    if (!category?.isActive) throw new BadRequestException('Categoria inválida ou inativa.');
+
+    const serviceCategory = category.parentSlug === 'servicos';
+    if (listingType === 'SERVICE' && !serviceCategory) {
+      throw new BadRequestException('Escolha uma categoria própria de serviços.');
+    }
+    if (listingType === 'PRODUCT' && (serviceCategory || category.slug === 'servicos')) {
+      throw new BadRequestException('Escolha uma categoria própria de produtos.');
+    }
+
+    const needsCustom = (listingType === 'SERVICE' && category.slug === 'servicos-outros')
+      || (listingType === 'PRODUCT' && category.slug === 'outros');
+    if (needsCustom) {
+      const attributes = attributesRaw && typeof attributesRaw === 'object' && !Array.isArray(attributesRaw)
+        ? attributesRaw as Record<string, unknown>
+        : {};
+      const custom = String(attributes.customCategory || '').trim();
+      if (!custom) throw new BadRequestException(listingType === 'SERVICE' ? 'Digite qual serviço você oferece.' : 'Digite qual é a categoria do produto.');
+    }
   }
 
   private async ensureServiceTaxonomy() {
