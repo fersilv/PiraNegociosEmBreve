@@ -7,7 +7,7 @@ import type { ClassifiedListing } from '../../types/classifieds';
 
 type ShowcaseVariant = 'default' | 'store';
 
-export function CompanyClassifiedsShowcase({ companyId, companyName, variant = 'default' }: { companyId?: string; companyName?: string; variant?: ShowcaseVariant }) {
+export function CompanyClassifiedsShowcase({ companyId, companyName, variant = 'default', onItemClick }: { companyId?: string; companyName?: string; variant?: ShowcaseVariant; onItemClick?: (item: ClassifiedListing) => void }) {
   const [items, setItems] = useState<ClassifiedListing[]>([]);
   const [pageSectionLabel, setPageSectionLabel] = useState('');
   const [loading, setLoading] = useState(Boolean(companyId));
@@ -53,8 +53,8 @@ export function CompanyClassifiedsShowcase({ companyId, companyName, variant = '
         </div>
 
         {loading ? <div className="mt-8 flex min-h-40 items-center justify-center"><Loader2 className={`h-6 w-6 animate-spin ${store ? 'text-white/35' : 'text-stone-400'}`} /></div> : <>
-          {products.length > 0 && <CatalogGroup icon={<PackageOpen className="h-4 w-4" />} label={services.length ? 'Produtos' : undefined} items={products} store={store} />}
-          {services.length > 0 && <CatalogGroup icon={<Wrench className="h-4 w-4" />} label={products.length ? 'Serviços' : undefined} items={services} store={store} />}
+          {products.length > 0 && <CatalogGroup icon={<PackageOpen className="h-4 w-4" />} label={services.length ? 'Produtos' : undefined} items={products} store={store} onItemClick={onItemClick} />}
+          {services.length > 0 && <CatalogGroup icon={<Wrench className="h-4 w-4" />} label={products.length ? 'Serviços' : undefined} items={services} store={store} onItemClick={onItemClick} />}
           <div className={`mt-8 rounded-[24px] p-5 sm:flex sm:items-center sm:justify-between sm:gap-5 ${store ? 'border border-white/10 bg-white/[.045]' : 'border border-stone-200 bg-white'}`}>
             <div className="flex items-start gap-3"><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${store ? 'bg-white/10 text-[#f1ff3d]' : 'bg-stone-100'}`}><MessageCircle className="h-5 w-5" /></span><div><h3 className="text-sm font-black">Negocie sem perder o contexto</h3><p className={`mt-1 text-xs leading-5 ${store ? 'text-white/40' : 'text-stone-500'}`}>Abra um item para conversar com a empresa. A conversa fica vinculada ao anúncio e permanece no seu histórico.</p></div></div>
             <Link to="/classificados" className={`mt-4 inline-flex rounded-2xl px-4 py-3 text-xs font-black sm:mt-0 ${store ? 'bg-[#f1ff3d] text-[#121216]' : 'bg-stone-900 text-white'}`}>Ver marketplace</Link>
@@ -65,6 +65,6 @@ export function CompanyClassifiedsShowcase({ companyId, companyName, variant = '
   );
 }
 
-function CatalogGroup({ icon, label, items, store }: { icon: React.ReactNode; label?: string; items: ClassifiedListing[]; store: boolean }) {
-  return <div className="mt-8">{label && <div className={`mb-4 flex items-center gap-2 text-xs font-black uppercase tracking-[.13em] ${store ? 'text-white/50' : 'text-stone-500'}`}>{icon}{label}</div>}<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">{items.slice(0, 10).map((listing) => <ClassifiedListingCard key={listing.id} listing={listing} />)}</div>{items.length > 10 && <p className={`mt-4 text-xs font-bold ${store ? 'text-white/30' : 'text-stone-400'}`}>+ {items.length - 10} item(ns) disponíveis na vitrine da empresa.</p>}</div>;
+function CatalogGroup({ icon, label, items, store, onItemClick }: { icon: React.ReactNode; label?: string; items: ClassifiedListing[]; store: boolean; onItemClick?: (item: ClassifiedListing) => void }) {
+  return <div className="mt-8">{label && <div className={`mb-4 flex items-center gap-2 text-xs font-black uppercase tracking-[.13em] ${store ? 'text-white/50' : 'text-stone-500'}`}>{icon}{label}</div>}<div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">{items.slice(0, 10).map((listing) => <ClassifiedListingCard key={listing.id} listing={listing} onClick={onItemClick ? () => onItemClick(listing) : undefined} />)}</div>{items.length > 10 && <p className={`mt-4 text-xs font-bold ${store ? 'text-white/30' : 'text-stone-400'}`}>+ {items.length - 10} item(ns) disponíveis na vitrine da empresa.</p>}</div>;
 }

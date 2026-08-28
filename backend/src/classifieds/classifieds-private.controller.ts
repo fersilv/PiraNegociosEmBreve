@@ -207,6 +207,11 @@ export class ClassifiedsPrivateController {
     return this.commerce.renameConversation(req.user.uid, conversationId, body?.name);
   }
 
+  @Delete('me/conversations/:conversationId')
+  async archiveConversation(@Req() req: any, @Param('conversationId') conversationId: string) {
+    return this.chats.archive(conversationId, req.user.uid);
+  }
+
   @Get('me/chat-labels')
   labels(@Req() req: any) {
     return this.commerce.companyLabels(req.user.uid);
@@ -229,7 +234,7 @@ export class ClassifiedsPrivateController {
 
   @Post('me/conversations/:conversationId/messages')
   async sendMessage(@Req() req: any, @Param('conversationId') conversationId: string, @Body() body: any) {
-    const result = await this.chats.send(conversationId, req.user.uid, body?.body);
+    const result = await this.chats.send(conversationId, req.user.uid, body?.body, body?.metadata);
     this.chatGateway.publishMessage(result.message, result.recipientIds);
     return result.message;
   }

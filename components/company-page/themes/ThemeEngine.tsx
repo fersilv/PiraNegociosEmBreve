@@ -32,6 +32,7 @@ import type {
   PublicCompanyLike,
   PublicJobLike,
 } from '../PremiumCompanySiteRenderer';
+import { CompanyClassifiedsShowcase } from '../CompanyClassifiedsShowcase';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -499,11 +500,11 @@ export function CategoriesSection({ className = '' }: { className?: string }) {
     <section className={`py-5 sm:py-7 ${className}`}>
       <div className="flex flex-wrap items-center gap-3">
         {config.categories?.title && <span className="mr-2 text-[10px] font-black uppercase tracking-[.2em] opacity-40">{config.categories.title}</span>}
-        {items.map(item => {
-          const external = /^https?:\/\//i.test(item.href);
+        {items.map((item, index) => {
+          const external = /^https?:\/\//i.test(item.href || '');
           return (
-            <a
-              key={item.id}
+              <a
+              key={item.id || item.label || index}
               href={item.href || '#'}
               target={external ? '_blank' : undefined}
               rel={external ? 'noopener noreferrer' : undefined}
@@ -517,6 +518,20 @@ export function CategoriesSection({ className = '' }: { className?: string }) {
           );
         })}
       </div>
+    </section>
+  );
+}
+
+export function StorefrontSection({ className = '' }: { className?: string }) {
+  const { company, isDark, openInternalPage } = useTheme();
+  return (
+    <section id="vitrine" className={`py-12 sm:py-16 ${className}`}>
+      <CompanyClassifiedsShowcase 
+        companyId={company.id} 
+        companyName={company.name} 
+        variant={isDark ? 'store' : 'default'} 
+        onItemClick={(item) => openInternalPage('classified-detail', item)}
+      />
     </section>
   );
 }
@@ -581,6 +596,7 @@ export function SectionStream() {
   const { config } = useTheme();
   const DEFAULT: CompanyPageSection[] = [
     { id: 'categories', type: 'categories', enabled: true },
+    { id: 'classifieds', type: 'classifieds', enabled: true },
     { id: 'about', type: 'about', enabled: true },
     { id: 'jobs', type: 'jobs', enabled: true },
     { id: 'contact', type: 'contact', enabled: true },
@@ -595,6 +611,7 @@ export function SectionStream() {
       {sections.map(section => {
         switch (section.type) {
           case 'categories': return <CategoriesSection key={section.id} />;
+          case 'classifieds': return <StorefrontSection key={section.id} />;
           case 'about': return <AboutSection key={section.id} />;
           case 'jobs': return <JobsSection key={section.id} />;
           case 'contact': return <ContactSection key={section.id} />;

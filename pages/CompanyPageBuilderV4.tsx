@@ -18,6 +18,8 @@ import {
 } from '../components/company-page/CompanySiteRenderer';
 import type { CompanyPageCategoryLink } from '../components/company-page/CompanyPageExtensions';
 import { getCompanyThemeCapabilities, themeSupports } from '../components/company-page/CompanyThemeCapabilities';
+import { FileUpload } from '../components/FileUpload';
+
 
 type Panel = 'themes' | 'sections' | 'store' | 'style' | 'content' | 'advanced';
 
@@ -288,7 +290,62 @@ function StorePanel({ config, onChange, commerce, classifiedsCount }: { config: 
   const removeCategory = (index: number) => onChange(merge(config, 'categories', { items: items.filter((_, itemIndex) => itemIndex !== index) }));
   const addCategory = () => onChange(merge(config, 'categories', { items: [...items, { id: `categoria-${Date.now()}`, label: 'Nova categoria', href: '#vitrine' }] }));
   if (!commerce) return <><Heading title="Loja e classificados" text="Essas opções aparecem nos modelos comerciais." /><div className="rounded-2xl border border-dashed border-stone-300 bg-stone-50 p-5 text-sm leading-6 text-stone-500"><ShoppingBag className="mb-3 h-6 w-6" />Escolha Loja, Marketplace, Catálogo, Mercado, Gazeta, Mosaico, Radar, Pregão ou Classificados Pro para editar banner, categorias e vitrine.</div></>;
-  return <><Heading title="Loja e classificados" text="Controle a experiência comercial. Os produtos e serviços vêm automaticamente dos Classificados da empresa." /><div className="rounded-2xl bg-emerald-50 p-3 text-xs font-bold text-emerald-800">{classifiedsCount} produto(s)/serviço(s) publicados para a Página da Empresa.</div><Label>Faixa promocional</Label><Input value={config.storefront?.promoText || ''} placeholder="Ex.: Frete grátis acima de R$ 199" onChange={(event) => onChange(merge(config, 'storefront', { promoText: event.target.value }))} /><Label>Segunda mensagem da faixa</Label><Input value={config.storefront?.secondaryPromoText || ''} placeholder="Ex.: 5% no Pix" onChange={(event) => onChange(merge(config, 'storefront', { secondaryPromoText: event.target.value }))} /><Toggle checked={config.storefront?.showSearch ?? true} onChange={(showSearch) => onChange(merge(config, 'storefront', { showSearch }))} label="Mostrar busca na loja" /><Label>Texto da busca</Label><Input value={config.storefront?.searchPlaceholder || ''} onChange={(event) => onChange(merge(config, 'storefront', { searchPlaceholder: event.target.value }))} /><Label>Estilo do banner</Label><Select value={config.storefront?.bannerStyle || ''} onChange={(event) => onChange(merge(config, 'storefront', { bannerStyle: event.target.value || undefined }))}><option value="">Padrão único deste tema</option><option value="full">Campanha tela cheia</option><option value="split">Banner dividido</option><option value="compact">Banner compacto</option><option value="editorial">Editorial</option></Select><Label>Imagem do banner</Label><div className="rounded-2xl border border-stone-200 p-3"><div className="mb-2 flex items-center gap-2 text-xs font-bold"><ImageIcon className="h-4 w-4" /> Imagem principal</div><Input value={config.cover?.url || ''} placeholder="URL da imagem" onChange={(event) => onChange(merge(config, 'cover', { enabled: Boolean(event.target.value), url: event.target.value }))} /></div><Label>Estilo das categorias</Label><Select value={config.storefront?.categoryStyle || ''} onChange={(event) => onChange(merge(config, 'storefront', { categoryStyle: event.target.value || undefined }))}><option value="">Padrão único deste tema</option><option value="image-tiles">Cards com imagem</option><option value="circles">Círculos com imagem</option><option value="tiles">Cards sem imagem</option><option value="chips">Chips / texto</option></Select><Label>Layout de produtos e serviços</Label><Select value={config.storefront?.productsLayout || ''} onChange={(event) => onChange(merge(config, 'storefront', { productsLayout: event.target.value || undefined }))}><option value="">Padrão único deste tema</option><option value="carousel">Carrossel horizontal</option><option value="grid">Grade</option><option value="masonry">Mosaico</option><option value="list">Lista</option></Select><Label>Cards por linha</Label><Select value={String(config.storefront?.cardsPerRow || 4)} onChange={(event) => onChange(merge(config, 'storefront', { cardsPerRow: Number(event.target.value) }))}><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></Select><Label>Título da vitrine</Label><Input value={config.storefront?.featuredTitle || ''} placeholder="Se vazio, usa o título próprio do tema" onChange={(event) => onChange(merge(config, 'storefront', { featuredTitle: event.target.value }))} /><Toggle checked={config.storefront?.showProducts !== false} onChange={(showProducts) => onChange(merge(config, 'storefront', { showProducts }))} label="Mostrar produtos" /><Toggle checked={config.storefront?.showServices !== false} onChange={(showServices) => onChange(merge(config, 'storefront', { showServices }))} label="Mostrar serviços" /><div className="mt-6 border-t border-stone-100 pt-5"><div className="flex items-center justify-between"><div><p className="text-sm font-bold">Categorias personalizadas</p><p className="mt-1 text-[11px] text-stone-500">Se deixar vazio, as categorias são criadas dos anúncios. Se preencher, pode usar com ou sem imagem.</p></div><button type="button" onClick={addCategory} className="inline-flex items-center gap-1 rounded-full bg-stone-950 px-3 py-2 text-[10px] font-bold text-white"><Plus className="h-3.5 w-3.5" />Adicionar</button></div><div className="mt-3 space-y-3">{items.map((item, index) => <div key={item.id || index} className="rounded-2xl border border-stone-200 p-3"><div className="flex gap-2"><div className="min-w-0 flex-1"><Input value={item.label || ''} placeholder="Nome da categoria" onChange={(event) => updateCategory(index, { label: event.target.value })} /></div><button type="button" onClick={() => removeCategory(index)} className="rounded-xl p-2 text-red-500 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button></div><div className="mt-2"><Input value={item.imageUrl || ''} placeholder="Imagem opcional da categoria" onChange={(event) => updateCategory(index, { imageUrl: event.target.value })} /></div><div className="mt-2"><Input value={item.href || ''} placeholder="Destino, ex.: #vitrine" onChange={(event) => updateCategory(index, { href: event.target.value })} /></div></div>)}</div></div></>;
+  return (
+    <>
+      <Heading title="Loja e classificados" text="Controle a experiência comercial. Os produtos e serviços vêm automaticamente dos Classificados da empresa." />
+      <div className="rounded-2xl bg-emerald-50 p-3 text-xs font-bold text-emerald-800">{classifiedsCount} produto(s)/serviço(s) publicados para a Página da Empresa.</div>
+      <Label>Faixa promocional</Label>
+      <Input value={config.storefront?.promoText || ''} placeholder="Ex.: Frete grátis acima de R$ 199" onChange={(event) => onChange(merge(config, 'storefront', { promoText: event.target.value }))} />
+      <Label>Segunda mensagem da faixa</Label>
+      <Input value={config.storefront?.secondaryPromoText || ''} placeholder="Ex.: 5% no Pix" onChange={(event) => onChange(merge(config, 'storefront', { secondaryPromoText: event.target.value }))} />
+      <Toggle checked={config.storefront?.showSearch ?? true} onChange={(showSearch) => onChange(merge(config, 'storefront', { showSearch }))} label="Mostrar busca na loja" />
+      <Label>Texto da busca</Label>
+      <Input value={config.storefront?.searchPlaceholder || ''} onChange={(event) => onChange(merge(config, 'storefront', { searchPlaceholder: event.target.value }))} />
+      <Label>Estilo do banner</Label>
+      <Select value={config.storefront?.bannerStyle || ''} onChange={(event) => onChange(merge(config, 'storefront', { bannerStyle: event.target.value || undefined }))}>
+        <option value="">Padrão único deste tema</option><option value="full">Campanha tela cheia</option><option value="split">Banner dividido</option><option value="compact">Banner compacto</option><option value="editorial">Editorial</option>
+      </Select>
+      <Label>Imagem do banner</Label>
+      <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3">
+        <FileUpload label="Imagem principal" accept="image/*" value={config.cover?.url || ''} onChange={(value) => onChange(merge(config, 'cover', { enabled: Boolean(value), url: value }))} maxSizeKB={3072} placeholder="Envie a imagem do banner" />
+      </div>
+      <Label>Estilo das categorias</Label>
+      <Select value={config.storefront?.categoryStyle || ''} onChange={(event) => onChange(merge(config, 'storefront', { categoryStyle: event.target.value || undefined }))}>
+        <option value="">Padrão único deste tema</option><option value="image-tiles">Cards com imagem</option><option value="circles">Círculos com imagem</option><option value="tiles">Cards sem imagem</option><option value="chips">Chips / texto</option>
+      </Select>
+      <Label>Layout de produtos e serviços</Label>
+      <Select value={config.storefront?.productsLayout || ''} onChange={(event) => onChange(merge(config, 'storefront', { productsLayout: event.target.value || undefined }))}>
+        <option value="">Padrão único deste tema</option><option value="carousel">Carrossel horizontal</option><option value="grid">Grade</option><option value="masonry">Mosaico</option><option value="list">Lista</option>
+      </Select>
+      <Label>Cards por linha</Label>
+      <Select value={String(config.storefront?.cardsPerRow || 4)} onChange={(event) => onChange(merge(config, 'storefront', { cardsPerRow: Number(event.target.value) }))}>
+        <option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
+      </Select>
+      <Label>Título da vitrine</Label>
+      <Input value={config.storefront?.featuredTitle || ''} placeholder="Se vazio, usa o título próprio do tema" onChange={(event) => onChange(merge(config, 'storefront', { featuredTitle: event.target.value }))} />
+      <Toggle checked={config.storefront?.showProducts !== false} onChange={(showProducts) => onChange(merge(config, 'storefront', { showProducts }))} label="Mostrar produtos" />
+      <Toggle checked={config.storefront?.showServices !== false} onChange={(showServices) => onChange(merge(config, 'storefront', { showServices }))} label="Mostrar serviços" />
+      
+      <div className="mt-6 border-t border-stone-100 pt-5">
+        <div className="flex items-center justify-between">
+          <div><p className="text-sm font-bold">Categorias personalizadas</p><p className="mt-1 text-[11px] text-stone-500">Se deixar vazio, as categorias são criadas dos anúncios. Se preencher, pode usar com ou sem imagem.</p></div>
+          <button type="button" onClick={addCategory} className="inline-flex items-center gap-1 rounded-full bg-stone-950 px-3 py-2 text-[10px] font-bold text-white"><Plus className="h-3.5 w-3.5" />Adicionar</button>
+        </div>
+        <div className="mt-3 space-y-3">
+          {items.map((item, index) => (
+            <div key={item.id || index} className="rounded-2xl border border-stone-200 p-3">
+              <div className="flex gap-2">
+                <div className="min-w-0 flex-1"><Input value={item.label || ''} placeholder="Nome da categoria" onChange={(event) => updateCategory(index, { label: event.target.value })} /></div>
+                <button type="button" onClick={() => removeCategory(index)} className="rounded-xl p-2 text-red-500 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>
+              </div>
+              <div className="mt-2"><Input value={item.imageUrl || ''} placeholder="Imagem opcional da categoria" onChange={(event) => updateCategory(index, { imageUrl: event.target.value })} /></div>
+              <div className="mt-2"><Input value={item.href || ''} placeholder="Destino, ex.: #vitrine" onChange={(event) => updateCategory(index, { href: event.target.value })} /></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
 }
 
 function StylePanel({ config, onChange }: { config: CompanyPageConfig; onChange: (next: CompanyPageConfig) => void }) {

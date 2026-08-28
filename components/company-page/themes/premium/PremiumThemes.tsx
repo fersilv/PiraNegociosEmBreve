@@ -240,15 +240,97 @@ function PortalHero() {
   const { company, jobs, visual, config } = useTheme();
   const copy = heroCopy();
   const cover = coverUrl(config);
+  const style = config.storefront?.bannerStyle || 'split';
+
+  const renderSearch = () => config.storefront?.showSearch !== false && (
+    <div className="mb-6 flex items-center rounded-2xl border border-current/10 bg-white px-6 py-4 shadow-sm" style={{ color: '#000' }}>
+      <Search className="mr-3 h-5 w-5 opacity-35" />
+      <span className="text-sm opacity-40">{config.storefront?.searchPlaceholder || 'Buscar produtos, serviços e vagas...'}</span>
+      <button className="ml-auto rounded-xl px-5 py-2 text-xs font-bold text-white" style={{ background: visual.primary }}>Buscar</button>
+    </div>
+  );
+
+  if (style === 'full') {
+    return (
+      <Shell>
+        <section className="py-8">
+          <div className="relative min-h-[500px] overflow-hidden rounded-3xl bg-black text-white p-10 sm:p-16">
+            {cover && <img src={cover} alt="" className="absolute inset-0 h-full w-full object-cover opacity-50" />}
+            <div className="absolute inset-0" style={{ background: `linear-gradient(to top right, ${visual.primary}dd, transparent)` }} />
+            <div className="relative z-10 flex h-full flex-col justify-end">
+              <div className="max-w-2xl">
+                <Eyebrow light>{copy.eyebrow || 'Portal de negócios'}</Eyebrow>
+                <h1 className="mt-4 text-5xl font-black leading-[.88] tracking-[-.05em] sm:text-7xl">{copy.title}</h1>
+                {copy.text && <p className="mt-5 text-lg leading-7 text-white/70">{copy.text}</p>}
+              </div>
+              <div className="mt-10 max-w-3xl">{renderSearch()}</div>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="rounded-2xl p-6" style={{ background: `${visual.accent}15` }}>
+              <p className="text-2xl font-black">{jobs.length}</p>
+              <p className="text-xs font-bold opacity-60">Oportunidades</p>
+            </div>
+            <div className="col-span-2 rounded-2xl border border-current/10 p-6 flex items-center gap-4">
+              <CompanyLogo />
+              <div>
+                <p className="font-bold">{company.name}</p>
+                <p className="text-xs opacity-40">{companyLocation(company)}</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </Shell>
+    );
+  }
+
+  if (style === 'compact') {
+    return (
+      <Shell>
+        <section className="py-8">
+          <div className="flex flex-col items-center justify-center rounded-3xl p-10 text-center sm:p-16" style={{ background: `${visual.primary}12` }}>
+            <Eyebrow>{copy.eyebrow || 'Portal de negócios'}</Eyebrow>
+            <h1 className="mt-4 max-w-4xl text-4xl font-black leading-[.88] tracking-[-.05em] sm:text-6xl">{copy.title}</h1>
+            <div className="mt-10 w-full max-w-2xl">{renderSearch()}</div>
+          </div>
+        </section>
+      </Shell>
+    );
+  }
+
+  if (style === 'editorial') {
+    return (
+      <Shell>
+        <section className="py-12">
+          <div className="grid gap-8 lg:grid-cols-2 lg:gap-16 items-center">
+            <div>
+              <Eyebrow>{copy.eyebrow || 'Portal de negócios'}</Eyebrow>
+              <h1 className="mt-4 font-serif text-6xl leading-[.95] tracking-tight sm:text-7xl">{copy.title}</h1>
+              {copy.text && <p className="mt-6 text-xl leading-relaxed opacity-60">{copy.text}</p>}
+              <div className="mt-10">{renderSearch()}</div>
+            </div>
+            <div className="grid gap-4">
+              {cover && <div className="aspect-[4/3] overflow-hidden rounded-3xl"><img src={cover} alt="" className="h-full w-full object-cover" /></div>}
+              <div className="flex items-center gap-4 rounded-3xl p-6" style={{ background: `${visual.accent}15` }}>
+                <span className="text-4xl">💼</span>
+                <div>
+                  <p className="text-xl font-black">{jobs.length}</p>
+                  <p className="text-sm font-bold opacity-60">oportunidades</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </Shell>
+    );
+  }
+
+  // Default: split
   return (
     <Shell>
       <section className="py-8">
         {/* Search bar */}
-        <div className="mb-6 flex items-center rounded-2xl border border-current/10 bg-white px-6 py-4 shadow-sm">
-          <Search className="mr-3 h-5 w-5 opacity-35" />
-          <span className="text-sm opacity-40">{config.storefront?.searchPlaceholder || 'Buscar produtos, serviços e vagas...'}</span>
-          <button className="ml-auto rounded-xl px-5 py-2 text-xs font-bold text-white" style={{ background: visual.primary }}>Buscar</button>
-        </div>
+        {renderSearch()}
         {/* Hero grid */}
         <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
           <div className="relative min-h-[420px] overflow-hidden rounded-2xl p-8 sm:p-12" style={{ background: `linear-gradient(135deg, ${visual.primary}, ${visual.primary}cc)` }}>

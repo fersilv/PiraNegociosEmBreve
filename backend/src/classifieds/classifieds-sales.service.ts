@@ -49,7 +49,7 @@ export class ClassifiedsSalesService implements OnModuleInit, OnModuleDestroy {
     const plan = await this.entitlements.companyPlan(company.id);
     const [connections, feeRule] = await Promise.all([
       this.dataSource.query(
-        `SELECT provider,status,"externalUserId","tokenExpiresAt","connectedAt","updatedAt"
+        `SELECT provider,status,"externalUserId","externalUserName","externalUserEmail","tokenExpiresAt","connectedAt","updatedAt"
          FROM company_classified_payment_connections
          WHERE "companyId" = $1 ORDER BY provider`,
         [company.id],

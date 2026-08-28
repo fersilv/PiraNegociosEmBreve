@@ -445,28 +445,86 @@ function VitrineHero() {
   const copy = heroCopy();
   const cover = coverUrl(config);
   const promo = config.storefront?.promoText;
+  const style = config.storefront?.bannerStyle || 'split';
+
+  const renderPromo = () => promo ? (
+    <div className="border-b py-2.5 text-center text-xs font-bold" style={{ background: `${visual.primary}12`, borderColor: `${visual.primary}22` }}>
+      <span style={{ color: visual.primary }}>✦</span> {promo}
+    </div>
+  ) : null;
+
+  if (style === 'compact') {
+    return (
+      <>
+        {renderPromo()}
+        <Shell className="pt-4">
+          <section className="relative overflow-hidden pn-r px-8 py-12 sm:px-12 sm:py-16" style={{ background: `linear-gradient(135deg, ${visual.primary}15, ${visual.accent}10)` }}>
+            <div className="relative z-10 flex flex-col items-center text-center">
+              <span className="mb-4 inline-flex items-center gap-2 rounded-full bg-white/60 px-3 py-1.5 text-[10px] font-black uppercase tracking-[.14em]">
+                <span style={{ color: visual.primary }}>●</span> {copy.eyebrow || 'Loja oficial'}
+              </span>
+              <h1 className="text-4xl font-black tracking-[-.04em] sm:text-5xl">{copy.title}</h1>
+              {copy.text && <p className="mt-4 max-w-2xl text-base opacity-60">{copy.text}</p>}
+            </div>
+          </section>
+        </Shell>
+      </>
+    );
+  }
+
+  if (style === 'full') {
+    return (
+      <>
+        {renderPromo()}
+        <section className="relative min-h-[70vh] overflow-hidden bg-black text-white">
+          {cover ? <img src={cover} alt="" className="absolute inset-0 h-full w-full object-cover opacity-60" /> : <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at 50% 100%, ${visual.primary}66, transparent 60%), #111` }} />}
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/20" />
+          <Shell className="relative z-10 flex min-h-[70vh] flex-col justify-end pb-16">
+            <span className="mb-4 inline-flex self-start items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[.14em] backdrop-blur-md">
+              <span style={{ color: visual.accent }}>●</span> {copy.eyebrow || 'Loja oficial'}
+            </span>
+            <h1 className="max-w-4xl text-6xl font-black leading-[.9] tracking-[-.04em] sm:text-8xl">{copy.title}</h1>
+            {copy.text && <p className="mt-6 max-w-xl text-lg text-white/70">{copy.text}</p>}
+          </Shell>
+        </section>
+      </>
+    );
+  }
+
+  if (style === 'editorial') {
+    return (
+      <>
+        {renderPromo()}
+        <Shell className="pt-8">
+          <section className="grid items-center gap-8 lg:grid-cols-[1fr_400px]">
+            <div className="py-12">
+              <span className="text-[10px] font-black uppercase tracking-[.2em] opacity-40">{copy.eyebrow || 'Loja oficial'}</span>
+              <h1 className="mt-6 font-serif text-6xl leading-[.95] tracking-[-.02em] sm:text-8xl">{copy.title}</h1>
+              {copy.text && <p className="mt-6 max-w-md text-lg leading-relaxed opacity-70">{copy.text}</p>}
+            </div>
+            {cover && <img src={cover} alt="" className="h-[600px] w-full object-cover pn-r" />}
+          </section>
+        </Shell>
+      </>
+    );
+  }
+
+  // Default: split
   return (
     <>
-      {promo && (
-        <div className="border-b py-2.5 text-center text-xs font-bold" style={{ background: `${visual.primary}12`, borderColor: `${visual.primary}22` }}>
-          <span style={{ color: visual.primary }}>✦</span> {promo}
-        </div>
-      )}
+      {renderPromo()}
       <Shell className="pt-6">
         <section className="relative min-h-[520px] overflow-hidden pn-r" style={{ background: `linear-gradient(135deg, ${visual.primary}15, ${visual.accent}10)` }}>
           <div className="grid lg:grid-cols-2">
             <div className="flex min-h-[520px] flex-col justify-center p-8 sm:p-12">
-              <span className="inline-flex items-center gap-2 rounded-full border border-current/10 bg-white/60 px-3 py-1.5 text-[10px] font-black uppercase tracking-[.14em]">
+              <span className="inline-flex self-start items-center gap-2 rounded-full border border-current/10 bg-white/60 px-3 py-1.5 text-[10px] font-black uppercase tracking-[.14em]">
                 <span style={{ color: visual.primary }}>●</span> {copy.eyebrow || 'Loja oficial'}
               </span>
               <h1 className="mt-6 text-5xl font-black leading-[.88] tracking-[-.06em] sm:text-7xl">{copy.title}</h1>
               {copy.text && <p className="mt-5 max-w-lg text-lg leading-8 opacity-60">{copy.text}</p>}
               <div className="mt-8 flex flex-wrap gap-3">
-                <a href="#vitrine" className="inline-flex items-center gap-2 px-6 py-3.5 text-sm font-black pn-r" style={{ background: visual.primary, color: contrastText(visual.primary) }}>
+                <a href="#vitrine" className="inline-flex items-center gap-2 px-6 py-3.5 text-sm font-black pn-r transition hover:-translate-y-0.5" style={{ background: visual.primary, color: '#fff' }}>
                   Explorar loja <ArrowRight className="h-4 w-4" />
-                </a>
-                <a href="#vagas" className="inline-flex items-center gap-2 border border-current/12 px-6 py-3.5 text-sm font-bold pn-r">
-                  Trabalhe conosco
                 </a>
               </div>
             </div>
@@ -476,7 +534,6 @@ function VitrineHero() {
                   <div className="rounded-3xl border border-current/10 bg-white/80 p-8 shadow-2xl backdrop-blur-xl">
                     <CompanyLogo large />
                     <p className="mt-4 text-center font-bold">{company.name}</p>
-                    <p className="mt-1 text-center text-xs opacity-40">Vitrine oficial</p>
                   </div>
                 </div>
               )}
@@ -510,6 +567,77 @@ function BazarHero() {
   const { visual, config, company, jobs } = useTheme();
   const copy = heroCopy();
   const searchPlaceholder = config.storefront?.searchPlaceholder || 'O que você procura?';
+  const style = config.storefront?.bannerStyle || 'split';
+
+  const renderSearch = () => config.storefront?.showSearch !== false && (
+    <div className="mb-6 flex w-full max-w-lg items-center rounded-full bg-white px-5 py-3.5 text-sm shadow-md" style={{ color: '#000' }}>
+      <Search className="mr-3 h-4 w-4 opacity-40" />
+      <span className="opacity-50">{searchPlaceholder}</span>
+    </div>
+  );
+
+  const renderChips = () => (
+    <div className="flex flex-wrap gap-2 pb-6">
+      {['Destaques', 'Sobre', 'Contato', 'Oportunidades'].map(chip => (
+        <span key={chip} className="whitespace-nowrap rounded-full bg-white/10 px-5 py-2 text-xs font-bold shadow-sm backdrop-blur-md" style={{ color: 'inherit' }}>{chip}</span>
+      ))}
+    </div>
+  );
+
+  if (style === 'full') {
+    return (
+      <Shell>
+        <section className="relative mt-8 min-h-[600px] overflow-hidden rounded-[32px] text-white shadow-2xl">
+          {coverUrl(config) ? <img src={coverUrl(config)} alt="" className="absolute inset-0 h-full w-full object-cover opacity-85" /> : <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${visual.primary}, ${visual.accent})` }} />}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
+          <div className="relative z-10 flex min-h-[600px] flex-col justify-end p-8 sm:p-14">
+            {renderChips()}
+            <Eyebrow light>{copy.eyebrow || 'Descubra'}</Eyebrow>
+            <h1 className="mt-4 max-w-4xl text-5xl font-black leading-[.9] tracking-[-.04em] sm:text-7xl">{copy.title}</h1>
+            {copy.text && <p className="mt-6 max-w-xl text-lg leading-8 text-white/70">{copy.text}</p>}
+            <div className="mt-8">{renderSearch()}</div>
+          </div>
+        </section>
+      </Shell>
+    );
+  }
+
+  if (style === 'compact') {
+    return (
+      <Shell>
+        <section className="py-8 sm:py-12">
+          {renderChips()}
+          <div className="flex flex-col items-center rounded-[32px] p-8 text-center sm:p-14" style={{ background: `${visual.primary}12` }}>
+            <Eyebrow>{copy.eyebrow || 'Descubra'}</Eyebrow>
+            <h1 className="mt-4 max-w-3xl text-4xl font-black leading-[.9] tracking-[-.04em] sm:text-6xl">{copy.title}</h1>
+            <div className="mt-8 flex w-full justify-center">{renderSearch()}</div>
+          </div>
+        </section>
+      </Shell>
+    );
+  }
+
+  if (style === 'editorial') {
+    return (
+      <Shell>
+        <section className="py-10">
+          <div className="grid gap-12 lg:grid-cols-[1fr_minmax(300px,400px)]">
+            <div className="flex flex-col justify-center">
+              <span className="mb-6 inline-flex self-start rounded-full border border-current/15 px-4 py-2 text-xs font-bold uppercase tracking-widest opacity-60">{company.cityState || 'Brasil'}</span>
+              <h1 className="font-serif text-6xl leading-[.95] tracking-tight sm:text-8xl">{copy.title}</h1>
+              {copy.text && <p className="mt-8 max-w-md text-xl leading-relaxed opacity-60">{copy.text}</p>}
+              <div className="mt-10">{renderSearch()}</div>
+            </div>
+            <div className="relative aspect-[3/4] overflow-hidden rounded-[32px] shadow-2xl">
+              {coverUrl(config) ? <img src={coverUrl(config)} alt="" className="h-full w-full object-cover" /> : <div className="h-full w-full bg-stone-200" />}
+            </div>
+          </div>
+        </section>
+      </Shell>
+    );
+  }
+
+  // Default: split
   return (
     <Shell>
       <section className="py-8 sm:py-12">

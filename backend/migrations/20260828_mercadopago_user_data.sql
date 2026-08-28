@@ -1,0 +1,1 @@
+ALTER TABLE "company_classified_payment_connections" ADD COLUMN "externalUserName" VARCHAR, ADD COLUMN "externalUserEmail" VARCHAR;

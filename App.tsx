@@ -96,6 +96,7 @@ export default function App() {
               <Route path="/classificados/conversas" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/conversas/:conversationId" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/configuracoes" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/empresa/*" element={<ClassifiedsWorkspacePage />} />
 
               <Route path="/criador-de-curriculo" element={<PublicResumeBuilderPage />} />
               <Route path="/criar-curriculo" element={<Navigate to="/criador-de-curriculo" replace />} />

@@ -137,9 +137,9 @@ export function ClassifiedsWorkspaceLayout({ children }: { children: React.React
     ...(business ? [{ to: '/classificados/vendas', label: 'Vendas', icon: <ShoppingCart className="h-5 w-5" /> }] : []),
     { to: '/classificados/publicar', label: 'Novo anúncio', icon: <Plus className="h-5 w-5" /> },
     ...(business ? [
-      { to: '/company/pagina', label: 'Minha Página', icon: <Globe2 className="h-5 w-5" /> },
-      { to: '/company/planos', label: 'Planos', icon: <CreditCard className="h-5 w-5" /> },
-      { to: '/company/comercial', label: 'Perfil da empresa', icon: <Building2 className="h-5 w-5" /> },
+      { to: '/classificados/empresa/pagina', label: 'Minha Página', icon: <Globe2 className="h-5 w-5" /> },
+      { to: '/classificados/empresa/planos', label: 'Planos', icon: <CreditCard className="h-5 w-5" /> },
+      { to: '/classificados/empresa/comercial', label: 'Perfil da empresa', icon: <Building2 className="h-5 w-5" /> },
     ] : []),
     { to: '/classificados/configuracoes', label: 'Configurações', icon: <Settings2 className="h-5 w-5" /> },
   ];

@@ -57,11 +57,13 @@ export function ClassifiedListingCard({
   compact = false,
   onFavoriteChange,
   detailBasePath = '/classificados/anuncio',
+  onClick,
 }: {
   listing: ClassifiedListing;
   compact?: boolean;
   onFavoriteChange?: (listingId: string, favorited: boolean) => void;
   detailBasePath?: string;
+  onClick?: () => void;
 }) {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -108,6 +110,7 @@ export function ClassifiedListingCard({
   return (
     <Link
       to={target}
+      onClick={onClick ? (e) => { e.preventDefault(); onClick(); } : undefined}
       className={`group relative min-w-0 overflow-hidden rounded-[18px] bg-white transition sm:rounded-[22px] ${auction ? 'shadow-[0_16px_45px_rgba(92,28,18,.16)] ring-2 ring-[#e5653f]/35 hover:-translate-y-1 hover:shadow-[0_22px_60px_rgba(92,28,18,.24)]' : 'shadow-[0_8px_26px_rgba(45,33,28,.055)] ring-1 ring-[#4b3328]/10 hover:-translate-y-0.5 hover:shadow-[0_16px_42px_rgba(45,33,28,.10)]'}`}
     >
       {auction && <div className="absolute inset-x-0 top-0 z-20 h-[3px] overflow-hidden bg-[#421f18]"><div className="h-full w-1/2 animate-[auctionSweep_2.2s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-[#ffb08b] to-transparent motion-reduce:animate-none" /></div>}
