@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { ClassifiedsCategoryTaxonomyService } from './classifieds-category-taxonomy.service';
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
 import { ClassifiedsService } from './classifieds.service';
 import { CompanyClassifiedProfile } from './entities/company-classified-profile.entity';
@@ -9,6 +10,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
 export class ClassifiedsPublicController {
   constructor(
     private readonly classifieds: ClassifiedsService,
+    private readonly taxonomy: ClassifiedsCategoryTaxonomyService,
     private readonly commerce: ClassifiedsCommerceService,
     @InjectRepository(CompanyClassifiedProfile)
     private readonly companyProfiles: Repository<CompanyClassifiedProfile>,
@@ -16,7 +18,7 @@ export class ClassifiedsPublicController {
 
   @Get('categories')
   categories() {
-    return this.classifieds.categories();
+    return this.taxonomy.categories();
   }
 
   @Get('listings')
