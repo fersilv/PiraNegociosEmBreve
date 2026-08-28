@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BadgeCheck, BadgeDollarSign, BarChart3, Briefcase, Building2, ChevronDown, Compass, Gavel, Home, LogOut, Menu, MessageCircle, Plus, Settings2, ShoppingCart, Store, User, Wrench, X } from 'lucide-react';
+import { BadgeCheck, BadgeDollarSign, BarChart3, Briefcase, Building2, ChevronDown, Compass, CreditCard, Gavel, Globe2, Home, LogOut, Menu, MessageCircle, Plus, Settings2, ShoppingCart, Store, User, Wrench, X } from 'lucide-react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { auth } from '../../lib/firebase';
 import { api } from '../../lib/api';
@@ -63,7 +63,7 @@ export function ClassifiedsWorkspaceGate({ children }: { children: React.ReactNo
       <OnboardingFrame mode="BUSINESS" title={`Verifique ${data.company.name} para publicar`} subtitle="A empresa pode acessar e explorar os Classificados normalmente. A verificação é exigida quando ela começa a anunciar." error={error}>
         <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-950">Para proteger compradores e a reputação do marketplace, apenas empresas verificadas podem publicar como Business.</div>
         <div className="mt-5 grid gap-2 sm:grid-cols-2">
-          <Link to="/company/perfil" className="rounded-2xl bg-[#0d4542] px-5 py-3.5 text-center text-sm font-black text-white">Verificação da empresa</Link>
+          <Link to="/company/verificacao" className="rounded-2xl bg-[#0d4542] px-5 py-3.5 text-center text-sm font-black text-white">Verificação da empresa</Link>
           <button disabled={working} onClick={() => run(() => selectIdentity('PERSONAL'))} className="rounded-2xl border border-[#b9d7d2] bg-white px-5 py-3.5 text-sm font-black text-[#155a55]">Entrar como Personal</button>
         </div>
       </OnboardingFrame>
@@ -136,6 +136,11 @@ export function ClassifiedsWorkspaceLayout({ children }: { children: React.React
     { to: '/classificados/analytics', label: 'Analytics', icon: <BarChart3 className="h-5 w-5" /> },
     ...(business ? [{ to: '/classificados/vendas', label: 'Vendas', icon: <ShoppingCart className="h-5 w-5" /> }] : []),
     { to: '/classificados/publicar', label: 'Novo anúncio', icon: <Plus className="h-5 w-5" /> },
+    ...(business ? [
+      { to: '/company/pagina', label: 'Minha Página', icon: <Globe2 className="h-5 w-5" /> },
+      { to: '/company/planos', label: 'Planos', icon: <CreditCard className="h-5 w-5" /> },
+      { to: '/company/comercial', label: 'Perfil da empresa', icon: <Building2 className="h-5 w-5" /> },
+    ] : []),
     { to: '/classificados/configuracoes', label: 'Configurações', icon: <Settings2 className="h-5 w-5" /> },
   ];
 
@@ -176,7 +181,7 @@ export function ClassifiedsWorkspaceLayout({ children }: { children: React.React
         <main className="p-4 pb-24 sm:p-6 md:p-8 md:pb-10">{children}</main>
       </div>
 
-      {mobileOpen && <div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-sm md:hidden" onClick={() => setMobileOpen(false)}><aside onClick={(event) => event.stopPropagation()} className={`flex h-full w-[86%] max-w-[330px] flex-col p-4 text-white ${palette.side}`}><div className="flex items-center justify-between"><WorkspaceBrand business={business} compact /><button onClick={() => setMobileOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10"><X className="h-4 w-4" /></button></div><div className="mt-4 grid grid-cols-2 gap-2"><Link to="/user" onClick={() => setMobileOpen(false)} className="flex items-center justify-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-[10px] font-black"><Briefcase className="h-3.5 w-3.5" /> Career</Link>{data.company?.available && <Link to="/company" onClick={() => setMobileOpen(false)} className="flex items-center justify-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-[10px] font-black"><Building2 className="h-3.5 w-3.5" /> Business</Link>}</div><div className="mt-3 rounded-2xl border border-white/10 bg-white/[.07] p-3"><p className={`text-[9px] font-black uppercase tracking-[.18em] ${palette.muted}`}>{business ? 'Business' : 'Personal'}</p><p className="mt-1 truncate text-sm font-black">{identityName}</p>{data.company?.available && <div className="mt-3 flex gap-2"><button onClick={() => switchIdentity('PERSONAL')} className="rounded-xl bg-white/10 px-3 py-2 text-[11px] font-black">Personal</button><button onClick={() => switchIdentity('COMPANY')} className="rounded-xl bg-white/10 px-3 py-2 text-[11px] font-black">Business</button></div>}</div><nav className="mt-5 space-y-1">{nav.map((item) => <Link key={item.to} to={item.to} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-white/72 hover:bg-white/[.07]">{item.icon}{item.label}</Link>)}</nav></aside></div>}
+      {mobileOpen && <div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-sm md:hidden" onClick={() => setMobileOpen(false)}><aside onClick={(event) => event.stopPropagation()} className={`flex h-full w-[86%] max-w-[330px] flex-col p-4 text-white ${palette.side}`}><div className="flex items-center justify-between"><WorkspaceBrand business={business} compact /><button onClick={() => setMobileOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10"><X className="h-4 w-4" /></button></div><div className="mt-4 grid grid-cols-2 gap-2"><Link to="/user" onClick={() => setMobileOpen(false)} className="flex items-center justify-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-[10px] font-black"><Briefcase className="h-3.5 w-3.5" /> Career</Link>{data.company?.available && <Link to="/company" onClick={() => setMobileOpen(false)} className="flex items-center justify-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-[10px] font-black"><Building2 className="h-3.5 w-3.5" /> Business</Link>}</div><div className="mt-3 rounded-2xl border border-white/10 bg-white/[.07] p-3"><p className={`text-[9px] font-black uppercase tracking-[.18em] ${palette.muted}`}>{business ? 'Business' : 'Personal'}</p><p className="mt-1 truncate text-sm font-black">{identityName}</p>{data.company?.available && <div className="mt-3 flex gap-2"><button onClick={() => switchIdentity('PERSONAL')} className="rounded-xl bg-white/10 px-3 py-2 text-[11px] font-black">Personal</button><button onClick={() => switchIdentity('COMPANY')} className="rounded-xl bg-white/10 px-3 py-2 text-[11px] font-black">Business</button></div>}</div><nav className="mt-5 space-y-1 overflow-y-auto">{nav.map((item) => <Link key={item.to} to={item.to} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-white/72 hover:bg-white/[.07]">{item.icon}{item.label}</Link>)}</nav></aside></div>}
     </div>
   );
 }
