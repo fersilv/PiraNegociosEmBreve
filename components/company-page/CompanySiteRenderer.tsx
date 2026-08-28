@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { CompanySiteRenderer as LegacyCompanySiteRenderer } from './PremiumCompanySiteRenderer';
 import type {
   CompanyEditorMode,
@@ -7,10 +8,7 @@ import type {
   PublicCompanyLike,
   PublicJobLike,
 } from './PremiumCompanySiteRenderer';
-import type {
-  CompanyPageConfig,
-  CompanyPageSection,
-} from './CompanyPageExtensions';
+import type { CompanyPageConfig, CompanyPageSection } from './CompanyPageExtensions';
 import {
   COMPANY_THEME_CATEGORIES,
   EXTRA_COMPANY_PAGE_TEMPLATES,
@@ -18,12 +16,7 @@ import {
   applyExtraCompanyThemePreset,
   isExtraCompanyTheme,
 } from './ReferenceCompanyThemes';
-import type {
-  CompanyThemeCatalogItem,
-  CompanyThemeCategory,
-  ExtraCompanyThemeKey,
-} from './ReferenceCompanyThemes';
-import { ConfigurableExtraCompanyThemeRenderer } from './ConfigurableReferenceThemes';
+import type { CompanyThemeCatalogItem, CompanyThemeCategory, ExtraCompanyThemeKey } from './ReferenceCompanyThemes';
 import {
   INSTITUTIONAL_V2_PRESETS,
   INSTITUTIONAL_V2_TEMPLATES,
@@ -31,11 +24,8 @@ import {
   applyInstitutionalV2Preset,
   type InstitutionalThemeKey,
 } from './InstitutionalCompanyThemes';
-import {
-  STORE_COMPANY_THEME_PRESET,
-  StoreCompanyTheme,
-  applyStoreCompanyThemePreset,
-} from './StoreCompanyTheme';
+import { STORE_COMPANY_THEME_PRESET, applyStoreCompanyThemePreset } from './StoreCompanyTheme';
+import { FlexibleCompanyThemeRenderer } from './FlexibleCompanyThemeRenderer';
 
 export type {
   CompanyEditorMode,
@@ -51,26 +41,46 @@ export type {
   InstitutionalThemeKey,
 };
 
-export type CompanyTemplateKey =
-  | InstitutionalThemeKey
-  | ExtraCompanyThemeKey
-  | 'loja'
-  | 'essencial' | 'institucional' | 'vitrine' | 'editorial';
+export type CompanyTemplateKey = InstitutionalThemeKey | ExtraCompanyThemeKey | 'loja' | 'marketplace' | 'catalogo' | 'institucional-pro' | 'classificados-pro' | 'servicos-pro' | 'essencial' | 'institucional' | 'vitrine' | 'editorial';
 
 export const COMPANY_PAGE_THEME_CATEGORIES = COMPANY_THEME_CATEGORIES;
 
-const STORE_TEMPLATE: CompanyThemeCatalogItem = {
-  key: 'loja',
-  category: 'classifieds',
-  name: 'Loja',
-  eyebrow: 'Storefront',
-  description: 'Página escura de varejo com hero de marca, atalhos, vitrine integrada e conversão direta para produtos, serviços e chat.',
-  bestFor: 'Lojas, presentes, personalização, tecnologia, varejo e catálogos próprios',
-};
+const FLEX_TEMPLATES: CompanyThemeCatalogItem[] = [
+  {
+    key: 'loja', category: 'classifieds', name: 'Loja', eyebrow: 'Storefront',
+    description: 'Vitrine comercial com hero de marca, atalhos, conteúdo modular e conversão direta.',
+    bestFor: 'Lojas, presentes, tecnologia, varejo e catálogos próprios',
+  },
+  {
+    key: 'marketplace', category: 'classifieds', name: 'Marketplace', eyebrow: 'Multi-vitrine',
+    description: 'Arquitetura de descoberta para muitas categorias, ofertas e caminhos de navegação.',
+    bestFor: 'Marketplaces, galerias comerciais e negócios com muitos departamentos',
+  },
+  {
+    key: 'catalogo', category: 'classifieds', name: 'Catálogo', eyebrow: 'Product catalog',
+    description: 'Modelo visual para apresentar linhas, coleções, serviços e atalhos como catálogo próprio.',
+    bestFor: 'Indústrias, distribuidores, lojas e catálogos B2B',
+  },
+  {
+    key: 'classificados-pro', category: 'classifieds', name: 'Classificados Pro', eyebrow: 'Listings',
+    description: 'Modelo denso para anúncios, categorias, oportunidades e navegação rápida.',
+    bestFor: 'Imóveis, veículos, equipamentos, brechós e classificados especializados',
+  },
+  {
+    key: 'institucional-pro', category: 'institutional', name: 'Institucional Pro', eyebrow: 'Corporate',
+    description: 'Site corporativo independente, com marca forte, conteúdo amplo e blocos reorganizáveis.',
+    bestFor: 'Empresas, indústrias, escritórios, tecnologia e negócios B2B',
+  },
+  {
+    key: 'servicos-pro', category: 'services', name: 'Serviços Pro', eyebrow: 'Service conversion',
+    description: 'Foco em apresentação, confiança, canais de contato e conversão para atendimento.',
+    bestFor: 'Clínicas, oficinas, consultorias, salões, escolas e profissionais',
+  },
+];
 
 const ALL_TEMPLATES: CompanyThemeCatalogItem[] = [
   ...INSTITUTIONAL_V2_TEMPLATES.map((template) => ({ ...template, category: 'institutional' as const })),
-  STORE_TEMPLATE,
+  ...FLEX_TEMPLATES,
   ...EXTRA_COMPANY_PAGE_TEMPLATES,
 ];
 
@@ -96,11 +106,30 @@ export const COMPANY_PAGE_TEMPLATES = {
   },
 };
 
-export const COMPANY_PAGE_THEME_PRESETS = {
-  ...INSTITUTIONAL_V2_PRESETS,
-  loja: STORE_COMPANY_THEME_PRESET,
-  ...EXTRA_THEME_PRESETS,
+const FLEX_PRESETS: Record<string, any> = {
+  marketplace: {
+    width: 'full', theme: { primary: '#172554', accent: '#2563eb', background: '#f8fafc', text: '#0f172a' },
+    branding: { typography: 'clean', logoSize: 'medium', corners: 'soft' }, hero: { layout: 'split' }, jobs: { layout: 'grid' }, navigation: { sticky: true, transparent: false },
+  },
+  catalogo: {
+    width: 'wide', theme: { primary: '#292524', accent: '#a16207', background: '#fafaf9', text: '#1c1917' },
+    branding: { typography: 'editorial', logoSize: 'large', corners: 'square' }, hero: { layout: 'minimal' }, jobs: { layout: 'grid' }, navigation: { sticky: true, transparent: false },
+  },
+  'classificados-pro': {
+    width: 'full', theme: { primary: '#111827', accent: '#f97316', background: '#f3f4f6', text: '#111827' },
+    branding: { typography: 'clean', logoSize: 'medium', corners: 'soft' }, hero: { layout: 'split' }, jobs: { layout: 'compact' }, navigation: { sticky: true, transparent: false },
+  },
+  'institucional-pro': {
+    width: 'wide', theme: { primary: '#0f172a', accent: '#0f766e', background: '#ffffff', text: '#0f172a' },
+    branding: { typography: 'clean', logoSize: 'large', corners: 'soft' }, hero: { layout: 'split' }, jobs: { layout: 'list' }, navigation: { sticky: true, transparent: false },
+  },
+  'servicos-pro': {
+    width: 'wide', theme: { primary: '#3f3f46', accent: '#7c3aed', background: '#fafafa', text: '#18181b' },
+    branding: { typography: 'human', logoSize: 'medium', corners: 'round' }, hero: { layout: 'centered' }, jobs: { layout: 'list' }, navigation: { sticky: true, transparent: false },
+  },
 };
+
+export const COMPANY_PAGE_THEME_PRESETS = { ...INSTITUTIONAL_V2_PRESETS, loja: STORE_COMPANY_THEME_PRESET, ...FLEX_PRESETS, ...EXTRA_THEME_PRESETS };
 
 function normalizeHex(value?: string) {
   const color = String(value || '').trim().toLowerCase();
@@ -118,14 +147,8 @@ function paletteMatches(theme: CompanyPageConfig['theme'], palette: { primary?: 
 
 function isUntouchedLegacyConfig(page?: CompanyPageConfig | null) {
   if (!page) return true;
-  const neutralPalette = !page.theme || paletteMatches(page.theme, {
-    primary: '#111111',
-    accent: '#555555',
-    background: '#ffffff',
-    text: '#171717',
-  });
+  const neutralPalette = !page.theme || paletteMatches(page.theme, { primary: '#111111', accent: '#555555', background: '#ffffff', text: '#171717' });
   if (!neutralPalette) return false;
-
   return (page.width || 'wide') === 'wide'
     && (page.branding?.typography || 'clean') === 'clean'
     && (page.branding?.logoSize || 'large') === 'large'
@@ -145,70 +168,66 @@ function isInstitutionalTheme(value?: string): value is InstitutionalThemeKey {
 function institutionalKey(value?: string): InstitutionalThemeKey {
   if (isInstitutionalTheme(value)) return value;
   if (value === 'institucional') return 'atlas';
-  if (value === 'vitrine') return 'pulse';
   if (value === 'editorial') return 'canvas';
   return 'aurora';
 }
 
-export function applyCompanyThemePreset(config: CompanyPageConfig, key: string): CompanyPageConfig {
-  if (key === 'loja') return applyStoreCompanyThemePreset(config);
-  if (isExtraCompanyTheme(key)) return applyExtraCompanyThemePreset(config, key) as CompanyPageConfig;
-  if (isInstitutionalTheme(key)) return applyInstitutionalV2Preset(config, key);
-  return config;
+function isFlexibleTheme(key: string) {
+  return key === 'loja' || key === 'marketplace' || key === 'catalogo' || key === 'classificados-pro' || key === 'institucional-pro' || key === 'servicos-pro' || key === 'vitrine' || isExtraCompanyTheme(key);
 }
 
-export function CompanySiteRenderer({
-  company,
-  jobs,
-  page,
-  preview = false,
-}: {
-  company: PublicCompanyLike;
-  jobs: PublicJobLike[];
-  page?: CompanyPageConfig | null;
-  preview?: boolean;
-}) {
+function applyGenericPreset(config: CompanyPageConfig, key: string): CompanyPageConfig {
+  const preset = FLEX_PRESETS[key];
+  if (!preset) return config;
+  return {
+    ...config,
+    templateKey: key,
+    width: preset.width,
+    theme: { ...(config.theme || {}), ...preset.theme },
+    branding: { ...(config.branding || {}), ...preset.branding },
+    hero: { ...(config.hero || {}), ...preset.hero },
+    jobs: { ...(config.jobs || {}), ...preset.jobs },
+    navigation: { ...(config.navigation || {}), ...preset.navigation },
+  } as CompanyPageConfig;
+}
+
+export function applyCompanyThemePreset(config: CompanyPageConfig, key: string): CompanyPageConfig {
+  if (key === 'loja') return applyStoreCompanyThemePreset(config);
+  if (FLEX_PRESETS[key]) return applyGenericPreset(config, key);
+  if (key === 'vitrine') return applyGenericPreset(config, 'marketplace') as CompanyPageConfig & { templateKey?: string };
+  if (isExtraCompanyTheme(key)) return applyExtraCompanyThemePreset(config, key) as CompanyPageConfig;
+  if (isInstitutionalTheme(key)) return applyInstitutionalV2Preset(config, key);
+  return { ...config, templateKey: key };
+}
+
+function PlatformFooter() {
+  return <div className="pn-platform-footer">
+    <style>{`.pn-company-renderer .pn-rendered-theme footer a[href="/"]{display:none!important}.pn-platform-footer{display:flex;align-items:center;justify-content:center;gap:9px;min-height:54px;padding:12px 20px;border-top:1px solid rgba(120,113,108,.18);background:#fff;color:#78716c;font:600 11px/1.2 Inter,ui-sans-serif,system-ui,sans-serif;letter-spacing:.02em}.pn-platform-footer img{width:22px;height:22px;object-fit:contain}.pn-platform-footer a{display:inline-flex;align-items:center;gap:9px;color:inherit;text-decoration:none}.pn-platform-footer strong{color:#44403c}`}</style>
+    <Link to="/" aria-label="PiraNegócios"><img src="/brand/symbol-terracotta.png" alt="" /><span>Integrado ao <strong>PiraNegócios</strong></span></Link>
+  </div>;
+}
+
+export function CompanySiteRenderer({ company, jobs, page, preview = false }: { company: PublicCompanyLike; jobs: PublicJobLike[]; page?: CompanyPageConfig | null; preview?: boolean }) {
   const config = page || {};
   const key = String(config.templateKey || 'aurora');
+  let rendered: React.ReactNode;
 
   if (config.editorMode === 'code') {
-    return <LegacyCompanySiteRenderer company={company} jobs={jobs} page={config} preview={preview} />;
+    rendered = <LegacyCompanySiteRenderer company={company} jobs={jobs} page={config} preview={preview} />;
+  } else if (isFlexibleTheme(key)) {
+    let visualPage = config;
+    if (isUntouchedLegacyConfig(config)) {
+      if (key === 'loja') visualPage = applyStoreCompanyThemePreset(config);
+      else if (FLEX_PRESETS[key]) visualPage = applyGenericPreset(config, key);
+      else if (key === 'vitrine') visualPage = { ...applyGenericPreset(config, 'marketplace'), templateKey: 'vitrine' };
+      else if (isExtraCompanyTheme(key)) visualPage = applyExtraCompanyThemePreset(config, key) as CompanyPageConfig;
+    }
+    rendered = <FlexibleCompanyThemeRenderer themeKey={key} company={company} jobs={jobs} config={visualPage} preview={preview} />;
+  } else {
+    const resolvedKey = institutionalKey(key);
+    const visualPage = isUntouchedLegacyConfig(config) ? applyInstitutionalV2Preset(config, resolvedKey) : config;
+    rendered = <InstitutionalCompanyThemes themeKey={resolvedKey} company={company} jobs={jobs} config={visualPage} preview={preview} />;
   }
 
-  if (key === 'loja') {
-    const visualPage = isUntouchedLegacyConfig(config)
-      ? applyStoreCompanyThemePreset(config)
-      : config;
-    return <StoreCompanyTheme company={company} jobs={jobs} config={visualPage} preview={preview} />;
-  }
-
-  if (isExtraCompanyTheme(key)) {
-    const visualPage = isUntouchedLegacyConfig(config)
-      ? applyExtraCompanyThemePreset(config, key) as CompanyPageConfig
-      : config;
-    return (
-      <ConfigurableExtraCompanyThemeRenderer
-        themeKey={key}
-        company={company}
-        jobs={jobs}
-        config={visualPage}
-        preview={preview}
-      />
-    );
-  }
-
-  const resolvedKey = institutionalKey(key);
-  const visualPage = isUntouchedLegacyConfig(config)
-    ? applyInstitutionalV2Preset(config, resolvedKey)
-    : config;
-
-  return (
-    <InstitutionalCompanyThemes
-      themeKey={resolvedKey}
-      company={company}
-      jobs={jobs}
-      config={visualPage}
-      preview={preview}
-    />
-  );
+  return <div className="pn-company-renderer"><div className="pn-rendered-theme">{rendered}</div><PlatformFooter /></div>;
 }
