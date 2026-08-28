@@ -10,6 +10,7 @@ import {
   CompanySiteRenderer,
   PublicCompanyLike,
   PublicJobLike,
+  isCommerceCompanyTheme,
 } from "../components/company-page/CompanySiteRenderer";
 
 export default function PublicCompanyPage() {
@@ -87,7 +88,7 @@ export default function PublicCompanyPage() {
   }
 
   const description = `${company.name}${company.cityState ? ` em ${company.cityState}` : ", Pirassununga e região"}. ${company.description?.slice(0, 120) || "Conheça a empresa, suas oportunidades, produtos e serviços."}`;
-  const storeTheme = String(page?.templateKey || '') === 'loja';
+  const commerceTheme = isCommerceCompanyTheme(String(page?.templateKey || ''));
 
   return (
     <>
@@ -98,7 +99,7 @@ export default function PublicCompanyPage() {
         structuredData={structuredData}
       />
       <CompanySiteRenderer company={company} jobs={jobs} page={page} />
-      <CompanyClassifiedsShowcase companyId={company.id} companyName={company.name} variant={storeTheme ? 'store' : 'default'} />
+      {!commerceTheme && <CompanyClassifiedsShowcase companyId={company.id} companyName={company.name} variant="default" />}
     </>
   );
 }
