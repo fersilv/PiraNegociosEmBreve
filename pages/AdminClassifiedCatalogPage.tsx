@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Archive,
@@ -126,6 +126,16 @@ export default function AdminClassifiedCatalogPage() {
     setCategories(Array.isArray(categoryResponse.data) ? categoryResponse.data : []);
   };
 
+  const loadAllArchivedAuctions = async () => {
+    const first = await api.get('/admin/classifieds-catalog/auctions', { params: { q: query || undefined, page: 1, pageSize: 100, archived: true } });
+    const firstData: AuctionPage = first.data || { items: [], pagination: { page: 1, pageSize: 100, total: 0, totalPages: 1 } };
+    const pages = Math.max(1, Number(firstData.pagination?.totalPages || 1));
+    if (pages <= 1) return firstData;
+    const remaining = await Promise.all(Array.from({ length: pages - 1 }, (_, index) => api.get('/admin/classifieds-catalog/auctions', { params: { q: query || undefined, page: index + 2, pageSize: 100, archived: true } })));
+    const items = [...firstData.items, ...remaining.flatMap(response => Array.isArray(response.data?.items) ? response.data.items : [])];
+    return { items, pagination: { page: 1, pageSize: items.length, total: Number(firstData.pagination?.total || items.length), totalPages: 1 } };
+  };
+
   const loadRows = async () => {
     setLoading(true);
     setMessage('');
@@ -134,12 +144,12 @@ export default function AdminClassifiedCatalogPage() {
         const response = await api.get('/admin/classifieds-catalog/auctions', { params: { q: query || undefined, status: status === 'ALL' ? undefined : status, page, pageSize: 30, archived: false } });
         setAuctions(response.data || { items: [], pagination: { page: 1, pageSize: 30, total: 0, totalPages: 1 } });
       } else if (archived) {
-        const [listingResponse, auctionResponse] = await Promise.all([
+        const [listingResponse, archivedAuctions] = await Promise.all([
           api.get('/admin/classifieds-catalog/listings', { params: { q: query || undefined, page, pageSize: 30, archived: true } }),
-          api.get('/admin/classifieds-catalog/auctions', { params: { q: query || undefined, page: 1, pageSize: 100, archived: true } }),
+          loadAllArchivedAuctions(),
         ]);
         setListings(listingResponse.data || { items: [], pagination: { page: 1, pageSize: 30, total: 0, totalPages: 1 } });
-        setAuctions(auctionResponse.data || { items: [], pagination: { page: 1, pageSize: 100, total: 0, totalPages: 1 } });
+        setAuctions(archivedAuctions);
       } else {
         const response = await api.get('/admin/classifieds-catalog/listings', { params: { type: tab, q: query || undefined, status: status === 'ALL' ? undefined : status, page, pageSize: 30, archived: false } });
         setListings(response.data || { items: [], pagination: { page: 1, pageSize: 30, total: 0, totalPages: 1 } });
@@ -240,7 +250,7 @@ export default function AdminClassifiedCatalogPage() {
 
       {loading ? <div className="flex min-h-72 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-stone-400" /></div> : archived ? <ArchivedList listings={listings.items} auctions={auctions.items} working={working} openListing={openListing} mutateListing={mutateListing} mutateAuction={mutateAuction} /> : showingAuctions ? <AuctionList rows={auctions.items} working={working} mutate={mutateAuction} /> : <ListingList rows={listings.items} open={openListing} detailLoading={detailLoading} />}
 
-      {!archived && pageInfo.totalPages > 1 && <div className="flex items-center justify-between border-t border-stone-100 px-5 py-4 text-xs font-bold text-stone-500"><span>{pageInfo.total} registros</span><div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage(current => Math.max(1, current - 1))} className="rounded-xl bg-stone-100 px-3 py-2 disabled:opacity-40">Anterior</button><span className="px-2 py-2">{page} / {pageInfo.totalPages}</span><button disabled={page >= pageInfo.totalPages} onClick={() => setPage(current => current + 1)} className="rounded-xl bg-stone-100 px-3 py-2 disabled:opacity-40">Próxima</button></div></div>}
+      {pageInfo.totalPages > 1 && <div className="flex items-center justify-between border-t border-stone-100 px-5 py-4 text-xs font-bold text-stone-500"><span>{pageInfo.total} {archived ? 'anúncios arquivados' : 'registros'}</span><div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage(current => Math.max(1, current - 1))} className="rounded-xl bg-stone-100 px-3 py-2 disabled:opacity-40">Anterior</button><span className="px-2 py-2">{page} / {pageInfo.totalPages}</span><button disabled={page >= pageInfo.totalPages} onClick={() => setPage(current => current + 1)} className="rounded-xl bg-stone-100 px-3 py-2 disabled:opacity-40">Próxima</button></div></div>}
     </section>
 
     {selected && <ListingAdminModal listing={selected} categories={categories} working={working} close={() => setSelected(null)} saved={async () => { setSelected(null); await refresh(); }} mutate={mutateListing} />}
@@ -259,7 +269,7 @@ function AuctionList({ rows, working, mutate }: { rows: Auction[]; working: stri
 
 function ArchivedList({ listings, auctions, working, openListing, mutateListing, mutateAuction }: { listings: Listing[]; auctions: Auction[]; working: string; openListing: (id: string) => void; mutateListing: (id: string, action: 'archive'|'restore'|'delete') => void; mutateAuction: (row: Auction, action: 'cancel'|'archive'|'restore'|'delete') => void }) {
   if (!listings.length && !auctions.length) return <Empty icon={<Archive className="h-8 w-8" />} title="Arquivo vazio" text="Itens arquivados somem dos relatórios ativos e ficam guardados aqui." />;
-  return <div><div className="border-b border-stone-100 bg-stone-50 px-5 py-3 text-[10px] font-black uppercase tracking-[.14em] text-stone-400">Produtos e serviços arquivados · {listings.length}</div><div className="divide-y divide-stone-100">{listings.map(row => <div key={row.id} className="grid gap-3 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_150px_auto] lg:items-center"><button onClick={() => openListing(row.id)} className="min-w-0 text-left"><p className="truncate text-sm font-black">{row.title}</p><p className="mt-1 text-xs text-stone-400">{row.companyName || row.sellerName} · {row.listingType === 'SERVICE' ? 'Serviço' : 'Produto'}</p></button><p className="text-xs text-stone-400">Arquivado {dateTime(row.archivedAt)}</p><div className="flex justify-end gap-2"><ActionButton disabled={Boolean(working)} onClick={() => mutateListing(row.id,'restore')} icon={<ArchiveRestore className="h-3.5 w-3.5" />} label="Restaurar" /><ActionButton destructive disabled={Boolean(working)} onClick={() => mutateListing(row.id,'delete')} icon={<Trash2 className="h-3.5 w-3.5" />} label="Excluir" /></div></div>)}</div>{Boolean(auctions.length) && <><div className="border-y border-stone-100 bg-stone-50 px-5 py-3 text-[10px] font-black uppercase tracking-[.14em] text-stone-400">Leilões arquivados · {auctions.length}</div><div className="divide-y divide-stone-100">{auctions.map(row => <div key={row.id} className="grid gap-3 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_150px_auto] lg:items-center"><div><p className="truncate text-sm font-black">{row.title}</p><p className="mt-1 text-xs text-stone-400">{row.companyName} · {STATUS_LABEL[row.status] || row.status}</p></div><p className="text-xs text-stone-400">Arquivado {dateTime(row.archivedAt)}</p><div className="flex justify-end gap-2"><ActionButton disabled={Boolean(working)} onClick={() => mutateAuction(row,'restore')} icon={<ArchiveRestore className="h-3.5 w-3.5" />} label="Restaurar" /><ActionButton destructive disabled={Boolean(working)} onClick={() => mutateAuction(row,'delete')} icon={<Trash2 className="h-3.5 w-3.5" />} label="Excluir" /></div></div>)}</div></>}</div>;
+  return <div><div className="border-b border-stone-100 bg-stone-50 px-5 py-3 text-[10px] font-black uppercase tracking-[.14em] text-stone-400">Produtos e serviços arquivados nesta página · {listings.length}</div><div className="divide-y divide-stone-100">{listings.map(row => <div key={row.id} className="grid gap-3 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_150px_auto] lg:items-center"><button onClick={() => openListing(row.id)} className="min-w-0 text-left"><p className="truncate text-sm font-black">{row.title}</p><p className="mt-1 text-xs text-stone-400">{row.companyName || row.sellerName} · {row.listingType === 'SERVICE' ? 'Serviço' : 'Produto'}</p></button><p className="text-xs text-stone-400">Arquivado {dateTime(row.archivedAt)}</p><div className="flex justify-end gap-2"><ActionButton disabled={Boolean(working)} onClick={() => mutateListing(row.id,'restore')} icon={<ArchiveRestore className="h-3.5 w-3.5" />} label="Restaurar" /><ActionButton destructive disabled={Boolean(working)} onClick={() => mutateListing(row.id,'delete')} icon={<Trash2 className="h-3.5 w-3.5" />} label="Excluir" /></div></div>)}</div>{Boolean(auctions.length) && <><div className="border-y border-stone-100 bg-stone-50 px-5 py-3 text-[10px] font-black uppercase tracking-[.14em] text-stone-400">Todos os leilões arquivados · {auctions.length}</div><div className="divide-y divide-stone-100">{auctions.map(row => <div key={row.id} className="grid gap-3 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_150px_auto] lg:items-center"><div><p className="truncate text-sm font-black">{row.title}</p><p className="mt-1 text-xs text-stone-400">{row.companyName} · {STATUS_LABEL[row.status] || row.status}</p></div><p className="text-xs text-stone-400">Arquivado {dateTime(row.archivedAt)}</p><div className="flex justify-end gap-2"><ActionButton disabled={Boolean(working)} onClick={() => mutateAuction(row,'restore')} icon={<ArchiveRestore className="h-3.5 w-3.5" />} label="Restaurar" /><ActionButton destructive disabled={Boolean(working)} onClick={() => mutateAuction(row,'delete')} icon={<Trash2 className="h-3.5 w-3.5" />} label="Excluir" /></div></div>)}</div></>}</div>;
 }
 
 function ListingAdminModal({ listing, categories, working, close, saved, mutate }: { listing: Listing; categories: ClassifiedCategory[]; working: string; close: () => void; saved: () => Promise<void>; mutate: (id: string, action: 'archive'|'restore'|'delete') => void }) {
