@@ -12,7 +12,8 @@ export type CompanyThemeFeature =
   | 'sectionSizing'
   | 'jobsLayout'
   | 'sectionOrder'
-  | 'sectionRemoval';
+  | 'sectionRemoval'
+  | 'commerceLayout';
 
 export interface CompanyThemeCapabilities {
   family: CompanyThemeFamily;
@@ -34,6 +35,7 @@ const FULL_FEATURES: Record<CompanyThemeFeature, boolean> = {
   jobsLayout: true,
   sectionOrder: true,
   sectionRemoval: true,
+  commerceLayout: false,
 };
 
 const FAMILY_BY_THEME: Record<string, CompanyThemeFamily> = {
@@ -49,8 +51,8 @@ const FAMILY_BY_THEME: Record<string, CompanyThemeFamily> = {
 
 const RECOMMENDED: Record<CompanyThemeFamily, string[]> = {
   institutional: ['identity', 'categories', 'about', 'jobs', 'contact', 'socials', 'legal'],
-  commerce: ['identity', 'categories', 'about', 'contact', 'socials', 'jobs', 'legal'],
-  classifieds: ['identity', 'categories', 'about', 'contact', 'jobs', 'socials', 'legal'],
+  commerce: ['identity', 'categories', 'classifieds', 'about', 'contact', 'socials', 'jobs', 'legal'],
+  classifieds: ['identity', 'categories', 'classifieds', 'contact', 'about', 'socials', 'jobs', 'legal'],
   services: ['identity', 'categories', 'about', 'contact', 'socials', 'jobs', 'legal'],
   food: ['identity', 'categories', 'about', 'contact', 'socials', 'legal'],
   fashion: ['identity', 'categories', 'about', 'contact', 'socials', 'legal'],
@@ -61,7 +63,7 @@ export function getCompanyThemeCapabilities(themeKey?: string | null): CompanyTh
   const family = FAMILY_BY_THEME[String(themeKey || 'aurora')] || 'institutional';
   return {
     family,
-    features: { ...FULL_FEATURES },
+    features: { ...FULL_FEATURES, commerceLayout: family === 'commerce' || family === 'classifieds' },
     requiredSections: ['identity'],
     recommendedSections: [...RECOMMENDED[family]],
   };
