@@ -20,7 +20,7 @@ type Panel = 'themes' | 'sections' | 'store' | 'style' | 'content' | 'advanced';
 const SECTION_META: Record<string, { label: string; description: string }> = {
   identity: { label: 'Capa / identidade', description: 'Abertura do site. Fica fixa no topo.' },
   categories: { label: 'Categorias', description: 'Atalhos visuais para departamentos, linhas ou áreas.' },
-  classifieds: { label: 'Produtos e serviços', description: 'Vitrine automática dos anúncios publicados pela empresa.' },
+  classifieds: { label: 'Classificados', description: 'Produtos e serviços publicados pela empresa para aparecerem na página.' },
   about: { label: 'Sobre', description: 'História, proposta e diferenciais da empresa.' },
   jobs: { label: 'Vagas', description: 'Oportunidades publicadas pela empresa.' },
   contact: { label: 'Contato', description: 'Telefone, WhatsApp, e-mail, site e endereço.' },
@@ -52,7 +52,7 @@ function hydrate(raw: CompanyPageConfig | null | undefined, company: PublicCompa
   const configuredCategories = Array.isArray(config.categories?.items) ? config.categories.items : null;
   const next: CompanyPageConfig = {
     ...config,
-    version: Math.max(6, legacyVersion || 6),
+    version: Math.max(7, legacyVersion || 7),
     editorMode: config.editorMode === 'code' ? 'code' : 'visual',
     templateKey,
     width: config.width || 'wide',
@@ -124,7 +124,7 @@ function hydrate(raw: CompanyPageConfig | null | undefined, company: PublicCompa
   };
 
   const hydratedSections = initialSections(next);
-  if (commerce && legacyVersion < 6 && !hydratedSections.some((section) => section.type === 'classifieds')) {
+  if (commerce && legacyVersion < 7 && !hydratedSections.some((section) => section.type === 'classifieds')) {
     const categoriesIndex = hydratedSections.findIndex((section) => section.type === 'categories');
     const insertAt = categoriesIndex >= 0 ? categoriesIndex + 1 : Math.min(1, hydratedSections.length);
     hydratedSections.splice(insertAt, 0, { id: 'classifieds', type: 'classifieds', enabled: true });
@@ -149,7 +149,7 @@ function prepareThemeStructure(config: CompanyPageConfig, themeKey: string) {
       next.splice(categoriesIndex >= 0 ? categoriesIndex + 1 : 1, 0, { id: `classifieds-${Date.now()}`, type: 'classifieds', enabled: true });
     }
   }
-  return { ...config, version: 6, sections: next };
+  return { ...config, version: 7, sections: next };
 }
 
 export function CompanyPageBuilderV4() {
