@@ -31,6 +31,7 @@ import { AdminPaymentsPage } from "./AdminPaymentsPage";
 import AdminMercadoPagoTestsPage from "./AdminMercadoPagoTestsPage";
 import AdminClassifiedCommercePage from "./AdminClassifiedCommercePage";
 import AdminClassifiedCatalogPage from "./AdminClassifiedCatalogPage";
+import AdminDeliveryPartnersPage from "./AdminDeliveryPartnersPage";
 import { AdminBillingSupportPage } from "./AdminBillingSupportPage";
 import { AdminPublicResumeBuilderPage } from "./AdminPublicResumeBuilderPage";
 import { AdminJobIntegrationsPage } from "./AdminJobIntegrationsPage";
@@ -42,6 +43,7 @@ import { CompanyJobPage } from "./CompanyJobPage";
 import { CompanyJobInvitesPage } from "./CompanyJobInvitesPage";
 import { CompanyHiringConfig } from "./CompanyHiringConfig";
 import { CompanyPlansPage } from "./CompanyPlansPage";
+import CompanyFinancialTransactionsPage from "./CompanyFinancialTransactionsPage";
 import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
 import { CandidateJobViewPage } from "./CandidateJobViewPage";
 import { ResumeWorkspace } from "./ResumeWorkspace";
@@ -63,6 +65,7 @@ function AdminRoutes() {
       <Route path="empresas" element={<AdminPage><AdminDashboard mode="moderation" section="companies" /></AdminPage>} />
       <Route path="validacao-cadastral" element={<AdminPage><AdminIdentityVerificationsPage /></AdminPage>} />
       <Route path="classificados" element={<AdminPage><AdminClassifiedCatalogPage /></AdminPage>} />
+      <Route path="entregas" element={<AdminPage><AdminDeliveryPartnersPage /></AdminPage>} />
       <Route path="avaliacoes-classificados" element={<AdminPage><AdminClassifiedReviewsPage /></AdminPage>} />
       <Route path="vagas" element={<AdminPage><AdminDashboard mode="moderation" section="jobs" /></AdminPage>} />
       <Route path="vagas/sinalizadas" element={<AdminPage><AdminFlaggedJobsPage /></AdminPage>} />
@@ -165,6 +168,7 @@ function CompanyRoutes({ companyId }: { companyId?: string }) {
       <Route path="talentos" element={companyOnly(<TalentSearchPage />)} />
       <Route path="contratacao" element={companyOnly(<CompanyHiringConfig />)} />
       <Route path="planos" element={companyOnly(<CompanyPlansPage />)} />
+      <Route path="pagamentos" element={companyOnly(<CompanyFinancialTransactionsPage />)} />
       <Route path="pagina" element={companyOnly(companyId ? <VerifiedCompanyPageRoute companyId={companyId} /> : null)} />
       <Route path="notificacoes" element={companyOnly(<NotificationPreferencesPage />)} />
       <Route path="verificacao" element={companyOnly(<IdentityVerificationPage />)} />
@@ -259,8 +263,6 @@ export function Dashboard() {
 
   if (isUserRoute) return <WorkspaceLayout workspace="user"><ResumeImportEntitlementOrchestrator /><BoostVisibilityBanner /><UserRoutes /></WorkspaceLayout>;
 
-  // Administração continua sendo a casa principal do administrador. A diferença é
-  // que, quando ele escolhe explicitamente outro workspace, o roteador não o expulsa de lá.
   if (isAdmin) return <Navigate to="/admin" replace />;
   return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
 }
