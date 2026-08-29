@@ -24,6 +24,10 @@ BEGIN
     UPDATE delivery_quotes
     SET status='CONSUMED'
     WHERE id=quote_id AND status IN ('QUOTED','SELECTED');
+
+    UPDATE classified_order_items
+    SET "stockReserved"=false
+    WHERE "orderId"=NEW.id AND "stockReserved"=true;
   ELSIF NEW."paymentStatus" IN ('REJECTED','CANCELED') THEN
     UPDATE delivery_quotes
     SET status=CASE WHEN "expiresAt">now() THEN 'QUOTED' ELSE 'EXPIRED' END
