@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ClassifiedsWorkspaceGate, ClassifiedsWorkspaceLayout } from '../components/classifieds/ClassifiedsWorkspaceLayout';
-import { ClassifiedsWorkspaceProvider } from '../contexts/ClassifiedsWorkspaceContext';
+import { ClassifiedsWorkspaceProvider, useClassifiedsWorkspace } from '../contexts/ClassifiedsWorkspaceContext';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
 import ClassifiedCommerceEditorPage from './ClassifiedCommerceEditorPage';
@@ -11,6 +11,7 @@ import ClassifiedsAuctionManagementPage from './ClassifiedsAuctionManagementPage
 import ClassifiedsAuctionsLivePageV2 from './ClassifiedsAuctionsLivePageV2';
 import ClassifiedsExplorePage from './ClassifiedsExplorePage';
 import ClassifiedsListingsPage from './ClassifiedsListingsPage';
+import ClassifiedsInventoryPage from './ClassifiedsInventoryPage';
 import ClassifiedsMessengerPage from './ClassifiedsMessengerPage';
 import ClassifiedsOffersPage from './ClassifiedsOffersPage';
 import ClassifiedsReceiptPreferencesPage from './ClassifiedsReceiptPreferencesPage';
@@ -18,6 +19,30 @@ import ClassifiedsReviewsPage from './ClassifiedsReviewsPage';
 import ClassifiedsSalesPage from './ClassifiedsSalesPage';
 import ClassifiedsSettingsPage from './ClassifiedsSettingsPage';
 import UserClassifiedsPage from './UserClassifiedsPage';
+import { CompanyPlansPage } from './CompanyPlansPage';
+import { CompanyProfilePage } from './CompanyProfilePage';
+import { CompanyPageBuilderV3 } from './CompanyPageBuilderV3';
+import { CompanyPageBuilderV4 } from './CompanyPageBuilderV4';
+
+function VerifiedCompanyPageRoute({ companyId }: { companyId: string }) {
+  const [hasPageVersion, setHasPageVersion] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    api.get(`/companies/${companyId}/page`)
+      .then((response) => {
+        if (!active) return;
+        setHasPageVersion(Boolean(response.data?.draft?.version ?? response.data?.page?.version));
+      })
+      .catch(() => {
+        if (active) setHasPageVersion(true);
+      });
+    return () => { active = false; };
+  }, [companyId]);
+
+  if (hasPageVersion == null) return <div className="p-8 text-stone-500">Carregando...</div>;
+  return hasPageVersion ? <CompanyPageBuilderV4 /> : <CompanyPageBuilderV3 />;
+}
 
 export default function ClassifiedsWorkspacePage() {
   const { user, loading } = useAuth();
@@ -35,6 +60,9 @@ export default function ClassifiedsWorkspacePage() {
 }
 
 function WorkspaceReadyContent() {
+  const { data } = useClassifiedsWorkspace();
+  const companyId = data?.company?.id;
+  
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -67,12 +95,17 @@ function WorkspaceReadyContent() {
   const isIntegratedAuctionArena = location.pathname === '/classificados/gestao/leiloes/arena';
   const isIntegratedLiveAuction = location.pathname.startsWith('/classificados/gestao/leiloes/') && location.pathname.endsWith('/ao-vivo');
   let page: React.ReactNode = <UserClassifiedsPage />;
-  if (isIntegratedAuctionArena || isIntegratedLiveAuction) page = <ClassifiedsAuctionsLivePageV2 embedded />;
+  
+  if (location.pathname.startsWith('/classificados/empresa/pagina') && companyId) page = <VerifiedCompanyPageRoute companyId={companyId} />;
+  else if (location.pathname.startsWith('/classificados/empresa/planos') && companyId) page = <CompanyPlansPage />;
+  else if (location.pathname.startsWith('/classificados/empresa/comercial') && companyId) page = <CompanyProfilePage section="commercial" />;
+  else if (isIntegratedAuctionArena || isIntegratedLiveAuction) page = <ClassifiedsAuctionsLivePageV2 embedded />;
   else if (location.pathname.startsWith('/classificados/gestao/leiloes')) page = <ClassifiedsAuctionManagementPage />;
   else if (location.pathname.startsWith('/classificados/explorar')) page = <ClassifiedsExplorePage />;
   else if (location.pathname.startsWith('/classificados/recebimentos')) page = <ClassifiedsReceiptPreferencesPage />;
   else if (location.pathname.startsWith('/classificados/avaliacoes')) page = <ClassifiedsReviewsPage />;
   else if (location.pathname.startsWith('/classificados/vendas')) page = <ClassifiedsSalesPage />;
+  else if (location.pathname.startsWith('/classificados/estoque')) page = <ClassifiedsInventoryPage />;
   else if (location.pathname.startsWith('/classificados/comercial/')) page = <ClassifiedCommerceEditorPage />;
   else if (location.pathname.startsWith('/classificados/publicar')) page = <ClassifiedPublishPage />;
   else if (location.pathname.startsWith('/classificados/ofertas')) page = <ClassifiedsOffersPage />;

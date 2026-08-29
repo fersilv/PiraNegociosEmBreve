@@ -22,6 +22,25 @@ type Relationship = 'PERSONAL' | 'EMPLOYEE' | 'PARTNER';
 export class IdentityComplianceService {
   constructor(private readonly dataSource: DataSource) {}
 
+  /**
+   * The application normally stores the Firebase UID in users.id. Some legacy
+   * installations, however, created that column as UUID and identify the
+   * account by its e-mail. Resolve the database key once at the boundary so
+   * the rest of the compliance flow always uses the column's native type.
+   */
+  async resolveUserId(firebaseUid: string, email?: string) {
+    const rows = await this.dataSource.query(
+      `SELECT id
+       FROM users
+       WHERE id::text=$1 OR ($2::varchar IS NOT NULL AND lower(email)=lower($2::varchar))
+       ORDER BY CASE WHEN id::text=$1 THEN 0 ELSE 1 END
+       LIMIT 1`,
+      [firebaseUid, String(email || '').trim().toLowerCase() || null],
+    );
+    if (!rows[0]?.id) throw new NotFoundException('Usuário não encontrado. Atualize seu cadastro antes de iniciar a verificação.');
+    return String(rows[0].id);
+  }
+
   async myStatus(uid: string) {
     const users = await this.dataSource.query(
       `SELECT u.id,u.email,u."displayName",u."fullName",u."socialName",u.phone,u."whatsappPhoneE164",u."whatsappVerifiedAt",u."companyId",
@@ -29,7 +48,7 @@ export class IdentityComplianceService {
               c."cnpjSituation",c."cnpjDataSource",c."cnpjDataCheckedAt",c."cnpjDataUpdatedAt",c."cnpjSnapshot",c."cnpjChangeAlert",
               c."commercialAddressSameAsLegal",c.address AS "commercialAddress",c.city AS "commercialCity",c.state AS "commercialState",
               c."verificationStatus",c."isVerified",c."complianceStatus"
-       FROM users u LEFT JOIN companies c ON c.id=u."companyId" WHERE u.id=$1 LIMIT 1`,
+       FROM users u LEFT JOIN companies c ON c.id=u."companyId" WHERE u.id::text=$1 LIMIT 1`,
       [uid],
     );
     const user = users[0];

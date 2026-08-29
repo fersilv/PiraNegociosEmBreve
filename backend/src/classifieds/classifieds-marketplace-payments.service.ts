@@ -35,8 +35,20 @@ export class ClassifiedsMarketplacePaymentsService {
     const rows=await this.dataSource.query(`SELECT * FROM company_classified_payment_oauth_states WHERE "stateHash"=$1 AND "companyId"=$2 AND "userId"=$3 AND provider='MERCADO_PAGO' AND "usedAt" IS NULL AND "expiresAt">now() LIMIT 1`,[this.hash(state),identity.company!.id,uid]);const oauth=rows[0];if(!oauth)throw new BadRequestException('Autorização Mercado Pago inválida ou expirada.');if(!oauth.codeVerifierEncrypted)throw new BadRequestException('Autorização sem PKCE. Inicie a conexão novamente.');
     const verifier=this.vault.decrypt<{codeVerifier?:string}>(oauth.codeVerifierEncrypted).codeVerifier;if(!verifier)throw new BadRequestException('Verificador PKCE inválido.');
     const token=await this.exchangeMercadoPagoCode(code,verifier);const expiresIn=Number(token.expires_in||0);const tokenExpiresAt=expiresIn>0?new Date(Date.now()+expiresIn*1000):null;
+    let externalUserName: string | null = null;
+    let externalUserEmail: string | null = null;
+    try {
+      const userRes = await fetch('https://api.mercadopago.com/users/me', { headers: { authorization: `Bearer ${token.access_token}` } });
+      if (userRes.ok) {
+        const userData = await userRes.json();
+        externalUserEmail = userData.email || null;
+        externalUserName = [userData.first_name, userData.last_name].filter(Boolean).join(' ') || null;
+      }
+    } catch (e) {
+      // Ignora erro de fetch, dados opcionais
+    }
     const credentials:MercadoPagoSellerCredentials={accessToken:String(token.access_token||''),refreshToken:token.refresh_token?String(token.refresh_token):null,publicKey:token.public_key?String(token.public_key):null,tokenType:token.token_type?String(token.token_type):null,userId:token.user_id==null?null:String(token.user_id),scope:token.scope?String(token.scope):null,obtainedAt:new Date().toISOString()};if(!credentials.accessToken)throw new ServiceUnavailableException('Mercado Pago não retornou credencial válida.');
-    await this.dataSource.transaction(async manager=>{await manager.query(`INSERT INTO company_classified_payment_connections("companyId",provider,status,"externalUserId","encryptedCredentials",scopes,"tokenExpiresAt","connectedByUserId","connectedAt","lastRefreshedAt") VALUES ($1,'MERCADO_PAGO','CONNECTED',$2,$3,$4,$5,$6,now(),now()) ON CONFLICT ("companyId",provider) DO UPDATE SET status='CONNECTED',"externalUserId"=EXCLUDED."externalUserId","encryptedCredentials"=EXCLUDED."encryptedCredentials",scopes=EXCLUDED.scopes,"tokenExpiresAt"=EXCLUDED."tokenExpiresAt","connectedByUserId"=EXCLUDED."connectedByUserId","connectedAt"=now(),"lastRefreshedAt"=now(),"updatedAt"=now()`,[identity.company!.id,credentials.userId,this.vault.encrypt(credentials as unknown as Record<string,unknown>),credentials.scope,tokenExpiresAt,uid]);await manager.query(`UPDATE company_classified_payment_oauth_states SET "usedAt"=now(),"codeVerifierEncrypted"=NULL WHERE id=$1`,[oauth.id])});
+    await this.dataSource.transaction(async manager=>{await manager.query(`INSERT INTO company_classified_payment_connections("companyId",provider,status,"externalUserId","encryptedCredentials",scopes,"tokenExpiresAt","connectedByUserId","connectedAt","lastRefreshedAt","externalUserName","externalUserEmail") VALUES ($1,'MERCADO_PAGO','CONNECTED',$2,$3,$4,$5,$6,now(),now(),$7,$8) ON CONFLICT ("companyId",provider) DO UPDATE SET status='CONNECTED',"externalUserId"=EXCLUDED."externalUserId","externalUserName"=EXCLUDED."externalUserName","externalUserEmail"=EXCLUDED."externalUserEmail","encryptedCredentials"=EXCLUDED."encryptedCredentials",scopes=EXCLUDED.scopes,"tokenExpiresAt"=EXCLUDED."tokenExpiresAt","connectedByUserId"=EXCLUDED."connectedByUserId","connectedAt"=now(),"lastRefreshedAt"=now(),"updatedAt"=now()`,[identity.company!.id,credentials.userId,this.vault.encrypt(credentials as unknown as Record<string,unknown>),credentials.scope,tokenExpiresAt,uid,externalUserName,externalUserEmail]);await manager.query(`UPDATE company_classified_payment_oauth_states SET "usedAt"=now(),"codeVerifierEncrypted"=NULL WHERE id=$1`,[oauth.id])});
     return{connected:true,provider:'MERCADO_PAGO',externalUserId:credentials.userId,tokenExpiresAt,pkce:true};
   }
 

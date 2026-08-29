@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Building2, CreditCard, Loader2, MapPin, QrCode, Save, Truck, WalletCards } from 'lucide-react';
+import { Building2, CreditCard, Loader2, MapPin, QrCode, Save, ShoppingCart, Truck, WalletCards } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 
@@ -15,6 +15,7 @@ const defaultState = {
   deliveryEnabled: false,
   arrangeEnabled: true,
   mercadoPagoConnected: false,
+  onlineCheckoutDefault: false,
 };
 
 export default function ClassifiedsReceiptPreferencesPage() {
@@ -50,6 +51,7 @@ export default function ClassifiedsReceiptPreferencesPage() {
         pickupEnabled: form.pickupEnabled,
         deliveryEnabled: form.deliveryEnabled,
         arrangeEnabled: form.arrangeEnabled,
+        onlineCheckoutDefault: form.onlineCheckoutDefault,
       });
       setForm((current) => ({ ...current, ...(response.data || {}) }));
       setMessage('Formas de recebimento salvas. Novas vendas e leilões podem usar estas escolhas como padrão.');
@@ -78,6 +80,11 @@ export default function ClassifiedsReceiptPreferencesPage() {
           {form.mercadoPagoConnected ? <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase text-emerald-700">Conectado</span> : <Link to="/classificados/vendas" className="rounded-xl bg-[#009ee3] px-4 py-2.5 text-xs font-black text-white">Conectar Mercado Pago</Link>}
         </div>
         <p className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-900">As tarifas cobradas pelo próprio Mercado Pago, disponibilidade de cartão e regras da conta continuam sendo definidas pelo provedor. Aqui você decide quais opções deseja disponibilizar aos clientes do PiraNegócios.</p>
+        {form.mercadoPagoConnected && (
+          <div className="mt-4 border-t border-stone-100 pt-4">
+            <ToggleLine icon={<ShoppingCart className="h-5 w-5" />} title="Habilitar compra online por padrão" text="Quando ativado, os novos anúncios serão publicados com a compra online ativada automaticamente (você ainda pode desligar em cada anúncio)." checked={form.onlineCheckoutDefault} onChange={(value) => setForm((current) => ({ ...current, onlineCheckoutDefault: value }))} />
+          </div>
+        )}
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">

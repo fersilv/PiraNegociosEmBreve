@@ -19,6 +19,8 @@ import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { ExternalApiClient } from './entities/external-api-client.entity';
 import {
   DEFAULT_JOBS_MCP_SCOPES,
+  DEFAULT_JOBS_V2_SCOPES,
+  expandLegacyJobsScopes,
   JOBS_CAPABILITIES,
   sanitizeJobsScopes,
 } from './jobs-mcp.scopes';
@@ -40,17 +42,22 @@ export class JobsIntegrationsAdminController {
       capabilities: JOBS_CAPABILITIES,
       defaults: {
         v1: LEGACY_OAUTH_ENVELOPE,
-        v2: DEFAULT_JOBS_MCP_SCOPES,
+        v2: DEFAULT_JOBS_V2_SCOPES,
         mcp: DEFAULT_JOBS_MCP_SCOPES,
+      },
+      policy: {
+        mcpPermissionModel: 'ONE_TOOL_ONE_SCOPE',
+        legacyScopesAccepted: true,
+        newKeysUseLegacyUmbrella: false,
       },
     };
   }
 
   @Get('clients')
-  list(@Query('kind') kindRaw?: string) {
+  async list(@Query('kind') kindRaw?: string) {
     const kind = this.kind(kindRaw || 'v1');
     const target = this.target(kind);
-    return this.clients.find({
+    const clients = await this.clients.find({
       where: { apiVersion: target.apiVersion, audience: target.audience },
       select: {
         id: true,
@@ -68,6 +75,7 @@ export class JobsIntegrationsAdminController {
       },
       order: { createdAt: 'DESC' },
     });
+    return clients.map((client) => this.publicClient(client));
   }
 
   @Post('clients')
@@ -84,15 +92,10 @@ export class JobsIntegrationsAdminController {
       throw new BadRequestException('Nome e identificação da origem são obrigatórios.');
     }
 
-    const selected = kind === 'v1'
+    const scopes = kind === 'v1'
       ? [...LEGACY_OAUTH_ENVELOPE]
-      : sanitizeJobsScopes(data.scopes, DEFAULT_JOBS_MCP_SCOPES).filter(
-          (scope) => !LEGACY_OAUTH_ENVELOPE.includes(scope),
-        );
-    if (!selected.length) throw new BadRequestException('Selecione pelo menos uma permissão.');
-    const scopes = kind === 'mcp'
-      ? Array.from(new Set([...LEGACY_OAUTH_ENVELOPE, ...selected]))
-      : selected;
+      : this.scopesForKind(kind, data.scopes, kind === 'mcp' ? DEFAULT_JOBS_MCP_SCOPES : DEFAULT_JOBS_V2_SCOPES);
+    if (!scopes.length) throw new BadRequestException('Selecione pelo menos uma permissão.');
 
     const apiKey = this.newKey(kind);
     const client = await this.clients.save(
@@ -132,13 +135,10 @@ export class JobsIntegrationsAdminController {
       if (client.apiVersion === 'v1' && client.audience === 'api') {
         client.scopes = [...LEGACY_OAUTH_ENVELOPE];
       } else {
-        const selected = sanitizeJobsScopes(data.scopes, []).filter(
-          (scope) => !LEGACY_OAUTH_ENVELOPE.includes(scope),
-        );
+        const kind: IntegrationKind = client.audience === 'mcp' ? 'mcp' : 'v2';
+        const selected = this.scopesForKind(kind, data.scopes, []);
         if (!selected.length) throw new BadRequestException('Selecione pelo menos uma permissão.');
-        client.scopes = client.audience === 'mcp'
-          ? Array.from(new Set([...LEGACY_OAUTH_ENVELOPE, ...selected]))
-          : selected;
+        client.scopes = selected;
       }
     }
     return this.publicClient(await this.clients.save(client));
@@ -174,6 +174,16 @@ export class JobsIntegrationsAdminController {
     return { apiVersion: kind, audience: 'api' as const };
   }
 
+  private scopesForKind(kind: Exclude<IntegrationKind, 'v1'>, value: unknown, fallback: string[]) {
+    const channel = kind === 'mcp' ? 'mcp' : 'v2';
+    const allowed = new Set(
+      JOBS_CAPABILITIES
+        .filter((capability) => !capability.legacy && capability.channels.includes(channel))
+        .map((capability) => capability.scope),
+    );
+    return sanitizeJobsScopes(value, fallback).filter((scope) => allowed.has(scope));
+  }
+
   private newKey(kind: IntegrationKind) {
     // O OAuth atual autentica a chave administrativa pn_v1_. A audiência MCP
     // continua separada no banco e nunca passa no guard REST; o prefixo é só
@@ -188,6 +198,12 @@ export class JobsIntegrationsAdminController {
 
   private publicClient(client: ExternalApiClient) {
     const { keyHash: _keyHash, ...safe } = client;
-    return safe;
+    return {
+      ...safe,
+      effectiveScopes: expandLegacyJobsScopes(client.scopes || []),
+      usesLegacyScopes: (client.scopes || []).some((scope) =>
+        JOBS_CAPABILITIES.some((capability) => capability.scope === scope && capability.legacy),
+      ),
+    };
   }
 }

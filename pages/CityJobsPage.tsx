@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Briefcase, Building2, ExternalLink, Loader2, MapPin } from "lucide-react";
 import { api } from "../lib/api";
 import { applicationUrlLabel, safeApplicationUrl } from "../lib/jobApplication";
+import { RegionalLoader } from "../components/RegionalLoader";
 
 type CityJob = {
   id: string;
@@ -91,7 +92,7 @@ export default function CityJobsPage() {
     return () => { document.getElementById(scriptId)?.remove(); };
   }, [data]);
 
-  if (loading) return <div className="flex min-h-[70vh] items-center justify-center bg-[#f5f2eb]"><Loader2 className="h-8 w-8 animate-spin text-terracotta-600" /></div>;
+  if (loading) return <RegionalLoader context="jobs" className="min-h-[70vh] bg-[#f5f2eb]" />;
 
   if (notFound || !data) {
     return <main className="min-h-screen bg-[#f5f2eb] px-4 py-20"><div className="mx-auto max-w-xl rounded-[30px] border border-stone-200 bg-white p-8 text-center"><MapPin className="mx-auto h-8 w-8 text-stone-300" /><h1 className="mt-4 font-serif text-3xl font-bold text-stone-950">Sem vagas ativas nesta cidade agora.</h1><p className="mt-3 text-sm leading-6 text-stone-500">A página volta a aparecer no nosso índice quando houver novas oportunidades verificadas.</p><Link to="/vagas" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-5 py-3 text-sm font-bold text-white">Ver todas as vagas</Link></div></main>;

@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { applyTypedCnpjCompanyUpdate } from './cnpj-update-typed.helper';
 
 type QsaMember = {
   name: string;
@@ -53,45 +54,21 @@ export class CnpjLookupService {
     const changeAlert = changes.length ? { detectedAt: new Date().toISOString(), changes } : null;
     const commercialSame = current.commercialAddressSameAsLegal !== false;
 
-    const rows = await this.dataSource.query(
-      `UPDATE companies SET
-         "hasCnpj"=true,
-         cnpj=$2,
-         "legalName"=$3,
-         "registryTradeName"=$4,
-         "legalAddress"=$5,
-         "legalCity"=$6,
-         "legalState"=$7,
-         "legalZipCode"=$8,
-         "cnpjSituation"=$9,
-         "cnpjDataSource"=$10,
-         "cnpjDataCheckedAt"=now(),
-         "cnpjDataUpdatedAt"=$11,
-         "cnpjSnapshot"=$12::jsonb,
-         "cnpjChangeAlert"=$13::jsonb,
-         address=CASE WHEN $14 THEN $5 ELSE address END,
-         city=CASE WHEN $14 THEN $6 ELSE city END,
-         state=CASE WHEN $14 THEN $7 ELSE state END,
-         "cityState"=CASE WHEN $14 THEN concat_ws(', ',NULLIF($6,''),NULLIF($7,'')) ELSE "cityState" END,
-         "updatedAt"=now()
-       WHERE id=$1 RETURNING *`,
-      [
-        companyId,
-        snapshot.cnpj,
-        snapshot.legalName,
-        snapshot.tradeName,
-        snapshot.legalAddress,
-        snapshot.city,
-        snapshot.state,
-        snapshot.zipCode,
-        snapshot.situation,
-        snapshot.source,
-        snapshot.sourceUpdatedAt,
-        JSON.stringify(snapshot),
-        JSON.stringify(changeAlert),
-        commercialSame,
-      ],
-    );
+    const rows = await applyTypedCnpjCompanyUpdate(this.dataSource, companyId, {
+      cnpj: snapshot.cnpj,
+      legalName: snapshot.legalName,
+      tradeName: snapshot.tradeName,
+      legalAddress: snapshot.legalAddress,
+      city: snapshot.city,
+      state: snapshot.state,
+      zipCode: snapshot.zipCode,
+      situation: snapshot.situation,
+      source: snapshot.source,
+      sourceUpdatedAt: snapshot.sourceUpdatedAt,
+      snapshot: JSON.stringify(snapshot),
+      changeAlert: JSON.stringify(changeAlert),
+      commercialSame,
+    });
     return { company: rows[0], changes };
   }
 

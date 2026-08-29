@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { ChatGateway } from '../chat/chat.gateway';
 import { PaymentsService } from './payments.service';
 import {
   PaymentProviderConfigService,
@@ -8,10 +9,13 @@ import {
 
 @Injectable()
 export class PaymentCheckoutStatusService {
+  private readonly watches = new Map<string, Promise<void>>();
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly payments: PaymentsService,
     private readonly providerConfig: PaymentProviderConfigService,
+    private readonly realtime: ChatGateway,
   ) {}
 
   async getForUser(userId: string, paymentId: string) {
@@ -27,13 +31,38 @@ export class PaymentCheckoutStatusService {
       payment = await this.find(userId, paymentId) || payment;
     }
 
-    return this.present(payment);
+    const presented = this.present(payment);
+    this.realtime.publishPaymentUpdate(userId, presented);
+    return presented;
+  }
+
+  watchForUser(userId: string, paymentId: string) {
+    const safeUserId = String(userId || '').trim();
+    const safePaymentId = String(paymentId || '').trim();
+    if (!safeUserId || !safePaymentId) return;
+    const key = `${safeUserId}:${safePaymentId}`;
+    if (this.watches.has(key)) return;
+
+    const task = this.runWatch(safeUserId, safePaymentId)
+      .catch(() => undefined)
+      .finally(() => this.watches.delete(key));
+    this.watches.set(key, task);
+  }
+
+  private async runWatch(userId: string, paymentId: string) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const state = await this.getForUser(userId, paymentId).catch(() => null);
+      if (!state) return;
+      if (state.completed === true) return;
+      if (['CANCELED', 'EXPIRED', 'REFUNDED'].includes(String(state.status || '').toUpperCase())) return;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
   }
 
   private async find(userId: string, paymentId: string) {
     const rows = await this.dataSource.query(
       `SELECT p.*, pp.name AS "productName", pp.description AS "productDescription",
-              pp."billingType", pp."durationDays"
+              pp."billingType" AS "productBillingType", pp."durationDays"
        FROM payments p
        LEFT JOIN payment_products pp ON pp.code = p."productCode"
        WHERE p.id = $1 AND p."userId" = $2
@@ -48,17 +77,22 @@ export class PaymentCheckoutStatusService {
     try { return JSON.parse(String(payment?.metadata || '{}')); } catch { return {}; }
   }
 
+  private isRecurring(payment: any, metadata = this.metadata(payment)) {
+    return payment.purchaseMode === 'SUBSCRIPTION'
+      || metadata.purchaseMode === 'SUBSCRIPTION'
+      || metadata.paymentType === 'PIX_AUTOMATICO'
+      || metadata.recurringApi === 'SUBSCRIPTIONS'
+      || metadata.efiAutomaticPix === true
+      || Boolean(metadata.mercadoPagoSubscriptionId);
+  }
+
   private async reconcileMercadoPago(payment: any) {
     const config = await this.providerConfig.getSecretConfig<MercadoPagoProviderConfig>('MERCADO_PAGO');
     const token = String(config.accessToken || '').trim();
     if (!token) return;
 
     const metadata = this.metadata(payment);
-    const recurring = payment.billingType === 'RECURRING'
-      || metadata.recurringApi === 'SUBSCRIPTIONS'
-      || Boolean(metadata.mercadoPagoSubscriptionId);
-
-    if (recurring) {
+    if (this.isRecurring(payment, metadata)) {
       await this.reconcileSubscription(payment, token);
       return;
     }
@@ -130,7 +164,7 @@ export class PaymentCheckoutStatusService {
         mercadoPagoTransactionId: transaction?.id || null,
         mercadoPagoTransactionStatus: providerStatus,
         mercadoPagoStatusDetail: providerStatusDetail,
-        confirmationMode: 'MERCADO_PAGO_ORDER_STATUS_POLL',
+        confirmationMode: 'MERCADO_PAGO_ORDER_REALTIME_WATCH',
       }).catch(() => undefined);
     }
   }
@@ -147,6 +181,8 @@ export class PaymentCheckoutStatusService {
       `UPDATE payments SET metadata = coalesce(metadata,'{}'::jsonb) || $2::jsonb, "updatedAt" = now()
        WHERE id = $1`,
       [payment.id, JSON.stringify({
+        purchaseMode: 'SUBSCRIPTION',
+        paymentType: 'PIX_AUTOMATICO',
         mercadoPagoSubscriptionId: subscriptionId,
         mercadoPagoSubscriptionStatus: status || null,
         mercadoPagoNextPaymentDate: subscription?.next_payment_date || null,
@@ -165,10 +201,9 @@ export class PaymentCheckoutStatusService {
 
   private present(payment: any) {
     const metadata = this.metadata(payment);
-    const recurring = payment.billingType === 'RECURRING'
-      || metadata.recurringApi === 'SUBSCRIPTIONS'
-      || Boolean(metadata.mercadoPagoSubscriptionId);
-    const subscriptionStatus = String(metadata.mercadoPagoSubscriptionStatus || '').toLowerCase();
+    const recurring = this.isRecurring(payment, metadata);
+    const purchaseMode = recurring ? 'SUBSCRIPTION' : 'ONE_TIME';
+    const subscriptionStatus = String(metadata.mercadoPagoSubscriptionStatus || metadata.efiRecurrenceStatus || '').toLowerCase();
     const authorizationUrl = recurring ? metadata.subscriptionCheckoutUrl || null : null;
     const ticketUrl = !recurring ? metadata.ticketUrl || null : null;
     const completed = payment.status === 'PAID'
@@ -176,10 +211,12 @@ export class PaymentCheckoutStatusService {
 
     return {
       id: payment.id,
+      paymentId: payment.id,
       productCode: payment.productCode,
       productName: payment.productName || payment.productCode,
       productDescription: payment.productDescription || null,
-      billingType: payment.billingType || 'ONE_TIME',
+      purchaseMode,
+      billingType: recurring ? 'RECURRING' : 'ONE_TIME',
       amountCents: Number(payment.amountCents || 0),
       originalAmountCents: Number(payment.originalAmountCents || payment.amountCents || 0),
       discountCents: Number(payment.discountCents || 0),
@@ -195,14 +232,17 @@ export class PaymentCheckoutStatusService {
       ticketUrl,
       recurring,
       subscriptionStatus: subscriptionStatus || null,
-      authorizationComplete: recurring && subscriptionStatus === 'authorized',
-      providerStatus: metadata.mercadoPagoTransactionStatus || metadata.mercadoPagoOrderStatus || null,
+      authorizationComplete: recurring && ['authorized', 'ativa', 'active'].includes(subscriptionStatus),
+      providerStatus: metadata.mercadoPagoTransactionStatus || metadata.mercadoPagoOrderStatus || metadata.efiRecurrenceStatus || null,
       providerStatusDetail: metadata.mercadoPagoStatusDetail || null,
       completed,
       awaitingPayment: !completed && payment.status === 'PENDING',
       metadata: {
+        purchaseMode,
+        paymentType: recurring ? 'PIX_AUTOMATICO' : 'PIX',
         checkoutApi: metadata.checkoutApi || null,
         recurringApi: metadata.recurringApi || null,
+        efiAutomaticPix: metadata.efiAutomaticPix === true,
       },
     };
   }

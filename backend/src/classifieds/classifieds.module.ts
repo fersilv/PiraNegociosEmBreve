@@ -9,6 +9,9 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { User } from '../users/entities/user.entity';
 import { ClassifiedsAiReviewService } from './classifieds-ai-review.service';
+import { ClassifiedsArchivedAwareAuctionService } from './classifieds-archived-aware-auction.service';
+import { ClassifiedsArchivedAwareCommerceService } from './classifieds-archived-aware-commerce.service';
+import { ClassifiedsArchivedAwareSalesService } from './classifieds-archived-aware-sales.service';
 import { ClassifiedsAuctionEngagementService } from './classifieds-auction-engagement.service';
 import { ClassifiedsAuctionExtrasController } from './classifieds-auction-extras.controller';
 import { ClassifiedsAuctionGateway } from './classifieds-auction.gateway';
@@ -19,6 +22,9 @@ import { ClassifiedsAuctionPublicController } from './classifieds-auction-public
 import { ClassifiedsAuctionPublicService } from './classifieds-auction-public.service';
 import { ClassifiedsAuctionService } from './classifieds-auction.service';
 import { ClassifiedsAuctionSettlementService } from './classifieds-auction-settlement.service';
+import { ClassifiedsCatalogAdminController } from './classifieds-catalog-admin.controller';
+import { ClassifiedsCatalogAdminService } from './classifieds-catalog-admin.service';
+import { ClassifiedsCategoryTaxonomyService } from './classifieds-category-taxonomy.service';
 import { ClassifiedsChatService } from './classifieds-chat.service';
 import { ClassifiedsCheckoutController } from './classifieds-checkout.controller';
 import { ClassifiedsCheckoutService } from './classifieds-checkout.service';
@@ -27,6 +33,9 @@ import { ClassifiedsCommerceAdminController } from './classifieds-commerce-admin
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
 import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
+import { ClassifiedsLifecycleController } from './classifieds-lifecycle.controller';
+import { ClassifiedsLifecycleService } from './classifieds-lifecycle.service';
+import { ClassifiedsListingLifecycleSchemaService } from './classifieds-listing-lifecycle-schema.service';
 import { ClassifiedsLocationService } from './classifieds-location.service';
 import { ClassifiedsMarketplacePaymentsService } from './classifieds-marketplace-payments.service';
 import { ClassifiedsOfferChatService } from './classifieds-offer-chat.service';
@@ -74,11 +83,13 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsAuctionPublicController,
     ClassifiedsAuctionManagementController,
     ClassifiedsPrivateController,
+    ClassifiedsLifecycleController,
     ClassifiedsSalesController,
     ClassifiedsCheckoutController,
     ClassifiedsCheckoutWebhookController,
     ClassifiedsAuctionExtrasController,
     ClassifiedsCommerceAdminController,
+    ClassifiedsCatalogAdminController,
     ClassifiedsReviewsController,
     ClassifiedsReviewsPublicController,
     ClassifiedsReviewsAdminController,
@@ -86,21 +97,25 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
   providers: [
     AdminGuard,
     ClassifiedsService,
+    ClassifiedsCategoryTaxonomyService,
+    ClassifiedsCatalogAdminService,
+    ClassifiedsLifecycleService,
+    ClassifiedsListingLifecycleSchemaService,
     ClassifiedsIdentityService,
     ClassifiedsLocationService,
     ClassifiedsChatService,
     ClassifiedsAiReviewService,
-    ClassifiedsCommerceService,
+    { provide: ClassifiedsCommerceService, useClass: ClassifiedsArchivedAwareCommerceService },
     ClassifiedsEntitlementsService,
     ClassifiedsAuctionGateway,
-    ClassifiedsAuctionService,
+    { provide: ClassifiedsAuctionService, useClass: ClassifiedsArchivedAwareAuctionService },
     ClassifiedsAuctionPublicService,
     ClassifiedsAuctionManagementService,
     ClassifiedsAuctionEngagementService,
     ClassifiedsAuctionSettlementService,
     ClassifiedsAuctionPaymentPolicyService,
     ClassifiedsReceiptPreferencesService,
-    ClassifiedsSalesService,
+    { provide: ClassifiedsSalesService, useClass: ClassifiedsArchivedAwareSalesService },
     ClassifiedsMarketplacePaymentsService,
     ClassifiedsOfferChatService,
     ClassifiedsMarketplaceTermsService,
@@ -110,7 +125,9 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
   ],
   exports: [
     ClassifiedsService,
+    ClassifiedsCategoryTaxonomyService,
     ClassifiedsIdentityService,
+    ClassifiedsLifecycleService,
     ClassifiedsLocationService,
     ClassifiedsCommerceService,
     ClassifiedsEntitlementsService,

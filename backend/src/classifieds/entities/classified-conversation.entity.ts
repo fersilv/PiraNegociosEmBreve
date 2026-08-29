@@ -35,6 +35,12 @@ export class ClassifiedConversation {
   @Column({ type: 'timestamptz', nullable: true })
   lastMessageAt: Date | null;
 
+  @Column({ type: 'timestamptz', nullable: true })
+  buyerDeletedAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  sellerDeletedAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

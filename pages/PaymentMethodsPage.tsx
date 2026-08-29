@@ -53,17 +53,13 @@ function dateLabel(value?: string | null) {
   return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
-function providerLabel(code: ProviderCode) {
-  return code === "EFI" ? "Efí Bank" : "Mercado Pago";
-}
-
 function paymentTypeLabel(type: PaymentType) {
   return type === "PIX" ? "Pix avulso" : "Pix Automático";
 }
 
 function capabilities(provider: Provider) {
-  if (provider.code === "EFI") return ["Pix", "Pix Automático", "API Pix"];
-  return ["Pix", "Pix Automático", "Orders", "Assinaturas"];
+  if (provider.code === "EFI") return ["Pix avulso", "Pix Automático", "API Pix"];
+  return ["Pix avulso", "Orders", "Assinaturas hospedadas"];
 }
 
 function statusOf(provider: Provider) {
@@ -110,8 +106,8 @@ export function PaymentMethodsPage() {
   const routeFor = (type: PaymentType) => routes.find((route) => route.paymentType === type);
   const eligibleFor = (provider: Provider, type: PaymentType) => {
     if (!provider.configured) return false;
-    if (type === "PIX_AUTOMATICO" && provider.code === "EFI" && provider.config?.pixAutomaticEnabled !== true) return false;
-    return true;
+    if (type === "PIX") return true;
+    return provider.code === "EFI" && provider.config?.pixAutomaticEnabled === true;
   };
 
   const openEditor = (provider: Provider) => {
@@ -207,7 +203,7 @@ export function PaymentMethodsPage() {
       await api.patch(`/admin/payments/providers/${editing.code}`, body);
       setEditing(null);
       setCertificate(null);
-      setMessage(`${savedName} salva. Qualquer rota que usava esse provedor foi desligada por segurança; teste e selecione novamente os tipos de pagamento.`);
+      setMessage(`${savedName} salva. As rotas que usavam esse provedor foram desligadas por segurança; teste e selecione novamente o gateway de cada tipo.`);
       await load();
     } catch (requestError: any) {
       setError(requestError?.response?.data?.message || "Não foi possível salvar a forma de pagamento.");
@@ -248,11 +244,11 @@ export function PaymentMethodsPage() {
         const provider = providers.find((item) => item.code === providerCode);
         if (!provider) throw new Error("Provedor não encontrado.");
         const accepted = window.confirm(
-          `Usar ${provider.name} para ${paymentTypeLabel(paymentType)}? A API será testada novamente antes de ativar esta rota.`,
+          `Usar ${provider.name} como gateway de ${paymentTypeLabel(paymentType)}? A API será testada novamente antes de ativar esta rota.`,
         );
         if (!accepted) return;
         await api.post(`/admin/payments/providers/${provider.code}/activate`, { paymentType });
-        setMessage(`${paymentTypeLabel(paymentType)} agora será processado por ${provider.name}.`);
+        setMessage(`${provider.name} agora é o gateway de ${paymentTypeLabel(paymentType)}.`);
       }
       await load();
     } catch (requestError: any) {
@@ -269,7 +265,7 @@ export function PaymentMethodsPage() {
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-terracotta-600">Financeiro · Integrações</p>
           <h1 className="mt-1 font-serif text-3xl font-bold text-stone-900">Formas de pagamento</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Configure os provedores e escolha separadamente quem processa cada tipo de pagamento. Pix avulso e Pix Automático podem usar o mesmo provedor ou provedores diferentes.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">Escolha dois roteamentos independentes: um gateway para Pix avulso e a Efí para Pix Automático. Alterar um não mexe no outro.</p>
         </div>
         <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-sm font-bold text-stone-700 shadow-sm disabled:opacity-50">
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Atualizar status
@@ -303,22 +299,34 @@ export function PaymentMethodsPage() {
       <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
         <div className="flex items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700"><Route className="h-5 w-5" /></span>
-          <div><h2 className="font-bold text-stone-950">Roteamento por tipo de pagamento</h2><p className="mt-1 text-xs leading-5 text-stone-500">Ao selecionar um provedor, a plataforma testa a API novamente. Apenas a rota escolhida é alterada; a outra continua independente.</p></div>
+          <div><h2 className="font-bold text-stone-950">Gateways por modalidade</h2><p className="mt-1 text-xs leading-5 text-stone-500">Compra avulsa usa Pix comum. Assinatura usa Pix Automático nativo da Efí.</p></div>
         </div>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           {(["PIX", "PIX_AUTOMATICO"] as PaymentType[]).map((type) => {
             const route = routeFor(type);
             return (
-              <div key={type} className="rounded-2xl border border-stone-200 bg-[#fffdfa] p-4">
+              <div key={type} className={`rounded-2xl border p-4 ${type === 'PIX' ? 'border-emerald-200 bg-emerald-50/35' : 'border-violet-200 bg-violet-50/35'}`}>
                 <div className="flex items-start justify-between gap-3">
-                  <div><p className="text-[10px] font-black uppercase tracking-[.14em] text-stone-400">{type === "PIX" ? "Pagamento imediato" : "Pagamento recorrente"}</p><h3 className="mt-1 font-bold text-stone-950">{paymentTypeLabel(type)}</h3><p className="mt-1 text-xs leading-5 text-stone-500">{type === "PIX" ? "QR Code e Pix copia e cola para compras avulsas." : "Autorização única e cobranças recorrentes do plano mensal."}</p></div>
+                  <div><p className="text-[10px] font-black uppercase tracking-[.14em] text-stone-400">{type === "PIX" ? "Gateway da compra avulsa" : "Gateway da assinatura"}</p><h3 className="mt-1 font-bold text-stone-950">{paymentTypeLabel(type)}</h3><p className="mt-1 text-xs leading-5 text-stone-500">{type === "PIX" ? "Escolha Efí ou Mercado Pago para QR Code e copia e cola das compras avulsas." : "Pix Automático nativo. Atualmente processado pela Efí quando o recurso estiver habilitado."}</p></div>
                   {route?.enabled && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black text-emerald-700">ATIVO</span>}
                 </div>
                 <label className="mt-4 block">
-                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-stone-400">Provedor</span>
+                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-stone-400">{type === 'PIX' ? 'Gateway do Pix avulso' : 'Gateway do Pix Automático'}</span>
                   <select value={route?.enabled ? route.providerCode || "" : ""} disabled={Boolean(working)} onChange={(event) => void changeRoute(type, event.target.value)} className="w-full rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm font-bold text-stone-700 outline-none focus:border-emerald-400 disabled:opacity-60">
                     <option value="">Desativado</option>
-                    {providers.map((provider) => <option key={provider.code} value={provider.code} disabled={!eligibleFor(provider, type)}>{provider.name}{!provider.configured ? " · configure primeiro" : type === "PIX_AUTOMATICO" && provider.code === "EFI" && provider.config?.pixAutomaticEnabled !== true ? " · Pix Automático desativado" : provider.lastHealthCheckOk === false ? " · último teste falhou" : ""}</option>)}
+                    {providers.map((provider) => {
+                      const eligible = eligibleFor(provider, type);
+                      const reason = !provider.configured
+                        ? ' · configure primeiro'
+                        : type === 'PIX_AUTOMATICO' && provider.code === 'MERCADO_PAGO'
+                          ? ' · não oferece Pix Automático nativo'
+                          : type === 'PIX_AUTOMATICO' && provider.code === 'EFI' && provider.config?.pixAutomaticEnabled !== true
+                            ? ' · Pix Automático desativado'
+                            : provider.lastHealthCheckOk === false
+                              ? ' · último teste falhou'
+                              : '';
+                      return <option key={provider.code} value={provider.code} disabled={!eligible}>{provider.name}{reason}</option>;
+                    })}
                   </select>
                 </label>
                 {working === `route:${type}` && <p className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-emerald-700"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Testando e atualizando rota...</p>}
@@ -387,7 +395,7 @@ export function PaymentMethodsPage() {
                   <SecretField label="Senha do certificado, se houver" configured={editing.config?.certificateHasPassphrase} value={draft.certificatePassphrase || ""} onChange={(value) => setDraft((current) => ({ ...current, certificatePassphrase: value }))} />
 
                   <div className="rounded-2xl border border-stone-200 p-4">
-                    <div className="flex items-start justify-between gap-4"><div><p className="font-bold text-stone-900">Pix Automático</p><p className="mt-1 text-xs leading-5 text-stone-500">Ative para que a Efí possa ser selecionada na rota de pagamentos recorrentes.</p></div><Switch checked={draft.pixAutomaticEnabled === true} onChange={(value) => setDraft((current) => ({ ...current, pixAutomaticEnabled: value }))} label="Pix Automático" /></div>
+                    <div className="flex items-start justify-between gap-4"><div><p className="font-bold text-stone-900">Pix Automático</p><p className="mt-1 text-xs leading-5 text-stone-500">Ative para que a Efí possa ser selecionada como gateway das assinaturas recorrentes.</p></div><Switch checked={draft.pixAutomaticEnabled === true} onChange={(value) => setDraft((current) => ({ ...current, pixAutomaticEnabled: value }))} label="Pix Automático" /></div>
                     {draft.pixAutomaticEnabled && <div className="mt-4 grid gap-4 sm:grid-cols-3"><SecretField label="Agência recebedora" configured={editing.config?.receiverAccountConfigured} value={draft.receiverAgency || ""} onChange={(value) => setDraft((current) => ({ ...current, receiverAgency: value }))} /><SecretField label="Conta recebedora" configured={editing.config?.receiverAccountConfigured} value={draft.receiverAccount || ""} onChange={(value) => setDraft((current) => ({ ...current, receiverAccount: value }))} /><SelectField label="Tipo da conta" value={draft.receiverAccountType || "PAGAMENTO"} onChange={(value) => setDraft((current) => ({ ...current, receiverAccountType: value }))} options={[{ value: "PAGAMENTO", label: "Pagamento" }, { value: "CORRENTE", label: "Corrente" }, { value: "POUPANCA", label: "Poupança" }]} /></div>}
                   </div>
 
@@ -407,7 +415,7 @@ export function PaymentMethodsPage() {
                     <SecretField label="Public Key" configured={editing.config?.publicKeyConfigured} value={draft.publicKey || ""} onChange={(value) => setDraft((current) => ({ ...current, publicKey: value }))} />
                     <div className="sm:col-span-2"><SecretField label="Assinatura secreta do Webhook" configured={editing.config?.webhookSecretConfigured} value={draft.webhookSecret || ""} onChange={(value) => setDraft((current) => ({ ...current, webhookSecret: value }))} /></div>
                   </div>
-                  <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-800"><strong>Integração:</strong> Pix avulso usa Checkout Transparente com API de Orders. Pix Automático usa a API de Assinaturas; a autorização é concluída na jornada segura do Mercado Pago e as cobranças futuras são conciliadas pelos eventos de assinatura.</div>
+                  <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-800"><strong>Uso no PiraNegócios:</strong> Mercado Pago pode ser selecionado como gateway do <strong>Pix avulso</strong> via Orders. A API de Assinaturas hospedadas continua disponível para outros fluxos, mas não é usada como Pix Automático.</div>
                 </>
               )}
             </div>
@@ -428,7 +436,7 @@ function EfiInstructions() {
 }
 
 function MercadoPagoInstructions() {
-  return <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4"><div className="flex gap-3"><KeyRound className="mt-0.5 h-5 w-5 shrink-0 text-sky-700" /><div><p className="font-bold text-sky-950">Credenciais Mercado Pago</p><ol className="mt-2 list-decimal space-y-1 pl-4 text-xs leading-5 text-sky-800"><li>Em <strong>Mercado Pago Developers → Suas integrações</strong>, abra a aplicação do Checkout Transparente.</li><li>Em <strong>Credenciais</strong>, copie o Access Token do ambiente correto.</li><li>Em <strong>Webhooks</strong>, use a URL exibida abaixo.</li><li>Para Pix avulso, habilite <strong>Order (Mercado Pago)</strong>. Para recorrência, habilite os eventos de <strong>Planos e assinaturas</strong>, incluindo assinatura e pagamento recorrente.</li><li>Salve, revele a <strong>assinatura secreta</strong> e cadastre-a aqui.</li></ol><a href="https://www.mercadopago.com.br/developers/panel/app" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-black text-sky-700 underline">Abrir Suas integrações <ExternalLink className="h-3.5 w-3.5" /></a></div></div></div>;
+  return <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4"><div className="flex gap-3"><KeyRound className="mt-0.5 h-5 w-5 shrink-0 text-sky-700" /><div><p className="font-bold text-sky-950">Credenciais Mercado Pago</p><ol className="mt-2 list-decimal space-y-1 pl-4 text-xs leading-5 text-sky-800"><li>Em <strong>Mercado Pago Developers → Suas integrações</strong>, abra a aplicação do Checkout Transparente.</li><li>Em <strong>Credenciais</strong>, copie o Access Token do ambiente correto.</li><li>Em <strong>Webhooks</strong>, use a URL exibida abaixo.</li><li>Para o Pix avulso, habilite os eventos necessários da <strong>Order</strong>.</li><li>Salve, revele a <strong>assinatura secreta</strong> e cadastre-a aqui.</li></ol><a href="https://www.mercadopago.com.br/developers/panel/app" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs font-black text-sky-700 underline">Abrir Suas integrações <ExternalLink className="h-3.5 w-3.5" /></a></div></div></div>;
 }
 
 function Switch({ checked, onChange, disabled = false, label }: { checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean; label: string }) {

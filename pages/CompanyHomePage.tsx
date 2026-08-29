@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { api, asArray } from "../lib/api";
 import { useAuth, getGreetingName } from "../contexts/AuthContext";
+import { RegionalLoader } from "../components/RegionalLoader";
 
 type CompanySummary = {
   id: string;
@@ -147,14 +148,7 @@ export function CompanyHomePage() {
   );
 
   if (loading) {
-    return (
-      <div className="flex min-h-[55vh] items-center justify-center">
-        <div className="text-center text-stone-500">
-          <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-terracotta-600" />
-          <p className="text-sm font-medium">Organizando o painel da empresa...</p>
-        </div>
-      </div>
-    );
+    return <RegionalLoader context="companies" label="Organizando o painel da empresa..." />;
   }
 
   if (!company) {

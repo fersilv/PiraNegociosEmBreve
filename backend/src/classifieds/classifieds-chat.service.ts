@@ -71,11 +71,11 @@ export class ClassifiedsChatService {
       .where(new Brackets((where) => {
         if (identity.type === 'COMPANY') {
           const companyId = identity.company!.id;
-          where.where('conversation.buyerCompanyId = :companyId', { companyId })
-            .orWhere('conversation.sellerCompanyId = :companyId', { companyId });
+          where.where('(conversation.buyerCompanyId = :companyId AND conversation.buyerDeletedAt IS NULL)', { companyId })
+            .orWhere('(conversation.sellerCompanyId = :companyId AND conversation.sellerDeletedAt IS NULL)', { companyId });
         } else {
-          where.where('(conversation.buyerUserId = :uid AND conversation.buyerCompanyId IS NULL)', { uid })
-            .orWhere('(conversation.sellerUserId = :uid AND conversation.sellerCompanyId IS NULL)', { uid });
+          where.where('(conversation.buyerUserId = :uid AND conversation.buyerCompanyId IS NULL AND conversation.buyerDeletedAt IS NULL)', { uid })
+            .orWhere('(conversation.sellerUserId = :uid AND conversation.sellerCompanyId IS NULL AND conversation.sellerDeletedAt IS NULL)', { uid });
         }
       }))
       .orderBy('conversation.lastMessageAt', 'DESC', 'NULLS LAST')
@@ -91,15 +91,28 @@ export class ClassifiedsChatService {
     return this.messages.find({ where: { conversationId }, order: { createdAt: 'ASC' } });
   }
 
-  async send(conversationId: string, uid: string, rawBody: unknown) {
+  async archive(conversationId: string, uid: string) {
+    const { conversation, role } = await this.assertParticipant(conversationId, uid);
+    if (role === 'BUYER') conversation.buyerDeletedAt = new Date();
+    else conversation.sellerDeletedAt = new Date();
+    await this.conversations.save(conversation);
+    return { archived: true };
+  }
+
+  async send(conversationId: string, uid: string, rawBody: unknown, rawMetadata: unknown = null) {
     const { conversation, user, role } = await this.assertParticipant(conversationId, uid);
     const body = String(rawBody ?? '').trim();
-    if (!body) throw new BadRequestException('Escreva uma mensagem.');
+    if (!body && !rawMetadata) throw new BadRequestException('Escreva uma mensagem ou envie um anexo.');
     if (body.length > 4000) throw new BadRequestException('A mensagem excede o limite de 4.000 caracteres.');
 
     const companyId = role === 'BUYER' ? conversation.buyerCompanyId : conversation.sellerCompanyId;
     const company = companyId ? await this.companies.findOne({ where: { id: companyId } }) : null;
     const senderName = company?.name || user.socialName || user.displayName || user.fullName || 'Usuário';
+
+    let metadata = null;
+    if (rawMetadata && typeof rawMetadata === 'object') {
+      metadata = rawMetadata;
+    }
 
     const message = await this.messages.save(this.messages.create({
       conversationId,
@@ -108,7 +121,7 @@ export class ClassifiedsChatService {
       senderRole: role,
       body,
       messageType: 'TEXT',
-      metadata: null,
+      metadata,
     }));
 
     conversation.lastMessageAt = message.createdAt || new Date();

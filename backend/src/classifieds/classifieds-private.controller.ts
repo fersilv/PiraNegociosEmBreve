@@ -1,12 +1,14 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { ChatGateway } from '../chat/chat.gateway';
 import { IdentityComplianceService } from '../compliance/identity-compliance.service';
 import { ClassifiedsAuctionService } from './classifieds-auction.service';
+import { ClassifiedsCategoryTaxonomyService } from './classifieds-category-taxonomy.service';
 import { ClassifiedsChatService } from './classifieds-chat.service';
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
 import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
+import { ClassifiedsLifecycleService } from './classifieds-lifecycle.service';
 import { ClassifiedsOfferChatService } from './classifieds-offer-chat.service';
 import { ClassifiedsService } from './classifieds.service';
 
@@ -15,7 +17,9 @@ import { ClassifiedsService } from './classifieds.service';
 export class ClassifiedsPrivateController {
   constructor(
     private readonly classifieds: ClassifiedsService,
+    private readonly taxonomy: ClassifiedsCategoryTaxonomyService,
     private readonly identities: ClassifiedsIdentityService,
+    private readonly lifecycle: ClassifiedsLifecycleService,
     private readonly chats: ClassifiedsChatService,
     private readonly commerce: ClassifiedsCommerceService,
     private readonly entitlements: ClassifiedsEntitlementsService,
@@ -134,12 +138,16 @@ export class ClassifiedsPrivateController {
 
   @Post('me/listings')
   async create(@Req() req: any, @Body() body: Record<string, unknown>) {
+    await this.taxonomy.assertCompatible(body.categorySlug, body.listingType, body.attributes);
     await this.entitlements.assertImageLimit(req.user.uid, body.images);
     return this.classifieds.create(req.user.uid, normalizeOptionalPublicContacts(body));
   }
 
   @Patch('me/listings/:id')
   async update(@Req() req: any, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    if (body.categorySlug !== undefined && body.listingType !== undefined) {
+      await this.taxonomy.assertCompatible(body.categorySlug, body.listingType, body.attributes);
+    }
     if (Array.isArray(body.images)) await this.entitlements.assertImageLimit(req.user.uid, body.images);
     return this.classifieds.update(req.user.uid, id, body);
   }
@@ -149,24 +157,21 @@ export class ClassifiedsPrivateController {
     await this.identities.assertPublishingReady(req.user.uid);
     const identity = await this.identities.active(req.user.uid);
     await this.compliance.assertSellerEligible(req.user.uid, identity);
-    const listing = await this.classifieds.publish(req.user.uid, id);
-    const moderation = await this.commerce.moderatePublishedListing(req.user.uid, id);
-    if ((moderation as any)?.status === 'PAUSED') {
-      return {
-        ...listing,
-        status: 'PAUSED',
-        moderationReason: (moderation as any).reason || 'Possível anúncio duplicado.',
-        duplicateOfListingId: (moderation as any).duplicateListingId || null,
-      };
-    }
-    return listing;
+
+    // A publicação não dispara mais moderação por IA automaticamente.
+    // Revisões operacionais devem ser executadas sob demanda por API/MCP.
+    return this.classifieds.publish(req.user.uid, id);
   }
 
   @Post('me/listings/:id/status')
   async status(@Req() req: any, @Param('id') id: string, @Body() body: { status?: unknown }) {
-    if (String(body?.status || '').toUpperCase() === 'PUBLISHED') {
+    const status = String(body?.status || '').toUpperCase();
+    if (status === 'PUBLISHED') {
       const identity = await this.identities.active(req.user.uid);
       await this.compliance.assertSellerEligible(req.user.uid, identity);
+    }
+    if (status === 'SOLD') {
+      return this.lifecycle.markSold(req.user.uid, id);
     }
     return this.classifieds.setStatus(req.user.uid, id, body?.status);
   }
@@ -202,6 +207,11 @@ export class ClassifiedsPrivateController {
     return this.commerce.renameConversation(req.user.uid, conversationId, body?.name);
   }
 
+  @Delete('me/conversations/:conversationId')
+  async archiveConversation(@Req() req: any, @Param('conversationId') conversationId: string) {
+    return this.chats.archive(conversationId, req.user.uid);
+  }
+
   @Get('me/chat-labels')
   labels(@Req() req: any) {
     return this.commerce.companyLabels(req.user.uid);
@@ -224,7 +234,7 @@ export class ClassifiedsPrivateController {
 
   @Post('me/conversations/:conversationId/messages')
   async sendMessage(@Req() req: any, @Param('conversationId') conversationId: string, @Body() body: any) {
-    const result = await this.chats.send(conversationId, req.user.uid, body?.body);
+    const result = await this.chats.send(conversationId, req.user.uid, body?.body, body?.metadata);
     this.chatGateway.publishMessage(result.message, result.recipientIds);
     return result.message;
   }

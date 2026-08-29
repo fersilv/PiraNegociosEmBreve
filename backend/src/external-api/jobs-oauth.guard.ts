@@ -35,6 +35,11 @@ export class JobsOAuthGuard implements CanActivate {
 
     try {
       const auth = await this.oauth.verifyAccessToken(rawToken);
+      if (auth.apiClient.audience !== 'mcp') {
+        throw new UnauthorizedException(
+          'Este vínculo OAuth não foi autorizado por uma chave exclusiva do MCP.',
+        );
+      }
       const now = Date.now();
       const window = this.windows.get(auth.apiClient.id);
       if (!window || now - window.start >= 60_000) {

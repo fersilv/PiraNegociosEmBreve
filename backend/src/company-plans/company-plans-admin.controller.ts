@@ -2,11 +2,20 @@ import { Body, Controller, Get, Param, Patch, Req, UseGuards } from '@nestjs/com
 import { AdminGuard } from '../admin/admin.guard';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { CompanyPlansAdminService } from './company-plans-admin.service';
+import { CompanyPlansService } from './company-plans.service';
 
 @Controller('admin/company-plans')
 @UseGuards(FirebaseAuthGuard, AdminGuard)
 export class CompanyPlansAdminController {
-  constructor(private readonly adminPlans: CompanyPlansAdminService) {}
+  constructor(
+    private readonly adminPlans: CompanyPlansAdminService,
+    private readonly plans: CompanyPlansService,
+  ) {}
+
+  @Get('benefit-catalog')
+  benefitCatalog() {
+    return this.plans.commercialBenefitCatalog();
+  }
 
   @Get(':companyId')
   get(@Param('companyId') companyId: string) {

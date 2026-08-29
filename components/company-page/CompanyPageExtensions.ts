@@ -5,11 +5,15 @@ import type {
 } from './PremiumCompanySiteRenderer';
 
 export type CompanyContentMode = 'section' | 'independent';
+export type CompanyCategoryStyle = 'chips' | 'circles' | 'tiles' | 'image-tiles';
+export type CompanyProductsLayout = 'carousel' | 'grid' | 'masonry' | 'list';
+export type CompanyBannerStyle = 'full' | 'split' | 'compact' | 'editorial';
 
 export interface CompanyPageCategoryLink {
   id: string;
   label: string;
   href: string;
+  imageUrl?: string;
 }
 
 export interface CompanyPageSection extends BaseCompanyPageSection {
@@ -35,6 +39,19 @@ export type CompanyPageConfig = Omit<BaseCompanyPageConfig, 'hero' | 'sections'>
     contentWidth?: CompanyPageWidth;
     contentMode?: CompanyContentMode;
     items?: CompanyPageCategoryLink[];
+  };
+  storefront?: {
+    promoText?: string;
+    secondaryPromoText?: string;
+    showSearch?: boolean;
+    searchPlaceholder?: string;
+    bannerStyle?: CompanyBannerStyle;
+    categoryStyle?: CompanyCategoryStyle;
+    productsLayout?: CompanyProductsLayout;
+    cardsPerRow?: 2 | 3 | 4 | 5;
+    featuredTitle?: string;
+    showProducts?: boolean;
+    showServices?: boolean;
   };
   sections?: CompanyPageSection[];
 };

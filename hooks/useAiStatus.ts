@@ -36,14 +36,14 @@ const EMPTY_STATUS: AiStatus = {
   resumeReanalysisPaymentRequired: false,
   resumeImprovementPaymentRequired: false,
   resumeImportPaymentRequired: false,
-  freeResumeImportAvailable: true,
+  freeResumeImportAvailable: false,
   resumeImportCount: 0,
   resumeImportPriceCents: null,
   resumeImportProductEnabled: false,
   resumeImportCredits: 0,
   resumeReanalysisPriceCents: null,
   resumeImprovementPriceCents: null,
-  freeResumeAnalysisAvailable: true,
+  freeResumeAnalysisAvailable: false,
   hasSavedResumeAnalysis: false,
   resumeAnalysisCount: 0,
   loading: true,
@@ -60,32 +60,33 @@ export function useAiStatus(): AiStatus {
         .get("/ai/status")
         .then((response) => {
           if (!active) return;
+          const enabled = Boolean(response.data?.enabled);
           setStatus({
-            enabled: Boolean(response.data?.enabled),
-            provider: response.data?.provider || null,
-            model: response.data?.model || null,
+            enabled,
+            provider: enabled ? response.data?.provider || null : null,
+            model: enabled ? response.data?.model || null : null,
             lifetimeFree: Boolean(response.data?.lifetimeFree),
             devMode: Boolean(response.data?.devMode),
-            paymentAccessOverride: Boolean(response.data?.paymentAccessOverride),
-            resumeScorePaymentRequired: Boolean(response.data?.resumeScorePaymentRequired),
-            resumeReanalysisPaymentRequired: Boolean(response.data?.resumeReanalysisPaymentRequired),
-            resumeImprovementPaymentRequired: Boolean(response.data?.resumeImprovementPaymentRequired),
-            resumeImportPaymentRequired: Boolean(response.data?.resumeImportPaymentRequired),
-            freeResumeImportAvailable: response.data?.freeResumeImportAvailable !== false,
+            paymentAccessOverride: enabled && Boolean(response.data?.paymentAccessOverride),
+            resumeScorePaymentRequired: enabled && Boolean(response.data?.resumeScorePaymentRequired),
+            resumeReanalysisPaymentRequired: enabled && Boolean(response.data?.resumeReanalysisPaymentRequired),
+            resumeImprovementPaymentRequired: enabled && Boolean(response.data?.resumeImprovementPaymentRequired),
+            resumeImportPaymentRequired: enabled && Boolean(response.data?.resumeImportPaymentRequired),
+            freeResumeImportAvailable: enabled && response.data?.freeResumeImportAvailable !== false,
             resumeImportCount: Number(response.data?.resumeImportCount || 0),
-            resumeImportPriceCents: Number.isFinite(Number(response.data?.products?.import?.effectivePriceCents))
+            resumeImportPriceCents: enabled && Number.isFinite(Number(response.data?.products?.import?.effectivePriceCents))
               ? Number(response.data.products.import.effectivePriceCents)
               : null,
-            resumeImportProductEnabled: Boolean(response.data?.products?.import?.enabled),
-            resumeImportCredits: Number(response.data?.credits?.RESUME_AI_IMPORT || 0),
-            resumeReanalysisPriceCents: Number.isFinite(Number(response.data?.products?.reanalysis?.effectivePriceCents))
+            resumeImportProductEnabled: enabled && Boolean(response.data?.products?.import?.enabled),
+            resumeImportCredits: enabled ? Number(response.data?.credits?.RESUME_AI_IMPORT || 0) : 0,
+            resumeReanalysisPriceCents: enabled && Number.isFinite(Number(response.data?.products?.reanalysis?.effectivePriceCents))
               ? Number(response.data.products.reanalysis.effectivePriceCents)
               : null,
-            resumeImprovementPriceCents: Number.isFinite(Number(response.data?.products?.improvement?.effectivePriceCents))
+            resumeImprovementPriceCents: enabled && Number.isFinite(Number(response.data?.products?.improvement?.effectivePriceCents))
               ? Number(response.data.products.improvement.effectivePriceCents)
               : null,
-            freeResumeAnalysisAvailable: response.data?.freeResumeAnalysisAvailable !== false,
-            hasSavedResumeAnalysis: Boolean(response.data?.hasSavedResumeAnalysis),
+            freeResumeAnalysisAvailable: enabled && response.data?.freeResumeAnalysisAvailable !== false,
+            hasSavedResumeAnalysis: enabled && Boolean(response.data?.hasSavedResumeAnalysis),
             resumeAnalysisCount: Number(response.data?.resumeAnalysisCount || 0),
             loading: false,
           });

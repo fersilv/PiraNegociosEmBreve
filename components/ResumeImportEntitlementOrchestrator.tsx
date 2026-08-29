@@ -70,6 +70,41 @@ function findImportCreditCard() {
   return heading?.parentElement || null;
 }
 
+function markAiVisibility(element: HTMLElement | null, visible: boolean) {
+  if (!element) return;
+  if (!visible) {
+    element.dataset.aiDisabledHidden = "true";
+    element.style.setProperty("display", "none", "important");
+    return;
+  }
+  if (element.dataset.aiDisabledHidden === "true") {
+    delete element.dataset.aiDisabledHidden;
+    element.style.removeProperty("display");
+  }
+}
+
+function syncAiDependentVisibility(enabled: boolean) {
+  markAiVisibility(findImportEntryCard(), enabled);
+  markAiVisibility(findImportCreditCard(), enabled);
+  markAiVisibility(document.querySelector<HTMLElement>(".resume-studio-ai-button"), enabled);
+  markAiVisibility(document.getElementById("resume-qualification-widget-root"), enabled);
+  document.querySelectorAll<HTMLElement>(".resume-import-modal").forEach((element) => markAiVisibility(element, enabled));
+
+  const legacySections = Array.from(document.querySelectorAll<HTMLElement>("#resume-builder-sidebar section"));
+  legacySections.forEach((section) => {
+    const text = section.textContent || "";
+    if (
+      text.includes("Análise profissional")
+      || text.includes("Qualidade do currículo")
+      || text.includes("Melhorar com IA")
+      || text.includes("Importar novos documentos com IA")
+      || text.includes("1ª importação com IA grátis")
+    ) {
+      markAiVisibility(section, enabled);
+    }
+  });
+}
+
 export function ResumeImportEntitlementOrchestrator() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -80,12 +115,15 @@ export function ResumeImportEntitlementOrchestrator() {
 
   const canImportNow = useMemo(
     () => Boolean(
-      status.freeResumeImportAvailable
+      status.enabled && (
+        status.freeResumeImportAvailable
         || status.resumeImportCredits > 0
         || status.paymentAccessOverride
-        || (status.resumeImportProductEnabled && !status.resumeImportPaymentRequired),
+        || (status.resumeImportProductEnabled && !status.resumeImportPaymentRequired)
+      ),
     ),
     [
+      status.enabled,
       status.freeResumeImportAvailable,
       status.paymentAccessOverride,
       status.resumeImportCredits,
@@ -95,9 +133,42 @@ export function ResumeImportEntitlementOrchestrator() {
   );
 
   useEffect(() => {
+    if ((!onResumePage && !onPaymentsPage) || status.loading) return;
+    let disposed = false;
+    let frame: number | null = null;
+
+    const sync = () => {
+      if (disposed) return;
+      syncAiDependentVisibility(status.enabled);
+    };
+    const schedule = () => {
+      if (disposed || frame !== null) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        sync();
+      });
+    };
+
+    const observer = new MutationObserver(schedule);
+    observer.observe(document.body, { childList: true, subtree: true });
+    schedule();
+    return () => {
+      disposed = true;
+      observer.disconnect();
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      syncAiDependentVisibility(true);
+    };
+  }, [onPaymentsPage, onResumePage, status.enabled, status.loading]);
+
+  useEffect(() => {
     if (!onResumePage || status.loading) return;
     const wantsImport = new URLSearchParams(location.search).get("import") === "1";
-    if (!wantsImport || canImportNow) return;
+    if (!wantsImport) return;
+    if (!status.enabled) {
+      navigate("/user/curriculo", { replace: true });
+      return;
+    }
+    if (canImportNow) return;
 
     if (status.resumeImportPaymentRequired && status.resumeImportProductEnabled) {
       navigate("/user/pagamentos", { replace: true });
@@ -109,6 +180,7 @@ export function ResumeImportEntitlementOrchestrator() {
     location.search,
     navigate,
     onResumePage,
+    status.enabled,
     status.loading,
     status.resumeImportPaymentRequired,
     status.resumeImportProductEnabled,
@@ -116,6 +188,7 @@ export function ResumeImportEntitlementOrchestrator() {
 
   useEffect(() => {
     if (!onResumePage && !onPaymentsPage) return;
+    if (status.loading || !status.enabled) return;
 
     let disposed = false;
     let frame: number | null = null;
@@ -257,7 +330,6 @@ export function ResumeImportEntitlementOrchestrator() {
 
       let action = card.querySelector<HTMLButtonElement>("[data-resume-import-credit-action='true']");
       const shouldShow = !status.loading && (status.freeResumeImportAvailable || status.resumeImportCredits > 0 || status.paymentAccessOverride);
-
       if (!shouldShow) {
         action?.remove();
         return;
@@ -331,6 +403,7 @@ export function ResumeImportEntitlementOrchestrator() {
     onPaymentsPage,
     onResumePage,
     priceLabel,
+    status.enabled,
     status.freeResumeImportAvailable,
     status.loading,
     status.paymentAccessOverride,

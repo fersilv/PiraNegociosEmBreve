@@ -34,6 +34,7 @@ export class ClassifiedsReceiptPreferencesService {
       pickupEnabled: row ? row.pickupEnabled !== false : true,
       deliveryEnabled: row?.deliveryEnabled === true,
       arrangeEnabled: row ? row.arrangeEnabled !== false : true,
+      onlineCheckoutDefault: row ? row.onlineCheckoutDefault === true : false,
       paymentConnections: connections,
       mercadoPagoConnected: connections.some((item: any) => item.provider === 'MERCADO_PAGO' && item.status === 'CONNECTED'),
     };
@@ -50,20 +51,26 @@ export class ClassifiedsReceiptPreferencesService {
     const pickupEnabled = body.pickupEnabled !== false;
     const deliveryEnabled = body.deliveryEnabled === true;
     const arrangeEnabled = body.arrangeEnabled !== false;
+    const onlineCheckoutDefault = body.onlineCheckoutDefault === true;
     if (!pickupEnabled && !deliveryEnabled && !arrangeEnabled) {
       throw new BadRequestException('Habilite pelo menos uma forma de entrega ou retirada.');
     }
 
     await this.dataSource.query(
       `INSERT INTO company_classified_receipt_preferences
-        ("companyId",provider,"pixEnabled","cardEnabled","cardMaxInstallments","auctionFeePayerDefault","pickupEnabled","deliveryEnabled","arrangeEnabled","updatedAt")
-       VALUES ($1,'MERCADO_PAGO',$2,$3,$4,$5,$6,$7,$8,now())
-       ON CONFLICT ("companyId") DO UPDATE SET
-         provider='MERCADO_PAGO',"pixEnabled"=EXCLUDED."pixEnabled","cardEnabled"=EXCLUDED."cardEnabled",
-         "cardMaxInstallments"=EXCLUDED."cardMaxInstallments","auctionFeePayerDefault"=EXCLUDED."auctionFeePayerDefault",
-         "pickupEnabled"=EXCLUDED."pickupEnabled","deliveryEnabled"=EXCLUDED."deliveryEnabled",
-         "arrangeEnabled"=EXCLUDED."arrangeEnabled","updatedAt"=now()`,
-      [companyId, pixEnabled, cardEnabled, cardMaxInstallments, auctionFeePayerDefault, pickupEnabled, deliveryEnabled, arrangeEnabled],
+        ("companyId",provider,"pixEnabled","cardEnabled","cardMaxInstallments","auctionFeePayerDefault","pickupEnabled","deliveryEnabled","arrangeEnabled","onlineCheckoutDefault","updatedAt")
+       VALUES ($1,'MERCADO_PAGO',$2,$3,$4,$5,$6,$7,$8,$9,now())
+       ON CONFLICT ("companyId",provider) DO UPDATE SET
+        "pixEnabled"=EXCLUDED."pixEnabled",
+        "cardEnabled"=EXCLUDED."cardEnabled",
+        "cardMaxInstallments"=EXCLUDED."cardMaxInstallments",
+        "auctionFeePayerDefault"=EXCLUDED."auctionFeePayerDefault",
+        "pickupEnabled"=EXCLUDED."pickupEnabled",
+        "deliveryEnabled"=EXCLUDED."deliveryEnabled",
+        "arrangeEnabled"=EXCLUDED."arrangeEnabled",
+        "onlineCheckoutDefault"=EXCLUDED."onlineCheckoutDefault",
+        "updatedAt"=now()`,
+      [companyId, pixEnabled, cardEnabled, cardMaxInstallments, auctionFeePayerDefault, pickupEnabled, deliveryEnabled, arrangeEnabled, onlineCheckoutDefault],
     );
     return this.get(uid);
   }

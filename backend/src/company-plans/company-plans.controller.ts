@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import type { PaymentCheckoutPayer } from '../payments/payment-provider-manager.service';
+import type { PurchaseMode } from '../payments/commercial-payments.service';
+import { CompanyPlanCommerceService } from './company-plan-commerce.service';
 import { CompanyPlansOverviewService } from './company-plans-overview.service';
 import { CompanyPlansService } from './company-plans.service';
 
@@ -10,11 +12,13 @@ export class CompanyPlansController {
   constructor(
     private readonly plans: CompanyPlansService,
     private readonly overview: CompanyPlansOverviewService,
+    private readonly commerce: CompanyPlanCommerceService,
   ) {}
 
   @Get()
-  getPlans(@Req() req: any) {
-    return this.overview.getForUser(req.user.uid);
+  async getPlans(@Req() req: any) {
+    const base = await this.overview.getForUser(req.user.uid);
+    return this.commerce.enrichOverview(base);
   }
 
   @Get('checkout/latest')
@@ -25,9 +29,18 @@ export class CompanyPlansController {
   @Post('checkout')
   checkout(
     @Req() req: any,
-    @Body() body: { plan?: string; payer?: PaymentCheckoutPayer },
+    @Body() body: {
+      plan?: string;
+      purchaseMode?: PurchaseMode;
+      payer?: PaymentCheckoutPayer;
+    },
   ) {
-    return this.plans.createCheckout(req.user.uid, body?.plan, body?.payer || {});
+    return this.commerce.createCheckout(
+      req.user.uid,
+      body?.plan,
+      body?.purchaseMode || 'SUBSCRIPTION',
+      body?.payer || {},
+    );
   }
 
   @Patch('cancel-at-period-end')

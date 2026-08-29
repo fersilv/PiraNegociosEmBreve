@@ -1,0 +1,1 @@
+ALTER TABLE "company_classified_receipt_preferences" ADD COLUMN "onlineCheckoutDefault" BOOLEAN DEFAULT false;

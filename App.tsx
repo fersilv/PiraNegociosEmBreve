@@ -9,7 +9,9 @@ import { PublishedResumeCompanyBridge } from "./components/PublishedResumeCompan
 import { PublicResumeAccountBridge } from "./components/PublicResumeAccountBridge";
 import { PublicResumeExitIntent } from "./components/PublicResumeExitIntent";
 import { PublicResumeResponsiveStyles } from "./components/PublicResumeResponsiveStyles";
-import { AuthenticatedProductFeedbackWidget } from "./components/AuthenticatedProductFeedbackWidget";
+import { AuthenticatedClassifiedsChatWidget } from "./components/AuthenticatedClassifiedsChatWidget";
+import { RegionalLoader } from "./components/RegionalLoader";
+import { AdminWorkspaceReturn } from "./components/AdminWorkspaceReturn";
 
 const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() => import("./pages/Login").then((module) => ({ default: module.Login })));
@@ -18,6 +20,7 @@ const Terms = lazy(() => import("./pages/Terms"));
 const JobsEntryPage = lazy(() => import("./pages/JobsEntryPage"));
 const PublicJobPage = lazy(() => import("./pages/PublicJobPage"));
 const PublicCompanyPage = lazy(() => import("./pages/PublicCompanyPage"));
+const CompanyCollectionPage = lazy(() => import("./pages/CompanyCollectionPage"));
 const CompanyPagePreviewPage = lazy(() => import("./pages/CompanyPagePreviewPage"));
 const CityJobsPage = lazy(() => import("./pages/CityJobsPage"));
 const EmbedJobsWidget = lazy(() => import("./pages/EmbedJobsWidget"));
@@ -33,7 +36,7 @@ const ClassifiedsPublicRouteGate = lazy(() => import("./pages/ClassifiedsPublicR
 const CompanyLegalPage = lazy(() => import("./pages/CompanyLegalPage").then((module) => ({ default: module.CompanyLegalPage })));
 
 function RouteLoader() {
-  return <div className="min-h-screen flex items-center justify-center text-stone-500">Carregando...</div>;
+  return <RegionalLoader className="min-h-screen" />;
 }
 
 export default function App() {
@@ -56,6 +59,7 @@ export default function App() {
           <PublicResumeResponsiveStyles />
           <PublicResumeExitIntent />
           {!isMinimalShell && <PublishedResumeCompanyBridge />}
+          {!isMinimalShell && <AdminWorkspaceReturn />}
           <Suspense fallback={<RouteLoader />}>
             <Routes>
               <Route path="/" element={<Home />} />
@@ -84,6 +88,7 @@ export default function App() {
               <Route path="/classificados/servicos" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/ofertas" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/vendas" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/estoque" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/vendas/mercado-pago" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/recebimentos" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/avaliacoes" element={<ClassifiedsWorkspacePage />} />
@@ -93,6 +98,7 @@ export default function App() {
               <Route path="/classificados/conversas" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/conversas/:conversationId" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/configuracoes" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/empresa/*" element={<ClassifiedsWorkspacePage />} />
 
               <Route path="/criador-de-curriculo" element={<PublicResumeBuilderPage />} />
               <Route path="/criar-curriculo" element={<Navigate to="/criador-de-curriculo" replace />} />
@@ -111,11 +117,13 @@ export default function App() {
 
               <Route path="/:companySlug/termos" element={<CompanyLegalPage type="terms" />} />
               <Route path="/:companySlug/privacidade" element={<CompanyLegalPage type="privacy" />} />
+              <Route path="/:companySlug/produtos" element={<CompanyCollectionPage kind="products" />} />
+              <Route path="/:companySlug/vagas" element={<CompanyCollectionPage kind="jobs" />} />
               <Route path="/:companySlug" element={<PublicCompanyPage />} />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </Suspense>
-          {!isMinimalShell && <AuthenticatedProductFeedbackWidget />}
+          {!isMinimalShell && <AuthenticatedClassifiedsChatWidget />}
         </BrowserRouter>
       </AuthProvider>
     </FeedbackProvider>

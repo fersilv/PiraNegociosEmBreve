@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminGuard } from '../admin/admin.guard';
 import { User } from '../users/entities/user.entity';
 import { CnpjLookupService } from './cnpj-lookup.service';
+import { CompanyContextRepairService } from './company-context-repair.service';
 import { CompanyVerificationAuthorizationService } from './company-verification-authorization.service';
 import {
   CompanyVerificationAdminController,
@@ -25,12 +26,14 @@ import { IdentityComplianceService } from './identity-compliance.service';
   providers: [
     AdminGuard,
     IdentityComplianceService,
+    CompanyContextRepairService,
     CnpjLookupService,
     CompanyVerificationEmailService,
     CompanyVerificationAuthorizationService,
   ],
   exports: [
     IdentityComplianceService,
+    CompanyContextRepairService,
     CnpjLookupService,
     CompanyVerificationAuthorizationService,
   ],

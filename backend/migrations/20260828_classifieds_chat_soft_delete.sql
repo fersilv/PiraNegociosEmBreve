@@ -1,0 +1,1 @@
+ALTER TABLE "classified_conversations" ADD COLUMN "buyerDeletedAt" timestamptz NULL, ADD COLUMN "sellerDeletedAt" timestamptz NULL;

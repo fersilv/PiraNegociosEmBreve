@@ -1,11 +1,41 @@
 import React, { useMemo } from 'react';
 
-const VERSION = 6;
-const SIZE = 17 + VERSION * 4;
-const DATA_CODEWORDS = 136;
-const BLOCK_DATA_CODEWORDS = 68;
-const ECC_CODEWORDS = 18;
-const MAX_BYTE_LENGTH = 134;
+type QrConfig = {
+  version: number;
+  size: number;
+  dataCodewords: number;
+  eccCodewords: number;
+  blockDataLengths: number[];
+  maxByteLength: number;
+  alignmentCenters: number[];
+  byteCountBits: number;
+};
+
+const QR_CONFIGS: QrConfig[] = [
+  {
+    version: 6,
+    size: 41,
+    dataCodewords: 136,
+    eccCodewords: 18,
+    blockDataLengths: [68, 68],
+    maxByteLength: 134,
+    alignmentCenters: [6, 34],
+    byteCountBits: 8,
+  },
+  {
+    // Versão 10-L comporta até 271 bytes em byte mode. Isso cobre os
+    // payloads BR Code do Pix Automático sem depender de serviço externo.
+    version: 10,
+    size: 57,
+    dataCodewords: 274,
+    eccCodewords: 18,
+    blockDataLengths: [68, 68, 69, 69],
+    maxByteLength: 271,
+    alignmentCenters: [6, 28, 50],
+    byteCountBits: 16,
+  },
+];
+
 const QUIET_ZONE = 4;
 
 const GF_EXP = new Array<number>(512).fill(0);
@@ -37,16 +67,18 @@ function reedSolomonGenerator(degree: number) {
   return polynomial;
 }
 
-const RS_GENERATOR = reedSolomonGenerator(ECC_CODEWORDS);
+const RS_GENERATORS = new Map<number, number[]>();
 
-function reedSolomonRemainder(data: number[]) {
-  const remainder = new Array<number>(ECC_CODEWORDS).fill(0);
+function reedSolomonRemainder(data: number[], eccCodewords: number) {
+  const generator = RS_GENERATORS.get(eccCodewords) || reedSolomonGenerator(eccCodewords);
+  RS_GENERATORS.set(eccCodewords, generator);
+  const remainder = new Array<number>(eccCodewords).fill(0);
   for (const byte of data) {
     const factor = byte ^ remainder[0];
     remainder.shift();
     remainder.push(0);
-    for (let index = 0; index < ECC_CODEWORDS; index += 1) {
-      remainder[index] ^= gfMultiply(RS_GENERATOR[index + 1], factor);
+    for (let index = 0; index < eccCodewords; index += 1) {
+      remainder[index] ^= gfMultiply(generator[index + 1], factor);
     }
   }
   return remainder;
@@ -56,19 +88,24 @@ function appendBits(target: boolean[], number: number, length: number) {
   for (let bit = length - 1; bit >= 0; bit -= 1) target.push(((number >>> bit) & 1) !== 0);
 }
 
-function encodeCodewords(text: string) {
-  const bytes = Array.from(new TextEncoder().encode(text));
-  if (bytes.length > MAX_BYTE_LENGTH) {
-    throw new Error('A URL desta sessão ficou grande demais para o QR Code local. Gere uma nova sessão.');
+function selectConfig(text: string) {
+  const byteLength = new TextEncoder().encode(text).length;
+  const config = QR_CONFIGS.find((item) => byteLength <= item.maxByteLength);
+  if (!config) {
+    throw new Error('O conteúdo ficou grande demais para o QR Code local. Use o código copia e cola.');
   }
+  return config;
+}
 
+function encodeCodewords(text: string, config: QrConfig) {
+  const bytes = Array.from(new TextEncoder().encode(text));
   const bits: boolean[] = [];
   appendBits(bits, 0b0100, 4); // byte mode
-  appendBits(bits, bytes.length, 8); // versions 1-9 use 8-bit byte count
+  appendBits(bits, bytes.length, config.byteCountBits);
   bytes.forEach((byte) => appendBits(bits, byte, 8));
 
-  const capacity = DATA_CODEWORDS * 8;
-  const terminatorLength = Math.min(4, capacity - bits.length);
+  const capacity = config.dataCodewords * 8;
+  const terminatorLength = Math.min(4, Math.max(0, capacity - bits.length));
   for (let index = 0; index < terminatorLength; index += 1) bits.push(false);
   while (bits.length % 8) bits.push(false);
 
@@ -79,21 +116,26 @@ function encodeCodewords(text: string) {
     data.push(byte);
   }
   let useFirstPad = true;
-  while (data.length < DATA_CODEWORDS) {
+  while (data.length < config.dataCodewords) {
     data.push(useFirstPad ? 0xec : 0x11);
     useFirstPad = !useFirstPad;
   }
 
-  const blocks = [
-    data.slice(0, BLOCK_DATA_CODEWORDS),
-    data.slice(BLOCK_DATA_CODEWORDS, BLOCK_DATA_CODEWORDS * 2),
-  ];
-  const eccBlocks = blocks.map(reedSolomonRemainder);
-  const result: number[] = [];
-  for (let index = 0; index < BLOCK_DATA_CODEWORDS; index += 1) {
-    blocks.forEach((block) => result.push(block[index]));
+  const blocks: number[][] = [];
+  let offset = 0;
+  for (const length of config.blockDataLengths) {
+    blocks.push(data.slice(offset, offset + length));
+    offset += length;
   }
-  for (let index = 0; index < ECC_CODEWORDS; index += 1) {
+  const eccBlocks = blocks.map((block) => reedSolomonRemainder(block, config.eccCodewords));
+  const result: number[] = [];
+  const longestDataBlock = Math.max(...config.blockDataLengths);
+  for (let index = 0; index < longestDataBlock; index += 1) {
+    blocks.forEach((block) => {
+      if (index < block.length) result.push(block[index]);
+    });
+  }
+  for (let index = 0; index < config.eccCodewords; index += 1) {
     eccBlocks.forEach((block) => result.push(block[index]));
   }
   return result;
@@ -108,16 +150,27 @@ function bchFormatBits(data: number) {
   return ((data << 10) | remainder) ^ 0x5412;
 }
 
+function bchVersionBits(version: number) {
+  const generator = 0x1f25;
+  let remainder = version << 12;
+  while (remainder.toString(2).length >= generator.toString(2).length) {
+    remainder ^= generator << (remainder.toString(2).length - generator.toString(2).length);
+  }
+  return (version << 12) | remainder;
+}
+
 function createMatrix(text: string) {
-  const modules = Array.from({ length: SIZE }, () => new Array<boolean | null>(SIZE).fill(null));
+  const config = selectConfig(text);
+  const size = config.size;
+  const modules = Array.from({ length: size }, () => new Array<boolean | null>(size).fill(null));
 
   const drawFinder = (row: number, column: number) => {
     for (let rowOffset = -1; rowOffset <= 7; rowOffset += 1) {
       const currentRow = row + rowOffset;
-      if (currentRow < 0 || currentRow >= SIZE) continue;
+      if (currentRow < 0 || currentRow >= size) continue;
       for (let columnOffset = -1; columnOffset <= 7; columnOffset += 1) {
         const currentColumn = column + columnOffset;
-        if (currentColumn < 0 || currentColumn >= SIZE) continue;
+        if (currentColumn < 0 || currentColumn >= size) continue;
         modules[currentRow][currentColumn] =
           (rowOffset >= 0 && rowOffset <= 6 && (columnOffset === 0 || columnOffset === 6)) ||
           (columnOffset >= 0 && columnOffset <= 6 && (rowOffset === 0 || rowOffset === 6)) ||
@@ -127,12 +180,11 @@ function createMatrix(text: string) {
   };
 
   drawFinder(0, 0);
-  drawFinder(SIZE - 7, 0);
-  drawFinder(0, SIZE - 7);
+  drawFinder(size - 7, 0);
+  drawFinder(0, size - 7);
 
-  const alignmentCenters = [6, 34];
-  alignmentCenters.forEach((row) => {
-    alignmentCenters.forEach((column) => {
+  config.alignmentCenters.forEach((row) => {
+    config.alignmentCenters.forEach((column) => {
       if (modules[row][column] !== null) return;
       for (let rowOffset = -2; rowOffset <= 2; rowOffset += 1) {
         for (let columnOffset = -2; columnOffset <= 2; columnOffset += 1) {
@@ -142,10 +194,10 @@ function createMatrix(text: string) {
     });
   });
 
-  for (let row = 8; row < SIZE - 8; row += 1) {
+  for (let row = 8; row < size - 8; row += 1) {
     if (modules[row][6] === null) modules[row][6] = row % 2 === 0;
   }
-  for (let column = 8; column < SIZE - 8; column += 1) {
+  for (let column = 8; column < size - 8; column += 1) {
     if (modules[6][column] === null) modules[6][column] = column % 2 === 0;
   }
 
@@ -155,21 +207,32 @@ function createMatrix(text: string) {
     const dark = ((formatBits >>> index) & 1) !== 0;
     if (index < 6) modules[index][8] = dark;
     else if (index < 8) modules[index + 1][8] = dark;
-    else modules[SIZE - 15 + index][8] = dark;
+    else modules[size - 15 + index][8] = dark;
 
-    if (index < 8) modules[8][SIZE - index - 1] = dark;
+    if (index < 8) modules[8][size - index - 1] = dark;
     else if (index < 9) modules[8][15 - index] = dark;
     else modules[8][14 - index] = dark;
   }
-  modules[SIZE - 8][8] = true;
+  modules[size - 8][8] = true;
 
-  const codewords = encodeCodewords(text);
+  if (config.version >= 7) {
+    const versionBits = bchVersionBits(config.version);
+    for (let index = 0; index < 18; index += 1) {
+      const dark = ((versionBits >>> index) & 1) !== 0;
+      const row = Math.floor(index / 3);
+      const column = (index % 3) + size - 11;
+      modules[row][column] = dark;
+      modules[column][row] = dark;
+    }
+  }
+
+  const codewords = encodeCodewords(text, config);
   let byteIndex = 0;
   let bitIndex = 7;
-  let row = SIZE - 1;
+  let row = size - 1;
   let direction = -1;
 
-  for (let column = SIZE - 1; column > 0; column -= 2) {
+  for (let column = size - 1; column > 0; column -= 2) {
     if (column === 6) column -= 1;
     while (true) {
       for (let offset = 0; offset < 2; offset += 1) {
@@ -186,7 +249,7 @@ function createMatrix(text: string) {
         }
       }
       row += direction;
-      if (row < 0 || row >= SIZE) {
+      if (row < 0 || row >= size) {
         row -= direction;
         direction = -direction;
         break;
@@ -197,9 +260,9 @@ function createMatrix(text: string) {
   return modules as boolean[][];
 }
 
-export function LocalQrCode({ value, className = '' }: { value: string; className?: string }) {
+export function LocalQrCode({ value, className = '', label = 'QR Code' }: { value: string; className?: string; label?: string }) {
   const matrix = useMemo(() => createMatrix(value), [value]);
-  const viewSize = SIZE + QUIET_ZONE * 2;
+  const viewSize = matrix.length + QUIET_ZONE * 2;
   const path = useMemo(() => {
     const segments: string[] = [];
     matrix.forEach((row, rowIndex) => {
@@ -214,7 +277,7 @@ export function LocalQrCode({ value, className = '' }: { value: string; classNam
     <svg
       viewBox={`0 0 ${viewSize} ${viewSize}`}
       role="img"
-      aria-label="QR Code da sessão temporária"
+      aria-label={label}
       className={className}
       shapeRendering="crispEdges"
     >

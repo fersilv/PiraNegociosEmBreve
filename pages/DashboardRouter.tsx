@@ -8,6 +8,7 @@ import { AdminWorkspaceLayout } from "../components/AdminWorkspaceLayout";
 import { BoostVisibilityBanner } from "../components/BoostVisibilityBanner";
 import { ResumeImportEntitlementOrchestrator } from "../components/ResumeImportEntitlementOrchestrator";
 import { ResumeQualificationWidget } from "../components/ResumeQualificationWidget";
+import { RegionalLoader } from "../components/RegionalLoader";
 import { CompanyJobsManagementPage } from "./CompanyJobsManagementPage";
 import { CompanyHomePage } from "./CompanyHomePage";
 import { CompanyNewJobPage } from "./CompanyNewJobPage";
@@ -29,6 +30,7 @@ import { AdminRegistrationPage } from "./AdminRegistrationPage";
 import { AdminPaymentsPage } from "./AdminPaymentsPage";
 import AdminMercadoPagoTestsPage from "./AdminMercadoPagoTestsPage";
 import AdminClassifiedCommercePage from "./AdminClassifiedCommercePage";
+import AdminClassifiedCatalogPage from "./AdminClassifiedCatalogPage";
 import { AdminBillingSupportPage } from "./AdminBillingSupportPage";
 import { AdminPublicResumeBuilderPage } from "./AdminPublicResumeBuilderPage";
 import { AdminJobIntegrationsPage } from "./AdminJobIntegrationsPage";
@@ -60,6 +62,7 @@ function AdminRoutes() {
       <Route index element={<AdminPage><AdminOverview /></AdminPage>} />
       <Route path="empresas" element={<AdminPage><AdminDashboard mode="moderation" section="companies" /></AdminPage>} />
       <Route path="validacao-cadastral" element={<AdminPage><AdminIdentityVerificationsPage /></AdminPage>} />
+      <Route path="classificados" element={<AdminPage><AdminClassifiedCatalogPage /></AdminPage>} />
       <Route path="avaliacoes-classificados" element={<AdminPage><AdminClassifiedReviewsPage /></AdminPage>} />
       <Route path="vagas" element={<AdminPage><AdminDashboard mode="moderation" section="jobs" /></AdminPage>} />
       <Route path="vagas/sinalizadas" element={<AdminPage><AdminFlaggedJobsPage /></AdminPage>} />
@@ -71,7 +74,8 @@ function AdminRoutes() {
       <Route path="criador-publico" element={<AdminPage><AdminPublicResumeBuilderPage /></AdminPage>} />
       <Route path="pagamentos" element={<AdminPage><AdminPaymentsPage /></AdminPage>} />
       <Route path="pagamentos/testes" element={<AdminPage><AdminMercadoPagoTestsPage /></AdminPage>} />
-      <Route path="pagamentos/classificados" element={<AdminPage><AdminClassifiedCommercePage /></AdminPage>} />
+      <Route path="pagamentos/monetizacao" element={<AdminPage><AdminClassifiedCommercePage /></AdminPage>} />
+      <Route path="pagamentos/classificados" element={<Navigate to="/admin/pagamentos/monetizacao" replace />} />
       <Route path="pagamentos/formas" element={<AdminPage><PaymentMethodsPage /></AdminPage>} />
       <Route path="pagamentos/suporte" element={<AdminPage><AdminBillingSupportPage /></AdminPage>} />
       <Route path="whatsapp" element={<AdminPage><AdminWhatsAppPage /></AdminPage>} />
@@ -180,6 +184,7 @@ function LegacyDashboardRedirect() {
   const path = location.pathname;
   const adminMap: Array<[string, string]> = [
     ["/dashboard/admin/empresas", "/admin/empresas"],
+    ["/dashboard/admin/classificados", "/admin/classificados"],
     ["/dashboard/admin/vagas", "/admin/vagas"],
     ["/dashboard/admin/usuarios", "/admin/usuarios"],
     ["/dashboard/admin/vinculos", "/admin/vinculos"],
@@ -219,7 +224,7 @@ function LegacyDashboardRedirect() {
 export function Dashboard() {
   const { user, profile, loading } = useAuth();
   const location = useLocation();
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Carregando...</div>;
+  if (loading) return <RegionalLoader context="auth" className="min-h-screen" />;
   if (!user) return <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   if (location.pathname.startsWith("/dashboard")) return <LegacyDashboardRedirect />;
 
@@ -227,14 +232,22 @@ export function Dashboard() {
   const isCompanyRoute = location.pathname === "/company" || location.pathname.startsWith("/company/");
   const isUserRoute = location.pathname === "/user" || location.pathname.startsWith("/user/");
   const isResumeStudioRoute = location.pathname === "/user/curriculo";
+  const isAdmin = profile?.type === "ADMIN";
 
-  if (profile && !profile.phone && !location.pathname.includes("/onboarding")) return <Navigate to={profile.type === "ADMIN" ? "/admin/onboarding" : "/user/onboarding"} replace />;
-  if (profile?.type === "ADMIN") {
-    if (!isAdminRoute) return <Navigate to="/admin" replace />;
+  if (profile && !profile.phone && !location.pathname.includes("/onboarding")) return <Navigate to={isAdmin ? "/admin/onboarding" : "/user/onboarding"} replace />;
+
+  if (isAdminRoute) {
+    if (!isAdmin) return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
     return <AdminWorkspaceLayout><AdminRoutes /></AdminWorkspaceLayout>;
   }
-  if (isAdminRoute) return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
-  if (isCompanyRoute) return <WorkspaceLayout workspace="company"><CompanyRoutes companyId={profile?.companyId} /></WorkspaceLayout>;
+
+  if (isCompanyRoute) {
+    if (isAdmin || profile?.companyId || location.pathname === "/company/comercial" || location.pathname === "/company/perfil") {
+      return <WorkspaceLayout workspace="company"><CompanyRoutes companyId={profile?.companyId} /></WorkspaceLayout>;
+    }
+    return <Navigate to="/company/comercial" replace />;
+  }
+
   if (isResumeStudioRoute)
     return (
       <>
@@ -243,6 +256,11 @@ export function Dashboard() {
         <ResumeWorkspace />
       </>
     );
+
   if (isUserRoute) return <WorkspaceLayout workspace="user"><ResumeImportEntitlementOrchestrator /><BoostVisibilityBanner /><UserRoutes /></WorkspaceLayout>;
+
+  // Administração continua sendo a casa principal do administrador. A diferença é
+  // que, quando ele escolhe explicitamente outro workspace, o roteador não o expulsa de lá.
+  if (isAdmin) return <Navigate to="/admin" replace />;
   return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
 }

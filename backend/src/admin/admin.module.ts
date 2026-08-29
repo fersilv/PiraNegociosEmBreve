@@ -6,6 +6,7 @@ import { CompanyAccessRequest } from '../companies/entities/company-access-reque
 import { Job } from '../jobs/entities/job.entity';
 import { User } from '../users/entities/user.entity';
 import { AdminController } from './admin.controller';
+import { AdminCompanyMembersController } from './admin-company-members.controller';
 import { AdminGuard } from './admin.guard';
 import { VisitorEvent } from '../analytics/entities/visitor-event.entity';
 import { AccountAccess } from '../analytics/entities/account-access.entity';
@@ -43,6 +44,7 @@ import { RegistrationService } from './registration.service';
   ],
   controllers: [
     AdminController,
+    AdminCompanyMembersController,
     AdminJobDetailsController,
     AdminJobFlagsController,
     SettingsController,

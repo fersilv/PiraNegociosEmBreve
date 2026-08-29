@@ -21,7 +21,7 @@ export function AdminTheme() {
 
       .admin-workspace .admin-page-shell {
         width: 100%;
-        animation: admin-enter .32s ease-out both;
+        animation: admin-enter .32s ease-out;
       }
 
       .admin-workspace .admin-page-shell > .max-w-7xl,
@@ -215,6 +215,12 @@ export function AdminTheme() {
         backdrop-filter: blur(7px);
       }
 
+      .admin-workspace .admin-page-shell [data-admin-modal-layout='viewport-safe'] {
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 9999 !important;
+      }
+
       .admin-workspace .admin-page-shell [role='dialog'] > div {
         width: min(920px, calc(100vw - 2rem));
         max-width: 920px !important;
@@ -271,8 +277,8 @@ export function AdminTheme() {
       }
 
       @keyframes admin-enter {
-        from { opacity: 0; transform: translateY(7px); }
-        to { opacity: 1; transform: translateY(0); }
+        from { opacity: 0; }
+        to { opacity: 1; }
       }
 
       @media (max-width: 767px) {

@@ -28,6 +28,16 @@ export class ClassifiedsSalesController {
     return this.sales.configureListing(req.user.uid, listingId, body || {});
   }
 
+  @Get('me/inventory')
+  inventory(@Req() req: any) {
+    return this.sales.inventory(req.user.uid);
+  }
+
+  @Patch('me/inventory/:listingId')
+  updateInventory(@Req() req: any, @Param('listingId') listingId: string, @Body() body: Record<string, unknown>) {
+    return this.sales.updateInventory(req.user.uid, listingId, body || {});
+  }
+
   @Get('me/sales/dashboard')
   dashboard(@Req() req: any) {
     return this.sales.dashboard(req.user.uid);

@@ -240,6 +240,18 @@ export class ClassifiedsService {
       ? cleanChannels(body.publicationChannels, identity.companyProfile?.defaultPublicationChannels || ['CLASSIFIEDS', 'COMPANY_PAGE'])
       : ['CLASSIFIEDS'] as ClassifiedPublicationChannel[];
 
+    let commerceConfig: any = null;
+    if (company) {
+      const prefs = await this.companiesRepo.manager.query(`SELECT "onlineCheckoutDefault" FROM company_classified_receipt_preferences WHERE "companyId" = $1 LIMIT 1`, [company.id]).catch(() => []);
+      if (prefs[0]?.onlineCheckoutDefault === true) {
+        commerceConfig = { onlineCheckout: { enabled: true } };
+      }
+      const inventory = cleanInitialInventory(body.commerceConfig);
+      if (listingType === 'PRODUCT' && inventory) {
+        commerceConfig = { ...(commerceConfig || {}), onlineCheckout: { ...(commerceConfig?.onlineCheckout || {}), ...inventory } };
+      }
+    }
+
     const listing = this.listingsRepo.create({
       sellerUserId: uid,
       companyId: company?.id || null,
@@ -263,11 +275,13 @@ export class ClassifiedsService {
       attributes: plainAttributes(body.attributes),
       publicationChannels,
       catalogConfig: cleanCatalogConfig(body.catalogConfig),
+      commerceConfig,
       contactPhone: cleanNullable(body.contactPhone || company?.phone || user.phone, 40),
       contactWhatsapp: cleanNullable(body.contactWhatsapp || user.whatsappPhoneE164, 40),
       publishedAt: status === 'PUBLISHED' ? new Date() : null,
       expiresAt: null,
     });
+
 
     const saved = await this.listingsRepo.save(listing);
     await this.replaceImages(saved.id, body.images);
@@ -300,6 +314,13 @@ export class ClassifiedsService {
     }
     if (body.attributes !== undefined) listing.attributes = plainAttributes(body.attributes);
     if (body.catalogConfig !== undefined) listing.catalogConfig = cleanCatalogConfig(body.catalogConfig);
+    if (body.commerceConfig !== undefined && listing.companyId && listing.listingType === 'PRODUCT') {
+      const inventory = cleanInitialInventory(body.commerceConfig);
+      if (inventory) listing.commerceConfig = {
+        ...(listing.commerceConfig || {}),
+        onlineCheckout: { ...(listing.commerceConfig?.onlineCheckout || {}), ...inventory },
+      };
+    }
     if (body.publicationChannels !== undefined) {
       if (listing.companyId) listing.publicationChannels = cleanChannels(body.publicationChannels, listing.publicationChannels);
       else listing.publicationChannels = ['CLASSIFIEDS'];
@@ -509,6 +530,14 @@ function numericParam(value: unknown) {
   if (value === undefined || value === null || value === '') return null;
   const parsed = Number(String(value).replace(',', '.'));
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function cleanInitialInventory(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const checkout = (value as any).onlineCheckout;
+  if (!checkout || typeof checkout !== 'object' || Array.isArray(checkout) || !Object.prototype.hasOwnProperty.call(checkout, 'stockQuantity')) return null;
+  if (checkout.stockQuantity === null || checkout.stockQuantity === '') return { stockQuantity: null };
+  return { stockQuantity: clampInt(checkout.stockQuantity, 0, 1_000_000, 0) };
 }
 
 function coordinate(value: unknown) {
