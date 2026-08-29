@@ -37,6 +37,7 @@ import { ClassifiedsCommerceSettingsService } from './classifieds-commerce-setti
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
 import { ClassifiedsDeliveryAdminController } from './classifieds-delivery-admin.controller';
 import { ClassifiedsDeliveryController } from './classifieds-delivery.controller';
+import { ClassifiedsDeliveryDistanceService } from './classifieds-delivery-distance.service';
 import { ClassifiedsDeliveryFinanceController } from './classifieds-delivery-finance.controller';
 import { ClassifiedsDeliveryService } from './classifieds-delivery.service';
 import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
@@ -139,6 +140,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsReviewModerationService,
     ClassifiedsReviewsService,
     ClassifiedsCommerceSettingsService,
+    ClassifiedsDeliveryDistanceService,
     ClassifiedsDeliveryService,
     ClassifiedsCartService,
     ClassifiedsServiceQuotesService,
