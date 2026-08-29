@@ -2,8 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { DataSource } from 'typeorm';
 import { classifiedsCommerceFeatureFlags } from './classifieds-commerce-feature-flags';
 import { ClassifiedsAddressResolutionService } from './classifieds-address-resolution.service';
-
-const HAVERSINE_DISTANCE_BUFFER = 1.3;
+import { resolveRoadDistance } from './classifieds-road-routing';
 
 @Injectable()
 export class ClassifiedsDeliveryPreviewService {
@@ -65,14 +64,23 @@ export class ClassifiedsDeliveryPreviewService {
     let originLongitude = this.coordinate(origin.longitude, -180, 180);
     if ((originLatitude == null || originLongitude == null) && origin.zipCode) {
       const resolvedOrigin = await this.addresses.byCep(origin.zipCode).catch(() => null);
-      originLatitude = resolvedOrigin?.latitude ?? null;
-      originLongitude = resolvedOrigin?.longitude ?? null;
+      originLatitude = this.coordinate(resolvedOrigin?.latitude, -90, 90);
+      originLongitude = this.coordinate(resolvedOrigin?.longitude, -180, 180);
     }
     const destinationLatitude = this.coordinate(destination.latitude, -90, 90);
     const destinationLongitude = this.coordinate(destination.longitude, -180, 180);
-    const distanceMeters = originLatitude != null && originLongitude != null && destinationLatitude != null && destinationLongitude != null
-      ? this.haversineMeters(originLatitude, originLongitude, destinationLatitude, destinationLongitude)
+
+    const routed = originLatitude != null && originLongitude != null && destinationLatitude != null && destinationLongitude != null
+      ? await resolveRoadDistance(
+          this.dataSource,
+          { latitude: originLatitude, longitude: originLongitude, zipCode: origin.zipCode },
+          { latitude: destinationLatitude, longitude: destinationLongitude, zipCode: destination.zipCode },
+        )
       : null;
+    const distanceMeters = routed?.distanceMeters ?? null;
+    const distanceSource = routed
+      ? (routed.cacheHit ? `${routed.source}_CACHE` : routed.source)
+      : 'ROAD_ROUTE_UNAVAILABLE';
 
     const aggregate = {
       weightGrams: listing.weightGrams == null ? null : Number(listing.weightGrams) * quantity,
@@ -125,7 +133,7 @@ export class ClassifiedsDeliveryPreviewService {
           partnerType: partner.type,
           eligible: false,
           reason: needsDistance && distanceMeters == null
-            ? 'Não foi possível obter coordenadas suficientes para calcular a faixa por km deste CEP.'
+            ? 'Não foi possível obter uma rota viária para calcular a faixa por km deste CEP.'
             : 'Nenhuma regra vigente atende este endereço ou volume.',
         });
         continue;
@@ -138,8 +146,12 @@ export class ClassifiedsDeliveryPreviewService {
         partnerType: partner.type,
         eligible: true,
         amountCents,
-        estimatedMinutes: selected.estimatedMinutes == null ? null : Number(selected.estimatedMinutes),
+        estimatedMinutes: selected.estimatedMinutes == null
+          ? (routed?.durationSeconds == null ? null : Math.max(1, Math.ceil(routed.durationSeconds / 60)))
+          : Number(selected.estimatedMinutes),
         distanceMeters,
+        distanceSource,
+        routeCacheHit: routed?.cacheHit === true,
         rateTableVersion: Number(table.version),
         rateRuleId: selected.id,
       });
@@ -157,7 +169,9 @@ export class ClassifiedsDeliveryPreviewService {
         state: origin.state,
       },
       distanceMeters,
-      distanceSource: distanceMeters == null ? 'UNAVAILABLE' : 'CEP_COORDINATES_HAVERSINE_BUFFER_30',
+      distanceSource,
+      routeDurationSeconds: routed?.durationSeconds ?? null,
+      routeCacheHit: routed?.cacheHit === true,
       options,
     };
   }
@@ -214,17 +228,6 @@ export class ClassifiedsDeliveryPreviewService {
       cents += Math.ceil(aggregate.weightGrams / 1000) * Number(rule.weightAdditionalPerKgCents || 0);
     }
     return Math.max(Number(rule.minimumPriceCents || 0), Math.round(cents));
-  }
-
-  private haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
-    const radius = 6_371_000;
-    const toRadians = (degrees: number) => degrees * Math.PI / 180;
-    const dLat = toRadians(lat2 - lat1);
-    const dLng = toRadians(lng2 - lng1);
-    const a = Math.sin(dLat / 2) ** 2
-      + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLng / 2) ** 2;
-    const straightLineMeters = Math.max(0, radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-    return Math.ceil(straightLineMeters * HAVERSINE_DISTANCE_BUFFER);
   }
 
   private coordinate(value: unknown, min: number, max: number) {
