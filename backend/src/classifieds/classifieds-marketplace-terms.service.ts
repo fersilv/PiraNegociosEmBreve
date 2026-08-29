@@ -7,7 +7,7 @@ import {
 import { DataSource } from 'typeorm';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
 
-export const CLASSIFIEDS_PAYMENT_TERMS_VERSION = '2026-08-26';
+export const CLASSIFIEDS_PAYMENT_TERMS_VERSION = '2026-08-28';
 export type ClassifiedPaymentTermsScope = 'ONLINE_PAYMENT_BUYER' | 'ONLINE_PAYMENT_SELLER';
 
 @Injectable()
@@ -114,8 +114,8 @@ export class ClassifiedsMarketplaceTermsService {
     if (!rows[0]) {
       throw new BadRequestException(
         scope === 'ONLINE_PAYMENT_SELLER'
-          ? 'Leia e aceite os termos de vendas e pagamentos online antes de habilitar o checkout.'
-          : 'Leia e aceite os termos do Marketplace e pagamentos online antes de concluir a compra.',
+          ? 'Leia e aceite os termos de vendas, pagamentos e logística antes de habilitar o checkout.'
+          : 'Leia e aceite os termos do Marketplace, pagamentos e entrega antes de concluir a compra.',
       );
     }
     return true;
