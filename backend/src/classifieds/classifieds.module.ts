@@ -9,6 +9,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { User } from '../users/entities/user.entity';
 import { WhatsAppModule } from '../whatsapp/whatsapp.module';
+import { ClassifiedsAddressResolutionService } from './classifieds-address-resolution.service';
 import { ClassifiedsAiReviewService } from './classifieds-ai-review.service';
 import { ClassifiedsArchivedAwareAuctionService } from './classifieds-archived-aware-auction.service';
 import { ClassifiedsArchivedAwareCommerceService } from './classifieds-archived-aware-commerce.service';
@@ -41,6 +42,7 @@ import { ClassifiedsDeliveryChannelAdminController } from './classifieds-deliver
 import { ClassifiedsDeliveryController } from './classifieds-delivery.controller';
 import { ClassifiedsDeliveryDistanceService } from './classifieds-delivery-distance.service';
 import { ClassifiedsDeliveryFinanceController } from './classifieds-delivery-finance.controller';
+import { ClassifiedsDeliveryPreviewService } from './classifieds-delivery-preview.service';
 import { ClassifiedsDeliveryService } from './classifieds-delivery.service';
 import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
@@ -118,6 +120,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
   providers: [
     AdminGuard,
     ClassifiedsService,
+    ClassifiedsAddressResolutionService,
     ClassifiedsCategoryTaxonomyService,
     ClassifiedsCatalogAdminService,
     ClassifiedsLifecycleService,
@@ -145,6 +148,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsReviewsService,
     ClassifiedsCommerceSettingsService,
     ClassifiedsDeliveryDistanceService,
+    ClassifiedsDeliveryPreviewService,
     ClassifiedsDeliveryService,
     ClassifiedsCartService,
     ClassifiedsServiceQuotesService,
