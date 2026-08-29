@@ -4,11 +4,9 @@ on:
   push:
     branches:
       - main
-      - classificados
-      - correcao-ia
+      - entregas
   pull_request:
     branches:
-      - pagamentos
       - main
 
 jobs:
@@ -37,3 +35,7 @@ jobs:
       - name: Backend build
         working-directory: backend
         run: npm run build
+
+      - name: Phase 0 commerce tests
+        working-directory: backend
+        run: npm test -- --runInBand classifieds-commerce-money.spec.ts classifieds-commerce-feature-flags.spec.ts
