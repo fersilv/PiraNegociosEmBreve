@@ -18,28 +18,39 @@ export class ClassifiedsCheckoutController {
   @Get('listings/:listingId/checkout')
   async config(@Req() req: any, @Param('listingId') listingId: string) {
     const base = await this.checkout.config(req.user.uid, listingId);
-    const rows = await this.dataSource.query(
-      `SELECT s."pickupEnabled",s."ownDeliveryEnabled",s."platformPartnersEnabled",
-              COALESCE(ls."disableLocalPartners",false) AS "disableLocalPartners"
-       FROM classified_listings l
-       LEFT JOIN company_commerce_settings s ON s."companyId"=l."companyId"
-       LEFT JOIN classified_listing_shipping ls ON ls."listingId"=l.id
-       WHERE l.id=$1 LIMIT 1`,
-      [listingId],
-    ).catch(() => []);
-    const settings = rows[0];
+    const settings = await this.fulfillmentSettings(listingId);
     if (!settings || settings.pickupEnabled == null) return base;
 
     const modes: Array<'PICKUP' | 'DELIVERY' | 'ARRANGE'> = [];
     if (settings.pickupEnabled === true) modes.push('PICKUP');
     const partnerDelivery = settings.platformPartnersEnabled === true && settings.disableLocalPartners !== true;
-    if (settings.ownDeliveryEnabled === true || partnerDelivery) modes.push('DELIVERY');
-    return { ...base, fulfillmentModes: modes.length ? modes : base.fulfillmentModes };
+    if (partnerDelivery) modes.push('DELIVERY');
+    if (!modes.length) return base;
+
+    // Anúncios criados antes dos padrões globais podem ter ficado gravados apenas
+    // com PICKUP. Materializamos a herança para o serviço de checkout e mantemos
+    // a autorização da entrega sendo validada novamente no POST.
+    await this.dataSource.query(
+      `UPDATE classified_listings
+       SET "commerceConfig"=jsonb_set(
+         jsonb_set(COALESCE("commerceConfig",'{}'::jsonb),'{onlineCheckout}',COALESCE("commerceConfig"->'onlineCheckout','{}'::jsonb),true),
+         '{onlineCheckout,fulfillmentModes}',to_jsonb($2::text[]),true
+       ),"updatedAt"=now()
+       WHERE id=$1`,
+      [listingId, modes],
+    ).catch(() => undefined);
+
+    return { ...base, fulfillmentModes: modes };
   }
 
   @Post('listings/:listingId/checkout')
-  createPayment(@Req() req: any, @Param('listingId') listingId: string, @Body() body: Record<string, any>) {
+  async createPayment(@Req() req: any, @Param('listingId') listingId: string, @Body() body: Record<string, any>) {
     if (String(body?.fulfillmentMode || '').toUpperCase() === 'DELIVERY') {
+      const settings = await this.fulfillmentSettings(listingId);
+      const partnerDelivery = settings?.platformPartnersEnabled === true && settings?.disableLocalPartners !== true;
+      if (!partnerDelivery) {
+        throw new Error('Entrega por parceiro da plataforma não está habilitada para este produto.');
+      }
       return this.deliveryCheckout.createPayment(req.user.uid, listingId, body || {});
     }
     return this.checkout.createPayment(req.user.uid, listingId, body || {});
@@ -61,5 +72,18 @@ export class ClassifiedsCheckoutController {
       surface: body?.surface || 'CLASSIFIEDS',
       userAgent: userAgent || '',
     });
+  }
+
+  private async fulfillmentSettings(listingId: string) {
+    const rows = await this.dataSource.query(
+      `SELECT s."pickupEnabled",s."ownDeliveryEnabled",s."platformPartnersEnabled",
+              COALESCE(ls."disableLocalPartners",false) AS "disableLocalPartners"
+       FROM classified_listings l
+       LEFT JOIN company_commerce_settings s ON s."companyId"=l."companyId"
+       LEFT JOIN classified_listing_shipping ls ON ls."listingId"=l.id
+       WHERE l.id=$1 LIMIT 1`,
+      [listingId],
+    ).catch(() => []);
+    return rows[0] || null;
   }
 }
