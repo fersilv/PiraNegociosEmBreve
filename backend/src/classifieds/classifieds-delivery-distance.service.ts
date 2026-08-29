@@ -1,18 +1,22 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { ClassifiedsAddressResolutionService } from './classifieds-address-resolution.service';
 
 const HAVERSINE_DISTANCE_BUFFER = 1.3;
 
 @Injectable()
 export class ClassifiedsDeliveryDistanceService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly addresses: ClassifiedsAddressResolutionService,
+  ) {}
 
   async derive(uid: string, raw: Record<string, unknown>) {
     const destinationAddressId = String(raw.destinationAddressId || '').trim();
     if (!destinationAddressId) return { distanceMeters: null, source: 'UNAVAILABLE' as const };
 
     const destinationRows = await this.dataSource.query(
-      `SELECT id,latitude,longitude FROM delivery_addresses
+      `SELECT id,"zipCode",latitude,longitude FROM delivery_addresses
        WHERE id=$1 AND "userId"=$2 AND active=true LIMIT 1`,
       [destinationAddressId, uid],
     );
@@ -57,25 +61,47 @@ export class ClassifiedsDeliveryDistanceService {
     if (!originLocationId) return { distanceMeters: null, source: 'UNAVAILABLE' as const };
 
     const originRows = await this.dataSource.query(
-      `SELECT id,latitude,longitude FROM company_fulfillment_locations
+      `SELECT id,"zipCode",latitude,longitude FROM company_fulfillment_locations
        WHERE id=$1 AND "companyId"=$2 AND active=true AND "allowsDeliveryOrigin"=true LIMIT 1`,
       [originLocationId, companyIds[0]],
     );
     const origin = originRows[0];
     if (!origin) throw new BadRequestException('Origem de entrega não configurada para esta empresa.');
 
-    const originLat = this.coordinate(origin.latitude, -90, 90);
-    const originLng = this.coordinate(origin.longitude, -180, 180);
-    const destinationLat = this.coordinate(destination.latitude, -90, 90);
-    const destinationLng = this.coordinate(destination.longitude, -180, 180);
-    if (originLat == null || originLng == null || destinationLat == null || destinationLng == null) {
+    const destinationCoordinates = await this.coordinatesFromStoredOrCep(destination, 'delivery_addresses');
+    const originCoordinates = await this.coordinatesFromStoredOrCep(origin, 'company_fulfillment_locations');
+    if (!destinationCoordinates || !originCoordinates) {
       return { distanceMeters: null, source: 'UNAVAILABLE' as const };
     }
 
     return {
-      distanceMeters: this.haversineMeters(originLat, originLng, destinationLat, destinationLng),
+      distanceMeters: this.haversineMeters(
+        originCoordinates.latitude,
+        originCoordinates.longitude,
+        destinationCoordinates.latitude,
+        destinationCoordinates.longitude,
+      ),
       source: 'SERVER_HAVERSINE_BUFFER_30' as const,
     };
+  }
+
+  private async coordinatesFromStoredOrCep(row: any, table: 'delivery_addresses' | 'company_fulfillment_locations') {
+    const latitude = this.coordinate(row.latitude, -90, 90);
+    const longitude = this.coordinate(row.longitude, -180, 180);
+    if (latitude != null && longitude != null) return { latitude, longitude };
+
+    const zipCode = String(row.zipCode || '').replace(/\D/g, '').slice(0, 8);
+    if (!/^\d{8}$/.test(zipCode)) return null;
+    const resolved = await this.addresses.byCep(zipCode).catch(() => null);
+    const resolvedLatitude = this.coordinate(resolved?.latitude, -90, 90);
+    const resolvedLongitude = this.coordinate(resolved?.longitude, -180, 180);
+    if (resolvedLatitude == null || resolvedLongitude == null) return null;
+
+    await this.dataSource.query(
+      `UPDATE ${table} SET latitude=$2,longitude=$3,"updatedAt"=now() WHERE id=$1`,
+      [row.id, resolvedLatitude, resolvedLongitude],
+    ).catch(() => undefined);
+    return { latitude: resolvedLatitude, longitude: resolvedLongitude };
   }
 
   private haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
