@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Headers, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { ClassifiedsCheckoutService } from './classifieds-checkout.service';
+import { ClassifiedsDeliveryAwareCheckoutService } from './classifieds-delivery-aware-checkout.service';
 import { ClassifiedsMarketplaceTermsService } from './classifieds-marketplace-terms.service';
 
 @Controller('classifieds')
@@ -8,6 +9,7 @@ import { ClassifiedsMarketplaceTermsService } from './classifieds-marketplace-te
 export class ClassifiedsCheckoutController {
   constructor(
     private readonly checkout: ClassifiedsCheckoutService,
+    private readonly deliveryCheckout: ClassifiedsDeliveryAwareCheckoutService,
     private readonly terms: ClassifiedsMarketplaceTermsService,
   ) {}
 
@@ -18,6 +20,9 @@ export class ClassifiedsCheckoutController {
 
   @Post('listings/:listingId/checkout')
   createPayment(@Req() req: any, @Param('listingId') listingId: string, @Body() body: Record<string, any>) {
+    if (String(body?.fulfillmentMode || '').toUpperCase() === 'DELIVERY') {
+      return this.deliveryCheckout.createPayment(req.user.uid, listingId, body || {});
+    }
     return this.checkout.createPayment(req.user.uid, listingId, body || {});
   }
 
