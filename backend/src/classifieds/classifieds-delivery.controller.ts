@@ -1,11 +1,15 @@
 import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
+import { ClassifiedsDeliveryDistanceService } from './classifieds-delivery-distance.service';
 import { ClassifiedsDeliveryService } from './classifieds-delivery.service';
 
 @Controller('classifieds/delivery')
 @UseGuards(FirebaseAuthGuard)
 export class ClassifiedsDeliveryController {
-  constructor(private readonly delivery: ClassifiedsDeliveryService) {}
+  constructor(
+    private readonly delivery: ClassifiedsDeliveryService,
+    private readonly distance: ClassifiedsDeliveryDistanceService,
+  ) {}
 
   @Get('company/partners')
   companyPartners(@Req() req: any) {
@@ -18,8 +22,14 @@ export class ClassifiedsDeliveryController {
   }
 
   @Post('quotes')
-  quote(@Req() req: any, @Body() body: Record<string, unknown>) {
-    return this.delivery.quote(req.user.uid, body);
+  async quote(@Req() req: any, @Body() body: Record<string, unknown>) {
+    const { distanceMeters: _ignoredDistance, ...safeBody } = body;
+    const derived = await this.distance.derive(req.user.uid, safeBody);
+    return this.delivery.quote(req.user.uid, {
+      ...safeBody,
+      distanceMeters: derived.distanceMeters,
+      distanceSource: derived.source,
+    });
   }
 
   @Get('company/jobs')
