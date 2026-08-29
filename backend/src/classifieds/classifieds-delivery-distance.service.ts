@@ -79,11 +79,13 @@ export class ClassifiedsDeliveryDistanceService {
       {
         ...(originCoordinates || {}),
         zipCode: origin.zipCode,
+        placeId: origin.placeId,
         address: this.completeAddress(origin),
       },
       {
         ...(destinationCoordinates || {}),
         zipCode: destination.zipCode,
+        placeId: destination.placeId,
         address: this.completeAddress(destination),
       },
     );
@@ -122,7 +124,6 @@ export class ClassifiedsDeliveryDistanceService {
     const zipCode = String(row.zipCode || '').replace(/\D/g, '').slice(0, 8);
     const parts = [
       [row.street, row.number].filter(Boolean).join(', '),
-      row.complement,
       row.neighborhood,
       [row.city, row.state].filter(Boolean).join(' - '),
       zipCode,
