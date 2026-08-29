@@ -38,6 +38,7 @@ import { ClassifiedsCommerceSettingsController } from './classifieds-commerce-se
 import { ClassifiedsCommerceSettingsService } from './classifieds-commerce-settings.service';
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
 import { ClassifiedsDeliveryAdminController } from './classifieds-delivery-admin.controller';
+import { ClassifiedsDeliveryAwareCheckoutService } from './classifieds-delivery-aware-checkout.service';
 import { ClassifiedsDeliveryChannelAdminController } from './classifieds-delivery-channel-admin.controller';
 import { ClassifiedsDeliveryController } from './classifieds-delivery.controller';
 import { ClassifiedsDeliveryDistanceService } from './classifieds-delivery-distance.service';
@@ -143,7 +144,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsMarketplacePaymentsService,
     ClassifiedsOfferChatService,
     ClassifiedsMarketplaceTermsService,
-    ClassifiedsCheckoutService,
+    { provide: ClassifiedsCheckoutService, useClass: ClassifiedsDeliveryAwareCheckoutService },
     ClassifiedsReviewModerationService,
     ClassifiedsReviewsService,
     ClassifiedsCommerceSettingsService,
