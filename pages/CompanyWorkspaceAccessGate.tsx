@@ -5,7 +5,11 @@ import { RegionalLoader } from "../components/RegionalLoader";
 import { Dashboard } from "./Dashboard";
 
 function requiredPermission(pathname: string): CompanyPermissionKey | null {
-  if (pathname.startsWith("/company/talentos") || pathname.startsWith("/company/contratacao")) return "recruitment";
+  if (
+    pathname.startsWith("/company/vagas")
+    || pathname.startsWith("/company/talentos")
+    || pathname.startsWith("/company/contratacao")
+  ) return "recruitment";
   if (pathname.startsWith("/company/financeiro") || pathname.startsWith("/company/planos")) return "finance";
   if (pathname.startsWith("/company/equipe")) return "team";
   if (
