@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+const HAVERSINE_DISTANCE_BUFFER = 1.3;
+
 @Injectable()
 export class ClassifiedsDeliveryDistanceService {
   constructor(private readonly dataSource: DataSource) {}
@@ -72,7 +74,7 @@ export class ClassifiedsDeliveryDistanceService {
 
     return {
       distanceMeters: this.haversineMeters(originLat, originLng, destinationLat, destinationLng),
-      source: 'SERVER_HAVERSINE' as const,
+      source: 'SERVER_HAVERSINE_BUFFER_30' as const,
     };
   }
 
@@ -83,7 +85,8 @@ export class ClassifiedsDeliveryDistanceService {
     const dLng = toRadians(lng2 - lng1);
     const a = Math.sin(dLat / 2) ** 2
       + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLng / 2) ** 2;
-    return Math.max(0, Math.round(radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))));
+    const straightLineMeters = Math.max(0, radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    return Math.ceil(straightLineMeters * HAVERSINE_DISTANCE_BUFFER);
   }
 
   private coordinate(value: unknown, min: number, max: number) {
