@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
 import {
   ArrowRight,
   ArrowLeft,
@@ -13,6 +13,9 @@ import {
   Linkedin,
   Mail,
   MapPin,
+  ImageIcon,
+  Loader2,
+  MessageCircle,
   Music2,
   Phone,
   Search,
@@ -21,6 +24,10 @@ import {
   X,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { api } from '../../../lib/api';
+import { useAuth } from '../../../contexts/AuthContext';
+import { classifiedPrice } from '../../classifieds/ClassifiedListingCard';
+import type { ClassifiedListing } from '../../../types/classifieds';
 import type {
   CompanyPageConfig,
   CompanyPageSection,
@@ -529,6 +536,7 @@ export function StorefrontSection({ className = '' }: { className?: string }) {
       <CompanyClassifiedsShowcase 
         companyId={company.id} 
         companyName={company.name} 
+        companySlug={company.slug}
         variant={isDark ? 'store' : 'default'} 
         onItemClick={(item) => openInternalPage('classified-detail', item)}
       />
@@ -705,23 +713,61 @@ function JobDetailPage({ job }: { job: PublicJobLike }) {
   );
 }
 
-function ClassifiedDetailPage({ classified }: { classified: any }) {
+function ClassifiedDetailPage({ classified }: { classified: ClassifiedListing }) {
   const { company, visual, isDark } = useTheme();
-  if (!classified) return null;
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [listing, setListing] = useState<ClassifiedListing>(classified);
+  const [loading, setLoading] = useState(Boolean(classified?.slug));
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!classified?.slug) return;
+    let active = true;
+    setLoading(true);
+    api.get(`/classifieds/listings/${encodeURIComponent(classified.slug)}`)
+      .then((response) => { if (active) setListing(response.data as ClassifiedListing); })
+      .catch(() => { if (active) setError('Não foi possível carregar todos os detalhes deste item.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [classified?.slug]);
+
+  if (!listing) return null;
+  const image = listing.images?.find((item) => item.isPrimary)?.url || listing.images?.[0]?.url;
+  const startConversation = async () => {
+    if (!user) {
+      navigate(`/login?returnTo=${encodeURIComponent(window.location.pathname)}`);
+      return;
+    }
+    setWorking(true);
+    setError('');
+    try {
+      const response = await api.post(`/classifieds/listings/${listing.id}/conversations`);
+      if (!response.data?.id) throw new Error('Conversa não identificada.');
+      navigate(`/classificados/conversas/${response.data.id}`);
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.message || 'Não foi possível iniciar a conversa.');
+    } finally {
+      setWorking(false);
+    }
+  };
 
   return (
-    <Shell className="py-12 sm:py-20">
-      <div className="mx-auto max-w-5xl">
-        <Eyebrow light={isDark}>Produto / Serviço</Eyebrow>
-        <h1 className="mt-4 text-4xl font-black tracking-[-.04em] sm:text-5xl">{classified.title || 'Anúncio'}</h1>
-        {classified.price && <p className="mt-4 text-2xl font-black" style={{ color: visual.primary }}>{classified.price}</p>}
-        {classified.description && <p className="mt-6 text-lg leading-8 opacity-65">{classified.description}</p>}
-        <div className="mt-8 flex items-center gap-4">
-          <CompanyLogo />
-          <div>
-            <p className="font-bold">{company.name}</p>
-            <VerifiedBadge />
-          </div>
+    <Shell className="py-8 sm:py-14">
+      <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,.8fr)]">
+        <div className="overflow-hidden border border-current/10 bg-black/5 pn-r">
+          {image ? <img src={image} alt={listing.title} className="aspect-[4/3] h-full w-full object-cover" /> : <div className="flex aspect-[4/3] items-center justify-center opacity-35"><ImageIcon className="h-12 w-12" /></div>}
+        </div>
+        <div className="flex flex-col">
+          <Eyebrow light={isDark}>{listing.listingType === 'SERVICE' ? 'Serviço' : 'Produto'} da loja</Eyebrow>
+          <h1 className="mt-4 text-4xl font-black tracking-[-.04em] sm:text-5xl">{listing.title || 'Anúncio'}</h1>
+          <p className="mt-4 text-3xl font-black" style={{ color: visual.primary }}>{classifiedPrice(listing)}</p>
+          <p className="mt-6 whitespace-pre-wrap text-base leading-7 opacity-65">{listing.description || 'Entre em contato com a empresa para conhecer todos os detalhes.'}</p>
+          <div className="mt-7 flex items-center gap-3 border-y border-current/10 py-5"><CompanyLogo /><div><p className="font-bold">{company.name}</p><span className="text-sm opacity-55">Loja verificada no PiraNegócios</span></div><VerifiedBadge /></div>
+          <div className="mt-7 grid gap-3 sm:grid-cols-2"><button type="button" onClick={() => void startConversation()} disabled={working} className="inline-flex min-h-12 items-center justify-center gap-2 px-5 text-sm font-black pn-r disabled:opacity-55" style={{ background: visual.primary, color: contrastText(visual.primary) }}>{working ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />} Negociar agora</button><Link to={`/classificados/anuncio/${encodeURIComponent(listing.slug)}`} className="inline-flex min-h-12 items-center justify-center gap-2 border border-current/15 px-5 text-sm font-bold pn-r">Ver anúncio completo <ArrowRight className="h-4 w-4" /></Link></div>
+          {loading && <p className="mt-4 flex items-center gap-2 text-xs opacity-50"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Atualizando informações...</p>}
+          {error && <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{error}</p>}
         </div>
       </div>
     </Shell>

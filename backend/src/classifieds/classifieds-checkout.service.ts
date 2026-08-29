@@ -522,11 +522,11 @@ export class ClassifiedsCheckoutService implements OnModuleInit, OnModuleDestroy
     const updated = await this.dataSource.query(
       `UPDATE classified_orders SET
          "providerPaymentId"=COALESCE($2,"providerPaymentId"),
-         "paymentStatus"=$3,
-         status=$4,
-         "providerStatusDetail"=$5,
-         "paidAt"=CASE WHEN $3='APPROVED' THEN COALESCE("paidAt",now()) ELSE "paidAt" END,
-         "canceledAt"=CASE WHEN $4='CANCELED' THEN COALESCE("canceledAt",now()) ELSE "canceledAt" END,
+         "paymentStatus"=$3::varchar,
+         status=$4::varchar,
+         "providerStatusDetail"=$5::varchar,
+         "paidAt"=CASE WHEN $3::varchar='APPROVED' THEN COALESCE("paidAt",now()) ELSE "paidAt" END,
+         "canceledAt"=CASE WHEN $4::varchar='CANCELED' THEN COALESCE("canceledAt",now()) ELSE "canceledAt" END,
          metadata=COALESCE(metadata,'{}'::jsonb) || $6::jsonb,
          "updatedAt"=now()
        WHERE id=$1 RETURNING *`,

@@ -17,7 +17,7 @@ import {
   UploadCloud,
   Wrench,
 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ClassifiedCategoryIcon } from '../components/classifieds/ClassifiedCategoryIcon';
 import { ClassifiedListingPreview } from '../components/classifieds/ClassifiedListingPreview';
 import { useClassifiedsWorkspace } from '../contexts/ClassifiedsWorkspaceContext';
@@ -64,6 +64,8 @@ type FormState = {
   images: string[];
   publicationChannels: ClassifiedPublicationChannel[];
   optionGroups: ClassifiedCatalogOptionGroup[];
+  inventoryMode: 'SINGLE' | 'TRACKED' | 'UNLIMITED';
+  stockQuantity: string;
 };
 
 type LocationField = 'city' | 'state' | 'neighborhood' | 'zipCode';
@@ -73,6 +75,8 @@ export default function ClassifiedPublishPage() {
   const { profile } = useAuth();
   const { data } = useClassifiedsWorkspace();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get('edit');
   const business = data?.activeIdentity === 'COMPANY';
   const company = data?.company;
   const [categories, setCategories] = useState<ClassifiedCategory[]>([]);
@@ -106,6 +110,8 @@ export default function ClassifiedPublishPage() {
     images: [],
     publicationChannels: business ? company?.defaultPublicationChannels || ['CLASSIFIEDS', 'COMPANY_PAGE'] : ['CLASSIFIEDS'],
     optionGroups: [],
+    inventoryMode: 'SINGLE',
+    stockQuantity: '1',
   });
 
   useEffect(() => {
@@ -116,6 +122,33 @@ export default function ClassifiedPublishPage() {
       .then((response) => setPhotoLimit(Math.max(3, Math.min(10, Number(response.data?.photoLimit) || 3))))
       .catch(() => setPhotoLimit(3));
   }, [data?.activeIdentity, data?.company?.id]);
+
+  useEffect(() => {
+    if (!editId) return;
+    let active = true;
+    api.get('/classifieds/me/listings').then((response) => {
+      const listings = Array.isArray(response.data) ? response.data : Array.isArray(response.data?.items) ? response.data.items : [];
+      const listing = listings.find((item: any) => item.id === editId);
+      if (!active || !listing) return;
+      const stock = listing.commerceConfig?.onlineCheckout?.stockQuantity;
+      locationTouched.current = true;
+      setChannelsTouched(true);
+      setDraftId(listing.id);
+      setForm((current) => ({
+        ...current,
+        listingType: listing.listingType || 'PRODUCT', categorySlug: listing.categorySlug || '', title: listing.title || '', description: listing.description || '',
+        price: listing.price == null ? '' : String(listing.price), priceType: listing.priceType || 'FIXED', condition: listing.condition || 'USED',
+        city: listing.city || '', state: listing.state || '', neighborhood: listing.neighborhood || '', zipCode: listing.zipCode || '',
+        contactPhone: listing.contactPhone || '', contactWhatsapp: listing.contactWhatsapp || '',
+        attributes: Object.fromEntries(Object.entries(listing.attributes || {}).map(([key, value]) => [key, value == null ? '' : String(value)])),
+        images: Array.isArray(listing.images) ? listing.images.map((image: any) => image.url).filter(Boolean) : [],
+        publicationChannels: Array.isArray(listing.publicationChannels) ? listing.publicationChannels : current.publicationChannels,
+        optionGroups: listing.catalogConfig?.optionGroups || [],
+        inventoryMode: stock == null ? 'UNLIMITED' : Number(stock) === 1 ? 'SINGLE' : 'TRACKED', stockQuantity: stock == null ? '' : String(stock),
+      }));
+    }).catch(() => { if (active) setError('Não foi possível carregar o anúncio para edição.'); });
+    return () => { active = false; };
+  }, [editId]);
 
   useEffect(() => {
     let active = true;
@@ -268,6 +301,9 @@ export default function ClassifiedPublishPage() {
     status,
     publicationChannels: business ? form.publicationChannels : ['CLASSIFIEDS'],
     catalogConfig: form.optionGroups.length ? { optionGroups: form.optionGroups, pricingStrategy: 'BASE' } : null,
+    commerceConfig: business && form.listingType === 'PRODUCT' ? {
+      onlineCheckout: { stockQuantity: form.inventoryMode === 'UNLIMITED' ? null : form.inventoryMode === 'SINGLE' ? 1 : Number(form.stockQuantity || 0) },
+    } : undefined,
   });
 
   const saveDraft = async () => {
@@ -341,7 +377,7 @@ export default function ClassifiedPublishPage() {
         <Link to="/classificados/painel" className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/[.06]" aria-label="Voltar"><ArrowLeft className="h-4 w-4" /></Link>
         <div className="min-w-0">
           <p className={`text-[9px] font-black uppercase tracking-[.16em] ${business ? 'text-[#397c75]' : 'text-[#b06448]'}`}>PiraNegócios {business ? 'Business' : 'Personal'}</p>
-          <h1 className="truncate font-serif text-2xl font-black">Criar anúncio</h1>
+          <h1 className="truncate font-serif text-2xl font-black">{draftId ? 'Editar anúncio' : 'Criar anúncio'}</h1>
         </div>
         <button type="button" onClick={() => setPreviewOpen(true)} className="ml-auto inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-black text-[#604c42] shadow-sm ring-1 ring-black/[.06] sm:hidden">Prévia</button>
         <button onClick={() => void saveDraft()} disabled={saving} className="hidden items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-bold text-[#604c42] shadow-sm ring-1 ring-black/[.06] hover:bg-stone-50 sm:ml-auto sm:inline-flex">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Salvar rascunho</button>
@@ -423,7 +459,7 @@ function TypeCard({ selected, disabled, onClick, icon, title, text }: { selected
 
 function MainInfoStep({ form, patch }: { form: FormState; patch: <K extends keyof FormState>(key: K, value: FormState[K]) => void }) {
   const service = form.listingType === 'SERVICE';
-  return <div><StepHeading eyebrow={service ? 'Apresente o serviço' : 'Apresente o produto'} title="Conte o que está oferecendo" text="Título direto, descrição útil e uma regra de preço clara deixam a negociação mais simples." /><div className="mt-6 space-y-5"><Field label="Título"><input value={form.title} onChange={(event) => patch('title', event.target.value)} maxLength={160} placeholder={service ? 'Ex.: Formatação e manutenção de notebook' : 'Ex.: iPhone 14 128 GB muito conservado'} className={inputClass} /></Field><Field label="Descrição"><textarea value={form.description} onChange={(event) => patch('description', event.target.value)} rows={7} placeholder={service ? 'Explique o atendimento, o que está incluso, região atendida e condições...' : 'Estado do item, tempo de uso, detalhes importantes, garantia...'} className={`${inputClass} h-auto resize-y py-3`} /></Field><div className="grid gap-4 sm:grid-cols-2">{!service && <Field label="Condição"><select value={form.condition} onChange={(event) => patch('condition', event.target.value as ClassifiedCondition)} className={inputClass}><option value="NEW">Novo</option><option value="USED">Usado</option><option value="REFURBISHED">Recondicionado</option></select></Field>}<Field label="Como exibir o preço"><select value={form.priceType} onChange={(event) => patch('priceType', event.target.value as ClassifiedPriceType)} className={inputClass}><option value="FIXED">Preço fixo</option><option value="NEGOTIABLE">Preço negociável</option>{service && <option value="STARTING_AT">A partir de</option>}{service && <option value="CONTACT">Solicite um orçamento</option>}</select></Field></div>{form.priceType !== 'CONTACT' && <Field label={form.priceType === 'STARTING_AT' ? 'Valor inicial' : 'Preço'}><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-stone-400">R$</span><input type="number" min="0" step="0.01" value={form.price} onChange={(event) => patch('price', event.target.value)} className={`${inputClass} pl-11`} placeholder="0,00" /></div></Field>}</div></div>;
+  return <div><StepHeading eyebrow={service ? 'Apresente o serviço' : 'Apresente o produto'} title="Conte o que está oferecendo" text="Título direto, descrição útil e uma regra de preço clara deixam a negociação mais simples." /><div className="mt-6 space-y-5"><Field label="Título"><input value={form.title} onChange={(event) => patch('title', event.target.value)} maxLength={160} placeholder={service ? 'Ex.: Formatação e manutenção de notebook' : 'Ex.: iPhone 14 128 GB muito conservado'} className={inputClass} /></Field><Field label="Descrição"><textarea value={form.description} onChange={(event) => patch('description', event.target.value)} rows={7} placeholder={service ? 'Explique o atendimento, o que está incluso, região atendida e condições...' : 'Estado do item, tempo de uso, detalhes importantes, garantia...'} className={`${inputClass} h-auto resize-y py-3`} /></Field><div className="grid gap-4 sm:grid-cols-2">{!service && <Field label="Condição"><select value={form.condition} onChange={(event) => patch('condition', event.target.value as ClassifiedCondition)} className={inputClass}><option value="NEW">Novo</option><option value="USED">Usado</option><option value="REFURBISHED">Recondicionado</option></select></Field>}<Field label="Como exibir o preço"><select value={form.priceType} onChange={(event) => patch('priceType', event.target.value as ClassifiedPriceType)} className={inputClass}><option value="FIXED">Preço fixo</option><option value="NEGOTIABLE">Preço negociável</option>{service && <option value="STARTING_AT">A partir de</option>}{service && <option value="CONTACT">Solicite um orçamento</option>}</select></Field></div>{form.priceType !== 'CONTACT' && <Field label={form.priceType === 'STARTING_AT' ? 'Valor inicial' : 'Preço'}><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-stone-400">R$</span><input type="number" min="0" step="0.01" value={form.price} onChange={(event) => patch('price', event.target.value)} className={`${inputClass} pl-11`} placeholder="0,00" /></div></Field>}{!service && <section className="rounded-[20px] border border-stone-200 bg-stone-50 p-4"><p className="text-sm font-black text-stone-800">Disponibilidade do produto</p><p className="mt-1 text-xs leading-5 text-stone-500">Defina isso agora para que a compra online não aceite mais itens do que você tem.</p><div className="mt-3 grid gap-2 sm:grid-cols-3"><button type="button" onClick={() => { patch('inventoryMode', 'SINGLE'); patch('stockQuantity', '1'); }} className={`rounded-xl p-3 text-left text-xs font-black ring-1 ${form.inventoryMode === 'SINGLE' ? 'bg-stone-900 text-white ring-stone-900' : 'bg-white text-stone-600 ring-stone-200'}`}>Produto único<span className="mt-1 block text-[10px] font-medium opacity-70">Vende uma vez.</span></button><button type="button" onClick={() => patch('inventoryMode', 'TRACKED')} className={`rounded-xl p-3 text-left text-xs font-black ring-1 ${form.inventoryMode === 'TRACKED' ? 'bg-stone-900 text-white ring-stone-900' : 'bg-white text-stone-600 ring-stone-200'}`}>Controlar estoque<span className="mt-1 block text-[10px] font-medium opacity-70">Baixa a cada pedido.</span></button><button type="button" onClick={() => patch('inventoryMode', 'UNLIMITED')} className={`rounded-xl p-3 text-left text-xs font-black ring-1 ${form.inventoryMode === 'UNLIMITED' ? 'bg-stone-900 text-white ring-stone-900' : 'bg-white text-stone-600 ring-stone-200'}`}>Sem controle<span className="mt-1 block text-[10px] font-medium opacity-70">Não limita vendas.</span></button></div>{form.inventoryMode === 'TRACKED' && <div className="mt-3 max-w-xs"><Field label="Quantidade inicial"><input type="number" min="0" value={form.stockQuantity} onChange={(event) => patch('stockQuantity', event.target.value)} className={inputClass} /></Field></div>}</section>}</div></div>;
 }
 
 function PhotosStep({ images, photoLimit, uploading, uploadImages, remove }: { images: string[]; photoLimit: number; uploading: boolean; uploadImages: (files: FileList | null) => void; remove: (index: number) => void }) {

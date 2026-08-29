@@ -96,6 +96,7 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
 
   const unitPrice = method === 'PIX' ? Number(config?.pricing.pixPrice ?? config?.pricing.currentPrice ?? 0) : Number(config?.pricing.cardPrice ?? config?.pricing.currentPrice ?? 0);
   const amount = Math.max(0, unitPrice * quantity);
+  const paymentPricesDiffer = Number(config?.pricing.pixPrice ?? config?.pricing.currentPrice ?? 0) !== Number(config?.pricing.cardPrice ?? config?.pricing.currentPrice ?? 0);
   const canMountBrick = Boolean(open && config?.publicKey && config.terms.accepted && config.available && amount > 0 && !result);
 
   useEffect(() => {
@@ -217,7 +218,7 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
             </aside>
 
             <main className="min-w-0">
-              <div className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-1.5"><button type="button" onClick={() => setMethod('PIX')} className={`rounded-xl px-3 py-3 text-xs font-black ${method === 'PIX' ? 'bg-white text-emerald-700 shadow-sm' : 'text-stone-500'}`}>Pix · {money(config.pricing.pixPrice)}</button><button type="button" onClick={() => setMethod('CARD')} className={`rounded-xl px-3 py-3 text-xs font-black ${method === 'CARD' ? 'bg-white text-[#009ee3] shadow-sm' : 'text-stone-500'}`}>Cartão · {money(config.pricing.cardPrice)}</button></div>
+              {paymentPricesDiffer ? <div className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-1.5"><button type="button" onClick={() => setMethod('PIX')} className={`rounded-xl px-3 py-3 text-xs font-black ${method === 'PIX' ? 'bg-white text-emerald-700 shadow-sm' : 'text-stone-500'}`}>Pix · {money(config.pricing.pixPrice)}</button><button type="button" onClick={() => setMethod('CARD')} className={`rounded-xl px-3 py-3 text-xs font-black ${method === 'CARD' ? 'bg-white text-[#009ee3] shadow-sm' : 'text-stone-500'}`}>Cartão · {money(config.pricing.cardPrice)}</button></div> : <div className="flex items-center justify-between rounded-2xl bg-[#eaf7fd] px-4 py-3 text-xs font-bold text-[#35647d]"><span>{method === 'PIX' ? 'Pix selecionado no formulário seguro abaixo.' : 'Cartão selecionado no formulário seguro abaixo.'}</span><button type="button" onClick={() => setMethod(method === 'PIX' ? 'CARD' : 'PIX')} className="underline">Usar {method === 'PIX' ? 'cartão' : 'Pix'}</button></div>}
 
               {fulfillment === 'DELIVERY' && <div className="mt-4 grid gap-3"><FieldLabel label="Endereço para entrega"><textarea value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} rows={2} placeholder="Endereço onde o vendedor deverá entregar" className="w-full rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-stone-200 focus:ring-[#009ee3]/40" /></FieldLabel><FieldLabel label="Observação opcional"><input value={deliveryNote} onChange={(event) => setDeliveryNote(event.target.value)} placeholder="Referência, horário, instruções" className="h-11 w-full rounded-xl bg-white px-3 text-sm outline-none ring-1 ring-stone-200" /></FieldLabel><p className="text-[10px] leading-5 text-amber-700">O PiraNegócios ainda não calcula frete. O valor exibido é apenas do produto; custo e condições de entrega devem estar informados ou ser combinados com o vendedor.</p></div>}
 

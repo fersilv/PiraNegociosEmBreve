@@ -246,6 +246,10 @@ export class ClassifiedsService {
       if (prefs[0]?.onlineCheckoutDefault === true) {
         commerceConfig = { onlineCheckout: { enabled: true } };
       }
+      const inventory = cleanInitialInventory(body.commerceConfig);
+      if (listingType === 'PRODUCT' && inventory) {
+        commerceConfig = { ...(commerceConfig || {}), onlineCheckout: { ...(commerceConfig?.onlineCheckout || {}), ...inventory } };
+      }
     }
 
     const listing = this.listingsRepo.create({
@@ -310,6 +314,13 @@ export class ClassifiedsService {
     }
     if (body.attributes !== undefined) listing.attributes = plainAttributes(body.attributes);
     if (body.catalogConfig !== undefined) listing.catalogConfig = cleanCatalogConfig(body.catalogConfig);
+    if (body.commerceConfig !== undefined && listing.companyId && listing.listingType === 'PRODUCT') {
+      const inventory = cleanInitialInventory(body.commerceConfig);
+      if (inventory) listing.commerceConfig = {
+        ...(listing.commerceConfig || {}),
+        onlineCheckout: { ...(listing.commerceConfig?.onlineCheckout || {}), ...inventory },
+      };
+    }
     if (body.publicationChannels !== undefined) {
       if (listing.companyId) listing.publicationChannels = cleanChannels(body.publicationChannels, listing.publicationChannels);
       else listing.publicationChannels = ['CLASSIFIEDS'];
@@ -519,6 +530,14 @@ function numericParam(value: unknown) {
   if (value === undefined || value === null || value === '') return null;
   const parsed = Number(String(value).replace(',', '.'));
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function cleanInitialInventory(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const checkout = (value as any).onlineCheckout;
+  if (!checkout || typeof checkout !== 'object' || Array.isArray(checkout) || !Object.prototype.hasOwnProperty.call(checkout, 'stockQuantity')) return null;
+  if (checkout.stockQuantity === null || checkout.stockQuantity === '') return { stockQuantity: null };
+  return { stockQuantity: clampInt(checkout.stockQuantity, 0, 1_000_000, 0) };
 }
 
 function coordinate(value: unknown) {

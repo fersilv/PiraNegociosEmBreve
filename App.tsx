@@ -20,6 +20,7 @@ const Terms = lazy(() => import("./pages/Terms"));
 const JobsEntryPage = lazy(() => import("./pages/JobsEntryPage"));
 const PublicJobPage = lazy(() => import("./pages/PublicJobPage"));
 const PublicCompanyPage = lazy(() => import("./pages/PublicCompanyPage"));
+const CompanyCollectionPage = lazy(() => import("./pages/CompanyCollectionPage"));
 const CompanyPagePreviewPage = lazy(() => import("./pages/CompanyPagePreviewPage"));
 const CityJobsPage = lazy(() => import("./pages/CityJobsPage"));
 const EmbedJobsWidget = lazy(() => import("./pages/EmbedJobsWidget"));
@@ -87,6 +88,7 @@ export default function App() {
               <Route path="/classificados/servicos" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/ofertas" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/vendas" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/estoque" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/vendas/mercado-pago" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/recebimentos" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/avaliacoes" element={<ClassifiedsWorkspacePage />} />
@@ -115,6 +117,8 @@ export default function App() {
 
               <Route path="/:companySlug/termos" element={<CompanyLegalPage type="terms" />} />
               <Route path="/:companySlug/privacidade" element={<CompanyLegalPage type="privacy" />} />
+              <Route path="/:companySlug/produtos" element={<CompanyCollectionPage kind="products" />} />
+              <Route path="/:companySlug/vagas" element={<CompanyCollectionPage kind="jobs" />} />
               <Route path="/:companySlug" element={<PublicCompanyPage />} />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>

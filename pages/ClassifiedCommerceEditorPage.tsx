@@ -19,6 +19,7 @@ type Form = {
   maxInstallments: string;
   interestFreeInstallments: string;
   onlineEnabled: boolean;
+  inventoryMode: 'SINGLE' | 'TRACKED' | 'UNLIMITED';
   pickup: boolean;
   delivery: boolean;
   stockQuantity: string;
@@ -40,6 +41,7 @@ const initialForm: Form = {
   maxInstallments: '1',
   interestFreeInstallments: '0',
   onlineEnabled: false,
+  inventoryMode: 'UNLIMITED',
   pickup: true,
   delivery: false,
   stockQuantity: '',
@@ -119,7 +121,7 @@ export default function ClassifiedCommerceEditorPage() {
         onlineCheckout: {
           enabled: business && form.onlineEnabled,
           fulfillmentModes: [form.pickup ? 'PICKUP' : null, form.delivery ? 'DELIVERY' : null].filter(Boolean),
-          stockQuantity: form.stockQuantity === '' ? null : Number(form.stockQuantity),
+          stockQuantity: form.inventoryMode === 'UNLIMITED' ? null : form.inventoryMode === 'SINGLE' ? 1 : Number(form.stockQuantity || 0),
           lowStockThreshold: form.lowStockThreshold === '' ? null : Number(form.lowStockThreshold),
           orderWhatsappE164: form.orderWhatsappE164 || null,
         },
@@ -161,7 +163,7 @@ export default function ClassifiedCommerceEditorPage() {
           {business && <Card icon={<ShoppingCart className="h-5 w-5" />} eyebrow="Compra online" title="Transforme o anúncio em checkout">
             {!onlineAvailable && <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">Para ativar compra online, a empresa precisa estar verificada, conectar um provedor em <Link to="/classificados/vendas" className="font-black underline">Vendas</Link> e ter uma regra de comissão configurada. O anúncio continua funcionando normalmente por chat/oferta sem isso.</div>}
             <Toggle checked={form.onlineEnabled} disabled={!onlineAvailable} onChange={(value) => patch('onlineEnabled', value)} label="Permitir comprar e pagar online" />
-            {form.onlineEnabled && <div className="mt-4 space-y-4"><div><p className="text-xs font-black text-stone-600">Como o cliente recebe?</p><div className="mt-2 flex gap-2"><CheckButton active={form.pickup} onClick={() => patch('pickup', !form.pickup)} label="Retirada" /><CheckButton active={form.delivery} onClick={() => patch('delivery', !form.delivery)} label="Entrega" /></div></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Estoque (opcional)"><input type="number" min="0" value={form.stockQuantity} onChange={(event) => patch('stockQuantity', event.target.value)} className={inputClass} /></Field><Field label="Avisar estoque baixo em"><input type="number" min="0" value={form.lowStockThreshold} onChange={(event) => patch('lowStockThreshold', event.target.value)} className={inputClass} /></Field></div><Field label="WhatsApp para receber pedidos (opcional)"><input value={form.orderWhatsappE164} onChange={(event) => patch('orderWhatsappE164', event.target.value)} placeholder="5516999999999" className={inputClass} /></Field><p className="text-[10px] leading-5 text-stone-400">O número fica como preferência operacional da empresa. O envio automático de pedidos por WhatsApp depende da integração de mensagens estar habilitada.</p></div>}
+            {form.onlineEnabled && <div className="mt-4 space-y-4"><div><p className="text-xs font-black text-stone-600">Como o cliente recebe?</p><div className="mt-2 flex gap-2"><CheckButton active={form.pickup} onClick={() => patch('pickup', !form.pickup)} label="Retirada" /><CheckButton active={form.delivery} onClick={() => patch('delivery', !form.delivery)} label="Entrega" /></div></div><div><p className="text-xs font-black text-stone-600">Disponibilidade</p><div className="mt-2 grid gap-2 sm:grid-cols-3"><CheckButton active={form.inventoryMode === 'SINGLE'} onClick={() => { patch('inventoryMode', 'SINGLE'); patch('stockQuantity', '1'); }} label="Produto único" /><CheckButton active={form.inventoryMode === 'TRACKED'} onClick={() => patch('inventoryMode', 'TRACKED')} label="Controlar estoque" /><CheckButton active={form.inventoryMode === 'UNLIMITED'} onClick={() => patch('inventoryMode', 'UNLIMITED')} label="Sem limite" /></div></div><div className="grid gap-4 sm:grid-cols-2">{form.inventoryMode === 'TRACKED' && <Field label="Em estoque"><input type="number" min="0" value={form.stockQuantity} onChange={(event) => patch('stockQuantity', event.target.value)} className={inputClass} /></Field>}<Field label="Avisar estoque baixo em"><input type="number" min="0" value={form.lowStockThreshold} onChange={(event) => patch('lowStockThreshold', event.target.value)} className={inputClass} /></Field></div><Link to="/classificados/estoque" className="inline-flex text-xs font-black text-[#a84f34] underline">Abrir gestão rápida de estoque</Link><Field label="WhatsApp para receber pedidos (opcional)"><input value={form.orderWhatsappE164} onChange={(event) => patch('orderWhatsappE164', event.target.value)} placeholder="5516999999999" className={inputClass} /></Field><p className="text-[10px] leading-5 text-stone-400">O número fica como preferência operacional da empresa. O envio automático de pedidos por WhatsApp depende da integração de mensagens estar habilitada.</p></div>}
           </Card>}
         </div>
 
@@ -202,6 +204,7 @@ function fromConfig(config: ClassifiedCommerceConfig | null): Form {
     maxInstallments: String(card?.maxInstallments || 1),
     interestFreeInstallments: String(card?.interestFreeInstallments || 0),
     onlineEnabled: checkout?.enabled === true,
+    inventoryMode: checkout?.stockQuantity == null ? 'UNLIMITED' : Number(checkout.stockQuantity) === 1 ? 'SINGLE' : 'TRACKED',
     pickup: checkout?.fulfillmentModes?.includes('PICKUP') ?? true,
     delivery: checkout?.fulfillmentModes?.includes('DELIVERY') ?? false,
     stockQuantity: checkout?.stockQuantity == null ? '' : String(checkout.stockQuantity),

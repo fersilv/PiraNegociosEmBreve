@@ -29,20 +29,23 @@ export class IdentityComplianceController {
 
   @Get('me')
   async me(@Req() req: any) {
-    await this.companyContext.repair(req.user.uid);
-    return this.compliance.myStatus(req.user.uid);
+    const userId = await this.compliance.resolveUserId(req.user.uid, req.user.email);
+    await this.companyContext.repair(userId);
+    return this.compliance.myStatus(userId);
   }
 
   @Patch('me/profile')
   async profile(@Req() req: any, @Body() body: Record<string, unknown>) {
-    await this.companyContext.repair(req.user.uid);
-    return this.compliance.saveProfile(req.user.uid, body || {});
+    const userId = await this.compliance.resolveUserId(req.user.uid, req.user.email);
+    await this.companyContext.repair(userId);
+    return this.compliance.saveProfile(userId, body || {});
   }
 
   @Patch('me/company-partners')
   async partners(@Req() req: any, @Body() body: any) {
-    await this.companyContext.repair(req.user.uid);
-    return this.compliance.replacePartners(req.user.uid, body?.partners);
+    const userId = await this.compliance.resolveUserId(req.user.uid, req.user.email);
+    await this.companyContext.repair(userId);
+    return this.compliance.replacePartners(userId, body?.partners);
   }
 
   @Post('me/documents/:kind')
@@ -53,14 +56,16 @@ export class IdentityComplianceController {
     @UploadedFile() file: Express.Multer.File,
     @Body() body: Record<string, unknown>,
   ) {
-    await this.companyContext.repair(req.user.uid);
-    return this.compliance.uploadDocument(req.user.uid, kind, file, body || {});
+    const userId = await this.compliance.resolveUserId(req.user.uid, req.user.email);
+    await this.companyContext.repair(userId);
+    return this.compliance.uploadDocument(userId, kind, file, body || {});
   }
 
   @Post('me/submit')
   async submit(@Req() req: any, @Body() body: Record<string, unknown>) {
-    await this.companyContext.repair(req.user.uid);
-    return this.compliance.submit(req.user.uid, body || {});
+    const userId = await this.compliance.resolveUserId(req.user.uid, req.user.email);
+    await this.companyContext.repair(userId);
+    return this.compliance.submit(userId, body || {});
   }
 }
 

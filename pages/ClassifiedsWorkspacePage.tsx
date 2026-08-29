@@ -11,6 +11,7 @@ import ClassifiedsAuctionManagementPage from './ClassifiedsAuctionManagementPage
 import ClassifiedsAuctionsLivePageV2 from './ClassifiedsAuctionsLivePageV2';
 import ClassifiedsExplorePage from './ClassifiedsExplorePage';
 import ClassifiedsListingsPage from './ClassifiedsListingsPage';
+import ClassifiedsInventoryPage from './ClassifiedsInventoryPage';
 import ClassifiedsMessengerPage from './ClassifiedsMessengerPage';
 import ClassifiedsOffersPage from './ClassifiedsOffersPage';
 import ClassifiedsReceiptPreferencesPage from './ClassifiedsReceiptPreferencesPage';
@@ -104,6 +105,7 @@ function WorkspaceReadyContent() {
   else if (location.pathname.startsWith('/classificados/recebimentos')) page = <ClassifiedsReceiptPreferencesPage />;
   else if (location.pathname.startsWith('/classificados/avaliacoes')) page = <ClassifiedsReviewsPage />;
   else if (location.pathname.startsWith('/classificados/vendas')) page = <ClassifiedsSalesPage />;
+  else if (location.pathname.startsWith('/classificados/estoque')) page = <ClassifiedsInventoryPage />;
   else if (location.pathname.startsWith('/classificados/comercial/')) page = <ClassifiedCommerceEditorPage />;
   else if (location.pathname.startsWith('/classificados/publicar')) page = <ClassifiedPublishPage />;
   else if (location.pathname.startsWith('/classificados/ofertas')) page = <ClassifiedsOffersPage />;

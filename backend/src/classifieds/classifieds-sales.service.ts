@@ -113,6 +113,48 @@ export class ClassifiedsSalesService implements OnModuleInit, OnModuleDestroy {
     return this.getListingCommerce(uid, listingId);
   }
 
+  async inventory(uid: string) {
+    const identity = await this.identities.active(uid);
+    if (identity.type !== 'COMPANY') throw new ForbiddenException('Estoque é exclusivo do workspace Business.');
+    const rows = await this.dataSource.query(
+      `SELECT id,title,status,"updatedAt","commerceConfig"
+       FROM classified_listings
+       WHERE "companyId" = $1 AND "listingType" = 'PRODUCT' AND status <> 'ARCHIVED'
+       ORDER BY "updatedAt" DESC`,
+      [identity.company!.id],
+    );
+    return rows.map((listing: any) => this.inventoryItem(listing));
+  }
+
+  async updateInventory(uid: string, listingId: string, raw: Record<string, unknown>) {
+    const identity = await this.identities.active(uid);
+    if (identity.type !== 'COMPANY') throw new ForbiddenException('Estoque é exclusivo do workspace Business.');
+    const listing = await this.assertOwner(uid, listingId);
+    if (listing.companyId !== identity.company!.id || listing.listingType !== 'PRODUCT') {
+      throw new ForbiddenException('Este produto não pode ter estoque gerenciado aqui.');
+    }
+
+    const current = listing.commerceConfig || {};
+    const checkout = current.onlineCheckout || {};
+    const stockQuantity = raw.stockQuantity === null || raw.stockQuantity === ''
+      ? null
+      : this.int(raw.stockQuantity, 0, 1_000_000, 0);
+    const lowStockThreshold = raw.lowStockThreshold === undefined
+      ? (checkout.lowStockThreshold ?? null)
+      : raw.lowStockThreshold === null || raw.lowStockThreshold === ''
+        ? null
+        : this.int(raw.lowStockThreshold, 0, 1_000_000, 0);
+    const commerceConfig = {
+      ...current,
+      onlineCheckout: { ...checkout, stockQuantity, lowStockThreshold },
+    } as ClassifiedCommerceConfig;
+    await this.dataSource.query(
+      `UPDATE classified_listings SET "commerceConfig" = $2::jsonb, "updatedAt" = now() WHERE id = $1`,
+      [listingId, JSON.stringify(commerceConfig)],
+    );
+    return this.inventoryItem({ ...listing, commerceConfig, updatedAt: new Date() });
+  }
+
   async dashboard(uid: string) {
     const identity = await this.identities.active(uid);
     if (identity.type !== 'COMPANY') throw new ForbiddenException('O módulo de Vendas é do workspace Business.');
@@ -378,6 +420,19 @@ export class ClassifiedsSalesService implements OnModuleInit, OnModuleDestroy {
       : !listing.companyId && listing.sellerUserId === uid;
     if (!allowed) throw new ForbiddenException('Este anúncio pertence a outra identidade.');
     return listing;
+  }
+
+  private inventoryItem(listing: any) {
+    const checkout = listing.commerceConfig?.onlineCheckout || {};
+    return {
+      id: listing.id,
+      title: listing.title,
+      status: listing.status,
+      updatedAt: listing.updatedAt,
+      stockQuantity: checkout.stockQuantity == null ? null : Number(checkout.stockQuantity),
+      lowStockThreshold: checkout.lowStockThreshold == null ? null : Number(checkout.lowStockThreshold),
+      onlineCheckoutEnabled: checkout.enabled === true,
+    };
   }
 
   private moneyNumber(value: unknown, message: string) {

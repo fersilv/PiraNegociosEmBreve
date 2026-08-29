@@ -7,7 +7,7 @@ import type { ClassifiedListing } from '../../types/classifieds';
 
 type ShowcaseVariant = 'default' | 'store';
 
-export function CompanyClassifiedsShowcase({ companyId, companyName, variant = 'default', onItemClick }: { companyId?: string; companyName?: string; variant?: ShowcaseVariant; onItemClick?: (item: ClassifiedListing) => void }) {
+export function CompanyClassifiedsShowcase({ companyId, companyName, companySlug, variant = 'default', onItemClick }: { companyId?: string; companyName?: string; companySlug?: string; variant?: ShowcaseVariant; onItemClick?: (item: ClassifiedListing) => void }) {
   const [items, setItems] = useState<ClassifiedListing[]>([]);
   const [pageSectionLabel, setPageSectionLabel] = useState('');
   const [loading, setLoading] = useState(Boolean(companyId));
@@ -37,6 +37,7 @@ export function CompanyClassifiedsShowcase({ companyId, companyName, variant = '
   const automaticTitle = products.length && services.length ? 'Produtos e serviços' : services.length ? 'Serviços' : 'Produtos';
   const title = pageSectionLabel || automaticTitle;
   const store = variant === 'store';
+  const companyCatalogHref = companySlug ? `/${encodeURIComponent(companySlug)}/produtos` : '/classificados/busca?sellerType=company';
 
   if (!companyId || (!loading && !items.length)) return null;
 
@@ -49,7 +50,7 @@ export function CompanyClassifiedsShowcase({ companyId, companyName, variant = '
             <h2 className="mt-2 font-serif text-3xl font-black tracking-[-.03em] sm:text-4xl">{title}</h2>
             <p className={`mt-2 max-w-2xl text-sm leading-6 ${store ? 'text-white/45' : 'text-stone-500'}`}>Itens que {companyName || 'esta empresa'} escolheu exibir na própria página. A negociação pode continuar pelo chat interno do anúncio.</p>
           </div>
-          <Link to="/classificados/busca?sellerType=company" className={`inline-flex items-center gap-2 text-xs font-black ${store ? 'text-white/60 hover:text-white' : 'text-stone-700 hover:text-stone-950'}`}>Explorar Classificados <ArrowRight className="h-4 w-4" /></Link>
+          <Link to={companyCatalogHref} className={`inline-flex items-center gap-2 text-xs font-black ${store ? 'text-white/60 hover:text-white' : 'text-stone-700 hover:text-stone-950'}`}>Ver todos da loja <ArrowRight className="h-4 w-4" /></Link>
         </div>
 
         {loading ? <div className="mt-8 flex min-h-40 items-center justify-center"><Loader2 className={`h-6 w-6 animate-spin ${store ? 'text-white/35' : 'text-stone-400'}`} /></div> : <>
@@ -57,7 +58,7 @@ export function CompanyClassifiedsShowcase({ companyId, companyName, variant = '
           {services.length > 0 && <CatalogGroup icon={<Wrench className="h-4 w-4" />} label={products.length ? 'Serviços' : undefined} items={services} store={store} onItemClick={onItemClick} />}
           <div className={`mt-8 rounded-[24px] p-5 sm:flex sm:items-center sm:justify-between sm:gap-5 ${store ? 'border border-white/10 bg-white/[.045]' : 'border border-stone-200 bg-white'}`}>
             <div className="flex items-start gap-3"><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${store ? 'bg-white/10 text-[#f1ff3d]' : 'bg-stone-100'}`}><MessageCircle className="h-5 w-5" /></span><div><h3 className="text-sm font-black">Negocie sem perder o contexto</h3><p className={`mt-1 text-xs leading-5 ${store ? 'text-white/40' : 'text-stone-500'}`}>Abra um item para conversar com a empresa. A conversa fica vinculada ao anúncio e permanece no seu histórico.</p></div></div>
-            <Link to="/classificados" className={`mt-4 inline-flex rounded-2xl px-4 py-3 text-xs font-black sm:mt-0 ${store ? 'bg-[#f1ff3d] text-[#121216]' : 'bg-stone-900 text-white'}`}>Ver marketplace</Link>
+            <Link to={companyCatalogHref} className={`mt-4 inline-flex rounded-2xl px-4 py-3 text-xs font-black sm:mt-0 ${store ? 'bg-[#f1ff3d] text-[#121216]' : 'bg-stone-900 text-white'}`}>Ver todos os itens</Link>
           </div>
         </>}
       </div>

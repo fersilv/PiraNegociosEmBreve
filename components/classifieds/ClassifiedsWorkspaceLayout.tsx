@@ -134,7 +134,7 @@ export function ClassifiedsWorkspaceLayout({ children }: { children: React.React
     { to: '/classificados/gestao/leiloes', label: 'Leilões', icon: <Gavel className="h-5 w-5" /> },
     { to: '/classificados/conversas', label: 'Conversas', icon: <MessageCircle className="h-5 w-5" /> },
     { to: '/classificados/analytics', label: 'Analytics', icon: <BarChart3 className="h-5 w-5" /> },
-    ...(business ? [{ to: '/classificados/vendas', label: 'Vendas', icon: <ShoppingCart className="h-5 w-5" /> }] : []),
+    ...(business ? [{ to: '/classificados/vendas', label: 'Vendas', icon: <ShoppingCart className="h-5 w-5" /> }, { to: '/classificados/estoque', label: 'Estoque', icon: <Store className="h-5 w-5" /> }] : []),
     { to: '/classificados/publicar', label: 'Novo anúncio', icon: <Plus className="h-5 w-5" /> },
     ...(business ? [
       { to: '/classificados/empresa/pagina', label: 'Minha Página', icon: <Globe2 className="h-5 w-5" /> },
