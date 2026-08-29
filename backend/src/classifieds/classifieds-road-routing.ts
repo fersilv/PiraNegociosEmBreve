@@ -6,6 +6,7 @@ export type DeliveryRoutePoint = {
   longitude?: number | null;
   zipCode?: string | null;
   address?: string | null;
+  placeId?: string | null;
 };
 
 export type DeliveryRouteDistance = {
@@ -79,7 +80,7 @@ export async function resolveRoadDistance(
       JSON.stringify({
         profile: 'driving',
         routingPreference: routed.source === 'GOOGLE_ROUTES' ? GOOGLE_ROUTING_PREFERENCE : null,
-        waypointMode: origin.address || destination.address ? 'ADDRESS_STRING' : 'LAT_LNG',
+        waypointMode: waypointMode(origin, destination),
       }),
     ],
   ).catch(() => undefined);
@@ -125,11 +126,13 @@ async function googleRoutes(origin: DeliveryRoutePoint, destination: DeliveryRou
 }
 
 function googleWaypoint(point: DeliveryRoutePoint) {
+  const placeId = String(point.placeId || '').trim();
+  if (placeId) return { placeId };
   const address = String(point.address || '').trim();
   if (address) return { address };
   const latitude = finiteCoordinate(point.latitude);
   const longitude = finiteCoordinate(point.longitude);
-  if (latitude == null || longitude == null) throw new Error('Route waypoint has neither a complete address nor coordinates.');
+  if (latitude == null || longitude == null) throw new Error('Route waypoint has neither placeId, complete address nor coordinates.');
   return { location: { latLng: { latitude, longitude } } };
 }
 
@@ -161,11 +164,13 @@ async function osrmRoute(origin: DeliveryRoutePoint, destination: DeliveryRouteP
 
 function routeCacheKey(origin: DeliveryRoutePoint, destination: DeliveryRoutePoint, provider: string) {
   const value = [
-    'delivery-route-v3',
+    'delivery-route-v4',
     provider,
     provider === 'GOOGLE_ROUTES' ? GOOGLE_ROUTING_PREFERENCE : 'OSRM_FASTEST',
     digits(origin.zipCode) || '',
     digits(destination.zipCode) || '',
+    normalizePlaceId(origin.placeId),
+    normalizePlaceId(destination.placeId),
     normalizeAddress(origin.address),
     normalizeAddress(destination.address),
     rounded(origin.latitude),
@@ -174,6 +179,16 @@ function routeCacheKey(origin: DeliveryRoutePoint, destination: DeliveryRoutePoi
     rounded(destination.longitude),
   ].join('|');
   return createHash('sha256').update(value).digest('hex');
+}
+
+function waypointMode(origin: DeliveryRoutePoint, destination: DeliveryRoutePoint) {
+  if (origin.placeId || destination.placeId) return 'PLACE_ID';
+  if (origin.address || destination.address) return 'ADDRESS_STRING';
+  return 'LAT_LNG';
+}
+
+function normalizePlaceId(value: unknown) {
+  return String(value || '').trim().slice(0, 255);
 }
 
 function normalizeAddress(value: unknown) {
