@@ -2,7 +2,6 @@ import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth, type CompanyPermissionKey } from "../contexts/AuthContext";
 import { RegionalLoader } from "../components/RegionalLoader";
-import { CompanyEmployeeRemovalPanel } from "../components/CompanyEmployeeRemovalPanel";
 import { Dashboard } from "./Dashboard";
 
 function requiredPermission(pathname: string): CompanyPermissionKey | null {
@@ -36,15 +35,5 @@ export default function CompanyWorkspaceAccessGate() {
     return <Navigate to="/company" replace />;
   }
 
-  const showTeamRemoval = location.pathname === "/company/equipe";
-  return (
-    <>
-      <Dashboard />
-      {showTeamRemoval && (
-        <div className="bg-[#f3f2ee] px-4 pb-10 md:pl-[320px] md:pr-8">
-          <CompanyEmployeeRemovalPanel />
-        </div>
-      )}
-    </>
-  );
+  return <Dashboard />;
 }
