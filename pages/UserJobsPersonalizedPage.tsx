@@ -18,6 +18,7 @@ import { api, asArray } from "../lib/api";
 import { useAuth, WorkLocationPreference } from "../contexts/AuthContext";
 import { Job } from "../types/job";
 import { JobModal } from "../components/JobModal";
+import { PaymentCheckoutModal } from "../components/payments/PaymentCheckoutModal";
 import { safeApplicationUrl } from "../lib/jobApplication";
 
 type MatchMode = "recommended" | "recent" | "all" | "applied";
@@ -116,7 +117,7 @@ export function UserJobsPersonalizedPage() {
   const [matchStatus, setMatchStatus] = useState<any>(null);
   const [premiumMatches, setPremiumMatches] = useState<PremiumMatch[]>([]);
   const [loading, setLoading] = useState(true);
-  const [buying, setBuying] = useState(false);
+  const [paymentOpen, setPaymentOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [mode, setMode] = useState<MatchMode>("recommended");
   const [search, setSearch] = useState("");
@@ -218,16 +219,10 @@ export function UserJobsPersonalizedPage() {
   const strongMatches = premiumActive ? matches.filter((item) => Number(item.premium?.score || 0) >= 70 && item.locationCompatible && (includeExclusivePcdJobs || (item.job.pcdMode || "GENERAL") !== "EXCLUSIVE")).length : 0;
   const bestMatches = premiumActive ? [...matches].filter((item) => item.locationCompatible && Number(item.premium?.score || 0) >= 55 && (includeExclusivePcdJobs || (item.job.pcdMode || "GENERAL") !== "EXCLUSIVE")).sort((a, b) => Number(b.premium?.score || 0) - Number(a.premium?.score || 0)).slice(0, 3) : [];
 
-  const buyPremium = async () => {
-    setBuying(true);
-    try {
-      await api.post("/payments/pix", { productCode: "JOB_MATCH_30D" });
-      navigate("/user/pagamentos");
-    } catch (error: any) {
-      alert(error?.response?.data?.message || "Não foi possível criar o Pix agora.");
-    } finally {
-      setBuying(false);
-    }
+  const refreshMatch = async () => {
+    const response = await api.get("/job-match/me").catch(() => ({ data: { active: false, matches: [] } }));
+    setMatchStatus(response.data || null);
+    setPremiumMatches(Array.isArray(response.data?.matches) ? response.data.matches : []);
   };
 
   const handleApply = async (job: Job) => {
@@ -271,7 +266,7 @@ export function UserJobsPersonalizedPage() {
       ) : (
         <section className="flex flex-col gap-4 rounded-[26px] border border-violet-200 bg-violet-50 p-5 md:flex-row md:items-center md:justify-between">
           <div><p className="text-[10px] font-black uppercase tracking-[.16em] text-violet-700">Recurso premium</p><h2 className="mt-1 text-lg font-bold text-stone-950">Desbloqueie o Match Inteligente por {matchProduct?.durationDays || 30} dias</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-stone-600">Veja percentual confiável, evidências do seu currículo, requisitos que ainda faltam e ranking personalizado. Todas as vagas continuam visíveis mesmo sem o premium.</p></div>
-          <button type="button" disabled={buying || matchProduct?.enabled === false} onClick={() => void buyPremium()} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-violet-700 px-5 py-3 text-sm font-black text-white disabled:opacity-50"><LockKeyhole className="h-4 w-4" /> {buying ? "Criando Pix..." : `Liberar por ${money(matchProduct?.effectivePriceCents || 299)}`}</button>
+          <button type="button" disabled={matchProduct?.enabled === false} onClick={() => setPaymentOpen(true)} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-violet-700 px-5 py-3 text-sm font-black text-white disabled:opacity-50"><LockKeyhole className="h-4 w-4" /> {`Liberar por ${money(matchProduct?.effectivePriceCents || matchProduct?.priceCents || 299)}`}</button>
         </section>
       )}
 
@@ -319,6 +314,24 @@ export function UserJobsPersonalizedPage() {
       </section>
 
       {selectedJob && <JobModal job={selectedJob} hasApplied={appliedIds.has(selectedJob.id)} onClose={() => setSelectedJob(null)} onApply={() => void handleApply(selectedJob)} />}
+
+      <PaymentCheckoutModal
+        open={paymentOpen}
+        onClose={() => setPaymentOpen(false)}
+        title={`Match Inteligente · ${matchProduct?.durationDays || 30} dias`}
+        description="Desbloqueie a análise de compatibilidade e o ranking personalizado sem sair da tela de vagas."
+        amountCents={Number(matchProduct?.effectivePriceCents || matchProduct?.priceCents || 299)}
+        productCode="JOB_MATCH_30D"
+        confirmLabel="Gerar Pix"
+        creatingLabel="Gerando Pix..."
+        createCheckout={() => api.post("/payments/pix", { productCode: "JOB_MATCH_30D" })}
+        onCompleted={async () => {
+          await refreshMatch();
+          setPaymentOpen(false);
+        }}
+      >
+        <p className="text-center text-[10px] leading-5 text-stone-400">Ao continuar, você concorda com os <Link to="/termos" target="_blank" className="font-black text-stone-600 underline">Termos da plataforma</Link>.</p>
+      </PaymentCheckoutModal>
     </div>
   );
 }
