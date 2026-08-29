@@ -54,7 +54,13 @@ import AdminIdentityVerificationsPage from "./AdminIdentityVerificationsPage";
 import AdminClassifiedReviewsPage from "./AdminClassifiedReviewsPage";
 
 function AdminPage({ children }: { children: React.ReactNode }) {
-  return <div className="admin-page-shell">{children}</div>;
+  const location = useLocation();
+  const links = [
+    ["/admin/classificados", "Classificados"],
+    ["/admin/entregas", "Entregas e parceiros"],
+    ["/admin/pagamentos", "Pagamentos"],
+  ];
+  return <div className="admin-page-shell"><nav className="mb-5 flex gap-2 overflow-x-auto rounded-2xl bg-white p-2 shadow-sm ring-1 ring-stone-200">{links.map(([to,label]) => <Link key={to} to={to} className={`shrink-0 rounded-xl px-3 py-2 text-[10px] font-black ${location.pathname.startsWith(to) ? "bg-stone-900 text-white" : "bg-stone-50 text-stone-600"}`}>{label}</Link>)}</nav>{children}</div>;
 }
 
 function AdminRoutes() {
@@ -182,6 +188,20 @@ function CompanyRoutes({ companyId }: { companyId?: string }) {
   );
 }
 
+function CompanySharedNavigation() {
+  const location = useLocation();
+  const links = [
+    ["/company", "Business"],
+    ["/company/pagamentos", "Transações financeiras"],
+    ["/company/planos", "Planos e cobrança"],
+    ["/classificados/explorar", "Classificados Business"],
+  ];
+  return <nav className="mb-5 flex gap-2 overflow-x-auto rounded-2xl bg-white/75 p-2 shadow-sm ring-1 ring-stone-200">{links.map(([to,label]) => {
+    const active = to === "/company" ? location.pathname === "/company" : location.pathname.startsWith(to);
+    return <Link key={to} to={to} className={`shrink-0 rounded-xl px-3 py-2 text-[10px] font-black ${active ? "bg-stone-900 text-white" : "bg-stone-50 text-stone-600"}`}>{label}</Link>;
+  })}</nav>;
+}
+
 function LegacyDashboardRedirect() {
   const { profile } = useAuth();
   const location = useLocation();
@@ -247,7 +267,7 @@ export function Dashboard() {
 
   if (isCompanyRoute) {
     if (isAdmin || profile?.companyId || location.pathname === "/company/comercial" || location.pathname === "/company/perfil") {
-      return <WorkspaceLayout workspace="company"><CompanyRoutes companyId={profile?.companyId} /></WorkspaceLayout>;
+      return <WorkspaceLayout workspace="company"><CompanySharedNavigation /><CompanyRoutes companyId={profile?.companyId} /></WorkspaceLayout>;
     }
     return <Navigate to="/company/comercial" replace />;
   }
