@@ -110,6 +110,10 @@ export default function App() {
               <Route path="/empresa/autorizar/:token" element={<CompanyVerificationAuthorizationPage />} />
               <Route path="/login" element={<Login />} />
 
+              {/* Evita que /:companySlug/vagas capture os workspaces reservados. */}
+              <Route path="/user/vagas" element={<Dashboard />} />
+              <Route path="/company/vagas" element={<Dashboard />} />
+              <Route path="/admin/vagas" element={<Dashboard />} />
               <Route path="/user/*" element={<Dashboard />} />
               <Route path="/company/*" element={<Dashboard />} />
               <Route path="/admin/*" element={<Dashboard />} />
