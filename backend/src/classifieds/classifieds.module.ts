@@ -8,6 +8,7 @@ import { ComplianceModule } from '../compliance/compliance.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { User } from '../users/entities/user.entity';
+import { WhatsAppModule } from '../whatsapp/whatsapp.module';
 import { ClassifiedsAiReviewService } from './classifieds-ai-review.service';
 import { ClassifiedsArchivedAwareAuctionService } from './classifieds-archived-aware-auction.service';
 import { ClassifiedsArchivedAwareCommerceService } from './classifieds-archived-aware-commerce.service';
@@ -36,6 +37,7 @@ import { ClassifiedsCommerceSettingsController } from './classifieds-commerce-se
 import { ClassifiedsCommerceSettingsService } from './classifieds-commerce-settings.service';
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
 import { ClassifiedsDeliveryAdminController } from './classifieds-delivery-admin.controller';
+import { ClassifiedsDeliveryChannelAdminController } from './classifieds-delivery-channel-admin.controller';
 import { ClassifiedsDeliveryController } from './classifieds-delivery.controller';
 import { ClassifiedsDeliveryDistanceService } from './classifieds-delivery-distance.service';
 import { ClassifiedsDeliveryFinanceController } from './classifieds-delivery-finance.controller';
@@ -76,6 +78,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ComplianceModule,
     NotificationsModule,
     PaymentsModule,
+    WhatsAppModule,
     TypeOrmModule.forFeature([
       ClassifiedCategory,
       ClassifiedListing,
@@ -108,6 +111,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsDeliveryController,
     ClassifiedsDeliveryFinanceController,
     ClassifiedsDeliveryAdminController,
+    ClassifiedsDeliveryChannelAdminController,
     ClassifiedsCartController,
     ClassifiedsServiceQuotesController,
   ],
