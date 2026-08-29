@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ClassifiedsWorkspaceGate, ClassifiedsWorkspaceLayout } from '../components/classifieds/ClassifiedsWorkspaceLayout';
 import { ClassifiedsWorkspaceProvider, useClassifiedsWorkspace } from '../contexts/ClassifiedsWorkspaceContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -67,7 +67,7 @@ export default function ClassifiedsWorkspacePage() {
 function WorkspaceReadyContent() {
   const { data } = useClassifiedsWorkspace();
   const companyId = data?.company?.id;
-  
+  const business = data?.activeIdentity === 'COMPANY';
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -125,7 +125,22 @@ function WorkspaceReadyContent() {
   else if (location.pathname.startsWith('/classificados/conversas')) page = <ClassifiedsMessengerPage />;
   else if (location.pathname.startsWith('/classificados/configuracoes')) page = <ClassifiedsSettingsPage />;
 
-  return <ClassifiedsWorkspaceLayout>{page}</ClassifiedsWorkspaceLayout>;
+  return <ClassifiedsWorkspaceLayout><CommerceQuickNav business={business} pathname={location.pathname} />{page}</ClassifiedsWorkspaceLayout>;
+}
+
+function CommerceQuickNav({ business, pathname }: { business: boolean; pathname: string }) {
+  const items = [
+    { to: '/classificados/carrinho', label: 'Carrinho' },
+    { to: '/classificados/compras', label: 'Compras' },
+    { to: '/classificados/orcamentos', label: 'Orçamentos' },
+    { to: '/classificados/logistica', label: 'Logística' },
+    ...(business ? [{ to: '/classificados/entregas', label: 'Entregas' }] : []),
+    { to: business ? '/company/pagamentos' : '/user/pagamentos', label: 'Transações financeiras' },
+  ];
+  return <nav className="mx-auto mb-5 flex max-w-7xl gap-2 overflow-x-auto rounded-2xl bg-white/80 p-2 shadow-sm ring-1 ring-black/[.05]">{items.map((item) => {
+    const active = item.to.startsWith('/classificados/') && pathname.startsWith(item.to);
+    return <Link key={item.to} to={item.to} className={`shrink-0 rounded-xl px-3 py-2 text-[10px] font-black transition ${active ? 'bg-stone-900 text-white' : 'bg-stone-50 text-stone-600 hover:bg-stone-100'}`}>{item.label}</Link>;
+  })}</nav>;
 }
 
 function safeReturnTo(value: string | null) {
