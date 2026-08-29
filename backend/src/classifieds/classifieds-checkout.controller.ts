@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { ClassifiedsCheckoutService } from './classifieds-checkout.service';
@@ -27,9 +27,6 @@ export class ClassifiedsCheckoutController {
     if (partnerDelivery) modes.push('DELIVERY');
     if (!modes.length) return base;
 
-    // Anúncios criados antes dos padrões globais podem ter ficado gravados apenas
-    // com PICKUP. Materializamos a herança para o serviço de checkout e mantemos
-    // a autorização da entrega sendo validada novamente no POST.
     await this.dataSource.query(
       `UPDATE classified_listings
        SET "commerceConfig"=jsonb_set(
@@ -49,7 +46,7 @@ export class ClassifiedsCheckoutController {
       const settings = await this.fulfillmentSettings(listingId);
       const partnerDelivery = settings?.platformPartnersEnabled === true && settings?.disableLocalPartners !== true;
       if (!partnerDelivery) {
-        throw new Error('Entrega por parceiro da plataforma não está habilitada para este produto.');
+        throw new BadRequestException('Entrega por parceiro da plataforma não está habilitada para este produto.');
       }
       return this.deliveryCheckout.createPayment(req.user.uid, listingId, body || {});
     }
