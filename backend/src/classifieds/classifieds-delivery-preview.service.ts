@@ -17,6 +17,9 @@ export class ClassifiedsDeliveryPreviewService {
     }
     const quantity = this.int(raw.quantity, 1, 999, 1);
     const destination = await this.addresses.byCep(raw.zipCode);
+    const suppliedDestination = raw.destinationAddress && typeof raw.destinationAddress === 'object'
+      ? raw.destinationAddress as Record<string, unknown>
+      : null;
 
     const listingRows = await this.dataSource.query(
       `SELECT l.id,l.title,l.status,l."listingType",l."companyId",
@@ -70,17 +73,25 @@ export class ClassifiedsDeliveryPreviewService {
     const destinationLatitude = this.coordinate(destination.latitude, -90, 90);
     const destinationLongitude = this.coordinate(destination.longitude, -180, 180);
 
-    const routed = originLatitude != null && originLongitude != null && destinationLatitude != null && destinationLongitude != null
-      ? await resolveRoadDistance(
-          this.dataSource,
-          { latitude: originLatitude, longitude: originLongitude, zipCode: origin.zipCode },
-          { latitude: destinationLatitude, longitude: destinationLongitude, zipCode: destination.zipCode },
-        )
-      : null;
+    const routed = await resolveRoadDistance(
+      this.dataSource,
+      {
+        latitude: originLatitude,
+        longitude: originLongitude,
+        zipCode: origin.zipCode,
+        address: this.completeAddress(origin),
+      },
+      {
+        latitude: destinationLatitude,
+        longitude: destinationLongitude,
+        zipCode: destination.zipCode,
+        address: this.destinationAddress(destination, suppliedDestination),
+      },
+    );
     const distanceMeters = routed?.distanceMeters ?? null;
     const distanceSource = routed
       ? (routed.cacheHit ? `${routed.source}_CACHE` : routed.source)
-      : 'ROAD_ROUTE_UNAVAILABLE';
+      : (String(process.env.GOOGLE_ROUTES_API_KEY || '').trim() ? 'GOOGLE_ROUTE_UNAVAILABLE' : 'ROAD_ROUTE_UNAVAILABLE');
 
     const aggregate = {
       weightGrams: listing.weightGrams == null ? null : Number(listing.weightGrams) * quantity,
@@ -133,7 +144,7 @@ export class ClassifiedsDeliveryPreviewService {
           partnerType: partner.type,
           eligible: false,
           reason: needsDistance && distanceMeters == null
-            ? 'Não foi possível obter uma rota viária para calcular a faixa por km deste CEP.'
+            ? 'Não foi possível obter uma rota Google válida para calcular a faixa por km deste endereço.'
             : 'Nenhuma regra vigente atende este endereço ou volume.',
         });
         continue;
@@ -160,7 +171,12 @@ export class ClassifiedsDeliveryPreviewService {
     return {
       listingId: listing.id,
       quantity,
-      destination,
+      destination: {
+        ...destination,
+        street: String(suppliedDestination?.street || destination.street || '').trim(),
+        number: String(suppliedDestination?.number || '').trim() || null,
+        neighborhood: String(suppliedDestination?.neighborhood || destination.neighborhood || '').trim(),
+      },
       origin: {
         id: origin.id,
         name: origin.name,
@@ -174,6 +190,34 @@ export class ClassifiedsDeliveryPreviewService {
       routeCacheHit: routed?.cacheHit === true,
       options,
     };
+  }
+
+  private destinationAddress(destination: any, supplied: Record<string, unknown> | null) {
+    const zipCode = String(destination.zipCode || '').replace(/\D/g, '').slice(0, 8);
+    const street = String(supplied?.street || destination.street || '').trim();
+    const number = String(supplied?.number || '').trim();
+    const complement = String(supplied?.complement || '').trim();
+    const neighborhood = String(supplied?.neighborhood || destination.neighborhood || '').trim();
+    return [
+      [street, number].filter(Boolean).join(', '),
+      complement,
+      neighborhood,
+      [destination.city, destination.state].filter(Boolean).join(' - '),
+      zipCode,
+      'Brasil',
+    ].map((value) => String(value || '').trim()).filter(Boolean).join(', ');
+  }
+
+  private completeAddress(row: any) {
+    const zipCode = String(row.zipCode || '').replace(/\D/g, '').slice(0, 8);
+    return [
+      [row.street, row.number].filter(Boolean).join(', '),
+      row.complement,
+      row.neighborhood,
+      [row.city, row.state].filter(Boolean).join(' - '),
+      zipCode,
+      'Brasil',
+    ].map((value) => String(value || '').trim()).filter(Boolean).join(', ');
   }
 
   private partnerRestriction(partner: any, aggregate: any, destination: any) {
