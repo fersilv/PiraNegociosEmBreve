@@ -5,6 +5,7 @@ export type DeliveryRoutePoint = {
   latitude: number;
   longitude: number;
   zipCode?: string | null;
+  address?: string | null;
 };
 
 export type DeliveryRouteDistance = {
@@ -15,19 +16,22 @@ export type DeliveryRouteDistance = {
 };
 
 const DEFAULT_OSRM_BASE_URL = 'https://router.project-osrm.org';
+const GOOGLE_ROUTING_PREFERENCE = 'TRAFFIC_AWARE_OPTIMAL';
 
 export async function resolveRoadDistance(
   dataSource: DataSource,
   origin: DeliveryRoutePoint,
   destination: DeliveryRoutePoint,
 ): Promise<DeliveryRouteDistance | null> {
-  const cacheKey = routeCacheKey(origin, destination);
+  const googleApiKey = String(process.env.GOOGLE_ROUTES_API_KEY || '').trim();
+  const preferredProvider = googleApiKey ? 'GOOGLE_ROUTES' : 'OSRM';
+  const cacheKey = routeCacheKey(origin, destination, preferredProvider);
   const cached = await dataSource.query(
     `SELECT "distanceMeters","durationSeconds",provider
      FROM delivery_route_distance_cache
-     WHERE "cacheKey"=$1 AND "expiresAt">now()
+     WHERE "cacheKey"=$1 AND "expiresAt">now() AND provider=$2
      LIMIT 1`,
-    [cacheKey],
+    [cacheKey, preferredProvider],
   ).catch(() => []);
 
   if (cached[0]) {
@@ -39,8 +43,13 @@ export async function resolveRoadDistance(
     };
   }
 
-  const google = await googleRoutes(origin, destination).catch(() => null);
-  const routed = google || await osrmRoute(origin, destination).catch(() => null);
+  const routed = googleApiKey
+    ? await googleRoutes(origin, destination, googleApiKey).catch((error) => {
+        console.warn('[delivery-routing] Google Routes failed; OSRM fallback disabled because GOOGLE_ROUTES_API_KEY is configured.', safeError(error));
+        return null;
+      })
+    : await osrmRoute(origin, destination).catch(() => null);
+
   if (!routed) return null;
 
   await dataSource.query(
@@ -67,17 +76,18 @@ export async function resolveRoadDistance(
       routed.source,
       routed.distanceMeters,
       routed.durationSeconds,
-      JSON.stringify({ profile: 'driving' }),
+      JSON.stringify({
+        profile: 'driving',
+        routingPreference: routed.source === 'GOOGLE_ROUTES' ? GOOGLE_ROUTING_PREFERENCE : null,
+        waypointMode: origin.address || destination.address ? 'ADDRESS_STRING' : 'LAT_LNG',
+      }),
     ],
   ).catch(() => undefined);
 
   return { ...routed, cacheHit: false };
 }
 
-async function googleRoutes(origin: DeliveryRoutePoint, destination: DeliveryRoutePoint) {
-  const apiKey = String(process.env.GOOGLE_ROUTES_API_KEY || '').trim();
-  if (!apiKey) return null;
-
+async function googleRoutes(origin: DeliveryRoutePoint, destination: DeliveryRoutePoint, apiKey: string) {
   const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
     method: 'POST',
     headers: {
@@ -86,26 +96,38 @@ async function googleRoutes(origin: DeliveryRoutePoint, destination: DeliveryRou
       'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration',
     },
     body: JSON.stringify({
-      origin: { location: { latLng: { latitude: origin.latitude, longitude: origin.longitude } } },
-      destination: { location: { latLng: { latitude: destination.latitude, longitude: destination.longitude } } },
+      origin: googleWaypoint(origin),
+      destination: googleWaypoint(destination),
       travelMode: 'DRIVE',
-      routingPreference: 'TRAFFIC_UNAWARE',
+      routingPreference: GOOGLE_ROUTING_PREFERENCE,
       computeAlternativeRoutes: false,
       languageCode: 'pt-BR',
+      regionCode: 'BR',
       units: 'METRIC',
     }),
-    signal: AbortSignal.timeout(5_000),
+    signal: AbortSignal.timeout(8_000),
   });
-  if (!response.ok) return null;
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => '');
+    throw new Error(`Google Routes HTTP ${response.status}${details ? `: ${details.slice(0, 500)}` : ''}`);
+  }
+
   const data: any = await response.json();
   const route = Array.isArray(data?.routes) ? data.routes[0] : null;
   const distanceMeters = positiveInt(route?.distanceMeters);
-  if (distanceMeters == null) return null;
+  if (distanceMeters == null) throw new Error('Google Routes returned no usable route distance.');
   return {
     distanceMeters,
     durationSeconds: durationToSeconds(route?.duration),
     source: 'GOOGLE_ROUTES' as const,
   };
+}
+
+function googleWaypoint(point: DeliveryRoutePoint) {
+  const address = String(point.address || '').trim();
+  if (address) return { address };
+  return { location: { latLng: { latitude: point.latitude, longitude: point.longitude } } };
 }
 
 async function osrmRoute(origin: DeliveryRoutePoint, destination: DeliveryRoutePoint) {
@@ -128,17 +150,25 @@ async function osrmRoute(origin: DeliveryRoutePoint, destination: DeliveryRouteP
   };
 }
 
-function routeCacheKey(origin: DeliveryRoutePoint, destination: DeliveryRoutePoint) {
+function routeCacheKey(origin: DeliveryRoutePoint, destination: DeliveryRoutePoint, provider: string) {
   const value = [
-    'driving',
+    'delivery-route-v2',
+    provider,
+    provider === 'GOOGLE_ROUTES' ? GOOGLE_ROUTING_PREFERENCE : 'OSRM_FASTEST',
     digits(origin.zipCode) || '',
     digits(destination.zipCode) || '',
+    normalizeAddress(origin.address),
+    normalizeAddress(destination.address),
     rounded(origin.latitude),
     rounded(origin.longitude),
     rounded(destination.latitude),
     rounded(destination.longitude),
   ].join('|');
   return createHash('sha256').update(value).digest('hex');
+}
+
+function normalizeAddress(value: unknown) {
+  return String(value || '').trim().toLocaleLowerCase('pt-BR').replace(/\s+/g, ' ').slice(0, 500);
 }
 
 function rounded(value: number) {
@@ -159,4 +189,8 @@ function durationToSeconds(value: unknown) {
   const text = String(value || '').trim();
   const match = text.match(/^([0-9]+(?:\.[0-9]+)?)s$/);
   return match ? Math.ceil(Number(match[1])) : null;
+}
+
+function safeError(error: unknown) {
+  return error instanceof Error ? error.message : String(error || 'unknown error');
 }
