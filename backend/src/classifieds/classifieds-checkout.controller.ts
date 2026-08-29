@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Headers, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { ClassifiedsCheckoutService } from './classifieds-checkout.service';
 import { ClassifiedsDeliveryAwareCheckoutService } from './classifieds-delivery-aware-checkout.service';
@@ -11,11 +12,29 @@ export class ClassifiedsCheckoutController {
     private readonly checkout: ClassifiedsCheckoutService,
     private readonly deliveryCheckout: ClassifiedsDeliveryAwareCheckoutService,
     private readonly terms: ClassifiedsMarketplaceTermsService,
+    private readonly dataSource: DataSource,
   ) {}
 
   @Get('listings/:listingId/checkout')
-  config(@Req() req: any, @Param('listingId') listingId: string) {
-    return this.checkout.config(req.user.uid, listingId);
+  async config(@Req() req: any, @Param('listingId') listingId: string) {
+    const base = await this.checkout.config(req.user.uid, listingId);
+    const rows = await this.dataSource.query(
+      `SELECT s."pickupEnabled",s."ownDeliveryEnabled",s."platformPartnersEnabled",
+              COALESCE(ls."disableLocalPartners",false) AS "disableLocalPartners"
+       FROM classified_listings l
+       LEFT JOIN company_commerce_settings s ON s."companyId"=l."companyId"
+       LEFT JOIN classified_listing_shipping ls ON ls."listingId"=l.id
+       WHERE l.id=$1 LIMIT 1`,
+      [listingId],
+    ).catch(() => []);
+    const settings = rows[0];
+    if (!settings || settings.pickupEnabled == null) return base;
+
+    const modes: Array<'PICKUP' | 'DELIVERY' | 'ARRANGE'> = [];
+    if (settings.pickupEnabled === true) modes.push('PICKUP');
+    const partnerDelivery = settings.platformPartnersEnabled === true && settings.disableLocalPartners !== true;
+    if (settings.ownDeliveryEnabled === true || partnerDelivery) modes.push('DELIVERY');
+    return { ...base, fulfillmentModes: modes.length ? modes : base.fulfillmentModes };
   }
 
   @Post('listings/:listingId/checkout')
