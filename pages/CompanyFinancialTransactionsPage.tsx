@@ -78,8 +78,7 @@ export default function CompanyFinancialTransactionsPage() {
       const all = Array.isArray(paymentsResponse.data) ? paymentsResponse.data as Payment[] : [];
       const scoped = all.filter((payment) => {
         const metadata = metadataOf(payment.metadata);
-        return String(metadata.companyId || '') === companyId
-          || String(payment.productCode || '').startsWith('COMPANY_');
+        return String(metadata.companyId || '').trim() === companyId;
       });
       setCompany({ id: companyId, name: companyName });
       setPayments(scoped);
@@ -124,17 +123,18 @@ export default function CompanyFinancialTransactionsPage() {
       </section>
 
       <section className="overflow-hidden rounded-[28px] bg-white shadow-sm ring-1 ring-stone-200">
-        <div className="border-b border-stone-100 px-5 py-4 sm:px-6"><h2 className="font-serif text-xl font-black">Histórico da empresa</h2><p className="mt-1 text-xs text-stone-500">Assinaturas, compras avulsas e demais cobranças Business iniciadas por esta conta.</p></div>
+        <div className="border-b border-stone-100 px-5 py-4 sm:px-6"><h2 className="font-serif text-xl font-black">Histórico da empresa</h2><p className="mt-1 text-xs text-stone-500">Assinaturas, compras avulsas e demais cobranças Business vinculadas a esta empresa.</p></div>
         {!payments.length ? (
-          <div className="px-6 py-14 text-center"><ReceiptText className="mx-auto h-9 w-9 text-stone-300" /><p className="mt-3 text-sm font-black text-stone-700">Nenhuma transação Business registrada.</p><p className="mt-1 text-xs text-stone-400">Quando houver uma compra ou assinatura da empresa, ela aparece aqui.</p></div>
+          <div className="px-6 py-14 text-center"><ReceiptText className="mx-auto h-9 w-9 text-stone-300" /><p className="mt-3 text-sm font-black text-stone-700">Nenhuma transação Business registrada.</p><p className="mt-1 text-xs text-stone-400">Quando houver uma compra ou assinatura desta empresa, ela aparece aqui.</p></div>
         ) : (
           <div className="divide-y divide-stone-100">
             {payments.map((payment) => {
               const metadata = metadataOf(payment.metadata);
+              const label = payment.productName || (metadata.companyPlan ? `Plano ${metadata.companyPlan}` : payment.productCode || 'Cobrança Business');
               return (
                 <article key={payment.id} className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_150px_140px] sm:items-center sm:px-6">
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-black text-stone-900">{payment.productName || metadata.companyPlan ? payment.productName || `Plano ${metadata.companyPlan}` : payment.productCode || 'Cobrança Business'}</p>{payment.isSimulation && <span className="rounded-full bg-violet-50 px-2 py-1 text-[9px] font-black text-violet-700">SIMULAÇÃO</span>}</div>
+                    <div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-black text-stone-900">{label}</p>{payment.isSimulation && <span className="rounded-full bg-violet-50 px-2 py-1 text-[9px] font-black text-violet-700">SIMULAÇÃO</span>}</div>
                     <p className="mt-1 text-[11px] text-stone-400">{dateTime(payment.createdAt)} · {payment.provider || 'Provedor a definir'}{payment.providerPaymentId ? ` · ${payment.providerPaymentId}` : ''}</p>
                   </div>
                   <div><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black ${statusClass(payment.status)}`}>{statusLabel(payment.status)}</span>{payment.paidAt && <p className="mt-1 text-[10px] text-stone-400">Pago em {dateTime(payment.paidAt)}</p>}</div>
