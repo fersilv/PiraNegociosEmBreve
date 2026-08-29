@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, BadgeDollarSign, CreditCard, FileText, Loader2, MapPin, MessageCircle, Search, ShieldCheck, ShoppingCart, X } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ClassifiedCheckoutModal } from '../components/classifieds/ClassifiedCheckoutModal';
+import { ClassifiedFreightCalculator } from '../components/classifieds/ClassifiedFreightCalculator';
 import { ClassifiedListingCard, classifiedCommercePricing, classifiedPrice } from '../components/classifieds/ClassifiedListingCard';
 import { useClassifiedsWorkspace } from '../contexts/ClassifiedsWorkspaceContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -47,18 +48,16 @@ function InternalExploreGrid() {
         <h1 className="mt-1 font-serif text-3xl font-black">Explorar</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Você continua dentro do seu workspace enquanto procura, favorita, conversa, compra ou pede orçamento.</p>
       </header>
-
       <div className="rounded-[24px] bg-white p-4 shadow-sm ring-1 ring-black/[.06]">
         <form onSubmit={(event) => { event.preventDefault(); setSubmitted(query.trim()); }} className="flex gap-2">
           <label className="relative min-w-0 flex-1"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Produto, serviço ou palavra-chave" className="h-12 w-full rounded-2xl bg-stone-50 pl-11 pr-4 text-sm font-semibold outline-none ring-1 ring-stone-200 focus:bg-white focus:ring-[#c96847]/40" /></label>
           <button className="rounded-2xl bg-stone-900 px-5 text-sm font-black text-white">Buscar</button>
         </form>
         <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-          {['', 'PRODUCT', 'SERVICE'].map((value) => <button key={value || 'ALL'} onClick={() => setListingType(value)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-black ${listingType === value ? 'bg-[#3a222b] text-white' : 'bg-stone-100 text-stone-600'}`}>{value === 'PRODUCT' ? 'Produtos' : value === 'SERVICE' ? 'Serviços' : 'Tudo'}</button>)}
+          {['', 'PRODUCT', 'SERVICE'].map((value) => <button key={value || 'ALL'} type="button" onClick={() => setListingType(value)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-black ${listingType === value ? 'bg-[#3a222b] text-white' : 'bg-stone-100 text-stone-600'}`}>{value === 'PRODUCT' ? 'Produtos' : value === 'SERVICE' ? 'Serviços' : 'Tudo'}</button>)}
           <select value={category} onChange={(event) => setCategory(event.target.value)} className="shrink-0 rounded-full border-0 bg-stone-100 px-4 py-2 text-xs font-black text-stone-600 outline-none"><option value="">Todas as categorias</option>{categories.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}</select>
         </div>
       </div>
-
       <div className="flex items-center justify-between"><p className="text-xs font-bold text-stone-500">{loading ? 'Buscando...' : `${result.total} anúncios encontrados`}</p></div>
       {loading ? <div className="flex min-h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-stone-400" /></div> : result.items.length ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{result.items.map((listing) => <ClassifiedListingCard key={listing.id} listing={listing} detailBasePath="/classificados/explorar" />)}</div> : <div className="rounded-[26px] border border-dashed border-stone-300 bg-white px-6 py-14 text-center"><h2 className="font-serif text-2xl font-black">Nada encontrado.</h2><p className="mt-2 text-sm text-stone-500">Tente outra busca ou categoria.</p></div>}
     </div>
@@ -121,8 +120,7 @@ function InternalListingDetail({ slug }: { slug: string }) {
     setWorking(true); setError('');
     try {
       await api.post(`/classifieds/listings/${listing.id}/offers`, { amount });
-      setOfferOpen(false);
-      setOfferAmount('');
+      setOfferOpen(false); setOfferAmount('');
       setNotice('Oferta enviada. O anunciante tem 48 horas para aceitar ou recusar.');
     } catch (requestError: any) {
       setError(requestError?.response?.data?.message || 'Não foi possível enviar a oferta.');
@@ -145,9 +143,7 @@ function InternalListingDetail({ slug }: { slug: string }) {
         } catch (retryError: any) {
           setError(retryError?.response?.data?.message || 'Não foi possível substituir o carrinho.');
         }
-      } else {
-        setError(message);
-      }
+      } else setError(message);
     } finally { setWorking(false); }
   };
 
@@ -157,8 +153,7 @@ function InternalListingDetail({ slug }: { slug: string }) {
     setWorking(true); setError(''); setNotice('');
     try {
       const response = await api.post(`/classifieds/service-quotes/listings/${listing.id}`, { scope: quoteScope.trim(), attachments: [] });
-      setQuoteOpen(false);
-      setQuoteScope('');
+      setQuoteOpen(false); setQuoteScope('');
       const id = response.data?.id;
       if (id) navigate(`/classificados/orcamentos/${id}`);
       else setNotice('Solicitação de orçamento enviada.');
@@ -180,6 +175,7 @@ function InternalListingDetail({ slug }: { slug: string }) {
   const canCheckout = !ownListing && listing.listingType === 'PRODUCT' && listing.commerceConfig?.onlineCheckout?.enabled === true;
   const canCart = canCheckout && Boolean(listing.companyId) && features?.cart === true;
   const canQuote = !ownListing && listing.listingType === 'SERVICE' && Boolean(listing.companyId) && features?.consultativeQuotes === true;
+
   return (
     <div className="mx-auto max-w-6xl">
       <button onClick={() => navigate('/classificados/explorar')} className="mb-4 inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-black shadow-sm ring-1 ring-stone-200"><ArrowLeft className="h-4 w-4" /> Explorar</button>
@@ -192,7 +188,8 @@ function InternalListingDetail({ slug }: { slug: string }) {
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-[28px] bg-white p-6 shadow-sm ring-1 ring-stone-200">
             <PriceBlock listing={listing} />
-            <h1 className="mt-3 font-serif text-3xl font-black leading-tight">{listing.title}</h1>
+            <ClassifiedFreightCalculator listing={listing} embedded />
+            <h1 className="mt-4 font-serif text-3xl font-black leading-tight">{listing.title}</h1>
             <p className="mt-3 flex items-center gap-2 text-xs font-bold text-stone-500"><MapPin className="h-4 w-4" />{listing.neighborhood ? `${listing.neighborhood}, ` : ''}{listing.city} - {listing.state}</p>
             {listing.seller && <div className="mt-5 flex items-center gap-3 rounded-2xl bg-stone-50 p-3"><div className="h-11 w-11 overflow-hidden rounded-full bg-stone-200">{listing.seller.photoURL && <img src={listing.seller.photoURL} alt="" className="h-full w-full object-cover" />}</div><div className="min-w-0"><div className="flex items-center gap-1"><p className="truncate text-sm font-black">{listing.seller.name}</p>{listing.seller.verified && <ShieldCheck className="h-4 w-4 text-emerald-600" />}</div><p className="text-[10px] text-stone-400">{listing.seller.type === 'COMPANY' ? 'Empresa' : 'Particular'}</p></div></div>}
             {!ownListing ? <div className="mt-5 grid gap-2">
@@ -223,4 +220,5 @@ function PriceBlock({ listing }: { listing: ClassifiedListing }) {
   const card = listing.commerceConfig?.paymentPricing?.card;
   return <div>{pricing.promotionActive && pricing.basePrice != null && <div className="flex items-center gap-2"><span className="rounded-full bg-[#d45442] px-2.5 py-1 text-[9px] font-black uppercase tracking-[.12em] text-white">Oferta</span><span className="text-sm font-bold text-stone-400 line-through">{money(pricing.basePrice)}</span></div>}<p className={`mt-1 text-3xl font-black ${pricing.promotionActive ? 'text-[#b74435]' : 'text-stone-900'}`}>{classifiedPrice(listing)}</p>{pricing.promotionActive && pricing.promotionEndsAt && <p className="mt-1 text-[10px] font-bold text-rose-600">Oferta até {new Date(pricing.promotionEndsAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>}{pixEnabled && <div className="mt-3 rounded-2xl bg-emerald-50 p-3"><p className="text-[9px] font-black uppercase tracking-[.1em] text-emerald-600">Preço no Pix</p><p className="mt-0.5 text-lg font-black text-emerald-800">{money(pricing.pixPrice)}</p></div>}{card?.enabled && pricing.cardPrice != null && <div className="mt-2 flex gap-2 rounded-2xl bg-stone-50 p-3 text-stone-600"><CreditCard className="mt-0.5 h-4 w-4 shrink-0" /><div><p className="text-xs font-black">{money(pricing.cardPrice)} no cartão</p><p className="mt-0.5 text-[10px]">até {pricing.maxInstallments}x{pricing.interestFreeInstallments > 0 ? ` · ${pricing.interestFreeInstallments}x sem juros` : ''}</p></div></div>}{listing.commerceConfig?.onlineCheckout?.enabled && <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-700">A empresa habilitou recebimento online para este produto.</p>}</div>;
 }
+
 function money(value: unknown) { const number = Number(value); return Number.isFinite(number) ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(number) : '—'; }
