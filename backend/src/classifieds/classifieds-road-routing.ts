@@ -14,7 +14,6 @@ export type DeliveryRouteDistance = {
   cacheHit: boolean;
 };
 
-const CACHE_TTL_DAYS = 30;
 const DEFAULT_OSRM_BASE_URL = 'https://router.project-osrm.org';
 
 export async function resolveRoadDistance(
@@ -49,7 +48,7 @@ export async function resolveRoadDistance(
        "cacheKey","originZipCode","destinationZipCode",
        "originLatitude","originLongitude","destinationLatitude","destinationLongitude",
        profile,provider,"distanceMeters","durationSeconds","expiresAt",metadata
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,'driving',$8,$9,$10,now()+($11 || ' days')::interval,$12::jsonb)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,'driving',$8,$9,$10,now()+interval '30 days',$11::jsonb)
      ON CONFLICT ("cacheKey") DO UPDATE SET
        provider=EXCLUDED.provider,
        "distanceMeters"=EXCLUDED."distanceMeters",
@@ -68,7 +67,6 @@ export async function resolveRoadDistance(
       routed.source,
       routed.distanceMeters,
       routed.durationSeconds,
-      CACHE_TTL_DAYS,
       JSON.stringify({ profile: 'driving' }),
     ],
   ).catch(() => undefined);
