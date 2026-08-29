@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Clipboard, Loader2, MapPin, PackageCheck, QrCode, ShieldCheck, ShoppingCart, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { ClassifiedMarketplaceTermsModal } from './ClassifiedMarketplaceTermsModal';
 
 type Method = 'PIX' | 'CARD';
 type Fulfillment = 'ARRANGE' | 'PICKUP' | 'DELIVERY';
@@ -63,8 +62,6 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
   const [fulfillment, setFulfillment] = useState<Fulfillment>('ARRANGE');
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [deliveryNote, setDeliveryNote] = useState('');
-  const [termsOpen, setTermsOpen] = useState(false);
-  const [termsWorking, setTermsWorking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [brickReady, setBrickReady] = useState(false);
   const [error, setError] = useState('');
@@ -82,9 +79,14 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
     idempotencyRef.current = null;
     setLoading(true); setError(''); setResult(null); setConfig(null); setBrickReady(false); setQuantity(1); setDeliveryAddress(''); setDeliveryNote('');
     api.get(`/classifieds/listings/${listingId}/checkout`)
-      .then((response) => {
+      .then(async (response) => {
         if (!mounted.current) return;
-        const next = response.data as CheckoutConfig;
+        let next = response.data as CheckoutConfig;
+        if (!next.terms?.accepted) {
+          await api.post('/classifieds/me/marketplace-terms/accept', { scope: 'ONLINE_PAYMENT_BUYER', surface: 'CHECKOUT_IMPLICIT' });
+          next = { ...next, terms: { ...next.terms, accepted: true } };
+        }
+        if (!mounted.current) return;
         setConfig(next);
         setFulfillment(next.fulfillmentModes?.[0] || 'ARRANGE');
         setDeliveryAddress(next.buyer?.deliveryAddress || '');
@@ -97,7 +99,7 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
   const unitPrice = method === 'PIX' ? Number(config?.pricing.pixPrice ?? config?.pricing.currentPrice ?? 0) : Number(config?.pricing.cardPrice ?? config?.pricing.currentPrice ?? 0);
   const amount = Math.max(0, unitPrice * quantity);
   const paymentPricesDiffer = Number(config?.pricing.pixPrice ?? config?.pricing.currentPrice ?? 0) !== Number(config?.pricing.cardPrice ?? config?.pricing.currentPrice ?? 0);
-  const canMountBrick = Boolean(open && config?.publicKey && config.terms.accepted && config.available && amount > 0 && !result);
+  const canMountBrick = Boolean(open && config?.publicKey && config.available && amount > 0 && !result);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,8 +158,6 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
                 const response = await api.post(`/classifieds/listings/${listingId}/checkout`, payload);
                 setResult(response.data as OrderResult);
               } catch (requestError: any) {
-                // Se o servidor respondeu, a tentativa teve desfecho conhecido e a próxima deve usar outra chave.
-                // Se foi falha de rede/timeout, mantém a mesma chave para um retry seguro.
                 if (requestError?.response) idempotencyRef.current = null;
                 setError(requestError?.response?.data?.message || 'O pagamento não pôde ser concluído. Se houve falha de conexão, tente novamente sem recarregar a página.');
                 throw requestError;
@@ -177,22 +177,9 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
         brickController.current = null;
       }
     };
-  }, [canMountBrick, config?.publicKey, config?.terms.accepted, method, quantity, amount, fulfillment, listingId, submitting, deliveryAddress, deliveryNote]);
+  }, [canMountBrick, config?.publicKey, method, quantity, amount, fulfillment, listingId, submitting, deliveryAddress, deliveryNote]);
 
   const maxQuantity = config?.stockQuantity == null ? 50 : Math.max(1, Math.min(50, config.stockQuantity));
-  const accepted = Boolean(config?.terms.accepted);
-
-  const acceptTerms = async () => {
-    if (!config || termsWorking) return;
-    setTermsWorking(true); setError('');
-    try {
-      await api.post('/classifieds/me/marketplace-terms/accept', { scope: 'ONLINE_PAYMENT_BUYER', surface: 'CHECKOUT' });
-      setConfig((current) => current ? { ...current, terms: { ...current.terms, accepted: true } } : current);
-      setTermsOpen(false);
-    } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || 'Não foi possível registrar o aceite dos termos.');
-    } finally { setTermsWorking(false); }
-  };
 
   if (!open) return null;
   return (
@@ -220,17 +207,16 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
             <main className="min-w-0">
               {paymentPricesDiffer ? <div className="grid grid-cols-2 gap-2 rounded-2xl bg-stone-100 p-1.5"><button type="button" onClick={() => setMethod('PIX')} className={`rounded-xl px-3 py-3 text-xs font-black ${method === 'PIX' ? 'bg-white text-emerald-700 shadow-sm' : 'text-stone-500'}`}>Pix · {money(config.pricing.pixPrice)}</button><button type="button" onClick={() => setMethod('CARD')} className={`rounded-xl px-3 py-3 text-xs font-black ${method === 'CARD' ? 'bg-white text-[#009ee3] shadow-sm' : 'text-stone-500'}`}>Cartão · {money(config.pricing.cardPrice)}</button></div> : <div className="flex items-center justify-between rounded-2xl bg-[#eaf7fd] px-4 py-3 text-xs font-bold text-[#35647d]"><span>{method === 'PIX' ? 'Pix selecionado no formulário seguro abaixo.' : 'Cartão selecionado no formulário seguro abaixo.'}</span><button type="button" onClick={() => setMethod(method === 'PIX' ? 'CARD' : 'PIX')} className="underline">Usar {method === 'PIX' ? 'cartão' : 'Pix'}</button></div>}
 
-              {fulfillment === 'DELIVERY' && <div className="mt-4 grid gap-3"><FieldLabel label="Endereço para entrega"><textarea value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} rows={2} placeholder="Endereço onde o vendedor deverá entregar" className="w-full rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-stone-200 focus:ring-[#009ee3]/40" /></FieldLabel><FieldLabel label="Observação opcional"><input value={deliveryNote} onChange={(event) => setDeliveryNote(event.target.value)} placeholder="Referência, horário, instruções" className="h-11 w-full rounded-xl bg-white px-3 text-sm outline-none ring-1 ring-stone-200" /></FieldLabel><p className="text-[10px] leading-5 text-amber-700">O PiraNegócios ainda não calcula frete. O valor exibido é apenas do produto; custo e condições de entrega devem estar informados ou ser combinados com o vendedor.</p></div>}
+              {fulfillment === 'DELIVERY' && <div className="mt-4 grid gap-3"><FieldLabel label="Endereço para entrega"><textarea value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} rows={2} placeholder="Endereço onde o vendedor deverá entregar" className="w-full rounded-2xl bg-white px-4 py-3 text-sm outline-none ring-1 ring-stone-200 focus:ring-[#009ee3]/40" /></FieldLabel><FieldLabel label="Observação opcional"><input value={deliveryNote} onChange={(event) => setDeliveryNote(event.target.value)} placeholder="Referência, horário, instruções" className="h-11 w-full rounded-xl bg-white px-3 text-sm outline-none ring-1 ring-stone-200" /></FieldLabel><p className="text-[10px] leading-5 text-amber-700">O PiraNegócios ainda não calcula frete nesta compra unitária. O valor exibido é apenas do produto; quando disponível, use o carrinho para cotação integrada de entrega.</p></div>}
 
-              {!accepted ? <div className="mt-5 rounded-[22px] border border-amber-200 bg-amber-50 p-5"><ShieldCheck className="h-5 w-5 text-amber-700" /><p className="mt-2 text-sm font-black text-amber-950">Leia os termos antes de pagar</p><p className="mt-1 text-xs leading-5 text-amber-800">Eles explicam o papel do vendedor, do PiraNegócios, do Mercado Pago, entrega, estorno e tratamento da negociação.</p><button type="button" onClick={() => setTermsOpen(true)} className="mt-4 rounded-xl bg-amber-900 px-4 py-2.5 text-xs font-black text-white">Abrir termos do marketplace</button></div> : <><div className="mt-5 min-h-[250px] rounded-[22px] bg-white p-3 ring-1 ring-stone-200"><div id="classified-payment-brick" />{!brickReady && <div className="flex min-h-52 items-center justify-center gap-2 text-xs font-bold text-stone-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando pagamento seguro...</div>}</div><div className="mt-3 flex items-start gap-2 rounded-xl bg-[#eaf7fd] p-3 text-[10px] leading-5 text-[#35647d]"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#009ee3]" /> O cartão é tokenizado pelo Mercado Pago. O PiraNegócios não recebe número completo nem CVV.</div></>}
+              <div className="mt-5 min-h-[250px] rounded-[22px] bg-white p-3 ring-1 ring-stone-200"><div id="classified-payment-brick" />{!brickReady && <div className="flex min-h-52 items-center justify-center gap-2 text-xs font-bold text-stone-400"><Loader2 className="h-4 w-4 animate-spin" /> Carregando pagamento seguro...</div>}</div>
+              <p className="mt-3 text-center text-[10px] leading-5 text-stone-400">Ao concluir esta compra, você concorda com os <Link to={config.terms?.url || '/classificados/termos'} target="_blank" className="font-black text-stone-600 underline">Termos do Marketplace</Link>. O cartão é tokenizado pelo Mercado Pago e o PiraNegócios não recebe número completo nem CVV.</p>
             </main>
           </div>}
 
           {result && <PaymentResult result={result} />}
         </div>
       </section>
-
-      <ClassifiedMarketplaceTermsModal open={termsOpen} mode="BUYER" working={termsWorking} accepted={accepted} onClose={() => !termsWorking && setTermsOpen(false)} onAccept={() => void acceptTerms()} />
     </div>
   );
 }
