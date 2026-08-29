@@ -22,6 +22,8 @@ import { ClassifiedsAuctionPublicController } from './classifieds-auction-public
 import { ClassifiedsAuctionPublicService } from './classifieds-auction-public.service';
 import { ClassifiedsAuctionService } from './classifieds-auction.service';
 import { ClassifiedsAuctionSettlementService } from './classifieds-auction-settlement.service';
+import { ClassifiedsCartController } from './classifieds-cart.controller';
+import { ClassifiedsCartService } from './classifieds-cart.service';
 import { ClassifiedsCatalogAdminController } from './classifieds-catalog-admin.controller';
 import { ClassifiedsCatalogAdminService } from './classifieds-catalog-admin.service';
 import { ClassifiedsCategoryTaxonomyService } from './classifieds-category-taxonomy.service';
@@ -30,7 +32,13 @@ import { ClassifiedsCheckoutController } from './classifieds-checkout.controller
 import { ClassifiedsCheckoutService } from './classifieds-checkout.service';
 import { ClassifiedsCheckoutWebhookController } from './classifieds-checkout-webhook.controller';
 import { ClassifiedsCommerceAdminController } from './classifieds-commerce-admin.controller';
+import { ClassifiedsCommerceSettingsController } from './classifieds-commerce-settings.controller';
+import { ClassifiedsCommerceSettingsService } from './classifieds-commerce-settings.service';
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
+import { ClassifiedsDeliveryAdminController } from './classifieds-delivery-admin.controller';
+import { ClassifiedsDeliveryController } from './classifieds-delivery.controller';
+import { ClassifiedsDeliveryFinanceController } from './classifieds-delivery-finance.controller';
+import { ClassifiedsDeliveryService } from './classifieds-delivery.service';
 import { ClassifiedsEntitlementsService } from './classifieds-entitlements.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
 import { ClassifiedsLifecycleController } from './classifieds-lifecycle.controller';
@@ -48,6 +56,8 @@ import { ClassifiedsReviewsAdminController, ClassifiedsReviewsController, Classi
 import { ClassifiedsReviewsService } from './classifieds-reviews.service';
 import { ClassifiedsSalesController } from './classifieds-sales.controller';
 import { ClassifiedsSalesService } from './classifieds-sales.service';
+import { ClassifiedsServiceQuotesController } from './classifieds-service-quotes.controller';
+import { ClassifiedsServiceQuotesService } from './classifieds-service-quotes.service';
 import { ClassifiedsService } from './classifieds.service';
 import { ClassifiedCategory } from './entities/classified-category.entity';
 import { ClassifiedConversationMessage } from './entities/classified-conversation-message.entity';
@@ -93,6 +103,12 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsReviewsController,
     ClassifiedsReviewsPublicController,
     ClassifiedsReviewsAdminController,
+    ClassifiedsCommerceSettingsController,
+    ClassifiedsDeliveryController,
+    ClassifiedsDeliveryFinanceController,
+    ClassifiedsDeliveryAdminController,
+    ClassifiedsCartController,
+    ClassifiedsServiceQuotesController,
   ],
   providers: [
     AdminGuard,
@@ -122,6 +138,10 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsCheckoutService,
     ClassifiedsReviewModerationService,
     ClassifiedsReviewsService,
+    ClassifiedsCommerceSettingsService,
+    ClassifiedsDeliveryService,
+    ClassifiedsCartService,
+    ClassifiedsServiceQuotesService,
   ],
   exports: [
     ClassifiedsService,
@@ -143,6 +163,10 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsMarketplaceTermsService,
     ClassifiedsCheckoutService,
     ClassifiedsReviewsService,
+    ClassifiedsCommerceSettingsService,
+    ClassifiedsDeliveryService,
+    ClassifiedsCartService,
+    ClassifiedsServiceQuotesService,
   ],
 })
 export class ClassifiedsModule {}
