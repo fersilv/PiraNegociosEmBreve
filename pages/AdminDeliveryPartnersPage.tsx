@@ -1,1 +1,1 @@
-export { default } from './AdminDeliveryPartnersPageV2';
+export { default } from './AdminDeliveryPartnersPageV3';
