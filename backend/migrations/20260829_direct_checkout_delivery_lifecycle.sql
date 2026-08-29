@@ -32,6 +32,10 @@ BEGIN
     UPDATE delivery_quotes
     SET status=CASE WHEN "expiresAt">now() THEN 'QUOTED' ELSE 'EXPIRED' END
     WHERE id=quote_id AND status='SELECTED';
+
+    UPDATE classified_order_items
+    SET "stockReserved"=false
+    WHERE "orderId"=NEW.id AND "stockReserved"=true;
   END IF;
 
   RETURN NEW;
