@@ -16,6 +16,7 @@ import {
   Smartphone,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { ClassifiedFreightCalculator } from '../components/classifieds/ClassifiedFreightCalculator';
 import { ClassifiedListingCard, classifiedCommercePricing, classifiedPrice } from '../components/classifieds/ClassifiedListingCard';
 import { Navbar } from '../components/Navbar';
 import { SeoHead } from '../components/SeoHead';
@@ -134,6 +135,8 @@ export default function ClassifiedListingPage() {
               <button onClick={() => void startConversation()} disabled={startingConversation} className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#2d211c] px-5 text-sm font-black text-white disabled:opacity-60 lg:hidden">{startingConversation ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />} Conversar pelo PiraNegócios</button>
               {conversationError && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-700 lg:hidden">{conversationError}</p>}
             </section>
+
+            <ClassifiedFreightCalculator listing={listing} />
 
             {listing.attributes && Object.keys(listing.attributes).length > 0 && <section className="mt-5 rounded-[24px] bg-white p-5 ring-1 ring-[#4b3328]/10 sm:p-7"><SectionTitle>Características</SectionTitle><div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3">{Object.entries(listing.attributes).map(([key, value]) => <div key={key}><p className="text-[9px] font-black uppercase tracking-[.14em] text-[#9b8275]">{attributeLabel(key)}</p><p className="mt-1 text-sm font-bold text-[#4e3b32]">{String(value ?? 'Não informado')}</p></div>)}</div></section>}
 
