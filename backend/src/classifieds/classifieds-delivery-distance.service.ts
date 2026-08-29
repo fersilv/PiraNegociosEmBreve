@@ -1,8 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ClassifiedsAddressResolutionService } from './classifieds-address-resolution.service';
-
-const HAVERSINE_DISTANCE_BUFFER = 1.3;
+import { resolveRoadDistance } from './classifieds-road-routing';
 
 @Injectable()
 export class ClassifiedsDeliveryDistanceService {
@@ -74,14 +73,20 @@ export class ClassifiedsDeliveryDistanceService {
       return { distanceMeters: null, source: 'UNAVAILABLE' as const };
     }
 
+    const routed = await resolveRoadDistance(
+      this.dataSource,
+      { ...originCoordinates, zipCode: origin.zipCode },
+      { ...destinationCoordinates, zipCode: destination.zipCode },
+    );
+    if (!routed) {
+      return { distanceMeters: null, source: 'ROAD_ROUTE_UNAVAILABLE' as const };
+    }
+
     return {
-      distanceMeters: this.haversineMeters(
-        originCoordinates.latitude,
-        originCoordinates.longitude,
-        destinationCoordinates.latitude,
-        destinationCoordinates.longitude,
-      ),
-      source: 'SERVER_HAVERSINE_BUFFER_30' as const,
+      distanceMeters: routed.distanceMeters,
+      durationSeconds: routed.durationSeconds,
+      source: routed.cacheHit ? `${routed.source}_CACHE` as const : routed.source,
+      cacheHit: routed.cacheHit,
     };
   }
 
@@ -102,17 +107,6 @@ export class ClassifiedsDeliveryDistanceService {
       [row.id, resolvedLatitude, resolvedLongitude],
     ).catch(() => undefined);
     return { latitude: resolvedLatitude, longitude: resolvedLongitude };
-  }
-
-  private haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
-    const radius = 6_371_000;
-    const toRadians = (degrees: number) => degrees * Math.PI / 180;
-    const dLat = toRadians(lat2 - lat1);
-    const dLng = toRadians(lng2 - lng1);
-    const a = Math.sin(dLat / 2) ** 2
-      + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLng / 2) ** 2;
-    const straightLineMeters = Math.max(0, radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-    return Math.ceil(straightLineMeters * HAVERSINE_DISTANCE_BUFFER);
   }
 
   private coordinate(value: unknown, min: number, max: number) {
