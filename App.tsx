@@ -17,6 +17,7 @@ const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() => import("./pages/Login").then((module) => ({ default: module.Login })));
 const Dashboard = lazy(() => import("./pages/Dashboard").then((module) => ({ default: module.Dashboard })));
 const WorkspaceJobsRoute = lazy(() => import("./pages/WorkspaceJobsRoute"));
+const CompanyWorkspaceAccessGate = lazy(() => import("./pages/CompanyWorkspaceAccessGate"));
 const Terms = lazy(() => import("./pages/Terms"));
 const JobsEntryPage = lazy(() => import("./pages/JobsEntryPage"));
 const PublicJobPage = lazy(() => import("./pages/PublicJobPage"));
@@ -116,7 +117,7 @@ export default function App() {
               <Route path="/company/vagas" element={<WorkspaceJobsRoute workspace="company" />} />
               <Route path="/admin/vagas" element={<WorkspaceJobsRoute workspace="admin" />} />
               <Route path="/user/*" element={<Dashboard />} />
-              <Route path="/company/*" element={<Dashboard />} />
+              <Route path="/company/*" element={<CompanyWorkspaceAccessGate />} />
               <Route path="/admin/*" element={<Dashboard />} />
               <Route path="/dashboard/*" element={<Dashboard />} />
 
