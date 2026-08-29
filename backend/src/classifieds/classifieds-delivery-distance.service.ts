@@ -15,7 +15,8 @@ export class ClassifiedsDeliveryDistanceService {
     if (!destinationAddressId) return { distanceMeters: null, source: 'UNAVAILABLE' as const };
 
     const destinationRows = await this.dataSource.query(
-      `SELECT id,"zipCode",latitude,longitude FROM delivery_addresses
+      `SELECT id,"zipCode",street,number,complement,neighborhood,city,state,"placeId",latitude,longitude
+       FROM delivery_addresses
        WHERE id=$1 AND "userId"=$2 AND active=true LIMIT 1`,
       [destinationAddressId, uid],
     );
@@ -60,26 +61,34 @@ export class ClassifiedsDeliveryDistanceService {
     if (!originLocationId) return { distanceMeters: null, source: 'UNAVAILABLE' as const };
 
     const originRows = await this.dataSource.query(
-      `SELECT id,"zipCode",latitude,longitude FROM company_fulfillment_locations
+      `SELECT id,"zipCode",street,number,complement,neighborhood,city,state,"placeId",latitude,longitude
+       FROM company_fulfillment_locations
        WHERE id=$1 AND "companyId"=$2 AND active=true AND "allowsDeliveryOrigin"=true LIMIT 1`,
       [originLocationId, companyIds[0]],
     );
     const origin = originRows[0];
     if (!origin) throw new BadRequestException('Origem de entrega não configurada para esta empresa.');
 
-    const destinationCoordinates = await this.coordinatesFromStoredOrCep(destination, 'delivery_addresses');
-    const originCoordinates = await this.coordinatesFromStoredOrCep(origin, 'company_fulfillment_locations');
-    if (!destinationCoordinates || !originCoordinates) {
-      return { distanceMeters: null, source: 'UNAVAILABLE' as const };
-    }
+    const [destinationCoordinates, originCoordinates] = await Promise.all([
+      this.coordinatesFromStoredOrCep(destination, 'delivery_addresses'),
+      this.coordinatesFromStoredOrCep(origin, 'company_fulfillment_locations'),
+    ]);
 
     const routed = await resolveRoadDistance(
       this.dataSource,
-      { ...originCoordinates, zipCode: origin.zipCode },
-      { ...destinationCoordinates, zipCode: destination.zipCode },
+      {
+        ...(originCoordinates || {}),
+        zipCode: origin.zipCode,
+        address: this.completeAddress(origin),
+      },
+      {
+        ...(destinationCoordinates || {}),
+        zipCode: destination.zipCode,
+        address: this.completeAddress(destination),
+      },
     );
     if (!routed) {
-      return { distanceMeters: null, source: 'ROAD_ROUTE_UNAVAILABLE' as const };
+      return { distanceMeters: null, source: 'GOOGLE_ROUTE_UNAVAILABLE' as const };
     }
 
     return {
@@ -107,6 +116,19 @@ export class ClassifiedsDeliveryDistanceService {
       [row.id, resolvedLatitude, resolvedLongitude],
     ).catch(() => undefined);
     return { latitude: resolvedLatitude, longitude: resolvedLongitude };
+  }
+
+  private completeAddress(row: any) {
+    const zipCode = String(row.zipCode || '').replace(/\D/g, '').slice(0, 8);
+    const parts = [
+      [row.street, row.number].filter(Boolean).join(', '),
+      row.complement,
+      row.neighborhood,
+      [row.city, row.state].filter(Boolean).join(' - '),
+      zipCode,
+      'Brasil',
+    ].map((value) => String(value || '').trim()).filter(Boolean);
+    return parts.join(', ');
   }
 
   private coordinate(value: unknown, min: number, max: number) {
