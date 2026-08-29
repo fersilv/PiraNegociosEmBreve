@@ -5,6 +5,11 @@ ALTER TABLE classified_orders
   ADD CONSTRAINT classified_orders_fulfillment_check
   CHECK ("fulfillmentMode" IN ('ARRANGE','PICKUP','DELIVERY','ROUND_TRIP'));
 
+-- Uma corrida pode gerar no máximo uma fatura. Retentativas de conclusão são idempotentes.
+CREATE UNIQUE INDEX IF NOT EXISTS company_delivery_invoices_job_uq
+  ON company_delivery_invoices("jobId")
+  WHERE "jobId" IS NOT NULL;
+
 -- Quando o checkout legado libera estoque, ele restaura o listing principal usando
 -- classified_orders.quantity. Em carrinhos, restauramos apenas os itens restantes
 -- e a eventual diferença, evitando devolução em dobro do primeiro item.
