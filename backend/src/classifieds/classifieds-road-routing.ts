@@ -2,8 +2,8 @@ import { createHash } from 'crypto';
 import { DataSource } from 'typeorm';
 
 export type DeliveryRoutePoint = {
-  latitude: number;
-  longitude: number;
+  latitude?: number | null;
+  longitude?: number | null;
   zipCode?: string | null;
   address?: string | null;
 };
@@ -69,10 +69,10 @@ export async function resolveRoadDistance(
       cacheKey,
       digits(origin.zipCode),
       digits(destination.zipCode),
-      origin.latitude,
-      origin.longitude,
-      destination.latitude,
-      destination.longitude,
+      finiteCoordinate(origin.latitude),
+      finiteCoordinate(origin.longitude),
+      finiteCoordinate(destination.latitude),
+      finiteCoordinate(destination.longitude),
       routed.source,
       routed.distanceMeters,
       routed.durationSeconds,
@@ -127,12 +127,21 @@ async function googleRoutes(origin: DeliveryRoutePoint, destination: DeliveryRou
 function googleWaypoint(point: DeliveryRoutePoint) {
   const address = String(point.address || '').trim();
   if (address) return { address };
-  return { location: { latLng: { latitude: point.latitude, longitude: point.longitude } } };
+  const latitude = finiteCoordinate(point.latitude);
+  const longitude = finiteCoordinate(point.longitude);
+  if (latitude == null || longitude == null) throw new Error('Route waypoint has neither a complete address nor coordinates.');
+  return { location: { latLng: { latitude, longitude } } };
 }
 
 async function osrmRoute(origin: DeliveryRoutePoint, destination: DeliveryRoutePoint) {
+  const originLatitude = finiteCoordinate(origin.latitude);
+  const originLongitude = finiteCoordinate(origin.longitude);
+  const destinationLatitude = finiteCoordinate(destination.latitude);
+  const destinationLongitude = finiteCoordinate(destination.longitude);
+  if (originLatitude == null || originLongitude == null || destinationLatitude == null || destinationLongitude == null) return null;
+
   const baseUrl = String(process.env.OSRM_ROUTER_BASE_URL || DEFAULT_OSRM_BASE_URL).trim().replace(/\/$/, '');
-  const coordinates = `${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}`;
+  const coordinates = `${originLongitude},${originLatitude};${destinationLongitude},${destinationLatitude}`;
   const response = await fetch(`${baseUrl}/route/v1/driving/${coordinates}?overview=false&alternatives=false&steps=false`, {
     headers: { accept: 'application/json' },
     signal: AbortSignal.timeout(5_000),
@@ -152,7 +161,7 @@ async function osrmRoute(origin: DeliveryRoutePoint, destination: DeliveryRouteP
 
 function routeCacheKey(origin: DeliveryRoutePoint, destination: DeliveryRoutePoint, provider: string) {
   const value = [
-    'delivery-route-v2',
+    'delivery-route-v3',
     provider,
     provider === 'GOOGLE_ROUTES' ? GOOGLE_ROUTING_PREFERENCE : 'OSRM_FASTEST',
     digits(origin.zipCode) || '',
@@ -171,8 +180,15 @@ function normalizeAddress(value: unknown) {
   return String(value || '').trim().toLocaleLowerCase('pt-BR').replace(/\s+/g, ' ').slice(0, 500);
 }
 
-function rounded(value: number) {
-  return Number(value).toFixed(5);
+function rounded(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(5) : '';
+}
+
+function finiteCoordinate(value: unknown) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function digits(value: unknown) {
