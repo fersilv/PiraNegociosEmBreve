@@ -28,10 +28,15 @@ ALTER TABLE classified_orders
     ("itemSubtotalCents" IS NULL OR "itemSubtotalCents" >= 0)
     AND "shippingCents" >= 0
     AND "buyerFeeCents" >= 0
-    AND ("applicationFeeCents" IS NULL OR "applicationFeeCents" >= 0)
+    AND ("applicationFeeCents" IS NULL OR (
+      "applicationFeeCents" >= 0
+      AND "applicationFeeCents" <= "totalCents"::bigint
+    ))
     AND ("providerFeeCents" IS NULL OR "providerFeeCents" >= 0)
     AND ("providerNetCents" IS NULL OR "providerNetCents" >= 0)
     AND "deliveryPartnerPayableCents" >= 0
+    AND ("itemSubtotalCents" IS NULL OR
+      "totalCents"::bigint = "itemSubtotalCents" + "shippingCents" + "buyerFeeCents")
   );
 
 COMMENT ON COLUMN classified_orders."applicationFeeCents" IS
@@ -101,8 +106,10 @@ CREATE TABLE IF NOT EXISTS classified_commerce_audit_events (
   "aggregateType" varchar(64) NOT NULL,
   "aggregateId" varchar(180) NOT NULL,
   action varchar(80) NOT NULL,
-  "actorUserId" varchar NULL REFERENCES users(id) ON DELETE SET NULL,
-  "companyId" uuid NULL REFERENCES companies(id) ON DELETE SET NULL,
+  -- Audit keeps immutable identifiers instead of mutable FKs. Parent deletion must
+  -- never rewrite historical audit rows through ON DELETE SET NULL.
+  "actorUserId" varchar NULL,
+  "companyId" uuid NULL,
   "correlationId" varchar(160) NULL,
   "fromStatus" varchar(48) NULL,
   "toStatus" varchar(48) NULL,
