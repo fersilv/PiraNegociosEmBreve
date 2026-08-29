@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, BadgeDollarSign, CreditCard, Loader2, MapPin, MessageCircle, Search, ShieldCheck, ShoppingCart, X } from 'lucide-react';
+import { ArrowLeft, BadgeDollarSign, CreditCard, FileText, Loader2, MapPin, MessageCircle, Search, ShieldCheck, ShoppingCart, X } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ClassifiedCheckoutModal } from '../components/classifieds/ClassifiedCheckoutModal';
 import { ClassifiedListingCard, classifiedCommercePricing, classifiedPrice } from '../components/classifieds/ClassifiedListingCard';
@@ -45,7 +45,7 @@ function InternalExploreGrid() {
       <header>
         <p className="text-[10px] font-black uppercase tracking-[.18em] text-[#b06448]">Marketplace interno</p>
         <h1 className="mt-1 font-serif text-3xl font-black">Explorar</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Você continua dentro do seu workspace enquanto procura, favorita, conversa ou faz uma oferta.</p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">Você continua dentro do seu workspace enquanto procura, favorita, conversa, compra ou pede orçamento.</p>
       </header>
 
       <div className="rounded-[24px] bg-white p-4 shadow-sm ring-1 ring-black/[.06]">
@@ -70,10 +70,13 @@ function InternalListingDetail({ slug }: { slug: string }) {
   const { user } = useAuth();
   const { data } = useClassifiedsWorkspace();
   const [listing, setListing] = useState<ClassifiedListing | null>(null);
+  const [features, setFeatures] = useState<any>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [offerOpen, setOfferOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [quoteOpen, setQuoteOpen] = useState(false);
+  const [quoteScope, setQuoteScope] = useState('');
   const [offerAmount, setOfferAmount] = useState('');
   const [working, setWorking] = useState(false);
   const [notice, setNotice] = useState('');
@@ -81,8 +84,15 @@ function InternalListingDetail({ slug }: { slug: string }) {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    api.get(`/classifieds/listings/${encodeURIComponent(slug)}`)
-      .then((response) => alive && setListing(response.data as ClassifiedListing))
+    Promise.all([
+      api.get(`/classifieds/listings/${encodeURIComponent(slug)}`),
+      api.get('/classifieds/commerce/features').catch(() => ({ data: {} })),
+    ])
+      .then(([listingResponse, featureResponse]) => {
+        if (!alive) return;
+        setListing(listingResponse.data as ClassifiedListing);
+        setFeatures(featureResponse.data || {});
+      })
       .catch((requestError: any) => alive && setError(requestError?.response?.data?.message || 'Anúncio não encontrado.'))
       .finally(() => alive && setLoading(false));
     return () => { alive = false; };
@@ -119,6 +129,44 @@ function InternalListingDetail({ slug }: { slug: string }) {
     } finally { setWorking(false); }
   };
 
+  const addToCart = async () => {
+    if (!listing || working) return;
+    setWorking(true); setError(''); setNotice('');
+    try {
+      await api.post(`/classifieds/cart/items/${listing.id}`, { quantity: 1 });
+      setNotice('Produto adicionado ao carrinho.');
+    } catch (requestError: any) {
+      const message = String(requestError?.response?.data?.message || 'Não foi possível adicionar ao carrinho.');
+      const otherCompany = /empresa|outro vendedor|outro carrinho/i.test(message);
+      if (otherCompany && window.confirm(`${message}\n\nQuer substituir o carrinho atual por este produto?`)) {
+        try {
+          await api.post(`/classifieds/cart/items/${listing.id}`, { quantity: 1, replaceOtherCompany: true });
+          setNotice('Carrinho anterior substituído e produto adicionado.');
+        } catch (retryError: any) {
+          setError(retryError?.response?.data?.message || 'Não foi possível substituir o carrinho.');
+        }
+      } else {
+        setError(message);
+      }
+    } finally { setWorking(false); }
+  };
+
+  const requestQuote = async () => {
+    if (!listing || working) return;
+    if (quoteScope.trim().length < 10) { setError('Descreva um pouco melhor o serviço que você precisa.'); return; }
+    setWorking(true); setError(''); setNotice('');
+    try {
+      const response = await api.post(`/classifieds/service-quotes/listings/${listing.id}`, { scope: quoteScope.trim(), attachments: [] });
+      setQuoteOpen(false);
+      setQuoteScope('');
+      const id = response.data?.id;
+      if (id) navigate(`/classificados/orcamentos/${id}`);
+      else setNotice('Solicitação de orçamento enviada.');
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.message || 'Não foi possível solicitar o orçamento.');
+    } finally { setWorking(false); }
+  };
+
   const trackContact = (channel: string) => {
     if (!listing) return;
     void api.post(`/classifieds/listings/${listing.id}/events`, { type: 'CONTACT_CLICK', channel }).catch(() => undefined);
@@ -130,6 +178,8 @@ function InternalListingDetail({ slug }: { slug: string }) {
   const pricing = classifiedCommercePricing(listing);
   const canOffer = !ownListing && listing.listingType === 'PRODUCT' && listing.price != null;
   const canCheckout = !ownListing && listing.listingType === 'PRODUCT' && listing.commerceConfig?.onlineCheckout?.enabled === true;
+  const canCart = canCheckout && Boolean(listing.companyId) && features?.cart === true;
+  const canQuote = !ownListing && listing.listingType === 'SERVICE' && Boolean(listing.companyId) && features?.consultativeQuotes === true;
   return (
     <div className="mx-auto max-w-6xl">
       <button onClick={() => navigate('/classificados/explorar')} className="mb-4 inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-black shadow-sm ring-1 ring-stone-200"><ArrowLeft className="h-4 w-4" /> Explorar</button>
@@ -145,13 +195,22 @@ function InternalListingDetail({ slug }: { slug: string }) {
             <h1 className="mt-3 font-serif text-3xl font-black leading-tight">{listing.title}</h1>
             <p className="mt-3 flex items-center gap-2 text-xs font-bold text-stone-500"><MapPin className="h-4 w-4" />{listing.neighborhood ? `${listing.neighborhood}, ` : ''}{listing.city} - {listing.state}</p>
             {listing.seller && <div className="mt-5 flex items-center gap-3 rounded-2xl bg-stone-50 p-3"><div className="h-11 w-11 overflow-hidden rounded-full bg-stone-200">{listing.seller.photoURL && <img src={listing.seller.photoURL} alt="" className="h-full w-full object-cover" />}</div><div className="min-w-0"><div className="flex items-center gap-1"><p className="truncate text-sm font-black">{listing.seller.name}</p>{listing.seller.verified && <ShieldCheck className="h-4 w-4 text-emerald-600" />}</div><p className="text-[10px] text-stone-400">{listing.seller.type === 'COMPANY' ? 'Empresa' : 'Particular'}</p></div></div>}
-            {!ownListing ? <div className="mt-5 grid gap-2">{canCheckout && <button type="button" onClick={() => setCheckoutOpen(true)} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#009ee3] text-sm font-black text-white shadow-[0_12px_28px_rgba(0,158,227,.22)]"><ShoppingCart className="h-4 w-4" /> Comprar agora</button>}<button disabled={working} onClick={() => void startChat()} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-stone-900 text-sm font-black text-white disabled:opacity-50"><MessageCircle className="h-4 w-4" /> Conversar</button>{canOffer && <button disabled={working} onClick={() => { setOfferAmount(String(pricing.currentPrice ?? listing.price ?? '').replace('.', ',')); setOfferOpen(true); }} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#c96847] text-sm font-black text-white"><BadgeDollarSign className="h-4 w-4" /> Fazer oferta</button>}</div> : <div className="mt-5 grid gap-2"><Link to="/classificados/anuncios" className="flex h-12 items-center justify-center rounded-2xl bg-stone-100 text-sm font-black text-stone-700">Este anúncio é seu</Link>{listing.listingType !== 'SERVICE' && <Link to={`/classificados/comercial/${listing.id}`} className="flex h-11 items-center justify-center rounded-2xl bg-[#fff1e9] text-xs font-black text-[#a84f34]">Editar preço e promoção</Link>}</div>}
+            {!ownListing ? <div className="mt-5 grid gap-2">
+              {canCheckout && <button type="button" onClick={() => setCheckoutOpen(true)} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#009ee3] text-sm font-black text-white shadow-[0_12px_28px_rgba(0,158,227,.22)]"><ShoppingCart className="h-4 w-4" /> Comprar agora</button>}
+              {canCart && <button disabled={working} type="button" onClick={() => void addToCart()} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-[#eaf7fd] text-xs font-black text-[#17688f] ring-1 ring-[#009ee3]/20 disabled:opacity-50"><ShoppingCart className="h-4 w-4" /> Adicionar ao carrinho</button>}
+              {canQuote && <button disabled={working} type="button" onClick={() => setQuoteOpen(true)} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#0d4542] text-sm font-black text-white disabled:opacity-50"><FileText className="h-4 w-4" /> Solicitar orçamento</button>}
+              <button disabled={working} onClick={() => void startChat()} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-stone-900 text-sm font-black text-white disabled:opacity-50"><MessageCircle className="h-4 w-4" /> Conversar</button>
+              {canOffer && <button disabled={working} onClick={() => { setOfferAmount(String(pricing.currentPrice ?? listing.price ?? '').replace('.', ',')); setOfferOpen(true); }} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#c96847] text-sm font-black text-white"><BadgeDollarSign className="h-4 w-4" /> Fazer oferta</button>}
+            </div> : <div className="mt-5 grid gap-2"><Link to={listing.listingType === 'SERVICE' ? '/classificados/servicos' : '/classificados/anuncios'} className="flex h-12 items-center justify-center rounded-2xl bg-stone-100 text-sm font-black text-stone-700">Este anúncio é seu</Link>{listing.listingType !== 'SERVICE' && <Link to={`/classificados/comercial/${listing.id}`} className="flex h-11 items-center justify-center rounded-2xl bg-[#fff1e9] text-xs font-black text-[#a84f34]">Editar preço, venda e logística</Link>}</div>}
             {(listing.contactWhatsapp || listing.contactPhone) && !ownListing && <div className="mt-4 border-t border-stone-100 pt-4"><p className="text-[10px] font-bold uppercase tracking-[.12em] text-stone-400">Contato externo opcional</p><div className="mt-2 flex gap-2">{listing.contactWhatsapp && <a onClick={() => trackContact('WHATSAPP')} href={`https://wa.me/${String(listing.contactWhatsapp).replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">WhatsApp</a>}{listing.contactPhone && <a onClick={() => trackContact('PHONE')} href={`tel:${listing.contactPhone}`} className="rounded-xl bg-stone-100 px-3 py-2 text-xs font-black text-stone-700">Telefone</a>}</div></div>}
           </div>
         </aside>
       </div>
 
       {offerOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4"><button aria-label="Fechar" className="absolute inset-0" onClick={() => !working && setOfferOpen(false)} /><div className="relative w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl"><button onClick={() => setOfferOpen(false)} className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-stone-100"><X className="h-4 w-4" /></button><p className="text-[10px] font-black uppercase tracking-[.16em] text-[#b06448]">Oferta válida por 48 horas</p><h2 className="mt-2 font-serif text-2xl font-black">Quanto você quer oferecer?</h2><p className="mt-2 text-sm text-stone-500">O anunciante recebe o valor e pode aceitar ou recusar sem você precisar iniciar uma conversa.</p><label className="mt-5 block"><span className="text-xs font-black text-stone-500">Sua oferta</span><div className="mt-2 flex h-14 items-center rounded-2xl bg-stone-50 px-4 ring-1 ring-stone-200"><span className="mr-2 text-sm font-black text-stone-500">R$</span><input autoFocus value={offerAmount} onChange={(event) => setOfferAmount(event.target.value)} inputMode="decimal" className="min-w-0 flex-1 bg-transparent text-xl font-black outline-none" /></div></label><button disabled={working} onClick={() => void submitOffer()} className="mt-5 flex h-12 w-full items-center justify-center rounded-2xl bg-[#c96847] text-sm font-black text-white disabled:opacity-50">{working ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Enviar oferta'}</button></div></div>}
+
+      {quoteOpen && <div className="fixed inset-0 z-[105] flex items-center justify-center bg-black/45 p-4"><button aria-label="Fechar" className="absolute inset-0" onClick={() => !working && setQuoteOpen(false)} /><div className="relative w-full max-w-lg rounded-[28px] bg-white p-6 shadow-2xl"><button onClick={() => setQuoteOpen(false)} className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-stone-100"><X className="h-4 w-4" /></button><p className="text-[10px] font-black uppercase tracking-[.16em] text-[#397c75]">Solicitação de orçamento</p><h2 className="mt-2 font-serif text-2xl font-black">Explique o que você precisa</h2><p className="mt-2 text-sm leading-6 text-stone-500">A empresa poderá enviar versões da proposta. Cada versão fica preservada e você escolhe qual aceitar.</p><textarea autoFocus rows={6} value={quoteScope} onChange={(event) => setQuoteScope(event.target.value)} placeholder="Ex.: preciso instalar dois pontos, material incluso, atendimento no bairro..." className="mt-5 w-full rounded-2xl bg-stone-50 p-4 text-sm outline-none ring-1 ring-stone-200 focus:ring-[#397c75]/40" /><button disabled={working || quoteScope.trim().length < 10} onClick={() => void requestQuote()} className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#0d4542] text-sm font-black text-white disabled:opacity-50">{working ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />} Enviar solicitação</button></div></div>}
+
       <ClassifiedCheckoutModal listingId={listing.id} open={checkoutOpen} onClose={() => setCheckoutOpen(false)} />
     </div>
   );
