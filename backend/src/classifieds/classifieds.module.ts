@@ -53,6 +53,7 @@ import { ClassifiedsListingLifecycleSchemaService } from './classifieds-listing-
 import { ClassifiedsLocationService } from './classifieds-location.service';
 import { ClassifiedsMarketplacePaymentsService } from './classifieds-marketplace-payments.service';
 import { ClassifiedsOfferChatService } from './classifieds-offer-chat.service';
+import { ClassifiedsOffersGateway } from './classifieds-offers.gateway';
 import { ClassifiedsMarketplaceTermsService } from './classifieds-marketplace-terms.service';
 import { ClassifiedsOrderOperationsController } from './classifieds-order-operations.controller';
 import { ClassifiedsOrderOperationsService } from './classifieds-order-operations.service';
@@ -143,6 +144,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsEntitlementsService,
     ClassifiedsAuctionGateway,
     ClassifiedsOrdersGateway,
+    ClassifiedsOffersGateway,
     ClassifiedsOrderOperationsService,
     ClassifiedsQuestionsService,
     { provide: ClassifiedsAuctionService, useClass: ClassifiedsArchivedAwareAuctionService },
