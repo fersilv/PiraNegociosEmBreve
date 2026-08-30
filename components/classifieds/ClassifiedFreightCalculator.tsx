@@ -27,13 +27,6 @@ type CepResolution = {
   state: string;
 };
 
-type ResolvedWaypoint = {
-  placeId?: string;
-  formattedAddress?: string | null;
-  granularity?: string | null;
-  geocodeCacheHit?: boolean;
-};
-
 type FreightOption = {
   partnerId: string;
   partnerName: string;
@@ -48,15 +41,7 @@ type FreightOption = {
 
 type QuoteResponse = {
   destination?: { zipCode?: string; street?: string; number?: string | null; neighborhood?: string; city?: string; state?: string };
-  origin?: { street?: string; number?: string | null; neighborhood?: string; city?: string; state?: string };
   distanceMeters?: number | null;
-  distanceSource?: string;
-  routeCacheHit?: boolean;
-  routeResolution?: {
-    provider?: string;
-    origin?: ResolvedWaypoint | null;
-    destination?: ResolvedWaypoint | null;
-  } | null;
   options?: FreightOption[];
 };
 
@@ -270,15 +255,6 @@ export function ClassifiedFreightCalculator({ listing, embedded = false }: { lis
           <div className="min-w-0 flex-1"><p className="text-xs font-black text-emerald-950">{option.partnerName}</p><p className="mt-0.5 text-[9px] font-bold text-emerald-700">{partnerLabel(option.partnerType)}{option.distanceMeters != null ? ` · ${(option.distanceMeters / 1000).toFixed(1).replace('.', ',')} km` : ''}</p></div>
           <div className="text-right"><p className="text-sm font-black text-emerald-900">{money(option.amountCents || 0)}</p>{option.estimatedMinutes != null && <p className="mt-0.5 inline-flex items-center gap-1 text-[8px] font-bold text-emerald-700"><Clock3 className="h-3 w-3" />~{option.estimatedMinutes} min</p>}</div>
         </div>) : <p className="rounded-xl bg-stone-50 px-3 py-3 text-[10px] font-bold text-stone-600">Nenhuma modalidade de entrega está disponível para este endereço.</p>}
-
-        {quote.routeResolution?.provider === 'GOOGLE_ROUTES' && <details className="rounded-xl bg-blue-50/70 px-3 py-2 text-[9px] text-blue-950 ring-1 ring-blue-100">
-          <summary className="cursor-pointer font-black">Rota validada pelo Google</summary>
-          <div className="mt-2 space-y-1 leading-4">
-            <p><strong>Origem Google:</strong> {quote.routeResolution.origin?.formattedAddress || 'não informado'} {quote.routeResolution.origin?.granularity ? `(${quote.routeResolution.origin.granularity})` : ''}</p>
-            <p><strong>Destino Google:</strong> {quote.routeResolution.destination?.formattedAddress || 'não informado'} {quote.routeResolution.destination?.granularity ? `(${quote.routeResolution.destination.granularity})` : ''}</p>
-            <p><strong>Fonte:</strong> {quote.distanceSource || 'GOOGLE_ROUTES'}{quote.routeCacheHit ? ' · rota em cache' : ''}</p>
-          </div>
-        </details>}
 
         {eligible.length === 0 && unavailable.length > 0 && <div className="space-y-1">{unavailable.slice(0, 3).map((option) => <p key={option.partnerId} className="text-[9px] text-stone-500"><strong>{option.partnerName}:</strong> {option.reason || 'indisponível'}</p>)}</div>}
       </div>}
