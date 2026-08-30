@@ -1,13 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle,
   BellRing,
-  CheckCircle2,
   ChevronRight,
   Clock3,
   Columns3,
-  CreditCard,
-  FileText,
   GripVertical,
   LayoutList,
   Loader2,
@@ -18,7 +14,6 @@ import {
   Search,
   ShoppingBag,
   Star,
-  Truck,
   UserRound,
   X,
 } from 'lucide-react';
@@ -85,7 +80,7 @@ type Column = {
 };
 
 const COLUMNS: Column[] = [
-  { key: 'NEW', title: 'Novos', statuses: ['CREATED','PAID'], targetStatus: 'CONFIRMED', hint: 'Entraram e aguardam confirmação' },
+  { key: 'NEW', title: 'Novos', statuses: ['CREATED','PAID'], hint: 'Entraram e aguardam confirmação' },
   { key: 'CONFIRMED', title: 'Confirmados', statuses: ['CONFIRMED'], targetStatus: 'CONFIRMED', hint: 'Aceitos pela operação' },
   { key: 'PREPARING', title: 'Em preparação', statuses: ['PREPARING'], targetStatus: 'PREPARING', hint: 'Separando ou preparando' },
   { key: 'READY', title: 'Prontos', statuses: ['READY'], targetStatus: 'READY', hint: 'Aguardando retirada ou saída' },
@@ -128,7 +123,7 @@ export default function ClassifiedsOrdersNowPage() {
       setOrders(Array.isArray(response.data) ? response.data : []);
       if (!silent) setError('');
     } catch (requestError: any) {
-      if (!silent) setError(requestError?.response?.data?.message || 'Não foi possível carregar os pedidos.');
+      if (!silent) setError(requestError?.response?.data?.message || 'Não foi possível carregar as vendas.');
     } finally { if (!silent) setLoading(false); }
   };
 
@@ -175,8 +170,8 @@ export default function ClassifiedsOrdersNowPage() {
           if (selectedId && payload?.orderId === selectedId) void loadDetail(selectedId, true);
         }, 80);
         if (payload?.reason === 'CREATED') {
-          setNotice('Novo pedido recebido agora.');
-          window.setTimeout(() => setNotice((current) => current === 'Novo pedido recebido agora.' ? '' : current), 6000);
+          setNotice('Nova venda recebida agora.');
+          window.setTimeout(() => setNotice((current) => current === 'Nova venda recebida agora.' ? '' : current), 6000);
         }
       });
     })();
@@ -244,19 +239,22 @@ export default function ClassifiedsOrdersNowPage() {
   }), [orders]);
 
   const drop = (column: Column) => {
-    if (!draggedId || !column.targetStatus) return;
+    if (!draggedId || !column.targetStatus) {
+      setDraggedId(null);
+      return;
+    }
     const order = orders.find((item) => item.id === draggedId);
     setDraggedId(null);
     if (!order || order.status === column.targetStatus || ['COMPLETED','CANCELED'].includes(order.status)) return;
     void changeStatus(order.id, column.targetStatus);
   };
 
-  if (!business) return <div className="mx-auto max-w-2xl rounded-[28px] bg-white p-8 text-center ring-1 ring-stone-200"><ShoppingBag className="mx-auto h-10 w-10 text-stone-300" /><h1 className="mt-4 font-serif text-3xl font-black">Pedidos agora é Business</h1><p className="mt-2 text-sm leading-6 text-stone-500">Abra o workspace de uma empresa para acompanhar a operação de pedidos.</p></div>;
+  if (!business) return <div className="mx-auto max-w-2xl rounded-[28px] bg-white p-8 text-center ring-1 ring-stone-200"><ShoppingBag className="mx-auto h-10 w-10 text-stone-300" /><h1 className="mt-4 font-serif text-3xl font-black">Minhas vendas é Business</h1><p className="mt-2 text-sm leading-6 text-stone-500">Abra o workspace de uma empresa para acompanhar a operação das vendas.</p></div>;
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-5 pb-12">
       <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div><div className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${socketConnected ? 'bg-emerald-500 shadow-[0_0_0_5px_rgba(16,185,129,.10)]' : 'bg-amber-400'}`} /><p className="text-[10px] font-black uppercase tracking-[.18em] text-[#397c75]">{socketConnected ? 'Ao vivo' : 'Reconectando · atualização automática'}</p></div><h1 className="mt-1 font-serif text-3xl font-black">Pedidos agora</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">A mesa de operação da empresa: o que acabou de entrar, o que precisa ser preparado, o que está pronto e o que já saiu.</p></div>
+        <div><div className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${socketConnected ? 'bg-emerald-500 shadow-[0_0_0_5px_rgba(16,185,129,.10)]' : 'bg-amber-400'}`} /><p className="text-[10px] font-black uppercase tracking-[.18em] text-[#397c75]">{socketConnected ? 'Ao vivo' : 'Reconectando · atualização automática'}</p></div><h1 className="mt-1 font-serif text-3xl font-black">Minhas vendas</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-stone-500">A central operacional da empresa: vendas novas, em preparação, prontas, em entrega e concluídas.</p></div>
         <div className="flex gap-2"><button type="button" onClick={() => setView('KANBAN')} className={`inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black ${view === 'KANBAN' ? 'bg-stone-900 text-white' : 'bg-white text-stone-600 ring-1 ring-stone-200'}`}><Columns3 className="h-4 w-4" /> Kanban</button><button type="button" onClick={() => setView('LIST')} className={`inline-flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-black ${view === 'LIST' ? 'bg-stone-900 text-white' : 'bg-white text-stone-600 ring-1 ring-stone-200'}`}><LayoutList className="h-4 w-4" /> Lista</button><button type="button" onClick={() => void load()} className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-3 text-xs font-black text-stone-600 ring-1 ring-stone-200"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar</button></div>
       </header>
 
@@ -274,8 +272,8 @@ export default function ClassifiedsOrdersNowPage() {
 
       {loading ? <div className="flex min-h-72 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-stone-400" /></div> : view === 'KANBAN' ? <div className="overflow-x-auto pb-3"><div className="grid min-w-[1320px] grid-cols-6 gap-3">{COLUMNS.map((column) => {
         const columnOrders = filtered.filter((order) => column.statuses.includes(order.status));
-        return <section key={column.key} onDragOver={(event) => event.preventDefault()} onDrop={() => drop(column)} className="min-h-[520px] rounded-[24px] bg-stone-100/80 p-3 ring-1 ring-stone-200"><div className="mb-3 flex items-start justify-between gap-2"><div><h2 className="text-sm font-black text-stone-800">{column.title}</h2><p className="mt-0.5 text-[9px] leading-4 text-stone-400">{column.hint}</p></div><span className="rounded-full bg-white px-2 py-1 text-[9px] font-black text-stone-500 ring-1 ring-stone-200">{columnOrders.length}</span></div><div className="space-y-2">{columnOrders.map((order) => <OrderCard key={order.id} order={order} working={working === order.id} onOpen={() => setSelectedId(order.id)} onDragStart={() => setDraggedId(order.id)} onPriority={changePriority} />)}{!columnOrders.length && <div className="rounded-2xl border border-dashed border-stone-300 px-3 py-8 text-center text-[10px] font-bold text-stone-400">Nada aqui agora</div>}</div></section>;
-      })}</div></div> : <div className="overflow-hidden rounded-[24px] bg-white shadow-sm ring-1 ring-stone-200">{filtered.length ? <div className="divide-y divide-stone-100">{filtered.map((order) => <OrderListRow key={order.id} order={order} onOpen={() => setSelectedId(order.id)} />)}</div> : <div className="px-6 py-16 text-center text-sm text-stone-500">Nenhum pedido neste filtro.</div>}</div>}
+        return <section key={column.key} onDragOver={(event) => { if (column.targetStatus) event.preventDefault(); }} onDrop={() => drop(column)} className={`min-h-[520px] rounded-[24px] bg-stone-100/80 p-3 ring-1 ring-stone-200 ${column.targetStatus ? '' : 'cursor-default'}`}><div className="mb-3 flex items-start justify-between gap-2"><div><h2 className="text-sm font-black text-stone-800">{column.title}</h2><p className="mt-0.5 text-[9px] leading-4 text-stone-400">{column.hint}</p></div><span className="rounded-full bg-white px-2 py-1 text-[9px] font-black text-stone-500 ring-1 ring-stone-200">{columnOrders.length}</span></div><div className="space-y-2">{columnOrders.map((order) => <OrderCard key={order.id} order={order} working={working === order.id} onOpen={() => setSelectedId(order.id)} onDragStart={() => setDraggedId(order.id)} onPriority={changePriority} />)}{!columnOrders.length && <div className="rounded-2xl border border-dashed border-stone-300 px-3 py-8 text-center text-[10px] font-bold text-stone-400">Nada aqui agora</div>}</div></section>;
+      })}</div></div> : <div className="overflow-hidden rounded-[24px] bg-white shadow-sm ring-1 ring-stone-200">{filtered.length ? <div className="divide-y divide-stone-100">{filtered.map((order) => <OrderListRow key={order.id} order={order} onOpen={() => setSelectedId(order.id)} />)}</div> : <div className="px-6 py-16 text-center text-sm text-stone-500">Nenhuma venda neste filtro.</div>}</div>}
 
       {selectedId && <OrderDetailModal order={detail} loading={detailLoading} working={working === selectedId} onClose={() => setSelectedId(null)} onStatus={(status) => void changeStatus(selectedId, status)} onPriority={(priority) => void changePriority(selectedId, priority)} />}
     </div>
