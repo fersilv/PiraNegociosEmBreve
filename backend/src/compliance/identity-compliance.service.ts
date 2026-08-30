@@ -48,7 +48,7 @@ export class IdentityComplianceService {
               c."cnpjSituation",c."cnpjDataSource",c."cnpjDataCheckedAt",c."cnpjDataUpdatedAt",c."cnpjSnapshot",c."cnpjChangeAlert",
               c."commercialAddressSameAsLegal",c.address AS "commercialAddress",c.city AS "commercialCity",c.state AS "commercialState",
               c."verificationStatus",c."isVerified",c."complianceStatus"
-       FROM users u LEFT JOIN companies c ON c.id=u."companyId" WHERE u.id::text=$1 LIMIT 1`,
+       FROM users u LEFT JOIN companies c ON c.id::text=u."companyId"::text WHERE u.id::text=$1 LIMIT 1`,
       [uid],
     );
     const user = users[0];
