@@ -73,6 +73,7 @@ export class ClassifiedsDeliveryPreviewService {
     const destinationLatitude = this.coordinate(destination.latitude, -90, 90);
     const destinationLongitude = this.coordinate(destination.longitude, -180, 180);
 
+    const suppliedNumber = String(suppliedDestination?.number || '').trim();
     const routed = await resolveRoadDistance(
       this.dataSource,
       {
@@ -80,12 +81,15 @@ export class ClassifiedsDeliveryPreviewService {
         longitude: originLongitude,
         zipCode: origin.zipCode,
         address: this.completeAddress(origin),
+        placeId: origin.placeId || null,
+        hasNumber: Boolean(String(origin.number || '').trim()),
       },
       {
         latitude: destinationLatitude,
         longitude: destinationLongitude,
         zipCode: destination.zipCode,
         address: this.destinationAddress(destination, suppliedDestination),
+        hasNumber: Boolean(suppliedNumber),
       },
     );
     const distanceMeters = routed?.distanceMeters ?? null;
@@ -144,7 +148,7 @@ export class ClassifiedsDeliveryPreviewService {
           partnerType: partner.type,
           eligible: false,
           reason: needsDistance && distanceMeters == null
-            ? 'Não foi possível obter uma rota Google válida para calcular a faixa por km deste endereço.'
+            ? 'Não foi possível obter uma rota Google precisa para calcular a faixa por km deste endereço.'
             : 'Nenhuma regra vigente atende este endereço ou volume.',
         });
         continue;
@@ -174,13 +178,16 @@ export class ClassifiedsDeliveryPreviewService {
       destination: {
         ...destination,
         street: String(suppliedDestination?.street || destination.street || '').trim(),
-        number: String(suppliedDestination?.number || '').trim() || null,
+        number: suppliedNumber || null,
         neighborhood: String(suppliedDestination?.neighborhood || destination.neighborhood || '').trim(),
       },
       origin: {
         id: origin.id,
         name: origin.name,
         zipCode: origin.zipCode,
+        street: origin.street,
+        number: origin.number,
+        neighborhood: origin.neighborhood,
         city: origin.city,
         state: origin.state,
       },
@@ -188,6 +195,11 @@ export class ClassifiedsDeliveryPreviewService {
       distanceSource,
       routeDurationSeconds: routed?.durationSeconds ?? null,
       routeCacheHit: routed?.cacheHit === true,
+      routeResolution: routed ? {
+        provider: routed.source,
+        origin: routed.originResolved,
+        destination: routed.destinationResolved,
+      } : null,
       options,
     };
   }
