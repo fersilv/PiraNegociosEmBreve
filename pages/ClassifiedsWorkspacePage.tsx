@@ -20,6 +20,7 @@ import ClassifiedsMessengerPage from './ClassifiedsMessengerPage';
 import ClassifiedsOffersPage from './ClassifiedsOffersPage';
 import ClassifiedsOrdersNowPage from './ClassifiedsOrdersNowPage';
 import ClassifiedsPurchasesPage from './ClassifiedsPurchasesPage';
+import ClassifiedsQuestionsManagementPage from './ClassifiedsQuestionsManagementPage';
 import ClassifiedsReceiptPreferencesPage from './ClassifiedsReceiptPreferencesPage';
 import ClassifiedsReviewsPage from './ClassifiedsReviewsPage';
 import ClassifiedsSalesPage from './ClassifiedsSalesPage';
@@ -116,6 +117,7 @@ function WorkspaceReadyContent() {
   else if (location.pathname.startsWith('/classificados/explorar')) page = <ClassifiedsExplorePage />;
   else if (location.pathname.startsWith('/classificados/recebimentos')) page = <ClassifiedsReceiptPreferencesPage />;
   else if (location.pathname.startsWith('/classificados/avaliacoes')) page = <ClassifiedsReviewsPage />;
+  else if (location.pathname.startsWith('/classificados/perguntas')) page = <ClassifiedsQuestionsManagementPage />;
   else if (location.pathname.startsWith('/classificados/minhas-vendas') || location.pathname.startsWith('/classificados/pedidos')) page = <ClassifiedsOrdersNowPage />;
   else if (location.pathname.startsWith('/classificados/vendas')) page = <ClassifiedsSalesPage />;
   else if (location.pathname.startsWith('/classificados/estoque')) page = <ClassifiedsInventoryPage />;
