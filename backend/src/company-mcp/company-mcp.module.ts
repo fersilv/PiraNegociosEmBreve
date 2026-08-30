@@ -15,6 +15,8 @@ import { CompanyMcpOAuthController } from './company-mcp-oauth.controller';
 import { CompanyMcpOAuthGuard } from './company-mcp-oauth.guard';
 import { CompanyMcpOAuthService } from './company-mcp-oauth.service';
 import { CompanyMcpOperationsService } from './company-mcp-operations.service';
+import { CompanyMcpProductLifecycleService } from './company-mcp-product-lifecycle.service';
+import { CompanyMcpSafeOperationsService } from './company-mcp-safe-operations.service';
 
 @Module({
   imports: [
@@ -35,7 +37,9 @@ import { CompanyMcpOperationsService } from './company-mcp-operations.service';
     CompanyMcpOAuthService,
     CompanyMcpLiveAccessService,
     CompanyMcpOAuthGuard,
-    CompanyMcpOperationsService,
+    CompanyMcpProductLifecycleService,
+    CompanyMcpSafeOperationsService,
+    { provide: CompanyMcpOperationsService, useExisting: CompanyMcpSafeOperationsService },
   ],
   exports: [CompanyMcpOAuthService],
 })
