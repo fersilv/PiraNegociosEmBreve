@@ -53,3 +53,30 @@ DROP TRIGGER IF EXISTS trg_settle_accepted_classified_offer ON classified_offers
 CREATE TRIGGER trg_settle_accepted_classified_offer
 AFTER UPDATE OF status ON classified_offers
 FOR EACH ROW EXECUTE FUNCTION settle_accepted_classified_offer();
+
+-- O canal realtime avisa comprador e vendedor sempre que uma oferta nasce ou muda.
+-- O payload carrega apenas identificadores/estado, nunca dados pessoais ou valores sensiveis.
+CREATE OR REPLACE FUNCTION pn_notify_classified_offer_change()
+RETURNS trigger AS $$
+BEGIN
+  PERFORM pg_notify(
+    'pira_classified_offers',
+    json_build_object(
+      'operation', TG_OP,
+      'offerId', NEW.id,
+      'listingId', NEW."listingId",
+      'status', NEW.status,
+      'buyerUserId', NEW."buyerUserId",
+      'buyerCompanyId', NEW."buyerCompanyId",
+      'sellerUserId', NEW."sellerUserId",
+      'sellerCompanyId', NEW."sellerCompanyId"
+    )::text
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_pn_notify_classified_offer_change ON classified_offers;
+CREATE TRIGGER trg_pn_notify_classified_offer_change
+AFTER INSERT OR UPDATE OF status, amount, "expiresAt", "orderId" ON classified_offers
+FOR EACH ROW EXECUTE FUNCTION pn_notify_classified_offer_change();
