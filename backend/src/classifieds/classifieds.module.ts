@@ -59,6 +59,8 @@ import { ClassifiedsOrderOperationsService } from './classifieds-order-operation
 import { ClassifiedsOrdersGateway } from './classifieds-orders.gateway';
 import { ClassifiedsPrivateController } from './classifieds-private.controller';
 import { ClassifiedsPublicController } from './classifieds-public.controller';
+import { ClassifiedsQuestionsController, ClassifiedsQuestionsPublicController } from './classifieds-questions.controller';
+import { ClassifiedsQuestionsService } from './classifieds-questions.service';
 import { ClassifiedsReceiptPreferencesService } from './classifieds-receipt-preferences.service';
 import { ClassifiedsReviewModerationService } from './classifieds-review-moderation.service';
 import { ClassifiedsReviewsAdminController, ClassifiedsReviewsController, ClassifiedsReviewsPublicController } from './classifieds-reviews.controller';
@@ -100,6 +102,8 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
   ],
   controllers: [
     ClassifiedsPublicController,
+    ClassifiedsQuestionsPublicController,
+    ClassifiedsQuestionsController,
     ClassifiedsAuctionPublicController,
     ClassifiedsAuctionManagementController,
     ClassifiedsPrivateController,
@@ -139,6 +143,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsAuctionGateway,
     ClassifiedsOrdersGateway,
     ClassifiedsOrderOperationsService,
+    ClassifiedsQuestionsService,
     { provide: ClassifiedsAuctionService, useClass: ClassifiedsArchivedAwareAuctionService },
     ClassifiedsAuctionPublicService,
     ClassifiedsAuctionManagementService,
@@ -186,6 +191,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsCartService,
     ClassifiedsServiceQuotesService,
     ClassifiedsOrderOperationsService,
+    ClassifiedsQuestionsService,
   ],
 })
 export class ClassifiedsModule {}
