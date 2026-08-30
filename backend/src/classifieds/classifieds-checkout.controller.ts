@@ -1,8 +1,9 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Headers, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { ClassifiedsCheckoutService } from './classifieds-checkout.service';
 import { ClassifiedsDeliveryAwareCheckoutService } from './classifieds-delivery-aware-checkout.service';
+import { ClassifiedsIdentityService } from './classifieds-identity.service';
 import { ClassifiedsMarketplaceTermsService } from './classifieds-marketplace-terms.service';
 
 @Controller('classifieds')
@@ -12,6 +13,7 @@ export class ClassifiedsCheckoutController {
     private readonly checkout: ClassifiedsCheckoutService,
     private readonly deliveryCheckout: ClassifiedsDeliveryAwareCheckoutService,
     private readonly terms: ClassifiedsMarketplaceTermsService,
+    private readonly identities: ClassifiedsIdentityService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -184,6 +186,52 @@ export class ClassifiedsCheckoutController {
         acceptedOffer: offerSnapshot,
         inventoryReserved: false,
         message: 'Ordem de compra enviada à empresa. O estoque só será baixado quando a empresa concluir a ordem.',
+      };
+    });
+  }
+
+  @Post('me/offers/:offerId/revoke-acceptance')
+  async revokeAcceptedOffer(@Req() req: any, @Param('offerId') offerId: string) {
+    const uid = req.user.uid;
+    const identity = await this.identities.active(uid);
+
+    return this.dataSource.transaction(async (manager) => {
+      const rows = await manager.query(
+        `SELECT o.*,l.title,l.slug
+         FROM classified_offers o
+         JOIN classified_listings l ON l.id=o."listingId"
+         WHERE o.id=$1
+         LIMIT 1 FOR UPDATE OF o`,
+        [offerId],
+      );
+      const offer = rows[0];
+      if (!offer) throw new BadRequestException('Oferta não encontrada.');
+
+      const sellerAllowed = identity.type === 'COMPANY'
+        ? offer.sellerCompanyId === identity.company!.id
+        : !offer.sellerCompanyId && offer.sellerUserId === uid;
+      if (!sellerAllowed) throw new ForbiddenException('Esta oferta pertence a outra identidade.');
+      if (offer.status !== 'ACCEPTED') throw new BadRequestException('Somente uma oferta aceita pode ter o aceite retirado.');
+      if (offer.orderId) {
+        throw new BadRequestException('Esta oferta já foi usada para iniciar uma compra. A partir daqui, qualquer desistência deve acontecer no pedido.');
+      }
+
+      const updatedRows = await manager.query(
+        `UPDATE classified_offers
+         SET status='REVOKED',"revokedAt"=now(),"revokedByUserId"=$2,"updatedAt"=now()
+         WHERE id=$1 AND status='ACCEPTED' AND "orderId" IS NULL
+         RETURNING *`,
+        [offerId, uid],
+      );
+      const updated = updatedRows[0];
+      if (!updated) throw new BadRequestException('O aceite já não está disponível para retirada.');
+
+      return {
+        ...updated,
+        title: offer.title,
+        slug: offer.slug,
+        role: 'SELLER',
+        acceptanceRevoked: true,
       };
     });
   }
