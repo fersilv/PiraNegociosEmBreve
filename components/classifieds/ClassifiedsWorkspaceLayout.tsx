@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BadgeCheck, BadgeDollarSign, BarChart3, Briefcase, Building2, ChevronDown, Compass, CreditCard, Gavel, Globe2, Home, LogOut, Menu, MessageCircle, Plus, Settings2, ShoppingCart, Store, User, Wrench, X } from 'lucide-react';
+import { BadgeCheck, BadgeDollarSign, BarChart3, Briefcase, Building2, ChevronDown, Compass, CreditCard, Gavel, Globe2, Heart, Home, LogOut, Menu, MessageCircle, PackageCheck, Plus, Settings2, ShoppingCart, Store, User, Wrench, X } from 'lucide-react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { auth } from '../../lib/firebase';
 import { api } from '../../lib/api';
@@ -11,6 +11,10 @@ const BUSINESS_SEGMENT_SUGGESTIONS = [
   'Prestador de serviços', 'Autônomo', 'Tecnologia', 'Assistência técnica',
   'Imobiliária', 'Veículos', 'Moda', 'Beleza', 'Construção', 'Agro', 'Pet', 'Outros',
 ];
+
+type MenuItem = { to: string; label: string; icon: React.ReactNode; badge?: number };
+type MenuGroup = { label: string; items: MenuItem[] };
+type SalesMenuSummary = { hasListings: boolean; hasSales: boolean; openOrders: number; visible: boolean };
 
 export function ClassifiedsWorkspaceGate({ children }: { children: React.ReactNode }) {
   const { data, loading, error, selectIdentity, acceptPersonalTerms, configureCompany } = useClassifiedsWorkspace();
@@ -121,27 +125,109 @@ export function ClassifiedsWorkspaceLayout({ children }: { children: React.React
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [identityOpen, setIdentityOpen] = useState(false);
+  const [salesSummary, setSalesSummary] = useState<SalesMenuSummary>({ hasListings: false, hasSales: false, openOrders: 0, visible: false });
   if (!data?.activeIdentity) return null;
 
   const business = data.activeIdentity === 'COMPANY';
   const identityName = business ? data.company?.name || 'Empresa' : data.personal.name;
-  const nav = [
-    { to: '/classificados/painel', label: 'Painel', icon: <Home className="h-5 w-5" /> },
-    { to: '/classificados/explorar', label: 'Explorar', icon: <Compass className="h-5 w-5" /> },
-    ...(!business || data.company?.canSellProducts !== false ? [{ to: '/classificados/anuncios', label: 'Meus anúncios', icon: <Store className="h-5 w-5" /> }] : []),
-    ...(!business || data.company?.canOfferServices !== false ? [{ to: '/classificados/servicos', label: 'Meus serviços', icon: <Wrench className="h-5 w-5" /> }] : []),
-    { to: '/classificados/ofertas', label: 'Negociações', icon: <BadgeDollarSign className="h-5 w-5" /> },
-    { to: '/classificados/gestao/leiloes', label: 'Leilões', icon: <Gavel className="h-5 w-5" /> },
-    { to: '/classificados/conversas', label: 'Conversas', icon: <MessageCircle className="h-5 w-5" /> },
-    { to: '/classificados/analytics', label: 'Analytics', icon: <BarChart3 className="h-5 w-5" /> },
-    ...(business ? [{ to: '/classificados/vendas', label: 'Vendas', icon: <ShoppingCart className="h-5 w-5" /> }, { to: '/classificados/estoque', label: 'Estoque', icon: <Store className="h-5 w-5" /> }] : []),
-    { to: '/classificados/publicar', label: 'Novo anúncio', icon: <Plus className="h-5 w-5" /> },
-    ...(business ? [
-      { to: '/classificados/empresa/pagina', label: 'Minha Página', icon: <Globe2 className="h-5 w-5" /> },
-      { to: '/classificados/empresa/planos', label: 'Planos', icon: <CreditCard className="h-5 w-5" /> },
-      { to: '/classificados/empresa/comercial', label: 'Perfil da empresa', icon: <Building2 className="h-5 w-5" /> },
-    ] : []),
-    { to: '/classificados/configuracoes', label: 'Configurações', icon: <Settings2 className="h-5 w-5" /> },
+
+  useEffect(() => {
+    if (!business || !data.company?.id) {
+      setSalesSummary({ hasListings: false, hasSales: false, openOrders: 0, visible: false });
+      return;
+    }
+    let active = true;
+    const load = () => api.get('/classifieds/me/orders/operations/summary')
+      .then((response) => {
+        if (!active) return;
+        setSalesSummary({
+          hasListings: response.data?.hasListings === true,
+          hasSales: response.data?.hasSales === true,
+          openOrders: Math.max(0, Number(response.data?.openOrders || 0)),
+          visible: response.data?.visible === true,
+        });
+      })
+      .catch(() => undefined);
+    void load();
+    const timer = window.setInterval(load, 30_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [business, data.company?.id]);
+
+  const groups: MenuGroup[] = business ? [
+    {
+      label: 'Marketplace',
+      items: [
+        { to: '/classificados/explorar', label: 'Explorar', icon: <Compass className="h-5 w-5" /> },
+        { to: '/classificados/favoritos', label: 'Favoritos', icon: <Heart className="h-5 w-5" /> },
+      ],
+    },
+    {
+      label: 'Catálogo e negociação',
+      items: [
+        ...(data.company?.canSellProducts !== false ? [{ to: '/classificados/anuncios', label: 'Meus anúncios', icon: <Store className="h-5 w-5" /> }] : []),
+        ...(data.company?.canOfferServices !== false ? [{ to: '/classificados/servicos', label: 'Meus serviços', icon: <Wrench className="h-5 w-5" /> }] : []),
+        { to: '/classificados/publicar', label: 'Novo anúncio', icon: <Plus className="h-5 w-5" /> },
+        { to: '/classificados/ofertas', label: 'Negociações', icon: <BadgeDollarSign className="h-5 w-5" /> },
+        { to: '/classificados/conversas', label: 'Conversas', icon: <MessageCircle className="h-5 w-5" /> },
+        { to: '/classificados/gestao/leiloes', label: 'Leilões', icon: <Gavel className="h-5 w-5" /> },
+      ],
+    },
+    {
+      label: 'Operação',
+      items: [
+        ...(salesSummary.visible ? [{ to: '/classificados/minhas-vendas', label: 'Minhas vendas', icon: <PackageCheck className="h-5 w-5" />, badge: salesSummary.openOrders }] : []),
+        { to: '/classificados/estoque', label: 'Estoque', icon: <Store className="h-5 w-5" /> },
+        { to: '/classificados/entregas', label: 'Entregas', icon: <ShoppingCart className="h-5 w-5" /> },
+        { to: '/classificados/orcamentos', label: 'Orçamentos', icon: <Wrench className="h-5 w-5" /> },
+        { to: '/classificados/logistica', label: 'Logística e endereços', icon: <Compass className="h-5 w-5" /> },
+      ],
+    },
+    {
+      label: 'Financeiro',
+      items: [
+        { to: '/classificados/vendas', label: 'Financeiro de vendas', icon: <ShoppingCart className="h-5 w-5" /> },
+        { to: '/classificados/recebimentos', label: 'Formas de recebimento', icon: <CreditCard className="h-5 w-5" /> },
+      ],
+    },
+    {
+      label: 'Vitrine e gestão',
+      items: [
+        { to: '/classificados/analytics', label: 'Analytics', icon: <BarChart3 className="h-5 w-5" /> },
+        { to: '/classificados/empresa/pagina', label: 'Minha Página', icon: <Globe2 className="h-5 w-5" /> },
+        { to: '/classificados/empresa/comercial', label: 'Perfil da empresa', icon: <Building2 className="h-5 w-5" /> },
+        { to: '/classificados/empresa/planos', label: 'Planos', icon: <CreditCard className="h-5 w-5" /> },
+        { to: '/classificados/configuracoes', label: 'Configurações', icon: <Settings2 className="h-5 w-5" /> },
+      ],
+    },
+  ] : [
+    {
+      label: 'Descobrir e comprar',
+      items: [
+        { to: '/classificados/explorar', label: 'Explorar', icon: <Compass className="h-5 w-5" /> },
+        { to: '/classificados/favoritos', label: 'Favoritos', icon: <Heart className="h-5 w-5" /> },
+        { to: '/classificados/carrinho', label: 'Carrinho', icon: <ShoppingCart className="h-5 w-5" /> },
+        { to: '/classificados/compras', label: 'Minhas compras', icon: <PackageCheck className="h-5 w-5" /> },
+        { to: '/classificados/orcamentos', label: 'Orçamentos', icon: <Wrench className="h-5 w-5" /> },
+      ],
+    },
+    {
+      label: 'Vender e negociar',
+      items: [
+        { to: '/classificados/anuncios', label: 'Meus anúncios', icon: <Store className="h-5 w-5" /> },
+        { to: '/classificados/servicos', label: 'Meus serviços', icon: <Wrench className="h-5 w-5" /> },
+        { to: '/classificados/publicar', label: 'Novo anúncio', icon: <Plus className="h-5 w-5" /> },
+        { to: '/classificados/ofertas', label: 'Negociações', icon: <BadgeDollarSign className="h-5 w-5" /> },
+        { to: '/classificados/conversas', label: 'Conversas', icon: <MessageCircle className="h-5 w-5" /> },
+        { to: '/classificados/gestao/leiloes', label: 'Leilões', icon: <Gavel className="h-5 w-5" /> },
+      ],
+    },
+    {
+      label: 'Conta',
+      items: [
+        { to: '/classificados/logistica', label: 'Endereços', icon: <Compass className="h-5 w-5" /> },
+        { to: '/classificados/configuracoes', label: 'Configurações', icon: <Settings2 className="h-5 w-5" /> },
+      ],
+    },
   ];
 
   const switchIdentity = async (identity: ClassifiedIdentityType) => {
@@ -168,8 +254,7 @@ export function ClassifiedsWorkspaceLayout({ children }: { children: React.React
           </button>
           {identityOpen && data.company?.available && <IdentityMenu active={data.activeIdentity} personalName={data.personal.name} companyName={data.company.name} onSelect={switchIdentity} />}
         </div>
-        <p className={`px-6 pb-2 pt-7 text-[9px] font-black uppercase tracking-[.2em] ${palette.muted}`}>Classificados</p>
-        <nav className="flex-1 space-y-1 overflow-y-auto px-4 pb-3">{nav.map((item) => <NavLink key={item.to} to={item.to} end={item.to === '/classificados/painel'} className={({ isActive }) => `flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition ${isActive ? 'bg-white text-stone-900 shadow-lg' : 'text-white/62 hover:bg-white/[.07] hover:text-white'}`}>{item.icon}{item.label}</NavLink>)}</nav>
+        <nav className="mt-5 flex-1 space-y-5 overflow-y-auto px-4 pb-4"><GroupedDesktopMenu groups={groups} mutedClass={palette.muted} /></nav>
         <div className="border-t border-white/10 p-4"><button onClick={async () => { await auth.signOut(); window.location.replace('/'); }} className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-white/55 hover:bg-white/[.06] hover:text-white"><LogOut className="h-5 w-5" /> Sair</button></div>
       </aside>
 
@@ -181,9 +266,17 @@ export function ClassifiedsWorkspaceLayout({ children }: { children: React.React
         <main className="p-4 pb-24 sm:p-6 md:p-8 md:pb-10">{children}</main>
       </div>
 
-      {mobileOpen && <div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-sm md:hidden" onClick={() => setMobileOpen(false)}><aside onClick={(event) => event.stopPropagation()} className={`flex h-full w-[86%] max-w-[330px] flex-col p-4 text-white ${palette.side}`}><div className="flex items-center justify-between"><WorkspaceBrand business={business} compact /><button onClick={() => setMobileOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10"><X className="h-4 w-4" /></button></div><div className="mt-4 grid grid-cols-2 gap-2"><Link to="/user" onClick={() => setMobileOpen(false)} className="flex items-center justify-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-[10px] font-black"><Briefcase className="h-3.5 w-3.5" /> Career</Link>{data.company?.available && <Link to="/company" onClick={() => setMobileOpen(false)} className="flex items-center justify-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-[10px] font-black"><Building2 className="h-3.5 w-3.5" /> Business</Link>}</div><div className="mt-3 rounded-2xl border border-white/10 bg-white/[.07] p-3"><p className={`text-[9px] font-black uppercase tracking-[.18em] ${palette.muted}`}>{business ? 'Business' : 'Personal'}</p><p className="mt-1 truncate text-sm font-black">{identityName}</p>{data.company?.available && <div className="mt-3 flex gap-2"><button onClick={() => switchIdentity('PERSONAL')} className="rounded-xl bg-white/10 px-3 py-2 text-[11px] font-black">Personal</button><button onClick={() => switchIdentity('COMPANY')} className="rounded-xl bg-white/10 px-3 py-2 text-[11px] font-black">Business</button></div>}</div><nav className="mt-5 space-y-1 overflow-y-auto">{nav.map((item) => <Link key={item.to} to={item.to} onClick={() => setMobileOpen(false)} className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold text-white/72 hover:bg-white/[.07]">{item.icon}{item.label}</Link>)}</nav></aside></div>}
+      {mobileOpen && <div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-sm md:hidden" onClick={() => setMobileOpen(false)}><aside onClick={(event) => event.stopPropagation()} className={`flex h-full w-[86%] max-w-[330px] flex-col p-4 text-white ${palette.side}`}><div className="flex items-center justify-between"><WorkspaceBrand business={business} compact /><button onClick={() => setMobileOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10"><X className="h-4 w-4" /></button></div><div className="mt-4 grid grid-cols-2 gap-2"><Link to="/user" onClick={() => setMobileOpen(false)} className="flex items-center justify-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-[10px] font-black"><Briefcase className="h-3.5 w-3.5" /> Career</Link>{data.company?.available && <Link to="/company" onClick={() => setMobileOpen(false)} className="flex items-center justify-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-[10px] font-black"><Building2 className="h-3.5 w-3.5" /> Business</Link>}</div><div className="mt-3 rounded-2xl border border-white/10 bg-white/[.07] p-3"><p className={`text-[9px] font-black uppercase tracking-[.18em] ${palette.muted}`}>{business ? 'Business' : 'Personal'}</p><p className="mt-1 truncate text-sm font-black">{identityName}</p>{data.company?.available && <div className="mt-3 flex gap-2"><button onClick={() => switchIdentity('PERSONAL')} className="rounded-xl bg-white/10 px-3 py-2 text-[11px] font-black">Personal</button><button onClick={() => switchIdentity('COMPANY')} className="rounded-xl bg-white/10 px-3 py-2 text-[11px] font-black">Business</button></div>}</div><nav className="mt-5 flex-1 space-y-5 overflow-y-auto"><GroupedMobileMenu groups={groups} mutedClass={palette.muted} onNavigate={() => setMobileOpen(false)} /></nav></aside></div>}
     </div>
   );
+}
+
+function GroupedDesktopMenu({ groups, mutedClass }: { groups: MenuGroup[]; mutedClass: string }) {
+  return <>{groups.filter((group) => group.items.length).map((group) => <section key={group.label}><p className={`px-3 pb-1.5 text-[9px] font-black uppercase tracking-[.18em] ${mutedClass}`}>{group.label}</p><div className="space-y-1">{group.items.map((item) => <NavLink key={item.to} to={item.to} className={({ isActive }) => `flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-bold transition ${isActive ? 'bg-white text-stone-900 shadow-lg' : 'text-white/62 hover:bg-white/[.07] hover:text-white'}`}>{item.icon}<span className="min-w-0 flex-1 truncate">{item.label}</span>{Boolean(item.badge) && <span className="min-w-6 rounded-full bg-rose-500 px-1.5 py-0.5 text-center text-[9px] font-black text-white">{item.badge! > 99 ? '99+' : item.badge}</span>}</NavLink>)}</div></section>)}</>;
+}
+
+function GroupedMobileMenu({ groups, mutedClass, onNavigate }: { groups: MenuGroup[]; mutedClass: string; onNavigate: () => void }) {
+  return <>{groups.filter((group) => group.items.length).map((group) => <section key={group.label}><p className={`px-3 pb-1.5 text-[9px] font-black uppercase tracking-[.18em] ${mutedClass}`}>{group.label}</p><div className="space-y-1">{group.items.map((item) => <Link key={item.to} to={item.to} onClick={onNavigate} className="flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-bold text-white/72 hover:bg-white/[.07]">{item.icon}<span className="min-w-0 flex-1 truncate">{item.label}</span>{Boolean(item.badge) && <span className="min-w-6 rounded-full bg-rose-500 px-1.5 py-0.5 text-center text-[9px] font-black text-white">{item.badge! > 99 ? '99+' : item.badge}</span>}</Link>)}</div></section>)}</>;
 }
 
 function FirstIdentityChoice({ data, working, error, choose }: { data: NonNullable<ReturnType<typeof useClassifiedsWorkspace>['data']>; working: boolean; error: string; choose: (identity: ClassifiedIdentityType) => void }) {
