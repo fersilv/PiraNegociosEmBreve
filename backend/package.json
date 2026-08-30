@@ -13,7 +13,7 @@
     "start": "nest start",
     "prestart:dev": "node ../.github/scripts/verify-build-inputs.cjs",
     "start:dev": "nest start --watch",
-    "start:debug": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "migrate:mobility": "node scripts/run-sql-migration.cjs migrations/20260821_candidate_mobility_pcd_jobs.sql",
     "migrate:push": "node scripts/run-sql-migration.cjs migrations/20260822_push_notifications.sql",
