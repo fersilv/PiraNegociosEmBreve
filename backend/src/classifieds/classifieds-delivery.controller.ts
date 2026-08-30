@@ -29,6 +29,8 @@ export class ClassifiedsDeliveryController {
       ...safeBody,
       distanceMeters: derived.distanceMeters,
       distanceSource: derived.source,
+      routeDurationSeconds: 'durationSeconds' in derived ? derived.durationSeconds : null,
+      routeResolution: 'routeResolution' in derived ? derived.routeResolution : null,
     });
   }
 
