@@ -94,6 +94,7 @@ export default function App() {
               <Route path="/classificados/anuncios" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/servicos" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/ofertas" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/perguntas" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/minhas-vendas" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/pedidos" element={<Navigate to="/classificados/minhas-vendas" replace />} />
               <Route path="/classificados/vendas" element={<ClassifiedsWorkspacePage />} />
