@@ -7,6 +7,17 @@ export type DeliveryRoutePoint = {
   zipCode?: string | null;
   address?: string | null;
   placeId?: string | null;
+  hasNumber?: boolean;
+};
+
+export type GoogleResolvedWaypoint = {
+  placeId: string;
+  formattedAddress: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  granularity: string | null;
+  types: string[];
+  geocodeCacheHit: boolean;
 };
 
 export type DeliveryRouteDistance = {
@@ -14,10 +25,13 @@ export type DeliveryRouteDistance = {
   durationSeconds: number | null;
   source: 'GOOGLE_ROUTES' | 'OSRM';
   cacheHit: boolean;
+  originResolved: GoogleResolvedWaypoint | null;
+  destinationResolved: GoogleResolvedWaypoint | null;
 };
 
 const DEFAULT_OSRM_BASE_URL = 'https://router.project-osrm.org';
 const GOOGLE_ROUTING_PREFERENCE = 'TRAFFIC_AWARE_OPTIMAL';
+const GOOGLE_GEOCODE_TTL_DAYS = 30;
 
 export async function resolveRoadDistance(
   dataSource: DataSource,
@@ -25,70 +39,193 @@ export async function resolveRoadDistance(
   destination: DeliveryRoutePoint,
 ): Promise<DeliveryRouteDistance | null> {
   const googleApiKey = String(process.env.GOOGLE_ROUTES_API_KEY || '').trim();
-  const preferredProvider = googleApiKey ? 'GOOGLE_ROUTES' : 'OSRM';
-  const cacheKey = routeCacheKey(origin, destination, preferredProvider);
-  const cached = await dataSource.query(
-    `SELECT "distanceMeters","durationSeconds",provider
-     FROM delivery_route_distance_cache
-     WHERE "cacheKey"=$1 AND "expiresAt">now() AND provider=$2
-     LIMIT 1`,
-    [cacheKey, preferredProvider],
-  ).catch(() => []);
 
+  if (googleApiKey) {
+    try {
+      const [originResolved, destinationResolved] = await Promise.all([
+        resolveGoogleWaypoint(dataSource, origin, googleApiKey),
+        resolveGoogleWaypoint(dataSource, destination, googleApiKey),
+      ]);
+      const cacheKey = googleRouteCacheKey(originResolved, destinationResolved);
+      const cached = await dataSource.query(
+        `SELECT "distanceMeters","durationSeconds"
+         FROM delivery_route_distance_cache
+         WHERE "cacheKey"=$1 AND "expiresAt">now() AND provider='GOOGLE_ROUTES'
+         LIMIT 1`,
+        [cacheKey],
+      ).catch(() => []);
+
+      if (cached[0]) {
+        return {
+          distanceMeters: Number(cached[0].distanceMeters),
+          durationSeconds: cached[0].durationSeconds == null ? null : Number(cached[0].durationSeconds),
+          source: 'GOOGLE_ROUTES',
+          cacheHit: true,
+          originResolved,
+          destinationResolved,
+        };
+      }
+
+      const routed = await googleRoutes(originResolved.placeId, destinationResolved.placeId, googleApiKey);
+      await persistRouteCache(dataSource, cacheKey, origin, destination, routed, originResolved, destinationResolved);
+      return {
+        ...routed,
+        cacheHit: false,
+        originResolved,
+        destinationResolved,
+      };
+    } catch (error) {
+      console.warn(
+        '[delivery-routing] Google routing failed; OSRM fallback disabled because GOOGLE_ROUTES_API_KEY is configured.',
+        safeError(error),
+      );
+      return null;
+    }
+  }
+
+  const routed = await osrmRoute(origin, destination).catch(() => null);
+  if (!routed) return null;
+  const cacheKey = osrmRouteCacheKey(origin, destination);
+  const cached = await dataSource.query(
+    `SELECT "distanceMeters","durationSeconds"
+     FROM delivery_route_distance_cache
+     WHERE "cacheKey"=$1 AND "expiresAt">now() AND provider='OSRM'
+     LIMIT 1`,
+    [cacheKey],
+  ).catch(() => []);
   if (cached[0]) {
     return {
       distanceMeters: Number(cached[0].distanceMeters),
       durationSeconds: cached[0].durationSeconds == null ? null : Number(cached[0].durationSeconds),
-      source: cached[0].provider === 'GOOGLE_ROUTES' ? 'GOOGLE_ROUTES' : 'OSRM',
+      source: 'OSRM',
       cacheHit: true,
+      originResolved: null,
+      destinationResolved: null,
+    };
+  }
+  await persistRouteCache(dataSource, cacheKey, origin, destination, routed, null, null);
+  return {
+    ...routed,
+    cacheHit: false,
+    originResolved: null,
+    destinationResolved: null,
+  };
+}
+
+async function resolveGoogleWaypoint(
+  dataSource: DataSource,
+  point: DeliveryRoutePoint,
+  apiKey: string,
+): Promise<GoogleResolvedWaypoint> {
+  const address = String(point.address || '').trim();
+  if (address) {
+    const resolved = await geocodeAddress(dataSource, address, point.zipCode, apiKey);
+    if (point.hasNumber && !isPreciseGranularity(resolved.granularity)) {
+      throw new Error(
+        `Google Geocoding resolved numbered address only as ${resolved.granularity || 'UNKNOWN'}: ${resolved.formattedAddress || address}`,
+      );
+    }
+    return resolved;
+  }
+
+  const placeId = String(point.placeId || '').trim();
+  if (placeId) {
+    return {
+      placeId,
+      formattedAddress: null,
+      latitude: finiteCoordinate(point.latitude),
+      longitude: finiteCoordinate(point.longitude),
+      granularity: null,
+      types: [],
+      geocodeCacheHit: true,
     };
   }
 
-  const routed = googleApiKey
-    ? await googleRoutes(origin, destination, googleApiKey).catch((error) => {
-        console.warn('[delivery-routing] Google Routes failed; OSRM fallback disabled because GOOGLE_ROUTES_API_KEY is configured.', safeError(error));
-        return null;
-      })
-    : await osrmRoute(origin, destination).catch(() => null);
+  throw new Error('Google routing requires a complete address or Place ID.');
+}
 
-  if (!routed) return null;
+async function geocodeAddress(
+  dataSource: DataSource,
+  address: string,
+  zipCode: unknown,
+  apiKey: string,
+): Promise<GoogleResolvedWaypoint> {
+  const normalized = normalizeAddress(address);
+  const cacheKey = createHash('sha256').update(`google-geocode-v1|${normalized}`).digest('hex');
+  const cached = await dataSource.query(
+    `SELECT "placeId","formattedAddress",granularity,latitude,longitude,types
+     FROM delivery_google_geocode_cache
+     WHERE "cacheKey"=$1 AND "expiresAt">now()
+     LIMIT 1`,
+    [cacheKey],
+  ).catch(() => []);
+
+  if (cached[0]) {
+    const resolved = rowToResolvedWaypoint(cached[0], true);
+    validateResolvedCep(resolved.formattedAddress, zipCode);
+    return resolved;
+  }
+
+  const url = `https://geocode.googleapis.com/v4/geocode/address/${encodeURIComponent(address)}?regionCode=br&languageCode=pt-BR`;
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      accept: 'application/json',
+      'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask': 'results.placeId,results.location,results.granularity,results.formattedAddress,results.types',
+    },
+    signal: AbortSignal.timeout(8_000),
+  });
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => '');
+    throw new Error(`Google Geocoding HTTP ${response.status}${details ? `: ${details.slice(0, 500)}` : ''}`);
+  }
+
+  const body: any = await response.json();
+  const result = Array.isArray(body?.results) ? body.results[0] : null;
+  const placeId = String(result?.placeId || '').trim();
+  if (!placeId) throw new Error(`Google Geocoding returned no Place ID for: ${address}`);
+
+  const resolved: GoogleResolvedWaypoint = {
+    placeId,
+    formattedAddress: String(result?.formattedAddress || '').trim() || null,
+    latitude: finiteCoordinate(result?.location?.latitude),
+    longitude: finiteCoordinate(result?.location?.longitude),
+    granularity: String(result?.granularity || '').trim().toUpperCase() || null,
+    types: Array.isArray(result?.types) ? result.types.map((item: unknown) => String(item)).filter(Boolean).slice(0, 20) : [],
+    geocodeCacheHit: false,
+  };
+  validateResolvedCep(resolved.formattedAddress, zipCode);
 
   await dataSource.query(
-    `INSERT INTO delivery_route_distance_cache(
-       "cacheKey","originZipCode","destinationZipCode",
-       "originLatitude","originLongitude","destinationLatitude","destinationLongitude",
-       profile,provider,"distanceMeters","durationSeconds","expiresAt",metadata
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,'driving',$8,$9,$10,now()+interval '30 days',$11::jsonb)
+    `INSERT INTO delivery_google_geocode_cache(
+       "cacheKey","placeId","formattedAddress",granularity,latitude,longitude,types,"expiresAt"
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,now()+interval '${GOOGLE_GEOCODE_TTL_DAYS} days')
      ON CONFLICT ("cacheKey") DO UPDATE SET
-       provider=EXCLUDED.provider,
-       "distanceMeters"=EXCLUDED."distanceMeters",
-       "durationSeconds"=EXCLUDED."durationSeconds",
+       "placeId"=EXCLUDED."placeId",
+       "formattedAddress"=EXCLUDED."formattedAddress",
+       granularity=EXCLUDED.granularity,
+       latitude=EXCLUDED.latitude,
+       longitude=EXCLUDED.longitude,
+       types=EXCLUDED.types,
        "expiresAt"=EXCLUDED."expiresAt",
-       metadata=EXCLUDED.metadata,
        "updatedAt"=now()`,
     [
       cacheKey,
-      digits(origin.zipCode),
-      digits(destination.zipCode),
-      finiteCoordinate(origin.latitude),
-      finiteCoordinate(origin.longitude),
-      finiteCoordinate(destination.latitude),
-      finiteCoordinate(destination.longitude),
-      routed.source,
-      routed.distanceMeters,
-      routed.durationSeconds,
-      JSON.stringify({
-        profile: 'driving',
-        routingPreference: routed.source === 'GOOGLE_ROUTES' ? GOOGLE_ROUTING_PREFERENCE : null,
-        waypointMode: waypointMode(origin, destination),
-      }),
+      resolved.placeId,
+      resolved.formattedAddress,
+      resolved.granularity,
+      resolved.latitude,
+      resolved.longitude,
+      JSON.stringify(resolved.types),
     ],
   ).catch(() => undefined);
 
-  return { ...routed, cacheHit: false };
+  return resolved;
 }
 
-async function googleRoutes(origin: DeliveryRoutePoint, destination: DeliveryRoutePoint, apiKey: string) {
+async function googleRoutes(originPlaceId: string, destinationPlaceId: string, apiKey: string) {
   const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
     method: 'POST',
     headers: {
@@ -97,8 +234,8 @@ async function googleRoutes(origin: DeliveryRoutePoint, destination: DeliveryRou
       'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration',
     },
     body: JSON.stringify({
-      origin: googleWaypoint(origin),
-      destination: googleWaypoint(destination),
+      origin: { placeId: originPlaceId },
+      destination: { placeId: destinationPlaceId },
       travelMode: 'DRIVE',
       routingPreference: GOOGLE_ROUTING_PREFERENCE,
       computeAlternativeRoutes: false,
@@ -123,17 +260,6 @@ async function googleRoutes(origin: DeliveryRoutePoint, destination: DeliveryRou
     durationSeconds: durationToSeconds(route?.duration),
     source: 'GOOGLE_ROUTES' as const,
   };
-}
-
-function googleWaypoint(point: DeliveryRoutePoint) {
-  const placeId = String(point.placeId || '').trim();
-  if (placeId) return { placeId };
-  const address = String(point.address || '').trim();
-  if (address) return { address };
-  const latitude = finiteCoordinate(point.latitude);
-  const longitude = finiteCoordinate(point.longitude);
-  if (latitude == null || longitude == null) throw new Error('Route waypoint has neither placeId, complete address nor coordinates.');
-  return { location: { latLng: { latitude, longitude } } };
 }
 
 async function osrmRoute(origin: DeliveryRoutePoint, destination: DeliveryRoutePoint) {
@@ -162,17 +288,67 @@ async function osrmRoute(origin: DeliveryRoutePoint, destination: DeliveryRouteP
   };
 }
 
-function routeCacheKey(origin: DeliveryRoutePoint, destination: DeliveryRoutePoint, provider: string) {
+async function persistRouteCache(
+  dataSource: DataSource,
+  cacheKey: string,
+  origin: DeliveryRoutePoint,
+  destination: DeliveryRoutePoint,
+  routed: { distanceMeters: number; durationSeconds: number | null; source: 'GOOGLE_ROUTES' | 'OSRM' },
+  originResolved: GoogleResolvedWaypoint | null,
+  destinationResolved: GoogleResolvedWaypoint | null,
+) {
+  await dataSource.query(
+    `INSERT INTO delivery_route_distance_cache(
+       "cacheKey","originZipCode","destinationZipCode",
+       "originLatitude","originLongitude","destinationLatitude","destinationLongitude",
+       profile,provider,"distanceMeters","durationSeconds","expiresAt",metadata
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,'driving',$8,$9,$10,now()+interval '30 days',$11::jsonb)
+     ON CONFLICT ("cacheKey") DO UPDATE SET
+       provider=EXCLUDED.provider,
+       "distanceMeters"=EXCLUDED."distanceMeters",
+       "durationSeconds"=EXCLUDED."durationSeconds",
+       "expiresAt"=EXCLUDED."expiresAt",
+       metadata=EXCLUDED.metadata,
+       "updatedAt"=now()`,
+    [
+      cacheKey,
+      digits(origin.zipCode),
+      digits(destination.zipCode),
+      originResolved?.latitude ?? finiteCoordinate(origin.latitude),
+      originResolved?.longitude ?? finiteCoordinate(origin.longitude),
+      destinationResolved?.latitude ?? finiteCoordinate(destination.latitude),
+      destinationResolved?.longitude ?? finiteCoordinate(destination.longitude),
+      routed.source,
+      routed.distanceMeters,
+      routed.durationSeconds,
+      JSON.stringify({
+        profile: 'driving',
+        routingPreference: routed.source === 'GOOGLE_ROUTES' ? GOOGLE_ROUTING_PREFERENCE : null,
+        waypointMode: routed.source === 'GOOGLE_ROUTES' ? 'GEOCODED_PLACE_ID' : 'LAT_LNG',
+        originPlaceId: originResolved?.placeId || null,
+        destinationPlaceId: destinationResolved?.placeId || null,
+        originGranularity: originResolved?.granularity || null,
+        destinationGranularity: destinationResolved?.granularity || null,
+      }),
+    ],
+  ).catch(() => undefined);
+}
+
+function googleRouteCacheKey(origin: GoogleResolvedWaypoint, destination: GoogleResolvedWaypoint) {
   const value = [
-    'delivery-route-v4',
-    provider,
-    provider === 'GOOGLE_ROUTES' ? GOOGLE_ROUTING_PREFERENCE : 'OSRM_FASTEST',
-    digits(origin.zipCode) || '',
-    digits(destination.zipCode) || '',
-    normalizePlaceId(origin.placeId),
-    normalizePlaceId(destination.placeId),
-    normalizeAddress(origin.address),
-    normalizeAddress(destination.address),
+    'delivery-route-v5',
+    'GOOGLE_ROUTES',
+    GOOGLE_ROUTING_PREFERENCE,
+    origin.placeId,
+    destination.placeId,
+  ].join('|');
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function osrmRouteCacheKey(origin: DeliveryRoutePoint, destination: DeliveryRoutePoint) {
+  const value = [
+    'delivery-route-v5',
+    'OSRM',
     rounded(origin.latitude),
     rounded(origin.longitude),
     rounded(destination.latitude),
@@ -181,14 +357,31 @@ function routeCacheKey(origin: DeliveryRoutePoint, destination: DeliveryRoutePoi
   return createHash('sha256').update(value).digest('hex');
 }
 
-function waypointMode(origin: DeliveryRoutePoint, destination: DeliveryRoutePoint) {
-  if (origin.placeId || destination.placeId) return 'PLACE_ID';
-  if (origin.address || destination.address) return 'ADDRESS_STRING';
-  return 'LAT_LNG';
+function rowToResolvedWaypoint(row: any, geocodeCacheHit: boolean): GoogleResolvedWaypoint {
+  return {
+    placeId: String(row.placeId || '').trim(),
+    formattedAddress: String(row.formattedAddress || '').trim() || null,
+    latitude: finiteCoordinate(row.latitude),
+    longitude: finiteCoordinate(row.longitude),
+    granularity: String(row.granularity || '').trim().toUpperCase() || null,
+    types: Array.isArray(row.types) ? row.types.map((item: unknown) => String(item)).filter(Boolean).slice(0, 20) : [],
+    geocodeCacheHit,
+  };
 }
 
-function normalizePlaceId(value: unknown) {
-  return String(value || '').trim().slice(0, 255);
+function validateResolvedCep(formattedAddress: string | null, rawZipCode: unknown) {
+  const expected = digits(rawZipCode);
+  if (!expected || !formattedAddress) return;
+  const match = formattedAddress.match(/\b(\d{5})-?(\d{3})\b/);
+  if (!match) return;
+  const actual = `${match[1]}${match[2]}`;
+  if (actual !== expected) {
+    throw new Error(`Google Geocoding resolved CEP ${actual}, but delivery requested CEP ${expected}.`);
+  }
+}
+
+function isPreciseGranularity(value: string | null) {
+  return value === 'ROOFTOP' || value === 'RANGE_INTERPOLATED';
 }
 
 function normalizeAddress(value: unknown) {
