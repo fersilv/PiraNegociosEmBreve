@@ -10,6 +10,7 @@ import { Company } from '../companies/entities/company.entity';
 import { Job } from '../jobs/entities/job.entity';
 import { JobsModule } from '../jobs/jobs.module';
 import { CompanyMcpController } from './company-mcp.controller';
+import { CompanyMcpLiveAccessService } from './company-mcp-live-access.service';
 import { CompanyMcpOAuthController } from './company-mcp-oauth.controller';
 import { CompanyMcpOAuthGuard } from './company-mcp-oauth.guard';
 import { CompanyMcpOAuthService } from './company-mcp-oauth.service';
@@ -30,7 +31,12 @@ import { CompanyMcpOperationsService } from './company-mcp-operations.service';
     ]),
   ],
   controllers: [CompanyMcpOAuthController, CompanyMcpController],
-  providers: [CompanyMcpOAuthService, CompanyMcpOAuthGuard, CompanyMcpOperationsService],
+  providers: [
+    CompanyMcpOAuthService,
+    CompanyMcpLiveAccessService,
+    CompanyMcpOAuthGuard,
+    CompanyMcpOperationsService,
+  ],
   exports: [CompanyMcpOAuthService],
 })
 export class CompanyMcpModule {}
