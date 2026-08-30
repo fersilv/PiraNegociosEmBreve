@@ -54,6 +54,9 @@ import { ClassifiedsLocationService } from './classifieds-location.service';
 import { ClassifiedsMarketplacePaymentsService } from './classifieds-marketplace-payments.service';
 import { ClassifiedsOfferChatService } from './classifieds-offer-chat.service';
 import { ClassifiedsMarketplaceTermsService } from './classifieds-marketplace-terms.service';
+import { ClassifiedsOrderOperationsController } from './classifieds-order-operations.controller';
+import { ClassifiedsOrderOperationsService } from './classifieds-order-operations.service';
+import { ClassifiedsOrdersGateway } from './classifieds-orders.gateway';
 import { ClassifiedsPrivateController } from './classifieds-private.controller';
 import { ClassifiedsPublicController } from './classifieds-public.controller';
 import { ClassifiedsReceiptPreferencesService } from './classifieds-receipt-preferences.service';
@@ -102,6 +105,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsPrivateController,
     ClassifiedsLifecycleController,
     ClassifiedsSalesController,
+    ClassifiedsOrderOperationsController,
     ClassifiedsCheckoutController,
     ClassifiedsCheckoutWebhookController,
     ClassifiedsAuctionExtrasController,
@@ -133,6 +137,8 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     { provide: ClassifiedsCommerceService, useClass: ClassifiedsArchivedAwareCommerceService },
     ClassifiedsEntitlementsService,
     ClassifiedsAuctionGateway,
+    ClassifiedsOrdersGateway,
+    ClassifiedsOrderOperationsService,
     { provide: ClassifiedsAuctionService, useClass: ClassifiedsArchivedAwareAuctionService },
     ClassifiedsAuctionPublicService,
     ClassifiedsAuctionManagementService,
@@ -179,6 +185,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsDeliveryService,
     ClassifiedsCartService,
     ClassifiedsServiceQuotesService,
+    ClassifiedsOrderOperationsService,
   ],
 })
 export class ClassifiedsModule {}
