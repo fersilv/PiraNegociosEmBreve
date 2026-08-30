@@ -16,6 +16,24 @@ export class ClassifiedsOrderOperationsService {
     private readonly realtime: ClassifiedsOrdersGateway,
   ) {}
 
+  async summary(uid: string) {
+    const companyId = await this.companyId(uid);
+    const rows = await this.dataSource.query(
+      `SELECT
+         EXISTS(SELECT 1 FROM classified_listings l WHERE l."companyId"=$1 LIMIT 1) AS "hasListings",
+         EXISTS(SELECT 1 FROM classified_orders o WHERE o."companyId"=$1 LIMIT 1) AS "hasSales",
+         (SELECT count(*)::int FROM classified_orders o WHERE o."companyId"=$1 AND o.status NOT IN ('COMPLETED','CANCELED')) AS "openOrders"`,
+      [companyId],
+    );
+    const row = rows[0] || {};
+    return {
+      hasListings: row.hasListings === true,
+      hasSales: row.hasSales === true,
+      openOrders: Math.max(0, Number(row.openOrders || 0)),
+      visible: row.hasListings === true || row.hasSales === true,
+    };
+  }
+
   async list(uid: string) {
     const companyId = await this.companyId(uid);
     const rows = await this.dataSource.query(
@@ -128,7 +146,7 @@ export class ClassifiedsOrderOperationsService {
       await manager.query(
         `INSERT INTO classified_order_events("orderId",type,"fromStatus","toStatus","actorUserId",metadata)
          VALUES ($1,'STATUS_CHANGED',$2,$3,$4,$5::jsonb)`,
-        [orderId, order.status, status, uid, JSON.stringify({ surface: 'ORDERS_NOW' })],
+        [orderId, order.status, status, uid, JSON.stringify({ surface: 'MINHAS_VENDAS' })],
       );
       return changed[0];
     });
@@ -157,7 +175,7 @@ export class ClassifiedsOrderOperationsService {
     await this.dataSource.query(
       `INSERT INTO classified_order_events("orderId",type,"actorUserId",metadata)
        VALUES ($1,'PRIORITY_CHANGED',$2,$3::jsonb)`,
-      [orderId, uid, JSON.stringify({ priority, surface: 'ORDERS_NOW' })],
+      [orderId, uid, JSON.stringify({ priority, surface: 'MINHAS_VENDAS' })],
     ).catch(() => undefined);
     this.realtime.publishCompanyOrderChanged(companyId, orderId, 'PRIORITY', { operationalPriority: priority });
     return this.present(rows[0]);
@@ -166,7 +184,7 @@ export class ClassifiedsOrderOperationsService {
   private async companyId(uid: string) {
     const identity = await this.identities.active(uid);
     if (identity.type !== 'COMPANY' || !identity.company?.id) {
-      throw new ForbiddenException('A central de pedidos é exclusiva do workspace Business.');
+      throw new ForbiddenException('A central de vendas é exclusiva do workspace Business.');
     }
     return identity.company.id;
   }
