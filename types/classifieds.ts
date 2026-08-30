@@ -19,6 +19,7 @@ export interface ClassifiedCatalogConfig { optionGroups?:ClassifiedCatalogOption
 export interface ClassifiedCommerceConfig {
   promotion?:{price:number;startsAt?:string|null;endsAt?:string|null;endAction?:'REVERT'|'PAUSE'}|null;
   paymentPricing?:{pix?:{enabled?:boolean;discountType?:'PERCENT'|'FIXED';discountValue?:number}|null;card?:{enabled?:boolean;price?:number|null;maxInstallments?:number;interestFreeInstallments?:number}|null}|null;
+  paymentOnReceipt?:{mode?:'INHERIT'|'ONLINE_ONLY'|'DISABLED';disabled?:boolean}|null;
   onlineCheckout?:{enabled?:boolean;fulfillmentModes?:ClassifiedFulfillmentMode[];stockQuantity?:number|null;lowStockThreshold?:number|null;orderWhatsappE164?:string|null}|null;
 }
 export interface ClassifiedEffectivePricing {basePrice:number|null;currentPrice:number|null;promotionActive:boolean;promotionEndsAt?:string|null;pixPrice:number|null;cardPrice:number|null;maxInstallments:number;interestFreeInstallments:number}
