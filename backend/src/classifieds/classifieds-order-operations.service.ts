@@ -134,21 +134,54 @@ export class ClassifiedsOrderOperationsService {
         throw new BadRequestException('Este pedido já foi encerrado.');
       }
       if (order.status === status) return order;
+
+      const payOnReceipt = String(order.orderMode || '') === 'PAY_ON_RECEIPT';
+      if (payOnReceipt && status === 'CANCELED') {
+        await this.releaseReceiptReservation(manager, order);
+      }
+
       const changed = await manager.query(
         `UPDATE classified_orders SET status=$2,
+           "paymentStatus"=CASE WHEN "orderMode"='PAY_ON_RECEIPT' AND $2='COMPLETED' THEN 'APPROVED'
+                                WHEN "orderMode"='PAY_ON_RECEIPT' AND $2='CANCELED' THEN 'CANCELED'
+                                ELSE "paymentStatus" END,
+           "stockReserved"=CASE WHEN "orderMode"='PAY_ON_RECEIPT' AND $2 IN ('COMPLETED','CANCELED') THEN false ELSE "stockReserved" END,
+           "paidAt"=CASE WHEN "orderMode"='PAY_ON_RECEIPT' AND $2='COMPLETED' THEN COALESCE("paidAt",now()) ELSE "paidAt" END,
            "readyAt"=CASE WHEN $2='READY' THEN COALESCE("readyAt",now()) ELSE "readyAt" END,
            "completedAt"=CASE WHEN $2='COMPLETED' THEN COALESCE("completedAt",now()) ELSE "completedAt" END,
            "canceledAt"=CASE WHEN $2='CANCELED' THEN COALESCE("canceledAt",now()) ELSE "canceledAt" END,
+           "stockCommittedAt"=CASE WHEN "orderMode"='PAY_ON_RECEIPT' AND $2='COMPLETED' THEN COALESCE("stockCommittedAt",now()) ELSE "stockCommittedAt" END,
            "updatedAt"=now()
          WHERE id=$1 RETURNING *`,
         [orderId, status],
       );
+      const next = changed[0];
+
+      if (payOnReceipt && status === 'COMPLETED') {
+        await manager.query(`UPDATE classified_order_items SET "stockReserved"=false WHERE "orderId"=$1`, [order.id]).catch(() => undefined);
+        if (order.offerId) {
+          await manager.query(
+            `UPDATE classified_offers SET status='CONSUMED',"consumedAt"=COALESCE("consumedAt",now()),"orderId"=$2,"updatedAt"=now()
+             WHERE id=$1 AND status IN ('ACCEPTED','CONSUMED')`,
+            [order.offerId, order.id],
+          ).catch(() => undefined);
+        }
+        await this.settleDeliveryQuote(manager, order, 'CONSUMED');
+      }
+
       await manager.query(
         `INSERT INTO classified_order_events("orderId",type,"fromStatus","toStatus","actorUserId",metadata)
          VALUES ($1,'STATUS_CHANGED',$2,$3,$4,$5::jsonb)`,
-        [orderId, order.status, status, uid, JSON.stringify({ surface: 'MINHAS_VENDAS' })],
+        [orderId, order.status, status, uid, JSON.stringify({ surface: 'MINHAS_VENDAS', paymentOnReceipt: payOnReceipt })],
       );
-      return changed[0];
+      if (payOnReceipt && status === 'COMPLETED') {
+        await manager.query(
+          `INSERT INTO classified_order_events("orderId",type,"fromStatus","toStatus","actorUserId",metadata)
+           VALUES ($1,'PAYMENT_CONFIRMED_ON_RECEIPT','PENDING','APPROVED',$2,$3::jsonb)`,
+          [orderId, uid, JSON.stringify({ method: order.paymentMethod, source: 'SELLER_CONFIRMATION' })],
+        ).catch(() => undefined);
+      }
+      return next;
     });
 
     await this.notifications.notifyUser(updated.buyerUserId, {
@@ -181,6 +214,42 @@ export class ClassifiedsOrderOperationsService {
     return this.present(rows[0]);
   }
 
+  private async releaseReceiptReservation(manager: any, order: any) {
+    if (order.stockReserved) {
+      const listingRows = await manager.query(`SELECT "commerceConfig" FROM classified_listings WHERE id=$1 LIMIT 1 FOR UPDATE`, [order.listingId]);
+      const config = listingRows[0]?.commerceConfig || {};
+      const raw = config?.onlineCheckout?.stockQuantity;
+      if (raw != null && raw !== '' && Number.isFinite(Number(raw))) {
+        const restored = Math.max(0, Math.floor(Number(raw))) + Math.max(1, Number(order.quantity || 1));
+        const next = { ...config, onlineCheckout: { ...(config.onlineCheckout || {}), stockQuantity: restored } };
+        await manager.query(`UPDATE classified_listings SET "commerceConfig"=$2::jsonb,"updatedAt"=now() WHERE id=$1`, [order.listingId, JSON.stringify(next)]);
+      }
+      await manager.query(`UPDATE classified_order_items SET "stockReserved"=false WHERE "orderId"=$1`, [order.id]).catch(() => undefined);
+    }
+    if (order.offerId) {
+      await manager.query(
+        `UPDATE classified_offers SET status=CASE WHEN "expiresAt"<=now() THEN 'EXPIRED' ELSE 'ACCEPTED' END,"orderId"=NULL,"updatedAt"=now()
+         WHERE id=$1 AND "orderId"=$2 AND status='ACCEPTED'`,
+        [order.offerId, order.id],
+      ).catch(() => undefined);
+    }
+    await this.settleDeliveryQuote(manager, order, 'RELEASE');
+  }
+
+  private async settleDeliveryQuote(manager: any, order: any, action: 'CONSUMED' | 'RELEASE') {
+    const quoteId = String(order.deliveryQuoteSnapshot?.id || order.fulfillmentData?.deliveryQuoteId || '').trim();
+    if (!quoteId) return;
+    if (action === 'CONSUMED') {
+      await manager.query(`UPDATE delivery_quotes SET status='CONSUMED',"updatedAt"=now() WHERE id=$1 AND status IN ('QUOTED','SELECTED','CONSUMED')`, [quoteId]).catch(() => undefined);
+      return;
+    }
+    await manager.query(
+      `UPDATE delivery_quotes SET status=CASE WHEN "expiresAt"<=now() THEN 'EXPIRED' ELSE 'QUOTED' END,"updatedAt"=now()
+       WHERE id=$1 AND status='SELECTED'`,
+      [quoteId],
+    ).catch(() => undefined);
+  }
+
   private async companyId(uid: string) {
     const identity = await this.identities.active(uid);
     if (identity.type !== 'COMPANY' || !identity.company?.id) {
@@ -210,12 +279,7 @@ export class ClassifiedsOrderOperationsService {
 
   private statusLabel(status: string) {
     return ({
-      CONFIRMED: 'confirmado',
-      PREPARING: 'em preparação',
-      READY: 'pronto',
-      OUT_FOR_DELIVERY: 'saiu para entrega',
-      COMPLETED: 'concluído',
-      CANCELED: 'cancelado',
+      CONFIRMED: 'confirmado', PREPARING: 'em preparação', READY: 'pronto', OUT_FOR_DELIVERY: 'saiu para entrega', COMPLETED: 'concluído', CANCELED: 'cancelado',
     } as Record<string, string>)[status] || status.toLowerCase();
   }
 }
