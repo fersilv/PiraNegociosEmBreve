@@ -5,6 +5,7 @@ import { ClassifiedsCheckoutService } from './classifieds-checkout.service';
 import { ClassifiedsDeliveryAwareCheckoutService } from './classifieds-delivery-aware-checkout.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
 import { ClassifiedsMarketplaceTermsService } from './classifieds-marketplace-terms.service';
+import { ClassifiedsPayOnReceiptCheckoutService } from './classifieds-pay-on-receipt-checkout.service';
 
 @Controller('classifieds')
 @UseGuards(FirebaseAuthGuard)
@@ -12,6 +13,7 @@ export class ClassifiedsCheckoutController {
   constructor(
     private readonly checkout: ClassifiedsCheckoutService,
     private readonly deliveryCheckout: ClassifiedsDeliveryAwareCheckoutService,
+    private readonly payOnReceiptCheckout: ClassifiedsPayOnReceiptCheckoutService,
     private readonly terms: ClassifiedsMarketplaceTermsService,
     private readonly identities: ClassifiedsIdentityService,
     private readonly dataSource: DataSource,
@@ -19,10 +21,11 @@ export class ClassifiedsCheckoutController {
 
   @Get('listings/:listingId/checkout')
   async config(@Req() req: any, @Param('listingId') listingId: string) {
-    const base = await this.checkout.config(req.user.uid, listingId);
-    const [settings, acceptedOffer] = await Promise.all([
+    const [base, settings, acceptedOffer, receipt] = await Promise.all([
+      this.checkout.config(req.user.uid, listingId),
       this.fulfillmentSettings(listingId),
       this.activeAcceptedOffer(req.user.uid, listingId),
+      this.paymentOnReceiptSettings(listingId),
     ]);
 
     const offerAmount = acceptedOffer ? Number(acceptedOffer.amount) : null;
@@ -46,25 +49,33 @@ export class ClassifiedsCheckoutController {
         }
       : base;
 
-    if (!settings || settings.pickupEnabled == null) return withOffer;
+    const onlineMethods = Array.isArray((withOffer as any).paymentMethods) ? [...(withOffer as any).paymentMethods] : ['PIX', 'CARD'];
+    if (receipt?.pixEnabled === false) this.remove(onlineMethods, 'PIX');
+    if (receipt?.cardEnabled === false) this.remove(onlineMethods, 'CARD');
 
-    const modes: Array<'PICKUP' | 'DELIVERY' | 'ARRANGE'> = [];
-    if (settings.pickupEnabled === true) modes.push('PICKUP');
-    const partnerDelivery = settings.platformPartnersEnabled === true && settings.disableLocalPartners !== true;
-    if (partnerDelivery) modes.push('DELIVERY');
-    if (!modes.length) return withOffer;
+    const receiptConfig = this.presentPaymentOnReceipt(receipt);
+    let result: any = { ...withOffer, paymentMethods: onlineMethods, paymentOnReceipt: receiptConfig };
 
-    await this.dataSource.query(
-      `UPDATE classified_listings
-       SET "commerceConfig"=jsonb_set(
-         jsonb_set(COALESCE("commerceConfig",'{}'::jsonb),'{onlineCheckout}',COALESCE("commerceConfig"->'onlineCheckout','{}'::jsonb),true),
-         '{onlineCheckout,fulfillmentModes}',to_jsonb($2::text[]),true
-       ),"updatedAt"=now()
-       WHERE id=$1`,
-      [listingId, modes],
-    ).catch(() => undefined);
+    if (settings && settings.pickupEnabled != null) {
+      const modes: Array<'PICKUP' | 'DELIVERY' | 'ARRANGE'> = [];
+      if (settings.pickupEnabled === true) modes.push('PICKUP');
+      const partnerDelivery = settings.platformPartnersEnabled === true && settings.disableLocalPartners !== true;
+      if (partnerDelivery) modes.push('DELIVERY');
+      if (modes.length) {
+        await this.dataSource.query(
+          `UPDATE classified_listings
+           SET "commerceConfig"=jsonb_set(
+             jsonb_set(COALESCE("commerceConfig",'{}'::jsonb),'{onlineCheckout}',COALESCE("commerceConfig"->'onlineCheckout','{}'::jsonb),true),
+             '{onlineCheckout,fulfillmentModes}',to_jsonb($2::text[]),true
+           ),"updatedAt"=now()
+           WHERE id=$1`,
+          [listingId, modes],
+        ).catch(() => undefined);
+        result = { ...result, fulfillmentModes: modes };
+      }
+    }
 
-    return { ...withOffer, fulfillmentModes: modes };
+    return result;
   }
 
   @Get('listings/:listingId/my-accepted-offer')
@@ -80,8 +91,36 @@ export class ClassifiedsCheckoutController {
     } : null;
   }
 
+  @Get('listings/:listingId/interaction-context')
+  async interactionContext(@Req() req: any, @Param('listingId') listingId: string) {
+    const uid = req.user.uid;
+    const rows = await this.dataSource.query(
+      `SELECT o.id,o.status,o.amount,o."expiresAt",conv.id AS "conversationId"
+       FROM classified_offers o
+       LEFT JOIN LATERAL (
+         SELECT id FROM classified_conversations c
+         WHERE c."listingId"=o."listingId" AND c."buyerUserId"=o."buyerUserId"
+         ORDER BY c."createdAt" DESC LIMIT 1
+       ) conv ON true
+       WHERE o."listingId"=$1 AND o."buyerUserId"=$2
+       ORDER BY o."updatedAt" DESC LIMIT 1`,
+      [listingId, uid],
+    ).catch(() => []);
+    const offer = rows[0] || null;
+    return {
+      hasOfferRelationship: Boolean(offer),
+      conversationId: offer?.conversationId || null,
+      latestOffer: offer ? { id: offer.id, status: offer.status, amount: Number(offer.amount), expiresAt: offer.expiresAt } : null,
+      chatAvailable: Boolean(offer),
+    };
+  }
+
   @Post('listings/:listingId/checkout')
   async createPayment(@Req() req: any, @Param('listingId') listingId: string, @Body() body: Record<string, any>) {
+    const paymentMethod = String(body?.paymentMethod || '').trim().toUpperCase();
+    if (paymentMethod === 'PAY_ON_RECEIPT') {
+      return this.payOnReceiptCheckout.create(req.user.uid, listingId, body || {});
+    }
     if (String(body?.fulfillmentMode || '').toUpperCase() === 'DELIVERY') {
       const settings = await this.fulfillmentSettings(listingId);
       const partnerDelivery = settings?.platformPartnersEnabled === true && settings?.disableLocalPartners !== true;
@@ -169,24 +208,14 @@ export class ClassifiedsCheckoutController {
          VALUES ($1,$2,$3,$4,0,$5,$6,$7::jsonb,false)`,
         [order.id, listing.id, quantity, unitPriceCents, totalCents, listing.title, JSON.stringify({ listingId: listing.id, title: listing.title, image: listing.image || null, acceptedOffer: offerSnapshot, pricingSource: 'ACCEPTED_OFFER' })],
       );
-      await manager.query(
-        `UPDATE classified_offers SET "orderId"=$2,"updatedAt"=now() WHERE id=$1 AND "orderId" IS NULL`,
-        [offer.id, order.id],
-      );
+      await manager.query(`UPDATE classified_offers SET "orderId"=$2,"updatedAt"=now() WHERE id=$1 AND "orderId" IS NULL`, [offer.id, order.id]);
       await manager.query(
         `INSERT INTO classified_order_events("orderId",type,"toStatus","actorUserId",metadata)
          VALUES ($1,'PURCHASE_ORDER_CREATED','CREATED',$2,$3::jsonb)`,
         [order.id, uid, JSON.stringify({ offerId: offer.id, quantity, inventoryPolicy: 'ON_COMPLETION' })],
       ).catch(() => undefined);
 
-      return {
-        ...order,
-        title: listing.title,
-        image: listing.image || null,
-        acceptedOffer: offerSnapshot,
-        inventoryReserved: false,
-        message: 'Ordem de compra enviada à empresa. O estoque só será baixado quando a empresa concluir a ordem.',
-      };
+      return { ...order, title: listing.title, image: listing.image || null, acceptedOffer: offerSnapshot, inventoryReserved: false, message: 'Ordem de compra enviada à empresa.' };
     });
   }
 
@@ -197,69 +226,40 @@ export class ClassifiedsCheckoutController {
 
     return this.dataSource.transaction(async (manager) => {
       const rows = await manager.query(
-        `SELECT o.*,l.title,l.slug
-         FROM classified_offers o
-         JOIN classified_listings l ON l.id=o."listingId"
-         WHERE o.id=$1
-         LIMIT 1 FOR UPDATE OF o`,
+        `SELECT o.*,l.title,l.slug FROM classified_offers o JOIN classified_listings l ON l.id=o."listingId" WHERE o.id=$1 LIMIT 1 FOR UPDATE OF o`,
         [offerId],
       );
       const offer = rows[0];
       if (!offer) throw new BadRequestException('Oferta não encontrada.');
-
-      const sellerAllowed = identity.type === 'COMPANY'
-        ? offer.sellerCompanyId === identity.company!.id
-        : !offer.sellerCompanyId && offer.sellerUserId === uid;
+      const sellerAllowed = identity.type === 'COMPANY' ? offer.sellerCompanyId === identity.company!.id : !offer.sellerCompanyId && offer.sellerUserId === uid;
       if (!sellerAllowed) throw new ForbiddenException('Esta oferta pertence a outra identidade.');
       if (offer.status !== 'ACCEPTED') throw new BadRequestException('Somente uma oferta aceita pode ter o aceite retirado.');
-      if (offer.orderId) {
-        throw new BadRequestException('Esta oferta já foi usada para iniciar uma compra. A partir daqui, qualquer desistência deve acontecer no pedido.');
-      }
-
+      if (offer.orderId) throw new BadRequestException('Esta oferta já foi usada para iniciar uma compra. A partir daqui, qualquer desistência deve acontecer no pedido.');
       const updatedRows = await manager.query(
-        `UPDATE classified_offers
-         SET status='REVOKED',"revokedAt"=now(),"revokedByUserId"=$2,"updatedAt"=now()
-         WHERE id=$1 AND status='ACCEPTED' AND "orderId" IS NULL
-         RETURNING *`,
+        `UPDATE classified_offers SET status='REVOKED',"revokedAt"=now(),"revokedByUserId"=$2,"updatedAt"=now() WHERE id=$1 AND status='ACCEPTED' AND "orderId" IS NULL RETURNING *`,
         [offerId, uid],
       );
       const updated = updatedRows[0];
       if (!updated) throw new BadRequestException('O aceite já não está disponível para retirada.');
-
-      return {
-        ...updated,
-        title: offer.title,
-        slug: offer.slug,
-        role: 'SELLER',
-        acceptanceRevoked: true,
-      };
+      return { ...updated, title: offer.title, slug: offer.slug, role: 'SELLER', acceptanceRevoked: true };
     });
   }
 
   @Get('me/purchases')
-  purchases(@Req() req: any) {
-    return this.checkout.purchases(req.user.uid);
-  }
+  purchases(@Req() req: any) { return this.checkout.purchases(req.user.uid); }
 
   @Get('me/marketplace-terms')
-  termsStatus(@Req() req: any) {
-    return this.terms.status(req.user.uid);
-  }
+  termsStatus(@Req() req: any) { return this.terms.status(req.user.uid); }
 
   @Post('me/marketplace-terms/accept')
   acceptTerms(@Req() req: any, @Headers('user-agent') userAgent: string | undefined, @Body() body: any) {
-    return this.terms.accept(req.user.uid, body?.scope, {
-      surface: body?.surface || 'CLASSIFIEDS',
-      userAgent: userAgent || '',
-    });
+    return this.terms.accept(req.user.uid, body?.scope, { surface: body?.surface || 'CLASSIFIEDS', userAgent: userAgent || '' });
   }
 
   private async activeAcceptedOffer(uid: string, listingId: string) {
     const rows = await this.dataSource.query(
-      `SELECT id,"listingId",amount,status,"expiresAt","respondedAt"
-       FROM classified_offers
-       WHERE "listingId"=$1 AND "buyerUserId"=$2 AND status='ACCEPTED'
-         AND "expiresAt">now() AND "orderId" IS NULL
+      `SELECT id,"listingId",amount,status,"expiresAt","respondedAt" FROM classified_offers
+       WHERE "listingId"=$1 AND "buyerUserId"=$2 AND status='ACCEPTED' AND "expiresAt">now() AND "orderId" IS NULL
        ORDER BY "respondedAt" DESC NULLS LAST,"updatedAt" DESC LIMIT 1`,
       [listingId, uid],
     ).catch(() => []);
@@ -268,14 +268,48 @@ export class ClassifiedsCheckoutController {
 
   private async fulfillmentSettings(listingId: string) {
     const rows = await this.dataSource.query(
-      `SELECT s."pickupEnabled",s."ownDeliveryEnabled",s."platformPartnersEnabled",
-              COALESCE(ls."disableLocalPartners",false) AS "disableLocalPartners"
-       FROM classified_listings l
-       LEFT JOIN company_commerce_settings s ON s."companyId"=l."companyId"
-       LEFT JOIN classified_listing_shipping ls ON ls."listingId"=l.id
+      `SELECT s."pickupEnabled",s."ownDeliveryEnabled",s."platformPartnersEnabled",COALESCE(ls."disableLocalPartners",false) AS "disableLocalPartners"
+       FROM classified_listings l LEFT JOIN company_commerce_settings s ON s."companyId"=l."companyId"
+       LEFT JOIN classified_listing_shipping ls ON ls."listingId"=l.id WHERE l.id=$1 LIMIT 1`,
+      [listingId],
+    ).catch(() => []);
+    return rows[0] || null;
+  }
+
+  private async paymentOnReceiptSettings(listingId: string) {
+    const rows = await this.dataSource.query(
+      `SELECT p."pixEnabled",p."cardEnabled",p."payOnReceiptEnabled",p."payOnPickupEnabled",p."payOnDeliveryEnabled",
+              p."receiptCashEnabled",p."receiptPixEnabled",p."receiptCreditCardEnabled",p."receiptDebitCardEnabled",p."receiptChangeEnabled",
+              l."commerceConfig"->'paymentOnReceipt' AS "listingPaymentOnReceipt"
+       FROM classified_listings l LEFT JOIN company_classified_receipt_preferences p ON p."companyId"=l."companyId"
        WHERE l.id=$1 LIMIT 1`,
       [listingId],
     ).catch(() => []);
     return rows[0] || null;
+  }
+
+  private presentPaymentOnReceipt(row: any) {
+    const listing = row?.listingPaymentOnReceipt || {};
+    const disabledByListing = listing?.disabled === true || ['DISABLED','ONLINE_ONLY'].includes(String(listing?.mode || '').toUpperCase());
+    const enabled = row?.payOnReceiptEnabled === true && !disabledByListing;
+    const methods: string[] = [];
+    if (enabled && row?.receiptCashEnabled !== false) methods.push('CASH');
+    if (enabled && row?.receiptPixEnabled !== false) methods.push('PIX');
+    if (enabled && row?.receiptCreditCardEnabled === true) methods.push('CREDIT_CARD');
+    if (enabled && row?.receiptDebitCardEnabled === true) methods.push('DEBIT_CARD');
+    return {
+      enabled,
+      disabledByListing,
+      pickupEnabled: enabled && row?.payOnPickupEnabled !== false,
+      deliveryEnabled: enabled && row?.payOnDeliveryEnabled !== false,
+      methods,
+      changeEnabled: enabled && row?.receiptChangeEnabled !== false,
+      listingMode: disabledByListing ? 'ONLINE_ONLY' : 'INHERIT',
+    };
+  }
+
+  private remove(items: string[], value: string) {
+    const index = items.indexOf(value);
+    if (index >= 0) items.splice(index, 1);
   }
 }
