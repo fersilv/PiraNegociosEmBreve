@@ -80,6 +80,7 @@ export default function App() {
               <Route path="/classificados/painel" element={<Navigate to="/classificados/explorar" replace />} />
               <Route path="/classificados/explorar" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/explorar/:listingSlug" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/favoritos" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/carrinho" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/compras" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/logistica" element={<ClassifiedsWorkspacePage />} />
@@ -93,6 +94,8 @@ export default function App() {
               <Route path="/classificados/anuncios" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/servicos" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/ofertas" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/minhas-vendas" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/pedidos" element={<Navigate to="/classificados/minhas-vendas" replace />} />
               <Route path="/classificados/vendas" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/estoque" element={<ClassifiedsWorkspacePage />} />
               <Route path="/classificados/vendas/mercado-pago" element={<ClassifiedsWorkspacePage />} />
