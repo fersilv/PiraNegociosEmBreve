@@ -78,5 +78,5 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_pn_notify_classified_offer_change ON classified_offers;
 CREATE TRIGGER trg_pn_notify_classified_offer_change
-AFTER INSERT OR UPDATE OF status, amount, "expiresAt", "orderId" ON classified_offers
+AFTER INSERT OR UPDATE OF status, amount, "expiresAt" ON classified_offers
 FOR EACH ROW EXECUTE FUNCTION pn_notify_classified_offer_change();
