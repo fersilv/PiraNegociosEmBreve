@@ -57,6 +57,7 @@ import { ClassifiedsMarketplaceTermsService } from './classifieds-marketplace-te
 import { ClassifiedsOrderOperationsController } from './classifieds-order-operations.controller';
 import { ClassifiedsOrderOperationsService } from './classifieds-order-operations.service';
 import { ClassifiedsOrdersGateway } from './classifieds-orders.gateway';
+import { ClassifiedsPayOnReceiptCheckoutService } from './classifieds-pay-on-receipt-checkout.service';
 import { ClassifiedsPrivateController } from './classifieds-private.controller';
 import { ClassifiedsPublicController } from './classifieds-public.controller';
 import { ClassifiedsQuestionsController, ClassifiedsQuestionsPublicController } from './classifieds-questions.controller';
@@ -157,6 +158,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsMarketplaceTermsService,
     ClassifiedsCheckoutService,
     ClassifiedsDeliveryAwareCheckoutService,
+    ClassifiedsPayOnReceiptCheckoutService,
     ClassifiedsReviewModerationService,
     ClassifiedsReviewsService,
     ClassifiedsCommerceSettingsService,
@@ -185,6 +187,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
     ClassifiedsMarketplacePaymentsService,
     ClassifiedsMarketplaceTermsService,
     ClassifiedsCheckoutService,
+    ClassifiedsPayOnReceiptCheckoutService,
     ClassifiedsReviewsService,
     ClassifiedsCommerceSettingsService,
     ClassifiedsDeliveryService,
