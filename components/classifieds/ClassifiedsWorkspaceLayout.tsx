@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BadgeCheck, BadgeDollarSign, BarChart3, Briefcase, Building2, ChevronDown, Compass, CreditCard, Gavel, Globe2, Heart, Home, LogOut, Menu, MessageCircle, PackageCheck, Plus, Settings2, ShoppingCart, Store, User, Wrench, X } from 'lucide-react';
+import { BadgeCheck, BadgeDollarSign, BarChart3, Briefcase, Building2, ChevronDown, Compass, CreditCard, Gavel, Globe2, Heart, LogOut, Menu, MessageCircle, MessageCircleQuestion, PackageCheck, Plus, Settings2, ShoppingCart, Store, User, Wrench, X } from 'lucide-react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { auth } from '../../lib/firebase';
 import { api } from '../../lib/api';
@@ -15,6 +15,7 @@ const BUSINESS_SEGMENT_SUGGESTIONS = [
 type MenuItem = { to: string; label: string; icon: React.ReactNode; badge?: number };
 type MenuGroup = { label: string; items: MenuItem[] };
 type SalesMenuSummary = { hasListings: boolean; hasSales: boolean; openOrders: number; visible: boolean };
+type QuestionMenuSummary = { pending: number; answered: number; hidden: number };
 
 export function ClassifiedsWorkspaceGate({ children }: { children: React.ReactNode }) {
   const { data, loading, error, selectIdentity, acceptPersonalTerms, configureCompany } = useClassifiedsWorkspace();
@@ -126,32 +127,46 @@ export function ClassifiedsWorkspaceLayout({ children }: { children: React.React
   const [mobileOpen, setMobileOpen] = useState(false);
   const [identityOpen, setIdentityOpen] = useState(false);
   const [salesSummary, setSalesSummary] = useState<SalesMenuSummary>({ hasListings: false, hasSales: false, openOrders: 0, visible: false });
-  if (!data?.activeIdentity) return null;
-
-  const business = data.activeIdentity === 'COMPANY';
-  const identityName = business ? data.company?.name || 'Empresa' : data.personal.name;
+  const [questionSummary, setQuestionSummary] = useState<QuestionMenuSummary>({ pending: 0, answered: 0, hidden: 0 });
+  const business = data?.activeIdentity === 'COMPANY';
+  const companyId = data?.company?.id;
 
   useEffect(() => {
-    if (!business || !data.company?.id) {
+    if (!business || !companyId) {
       setSalesSummary({ hasListings: false, hasSales: false, openOrders: 0, visible: false });
+      setQuestionSummary({ pending: 0, answered: 0, hidden: 0 });
       return;
     }
     let active = true;
-    const load = () => api.get('/classifieds/me/orders/operations/summary')
-      .then((response) => {
-        if (!active) return;
+    const load = async () => {
+      const [sales, questions] = await Promise.allSettled([
+        api.get('/classifieds/me/orders/operations/summary'),
+        api.get('/classifieds/me/questions/summary'),
+      ]);
+      if (!active) return;
+      if (sales.status === 'fulfilled') {
         setSalesSummary({
-          hasListings: response.data?.hasListings === true,
-          hasSales: response.data?.hasSales === true,
-          openOrders: Math.max(0, Number(response.data?.openOrders || 0)),
-          visible: response.data?.visible === true,
+          hasListings: sales.value.data?.hasListings === true,
+          hasSales: sales.value.data?.hasSales === true,
+          openOrders: Math.max(0, Number(sales.value.data?.openOrders || 0)),
+          visible: sales.value.data?.visible === true,
         });
-      })
-      .catch(() => undefined);
+      }
+      if (questions.status === 'fulfilled') {
+        setQuestionSummary({
+          pending: Math.max(0, Number(questions.value.data?.pending || 0)),
+          answered: Math.max(0, Number(questions.value.data?.answered || 0)),
+          hidden: Math.max(0, Number(questions.value.data?.hidden || 0)),
+        });
+      }
+    };
     void load();
     const timer = window.setInterval(load, 30_000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [business, data.company?.id]);
+  }, [business, companyId]);
+
+  if (!data?.activeIdentity) return null;
+  const identityName = business ? data.company?.name || 'Empresa' : data.personal.name;
 
   const groups: MenuGroup[] = business ? [
     {
@@ -167,6 +182,7 @@ export function ClassifiedsWorkspaceLayout({ children }: { children: React.React
         ...(data.company?.canSellProducts !== false ? [{ to: '/classificados/anuncios', label: 'Meus anúncios', icon: <Store className="h-5 w-5" /> }] : []),
         ...(data.company?.canOfferServices !== false ? [{ to: '/classificados/servicos', label: 'Meus serviços', icon: <Wrench className="h-5 w-5" /> }] : []),
         { to: '/classificados/publicar', label: 'Novo anúncio', icon: <Plus className="h-5 w-5" /> },
+        { to: '/classificados/perguntas', label: 'Perguntas', icon: <MessageCircleQuestion className="h-5 w-5" />, badge: questionSummary.pending },
         { to: '/classificados/ofertas', label: 'Negociações', icon: <BadgeDollarSign className="h-5 w-5" /> },
         { to: '/classificados/conversas', label: 'Conversas', icon: <MessageCircle className="h-5 w-5" /> },
         { to: '/classificados/gestao/leiloes', label: 'Leilões', icon: <Gavel className="h-5 w-5" /> },
