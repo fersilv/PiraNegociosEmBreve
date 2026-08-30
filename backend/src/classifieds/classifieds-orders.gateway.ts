@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import {
   ConnectedSocket,
   OnGatewayConnection,
@@ -7,7 +7,9 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { Client } from 'pg';
 import { Server, Socket } from 'socket.io';
+import { DataSource } from 'typeorm';
 import { FirebaseService } from '../auth/firebase.service';
 import { ClassifiedsIdentityService } from './classifieds-identity.service';
 
@@ -25,14 +27,30 @@ export type ClassifiedOrderRealtimeReason = 'CREATED' | 'PAYMENT' | 'STATUS' | '
     credentials: true,
   },
 })
-export class ClassifiedsOrdersGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ClassifiedsOrdersGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
   @WebSocketServer() server: Server;
   private readonly logger = new Logger(ClassifiedsOrdersGateway.name);
+  private pgListener: Client | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private destroyed = false;
 
   constructor(
     private readonly firebaseService: FirebaseService,
     private readonly identities: ClassifiedsIdentityService,
+    private readonly dataSource: DataSource,
   ) {}
+
+  onModuleInit() {
+    void this.connectPgListener();
+  }
+
+  async onModuleDestroy() {
+    this.destroyed = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    const listener = this.pgListener;
+    this.pgListener = null;
+    if (listener) await listener.end().catch(() => undefined);
+  }
 
   async handleConnection(client: Socket) {
     const token = typeof client.handshake.auth?.token === 'string' ? client.handshake.auth.token.trim() : '';
@@ -77,6 +95,71 @@ export class ClassifiedsOrdersGateway implements OnGatewayConnection, OnGatewayD
       snapshot: snapshot || null,
       at: new Date().toISOString(),
     });
+  }
+
+  private async connectPgListener() {
+    if (this.destroyed || this.pgListener) return;
+    try {
+      const options: any = this.dataSource.options as any;
+      const config = options.url
+        ? { connectionString: options.url, ssl: options.ssl }
+        : {
+            host: options.host,
+            port: options.port,
+            database: options.database,
+            user: options.username,
+            password: options.password,
+            ssl: options.ssl,
+          };
+      const client = new Client(config as any);
+      this.pgListener = client;
+      client.on('notification', (message) => {
+        if (message.channel !== 'pira_classified_orders' || !message.payload) return;
+        try {
+          const payload = JSON.parse(message.payload) as Record<string, any>;
+          const statusChanged = payload.operation === 'UPDATE';
+          const reason: ClassifiedOrderRealtimeReason = payload.operation === 'INSERT'
+            ? 'CREATED'
+            : String(payload.paymentStatus || '') === 'APPROVED' ? 'PAYMENT' : statusChanged ? 'STATUS' : 'STATUS';
+          this.publishCompanyOrderChanged(String(payload.companyId || ''), String(payload.orderId || ''), reason, {
+            status: payload.status || null,
+            paymentStatus: payload.paymentStatus || null,
+          });
+        } catch (error) {
+          this.logger.debug(`Evento de pedido realtime inválido: ${String(error)}`);
+        }
+      });
+      client.on('error', (error) => {
+        this.logger.warn(`Canal realtime de pedidos perdeu a conexão: ${String(error)}`);
+        void this.dropPgListener(client);
+      });
+      client.on('end', () => void this.dropPgListener(client));
+      await client.connect();
+      await client.query('LISTEN pira_classified_orders');
+      this.logger.log('Canal realtime de pedidos conectado ao PostgreSQL.');
+    } catch (error) {
+      this.logger.warn(`Realtime de pedidos sem LISTEN/NOTIFY; a UI continuará com polling: ${String(error)}`);
+      const listener = this.pgListener;
+      this.pgListener = null;
+      if (listener) await listener.end().catch(() => undefined);
+      this.scheduleReconnect();
+    }
+  }
+
+  private async dropPgListener(client: Client) {
+    if (this.pgListener !== client) return;
+    this.pgListener = null;
+    await client.end().catch(() => undefined);
+    this.scheduleReconnect();
+  }
+
+  private scheduleReconnect() {
+    if (this.destroyed || this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.connectPgListener();
+    }, 5000);
+    this.reconnectTimer.unref?.();
   }
 
   private companyRoom(companyId: string) {
