@@ -4,6 +4,7 @@ import { ClassifiedsIdentityService } from './classifieds-identity.service';
 
 export type AuctionFeePayer = 'SELLER' | 'BUYER';
 export type ClassifiedPaymentMethod = 'PIX' | 'CARD';
+export type ClassifiedReceiptPaymentMethod = 'CASH' | 'PIX' | 'CREDIT_CARD' | 'DEBIT_CARD';
 
 @Injectable()
 export class ClassifiedsReceiptPreferencesService {
@@ -35,6 +36,14 @@ export class ClassifiedsReceiptPreferencesService {
       deliveryEnabled: row?.deliveryEnabled === true,
       arrangeEnabled: row ? row.arrangeEnabled !== false : true,
       onlineCheckoutDefault: row ? row.onlineCheckoutDefault === true : false,
+      payOnReceiptEnabled: row?.payOnReceiptEnabled === true,
+      payOnPickupEnabled: row ? row.payOnPickupEnabled !== false : true,
+      payOnDeliveryEnabled: row ? row.payOnDeliveryEnabled !== false : true,
+      receiptCashEnabled: row ? row.receiptCashEnabled !== false : true,
+      receiptPixEnabled: row ? row.receiptPixEnabled !== false : true,
+      receiptCreditCardEnabled: row?.receiptCreditCardEnabled === true,
+      receiptDebitCardEnabled: row?.receiptDebitCardEnabled === true,
+      receiptChangeEnabled: row ? row.receiptChangeEnabled !== false : true,
       paymentConnections: connections,
       mercadoPagoConnected: connections.some((item: any) => item.provider === 'MERCADO_PAGO' && item.status === 'CONNECTED'),
     };
@@ -45,7 +54,7 @@ export class ClassifiedsReceiptPreferencesService {
     const companyId = identity.company!.id;
     const pixEnabled = body.pixEnabled !== false;
     const cardEnabled = body.cardEnabled !== false;
-    if (!pixEnabled && !cardEnabled) throw new BadRequestException('Habilite pelo menos Pix ou cartão.');
+    if (!pixEnabled && !cardEnabled) throw new BadRequestException('Habilite pelo menos Pix ou cartão para pagamentos online.');
     const cardMaxInstallments = this.installments(body.cardMaxInstallments ?? 12);
     const auctionFeePayerDefault = this.feePayer(body.auctionFeePayerDefault);
     const pickupEnabled = body.pickupEnabled !== false;
@@ -56,10 +65,26 @@ export class ClassifiedsReceiptPreferencesService {
       throw new BadRequestException('Habilite pelo menos uma forma de entrega ou retirada.');
     }
 
+    const payOnReceiptEnabled = body.payOnReceiptEnabled === true;
+    const payOnPickupEnabled = payOnReceiptEnabled && pickupEnabled && body.payOnPickupEnabled !== false;
+    const payOnDeliveryEnabled = payOnReceiptEnabled && deliveryEnabled && body.payOnDeliveryEnabled !== false;
+    const receiptCashEnabled = body.receiptCashEnabled !== false;
+    const receiptPixEnabled = body.receiptPixEnabled !== false;
+    const receiptCreditCardEnabled = body.receiptCreditCardEnabled === true;
+    const receiptDebitCardEnabled = body.receiptDebitCardEnabled === true;
+    const receiptChangeEnabled = body.receiptChangeEnabled !== false;
+    if (payOnReceiptEnabled && !payOnPickupEnabled && !payOnDeliveryEnabled) {
+      throw new BadRequestException('Escolha pagamento na retirada, na entrega ou ambos.');
+    }
+    if (payOnReceiptEnabled && !receiptCashEnabled && !receiptPixEnabled && !receiptCreditCardEnabled && !receiptDebitCardEnabled) {
+      throw new BadRequestException('Habilite pelo menos uma forma de pagamento presencial.');
+    }
+
     await this.dataSource.query(
       `INSERT INTO company_classified_receipt_preferences
-        ("companyId",provider,"pixEnabled","cardEnabled","cardMaxInstallments","auctionFeePayerDefault","pickupEnabled","deliveryEnabled","arrangeEnabled","onlineCheckoutDefault","updatedAt")
-       VALUES ($1,'MERCADO_PAGO',$2,$3,$4,$5,$6,$7,$8,$9,now())
+        ("companyId",provider,"pixEnabled","cardEnabled","cardMaxInstallments","auctionFeePayerDefault","pickupEnabled","deliveryEnabled","arrangeEnabled","onlineCheckoutDefault",
+         "payOnReceiptEnabled","payOnPickupEnabled","payOnDeliveryEnabled","receiptCashEnabled","receiptPixEnabled","receiptCreditCardEnabled","receiptDebitCardEnabled","receiptChangeEnabled","updatedAt")
+       VALUES ($1,'MERCADO_PAGO',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())
        ON CONFLICT ("companyId",provider) DO UPDATE SET
         "pixEnabled"=EXCLUDED."pixEnabled",
         "cardEnabled"=EXCLUDED."cardEnabled",
@@ -69,8 +94,17 @@ export class ClassifiedsReceiptPreferencesService {
         "deliveryEnabled"=EXCLUDED."deliveryEnabled",
         "arrangeEnabled"=EXCLUDED."arrangeEnabled",
         "onlineCheckoutDefault"=EXCLUDED."onlineCheckoutDefault",
+        "payOnReceiptEnabled"=EXCLUDED."payOnReceiptEnabled",
+        "payOnPickupEnabled"=EXCLUDED."payOnPickupEnabled",
+        "payOnDeliveryEnabled"=EXCLUDED."payOnDeliveryEnabled",
+        "receiptCashEnabled"=EXCLUDED."receiptCashEnabled",
+        "receiptPixEnabled"=EXCLUDED."receiptPixEnabled",
+        "receiptCreditCardEnabled"=EXCLUDED."receiptCreditCardEnabled",
+        "receiptDebitCardEnabled"=EXCLUDED."receiptDebitCardEnabled",
+        "receiptChangeEnabled"=EXCLUDED."receiptChangeEnabled",
         "updatedAt"=now()`,
-      [companyId, pixEnabled, cardEnabled, cardMaxInstallments, auctionFeePayerDefault, pickupEnabled, deliveryEnabled, arrangeEnabled, onlineCheckoutDefault],
+      [companyId, pixEnabled, cardEnabled, cardMaxInstallments, auctionFeePayerDefault, pickupEnabled, deliveryEnabled, arrangeEnabled, onlineCheckoutDefault,
+        payOnReceiptEnabled, payOnPickupEnabled, payOnDeliveryEnabled, receiptCashEnabled, receiptPixEnabled, receiptCreditCardEnabled, receiptDebitCardEnabled, receiptChangeEnabled],
     );
     return this.get(uid);
   }
@@ -85,6 +119,15 @@ export class ClassifiedsReceiptPreferencesService {
     if (fallback?.pixEnabled !== false) defaults.push('PIX');
     if (fallback?.cardEnabled !== false) defaults.push('CARD');
     return defaults.length ? defaults : ['PIX'];
+  }
+
+  receiptMethods(row: any): ClassifiedReceiptPaymentMethod[] {
+    const methods: ClassifiedReceiptPaymentMethod[] = [];
+    if (row?.receiptCashEnabled !== false) methods.push('CASH');
+    if (row?.receiptPixEnabled !== false) methods.push('PIX');
+    if (row?.receiptCreditCardEnabled === true) methods.push('CREDIT_CARD');
+    if (row?.receiptDebitCardEnabled === true) methods.push('DEBIT_CARD');
+    return methods;
   }
 
   fulfillmentFrom(body: Record<string, unknown>, fallback?: { pickupEnabled?: boolean; deliveryEnabled?: boolean; arrangeEnabled?: boolean }) {

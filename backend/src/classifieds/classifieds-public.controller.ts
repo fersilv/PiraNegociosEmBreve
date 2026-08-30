@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { ClassifiedsAddressResolutionService } from './classifieds-address-resolution.service';
 import { ClassifiedsCategoryTaxonomyService } from './classifieds-category-taxonomy.service';
 import { ClassifiedsCommerceService } from './classifieds-commerce.service';
+import { ClassifiedsDeliveryPreviewService } from './classifieds-delivery-preview.service';
 import { ClassifiedsService } from './classifieds.service';
 import { CompanyClassifiedProfile } from './entities/company-classified-profile.entity';
 
@@ -12,6 +14,8 @@ export class ClassifiedsPublicController {
     private readonly classifieds: ClassifiedsService,
     private readonly taxonomy: ClassifiedsCategoryTaxonomyService,
     private readonly commerce: ClassifiedsCommerceService,
+    private readonly addressResolution: ClassifiedsAddressResolutionService,
+    private readonly deliveryPreview: ClassifiedsDeliveryPreviewService,
     @InjectRepository(CompanyClassifiedProfile)
     private readonly companyProfiles: Repository<CompanyClassifiedProfile>,
   ) {}
@@ -19,6 +23,16 @@ export class ClassifiedsPublicController {
   @Get('categories')
   categories() {
     return this.taxonomy.categories();
+  }
+
+  @Get('address/cep/:zipCode')
+  resolveAddressByCep(@Param('zipCode') zipCode: string) {
+    return this.addressResolution.byCep(zipCode);
+  }
+
+  @Get('address/search')
+  searchAddress(@Query() query: Record<string, unknown>) {
+    return this.addressResolution.search(query);
   }
 
   @Get('listings')
@@ -36,6 +50,11 @@ export class ClassifiedsPublicController {
       items,
       pageSectionLabel: profile?.pageSectionLabel || null,
     };
+  }
+
+  @Post('listings/:id/shipping-quote')
+  shippingQuote(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.deliveryPreview.listingQuote(id, body);
   }
 
   @Get('listings/:slug')

@@ -33,7 +33,7 @@ const CompanyVerificationAuthorizationPage = lazy(() => import("./pages/CompanyV
 const HelpCenterPage = lazy(() => import("./pages/HelpCenterPage"));
 const ClassifiedsEntryPage = lazy(() => import("./pages/ClassifiedsEntryPage"));
 const ClassifiedsTermsPage = lazy(() => import("./pages/ClassifiedsTermsPage"));
-const ClassifiedsWorkspaceAccessGate = lazy(() => import("./pages/ClassifiedsWorkspaceAccessGate"));
+const ClassifiedsWorkspacePage = lazy(() => import("./pages/ClassifiedsWorkspacePage"));
 const ClassifiedsPublicRouteGate = lazy(() => import("./pages/ClassifiedsPublicRouteGate"));
 const CompanyLegalPage = lazy(() => import("./pages/CompanyLegalPage").then((module) => ({ default: module.CompanyLegalPage })));
 
@@ -80,27 +80,38 @@ export default function App() {
               <Route path="/classificados/leiloes" element={<ClassifiedsPublicRouteGate mode="AUCTIONS" />} />
               <Route path="/classificados/leiloes/:auctionId" element={<ClassifiedsPublicRouteGate mode="AUCTIONS" />} />
               <Route path="/classificados/painel" element={<Navigate to="/classificados/explorar" replace />} />
-              <Route path="/classificados/explorar" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/explorar/:listingSlug" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/gestao/leiloes" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/gestao/leiloes/arena" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/gestao/leiloes/:auctionId" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/gestao/leiloes/:auctionId/ao-vivo" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/anuncios" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/servicos" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/ofertas" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/vendas" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/estoque" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/vendas/mercado-pago" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/recebimentos" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/avaliacoes" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/comercial/:listingId" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/analytics" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/publicar" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/conversas" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/conversas/:conversationId" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/configuracoes" element={<ClassifiedsWorkspaceAccessGate />} />
-              <Route path="/classificados/empresa/*" element={<ClassifiedsWorkspaceAccessGate />} />
+              <Route path="/classificados/explorar" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/explorar/:listingSlug" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/favoritos" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/carrinho" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/compras" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/logistica" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/entregas" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/orcamentos" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/orcamentos/:quoteId" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/gestao/leiloes" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/gestao/leiloes/arena" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/gestao/leiloes/:auctionId" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/gestao/leiloes/:auctionId/ao-vivo" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/anuncios" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/servicos" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/ofertas" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/perguntas" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/minhas-vendas" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/pedidos" element={<Navigate to="/classificados/minhas-vendas" replace />} />
+              <Route path="/classificados/vendas" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/estoque" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/vendas/mercado-pago" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/recebimentos" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/avaliacoes" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/comercial/:listingId" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/analytics" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/publicar" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/conversas" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/conversas/:conversationId" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/configuracoes" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/empresa/*" element={<ClassifiedsWorkspacePage />} />
+              <Route path="/classificados/*" element={<ClassifiedsWorkspacePage />} />
 
               <Route path="/criador-de-curriculo" element={<PublicResumeBuilderPage />} />
               <Route path="/criar-curriculo" element={<Navigate to="/criador-de-curriculo" replace />} />

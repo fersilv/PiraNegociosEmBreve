@@ -21,7 +21,6 @@ import { CompanyPagePreview } from './entities/company-page-preview.entity';
 import { CompanyPagesService } from './company-pages.service';
 import { CompanyPagesController } from './company-pages.controller';
 import { CompanyPagesPublicController } from './company-pages-public.controller';
-import { CompanyMembershipAccessController } from './company-membership-access.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { TalentInvitesService } from './talent-invites.service';
 import { TalentInviteEmailService } from './talent-invite-email.service';
@@ -54,7 +53,6 @@ import { TalentInvitePreviewController } from './talent-invite-preview.controlle
   ],
   controllers: [
     CompaniesController,
-    CompanyMembershipAccessController,
     CompanyPagesController,
     CompanyPagesPublicController,
     TalentInvitesController,

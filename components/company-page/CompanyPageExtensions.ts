@@ -8,6 +8,8 @@ export type CompanyContentMode = 'section' | 'independent';
 export type CompanyCategoryStyle = 'chips' | 'circles' | 'tiles' | 'image-tiles';
 export type CompanyProductsLayout = 'carousel' | 'grid' | 'masonry' | 'list';
 export type CompanyBannerStyle = 'full' | 'split' | 'compact' | 'editorial';
+export type CompanyBusinessDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+export type CompanyBusinessHoursInterval = { open: string; close: string };
 
 export interface CompanyPageCategoryLink {
   id: string;
@@ -52,6 +54,12 @@ export type CompanyPageConfig = Omit<BaseCompanyPageConfig, 'hero' | 'sections'>
     featuredTitle?: string;
     showProducts?: boolean;
     showServices?: boolean;
+  };
+  businessHours?: {
+    enabled?: boolean;
+    showOnPage?: boolean;
+    timezone?: string;
+    days?: Partial<Record<CompanyBusinessDay, CompanyBusinessHoursInterval[]>>;
   };
   sections?: CompanyPageSection[];
 };

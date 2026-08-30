@@ -17,7 +17,7 @@ function getChatAttachment(metadata: ClassifiedConversationMessage['metadata']):
 }
 
 export function AuthenticatedClassifiedsChatWidget() {
-  const { user, profile, loading } = useAuth();
+  const { user, loading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -156,13 +156,6 @@ export function AuthenticatedClassifiedsChatWidget() {
   };
 
   if (loading || !user) return null;
-  const linkedWithoutMarketplace = Boolean(
-    profile?.companyId
-    && profile?.type !== 'ADMIN'
-    && profile?.isCompanyAdmin !== true
-    && profile?.companyAccess?.permissions?.marketplace !== true,
-  );
-  if (linkedWithoutMarketplace) return null;
   if (location.pathname.startsWith('/classificados/conversas')) return null;
 
   return (

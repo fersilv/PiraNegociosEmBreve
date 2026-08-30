@@ -22,6 +22,7 @@ const REQUIRED_CODE_COMPONENTS = [
 ] as const;
 const MAX_CONFIG_BYTES = 4_500_000;
 const PREVIEW_MINUTES = 60;
+const BUSINESS_HOUR_DAYS = ['mon','tue','wed','thu','fri','sat','sun'] as const;
 
 type AnyConfig = Record<string, any>;
 
@@ -71,6 +72,12 @@ export class CompanyPagesService {
         facebook: company.socialFacebook || '',
         youtube: '',
         tiktok: '',
+      },
+      businessHours: {
+        enabled: false,
+        showOnPage: true,
+        timezone: 'America/Sao_Paulo',
+        days: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
       },
       legal: {
         termsEnabled: false,
@@ -288,6 +295,7 @@ export class CompanyPagesService {
       about: { ...fallback.about, ...(input.about || {}), text: safeText(input.about?.text, 20_000) },
       contacts: { ...fallback.contacts, ...(input.contacts || {}) },
       socials: { ...fallback.socials, ...(input.socials || {}) },
+      businessHours: this.normalizeBusinessHours(input.businessHours),
       legal: {
         ...fallback.legal,
         ...(input.legal || {}),
@@ -301,5 +309,30 @@ export class CompanyPagesService {
         js: safeText(codePage.js, 180_000),
       },
     };
+  }
+
+  private normalizeBusinessHours(raw: unknown) {
+    const input = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as AnyConfig : {};
+    const timezone = String(input.timezone || 'America/Sao_Paulo').trim().slice(0, 80) || 'America/Sao_Paulo';
+    const sourceDays = input.days && typeof input.days === 'object' ? input.days : {};
+    const days: Record<string, Array<{ open: string; close: string }>> = {};
+    for (const day of BUSINESS_HOUR_DAYS) {
+      const intervals = Array.isArray(sourceDays[day]) ? sourceDays[day].slice(0, 4) : [];
+      days[day] = intervals.map((interval: AnyConfig) => ({
+        open: this.safeHour(interval?.open),
+        close: this.safeHour(interval?.close),
+      })).filter((interval: { open: string; close: string }) => Boolean(interval.open && interval.close));
+    }
+    return {
+      enabled: input.enabled === true,
+      showOnPage: input.showOnPage !== false,
+      timezone,
+      days,
+    };
+  }
+
+  private safeHour(value: unknown) {
+    const text = String(value || '').trim();
+    return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(text) ? text : '';
   }
 }

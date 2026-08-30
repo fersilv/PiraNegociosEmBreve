@@ -128,20 +128,6 @@ export interface Language {
   level: string;
 }
 
-export type CompanyPermissionKey = "companyProfile" | "recruitment" | "marketplace" | "finance" | "team";
-
-export interface CompanyAccess {
-  linked: boolean;
-  companyId?: string | null;
-  companyName?: string | null;
-  role?: "PRIMARY_ADMIN" | "ADMIN" | "EMPLOYEE" | null;
-  status?: "ACTIVE" | "SUSPENDED" | "REVOKED" | null;
-  isOwner?: boolean;
-  isPartner?: boolean;
-  permissions: Record<CompanyPermissionKey, boolean>;
-  hasAnyPermission: boolean;
-}
-
 export interface UserProfile {
   id?: string;
   name?: string;
@@ -158,7 +144,6 @@ export interface UserProfile {
   companyName?: string;
   companyDescription?: string;
   companyLogo?: string;
-  companyAccess?: CompanyAccess | null;
   photoURL?: string;
   bio?: string;
   resumeURL?: string;
@@ -235,16 +220,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: inviteToken ? { "X-Talent-Invite-Token": inviteToken } : undefined,
       });
       const data = response.data as UserProfile;
-      let companyAccess: CompanyAccess | null = null;
-      if (data.companyId) {
-        try {
-          const accessResponse = await api.get("/company-membership/me");
-          companyAccess = accessResponse.data as CompanyAccess;
-        } catch (accessError) {
-          console.error("Erro ao buscar permissões do vínculo empresarial:", accessError);
-        }
-      }
-      setProfile({ ...data, companyAccess });
+      setProfile(data);
     } catch (error) {
       console.error("Erro ao buscar perfil da API:", error);
       setProfile(null);

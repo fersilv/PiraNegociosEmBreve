@@ -9,14 +9,22 @@ import ClassifiedPublishPage from './ClassifiedPublishPage';
 import ClassifiedsAnalyticsPage from './ClassifiedsAnalyticsPage';
 import ClassifiedsAuctionManagementPage from './ClassifiedsAuctionManagementPage';
 import ClassifiedsAuctionsLivePageV2 from './ClassifiedsAuctionsLivePageV2';
+import ClassifiedsCartPage from './ClassifiedsCartPage';
+import ClassifiedsDeliveryOperationsPage from './ClassifiedsDeliveryOperationsPage';
 import ClassifiedsExplorePage from './ClassifiedsExplorePage';
+import ClassifiedsFavoritesPage from './ClassifiedsFavoritesPage';
 import ClassifiedsListingsPage from './ClassifiedsListingsPage';
 import ClassifiedsInventoryPage from './ClassifiedsInventoryPage';
+import ClassifiedsLogisticsPage from './ClassifiedsLogisticsPage';
 import ClassifiedsMessengerPage from './ClassifiedsMessengerPage';
 import ClassifiedsOffersPage from './ClassifiedsOffersPage';
+import ClassifiedsOrdersNowPage from './ClassifiedsOrdersNowPage';
+import ClassifiedsPurchasesPage from './ClassifiedsPurchasesPage';
+import ClassifiedsQuestionsManagementPage from './ClassifiedsQuestionsManagementPage';
 import ClassifiedsReceiptPreferencesPage from './ClassifiedsReceiptPreferencesPage';
 import ClassifiedsReviewsPage from './ClassifiedsReviewsPage';
 import ClassifiedsSalesPage from './ClassifiedsSalesPage';
+import ClassifiedsServiceQuotesPage from './ClassifiedsServiceQuotesPage';
 import ClassifiedsSettingsPage from './ClassifiedsSettingsPage';
 import UserClassifiedsPage from './UserClassifiedsPage';
 import { CompanyPlansPage } from './CompanyPlansPage';
@@ -62,7 +70,6 @@ export default function ClassifiedsWorkspacePage() {
 function WorkspaceReadyContent() {
   const { data } = useClassifiedsWorkspace();
   const companyId = data?.company?.id;
-  
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -95,15 +102,23 @@ function WorkspaceReadyContent() {
   const isIntegratedAuctionArena = location.pathname === '/classificados/gestao/leiloes/arena';
   const isIntegratedLiveAuction = location.pathname.startsWith('/classificados/gestao/leiloes/') && location.pathname.endsWith('/ao-vivo');
   let page: React.ReactNode = <UserClassifiedsPage />;
-  
+
   if (location.pathname.startsWith('/classificados/empresa/pagina') && companyId) page = <VerifiedCompanyPageRoute companyId={companyId} />;
   else if (location.pathname.startsWith('/classificados/empresa/planos') && companyId) page = <CompanyPlansPage />;
   else if (location.pathname.startsWith('/classificados/empresa/comercial') && companyId) page = <CompanyProfilePage section="commercial" />;
   else if (isIntegratedAuctionArena || isIntegratedLiveAuction) page = <ClassifiedsAuctionsLivePageV2 embedded />;
   else if (location.pathname.startsWith('/classificados/gestao/leiloes')) page = <ClassifiedsAuctionManagementPage />;
+  else if (location.pathname.startsWith('/classificados/carrinho')) page = <ClassifiedsCartPage />;
+  else if (location.pathname.startsWith('/classificados/compras')) page = <ClassifiedsPurchasesPage />;
+  else if (location.pathname.startsWith('/classificados/favoritos')) page = <ClassifiedsFavoritesPage />;
+  else if (location.pathname.startsWith('/classificados/logistica')) page = <ClassifiedsLogisticsPage />;
+  else if (location.pathname.startsWith('/classificados/entregas')) page = <ClassifiedsDeliveryOperationsPage />;
+  else if (location.pathname.startsWith('/classificados/orcamentos')) page = <ClassifiedsServiceQuotesPage />;
   else if (location.pathname.startsWith('/classificados/explorar')) page = <ClassifiedsExplorePage />;
   else if (location.pathname.startsWith('/classificados/recebimentos')) page = <ClassifiedsReceiptPreferencesPage />;
   else if (location.pathname.startsWith('/classificados/avaliacoes')) page = <ClassifiedsReviewsPage />;
+  else if (location.pathname.startsWith('/classificados/perguntas')) page = <ClassifiedsQuestionsManagementPage />;
+  else if (location.pathname.startsWith('/classificados/minhas-vendas') || location.pathname.startsWith('/classificados/pedidos')) page = <ClassifiedsOrdersNowPage />;
   else if (location.pathname.startsWith('/classificados/vendas')) page = <ClassifiedsSalesPage />;
   else if (location.pathname.startsWith('/classificados/estoque')) page = <ClassifiedsInventoryPage />;
   else if (location.pathname.startsWith('/classificados/comercial/')) page = <ClassifiedCommerceEditorPage />;

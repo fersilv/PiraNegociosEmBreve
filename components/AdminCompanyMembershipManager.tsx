@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Crown, Handshake, Loader2, Save, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react';
+import { Crown, Handshake, Loader2, Save, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import { api } from '../lib/api';
 
 type CompanyRole = 'PRIMARY_ADMIN' | 'ADMIN' | 'EMPLOYEE';
@@ -146,24 +146,6 @@ export function AdminCompanyMembershipManager({ companyId, companyName }: { comp
     }
   };
 
-  const removeMember = async (member: CompanyMember) => {
-    if (member.isOwner) return;
-    const label = memberName(member);
-    if (!window.confirm(`Remover ${label} de ${companyName || 'esta empresa'}? O vínculo e todas as permissões empresariais serão revogados.`)) return;
-    setSavingId(member.id);
-    setMessage('');
-    setError('');
-    try {
-      await api.delete(`/company-membership/${companyId}/members/${member.id}`);
-      setMembers((current) => current.filter((item) => item.id !== member.id));
-      setMessage(`${label} foi removido(a) da empresa.`);
-    } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || 'Não foi possível remover este vínculo.');
-    } finally {
-      setSavingId(null);
-    }
-  };
-
   return (
     <section className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -225,7 +207,6 @@ export function AdminCompanyMembershipManager({ companyId, companyName }: { comp
                 </div>
 
                 <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-stone-100 pt-3">
-                  {!owner && <button type="button" onClick={() => void removeMember(member)} disabled={busy} className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-black text-red-700 hover:bg-red-100 disabled:opacity-50"><Trash2 className="h-4 w-4" /> Remover da empresa</button>}
                   {!owner && member.status === 'ACTIVE' && <button type="button" onClick={() => void makeOwner(member)} disabled={busy} className="inline-flex h-10 items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 text-xs font-black text-amber-800 disabled:opacity-50"><Crown className="h-4 w-4" /> Tornar proprietário</button>}
                   <button type="button" onClick={() => void saveMember(member)} disabled={busy} className="inline-flex h-10 items-center gap-2 rounded-xl bg-terracotta-600 px-4 text-xs font-black text-white disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : owner ? <ShieldCheck className="h-4 w-4" /> : <Save className="h-4 w-4" />} {owner ? 'Salvar sociedade' : 'Salvar acesso'}</button>
                 </div>

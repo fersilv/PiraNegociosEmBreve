@@ -15,7 +15,6 @@ import {
   Settings2,
   ShieldCheck,
   Store,
-  Trash2,
   UserCog,
   Users,
   WalletCards,
@@ -151,20 +150,6 @@ export function CompanyProfilePage({ section = "commercial" }: { section?: Compa
     } finally { setWorking(""); }
   };
 
-  const removeMember = async (member: any) => {
-    if (!companyId || member.id === user?.uid) return;
-    const label = member.socialName || member.displayName || member.fullName || member.name || member.email || "esta pessoa";
-    if (!window.confirm(`Remover ${label} da empresa? O acesso empresarial e todas as permissões serão revogados.`)) return;
-    setWorking(`member-${member.id}`); setMessage("");
-    try {
-      await api.delete(`/company-membership/${companyId}/members/${member.id}`);
-      setEmployees((current) => current.filter((item) => item.id !== member.id));
-      setMessage(`${label} foi removido(a) da empresa.`);
-    } catch (error: any) {
-      setMessage(error?.response?.data?.message || "Não foi possível remover esta pessoa da empresa.");
-    } finally { setWorking(""); }
-  };
-
   const subscribe = async (plan: "PLUS" | "ELITE") => {
     setWorking(`plan-${plan}`); setMessage("");
     try {
@@ -196,7 +181,7 @@ export function CompanyProfilePage({ section = "commercial" }: { section?: Compa
 
     {section === "commercial" && <CommercialSection company={company} name={name} setName={setName} description={description} setDescription={setDescription} logoURL={logoURL} setLogoURL={setLogoURL} website={website} setWebsite={setWebsite} phone={phone} setPhone={setPhone} sameAddress={sameAddress} setSameAddress={setSameAddress} address={address} setAddress={setAddress} city={city} setCity={setCity} state={state} setState={setState} working={working} onSave={saveCommercial} onRefreshRegistry={refreshRegistry} />}
     {section === "finance" && <FinanceSection plans={plans} checkout={checkout} working={working} onSubscribe={subscribe} />}
-    {section === "team" && <TeamSection employees={employees} userId={user?.uid || ""} inviteName={inviteName} setInviteName={setInviteName} inviteEmail={inviteEmail} setInviteEmail={setInviteEmail} inviteRole={inviteRole} setInviteRole={setInviteRole} working={working} onInvite={invite} onChangeRole={changeRole} onRemove={removeMember} />}
+    {section === "team" && <TeamSection employees={employees} userId={user?.uid || ""} inviteName={inviteName} setInviteName={setInviteName} inviteEmail={inviteEmail} setInviteEmail={setInviteEmail} inviteRole={inviteRole} setInviteRole={setInviteRole} working={working} onInvite={invite} onChangeRole={changeRole} />}
     {section === "settings" && <SettingsSection company={company} />}
   </div>;
 }
@@ -242,9 +227,9 @@ function FinanceSection({ plans, checkout, working, onSubscribe }: any) {
   </div>;
 }
 
-function TeamSection({ employees, userId, inviteName, setInviteName, inviteEmail, setInviteEmail, inviteRole, setInviteRole, working, onInvite, onChangeRole, onRemove }: any) {
+function TeamSection({ employees, userId, inviteName, setInviteName, inviteEmail, setInviteEmail, inviteRole, setInviteRole, working, onInvite, onChangeRole }: any) {
   return <div className="space-y-5"><section className="rounded-[28px] bg-white p-5 ring-1 ring-stone-200 sm:p-6"><div className="flex items-start gap-3"><Users className="h-5 w-5 text-[#397c75]" /><div><h2 className="text-xl font-black">Equipe e permissões</h2><p className="mt-1 text-xs leading-5 text-stone-500">O administrador principal pode conceder acesso à empresa. Recrutamento, Marketplace, Financeiro, Perfil e Equipe são domínios separados na camada de permissões.</p></div></div><div className="mt-5 grid gap-3 sm:grid-cols-[1fr_1fr_.65fr_auto]"><input value={inviteName} onChange={e => setInviteName(e.target.value)} placeholder="Nome" className={inputClass} /><input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="E-mail" className={inputClass} /><select value={inviteRole} onChange={e => setInviteRole(e.target.value)} className={inputClass}><option value="colaborador">Colaborador</option><option value="admin">Administrador</option></select><button onClick={() => void onInvite()} disabled={working === "invite" || !inviteName.trim() || !inviteEmail.trim()} className="rounded-xl bg-[#0d4542] px-4 text-xs font-black text-white disabled:opacity-40">Convidar</button></div></section>
-    <section className="overflow-hidden rounded-[28px] bg-white ring-1 ring-stone-200"><div className="border-b border-stone-100 p-5"><h3 className="font-black">Pessoas vinculadas</h3></div><div className="divide-y divide-stone-100">{employees.length ? employees.map((member: any) => <div key={member.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-black">{member.name || member.displayName || member.email}</p><p className="mt-1 text-xs text-stone-400">{member.email}</p></div><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase ${member.isCompanyAdmin ? "bg-violet-50 text-violet-700" : "bg-stone-100 text-stone-600"}`}>{member.isCompanyAdmin ? "Administrador" : "Colaborador"}</span>{member.id !== userId && <><select disabled={working === `member-${member.id}`} value={member.isCompanyAdmin ? "admin" : "colaborador"} onChange={e => void onChangeRole(member, e.target.value === "admin")} className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-bold"><option value="colaborador">Colaborador</option><option value="admin">Administrador</option></select><button type="button" disabled={working === `member-${member.id}`} onClick={() => void onRemove(member)} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-black text-red-700 transition hover:bg-red-100 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />Remover</button></>}</div></div>) : <div className="p-10 text-center text-sm text-stone-400">Nenhuma outra pessoa vinculada.</div>}</div><div className="border-t border-stone-100 bg-stone-50 p-4 text-[10px] leading-4 text-stone-500">Permissões granulares já existem na camada de autorização societária. A edição individual dos colaboradores será aplicada sobre os mesmos domínios: {Object.values(permissionLabels).join(", ")}.</div></section>
+    <section className="overflow-hidden rounded-[28px] bg-white ring-1 ring-stone-200"><div className="border-b border-stone-100 p-5"><h3 className="font-black">Pessoas vinculadas</h3></div><div className="divide-y divide-stone-100">{employees.length ? employees.map((member: any) => <div key={member.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-black">{member.name || member.displayName || member.email}</p><p className="mt-1 text-xs text-stone-400">{member.email}</p></div><div className="flex items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase ${member.isCompanyAdmin ? "bg-violet-50 text-violet-700" : "bg-stone-100 text-stone-600"}`}>{member.isCompanyAdmin ? "Administrador" : "Colaborador"}</span>{member.id !== userId && <select disabled={working === `member-${member.id}`} value={member.isCompanyAdmin ? "admin" : "colaborador"} onChange={e => void onChangeRole(member, e.target.value === "admin")} className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-bold"><option value="colaborador">Colaborador</option><option value="admin">Administrador</option></select>}</div></div>) : <div className="p-10 text-center text-sm text-stone-400">Nenhuma outra pessoa vinculada.</div>}</div><div className="border-t border-stone-100 bg-stone-50 p-4 text-[10px] leading-4 text-stone-500">Permissões granulares já existem na camada de autorização societária. A edição individual dos colaboradores será aplicada sobre os mesmos domínios: {Object.values(permissionLabels).join(", ")}.</div></section>
   </div>;
 }
 

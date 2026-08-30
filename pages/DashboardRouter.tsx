@@ -31,6 +31,7 @@ import { AdminPaymentsPage } from "./AdminPaymentsPage";
 import AdminMercadoPagoTestsPage from "./AdminMercadoPagoTestsPage";
 import AdminClassifiedCommercePage from "./AdminClassifiedCommercePage";
 import AdminClassifiedCatalogPage from "./AdminClassifiedCatalogPage";
+import AdminDeliveryPartnersPage from "./AdminDeliveryPartnersPage";
 import { AdminBillingSupportPage } from "./AdminBillingSupportPage";
 import { AdminPublicResumeBuilderPage } from "./AdminPublicResumeBuilderPage";
 import { AdminJobIntegrationsPage } from "./AdminJobIntegrationsPage";
@@ -42,6 +43,7 @@ import { CompanyJobPage } from "./CompanyJobPage";
 import { CompanyJobInvitesPage } from "./CompanyJobInvitesPage";
 import { CompanyHiringConfig } from "./CompanyHiringConfig";
 import { CompanyPlansPage } from "./CompanyPlansPage";
+import CompanyFinancialTransactionsPage from "./CompanyFinancialTransactionsPage";
 import { CandidateOnboardingPage } from "./CandidateOnboardingPage";
 import { CandidateJobViewPage } from "./CandidateJobViewPage";
 import { ResumeWorkspace } from "./ResumeWorkspace";
@@ -52,7 +54,13 @@ import AdminIdentityVerificationsPage from "./AdminIdentityVerificationsPage";
 import AdminClassifiedReviewsPage from "./AdminClassifiedReviewsPage";
 
 function AdminPage({ children }: { children: React.ReactNode }) {
-  return <div className="admin-page-shell">{children}</div>;
+  const location = useLocation();
+  const links = [
+    ["/admin/classificados", "Classificados"],
+    ["/admin/entregas", "Entregas e parceiros"],
+    ["/admin/pagamentos", "Pagamentos"],
+  ];
+  return <div className="admin-page-shell"><nav className="mb-5 flex gap-2 overflow-x-auto rounded-2xl bg-white p-2 shadow-sm ring-1 ring-stone-200">{links.map(([to,label]) => <Link key={to} to={to} className={`shrink-0 rounded-xl px-3 py-2 text-[10px] font-black ${location.pathname.startsWith(to) ? "bg-stone-900 text-white" : "bg-stone-50 text-stone-600"}`}>{label}</Link>)}</nav>{children}</div>;
 }
 
 function AdminRoutes() {
@@ -63,6 +71,7 @@ function AdminRoutes() {
       <Route path="empresas" element={<AdminPage><AdminDashboard mode="moderation" section="companies" /></AdminPage>} />
       <Route path="validacao-cadastral" element={<AdminPage><AdminIdentityVerificationsPage /></AdminPage>} />
       <Route path="classificados" element={<AdminPage><AdminClassifiedCatalogPage /></AdminPage>} />
+      <Route path="entregas" element={<AdminPage><AdminDeliveryPartnersPage /></AdminPage>} />
       <Route path="avaliacoes-classificados" element={<AdminPage><AdminClassifiedReviewsPage /></AdminPage>} />
       <Route path="vagas" element={<AdminPage><AdminDashboard mode="moderation" section="jobs" /></AdminPage>} />
       <Route path="vagas/sinalizadas" element={<AdminPage><AdminFlaggedJobsPage /></AdminPage>} />
@@ -165,6 +174,7 @@ function CompanyRoutes({ companyId }: { companyId?: string }) {
       <Route path="talentos" element={companyOnly(<TalentSearchPage />)} />
       <Route path="contratacao" element={companyOnly(<CompanyHiringConfig />)} />
       <Route path="planos" element={companyOnly(<CompanyPlansPage />)} />
+      <Route path="pagamentos" element={companyOnly(<CompanyFinancialTransactionsPage />)} />
       <Route path="pagina" element={companyOnly(companyId ? <VerifiedCompanyPageRoute companyId={companyId} /> : null)} />
       <Route path="notificacoes" element={companyOnly(<NotificationPreferencesPage />)} />
       <Route path="verificacao" element={companyOnly(<IdentityVerificationPage />)} />
@@ -176,6 +186,20 @@ function CompanyRoutes({ companyId }: { companyId?: string }) {
       <Route path="*" element={<Navigate to={hasCompany ? "/company" : "/company/comercial"} replace />} />
     </Routes>
   );
+}
+
+function CompanySharedNavigation() {
+  const location = useLocation();
+  const links = [
+    ["/company", "Business"],
+    ["/company/pagamentos", "Transações financeiras"],
+    ["/company/planos", "Planos e cobrança"],
+    ["/classificados/explorar", "Classificados Business"],
+  ];
+  return <nav className="mb-5 flex gap-2 overflow-x-auto rounded-2xl bg-white/75 p-2 shadow-sm ring-1 ring-stone-200">{links.map(([to,label]) => {
+    const active = to === "/company" ? location.pathname === "/company" : location.pathname.startsWith(to);
+    return <Link key={to} to={to} className={`shrink-0 rounded-xl px-3 py-2 text-[10px] font-black ${active ? "bg-stone-900 text-white" : "bg-stone-50 text-stone-600"}`}>{label}</Link>;
+  })}</nav>;
 }
 
 function LegacyDashboardRedirect() {
@@ -243,7 +267,7 @@ export function Dashboard() {
 
   if (isCompanyRoute) {
     if (isAdmin || profile?.companyId || location.pathname === "/company/comercial" || location.pathname === "/company/perfil") {
-      return <WorkspaceLayout workspace="company"><CompanyRoutes companyId={profile?.companyId} /></WorkspaceLayout>;
+      return <WorkspaceLayout workspace="company"><CompanySharedNavigation /><CompanyRoutes companyId={profile?.companyId} /></WorkspaceLayout>;
     }
     return <Navigate to="/company/comercial" replace />;
   }
@@ -259,8 +283,6 @@ export function Dashboard() {
 
   if (isUserRoute) return <WorkspaceLayout workspace="user"><ResumeImportEntitlementOrchestrator /><BoostVisibilityBanner /><UserRoutes /></WorkspaceLayout>;
 
-  // Administração continua sendo a casa principal do administrador. A diferença é
-  // que, quando ele escolhe explicitamente outro workspace, o roteador não o expulsa de lá.
   if (isAdmin) return <Navigate to="/admin" replace />;
   return <Navigate to={profile?.companyId ? "/company" : "/user"} replace />;
 }
