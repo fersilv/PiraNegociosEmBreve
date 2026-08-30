@@ -81,16 +81,23 @@ export class ClassifiedsDeliveryDistanceService {
         zipCode: origin.zipCode,
         placeId: origin.placeId,
         address: this.completeAddress(origin),
+        hasNumber: Boolean(String(origin.number || '').trim()),
       },
       {
         ...(destinationCoordinates || {}),
         zipCode: destination.zipCode,
         placeId: destination.placeId,
         address: this.completeAddress(destination),
+        hasNumber: Boolean(String(destination.number || '').trim()),
       },
     );
     if (!routed) {
-      return { distanceMeters: null, source: 'GOOGLE_ROUTE_UNAVAILABLE' as const };
+      return {
+        distanceMeters: null,
+        source: String(process.env.GOOGLE_ROUTES_API_KEY || '').trim()
+          ? 'GOOGLE_ROUTE_UNAVAILABLE' as const
+          : 'ROAD_ROUTE_UNAVAILABLE' as const,
+      };
     }
 
     return {
@@ -98,6 +105,11 @@ export class ClassifiedsDeliveryDistanceService {
       durationSeconds: routed.durationSeconds,
       source: routed.cacheHit ? `${routed.source}_CACHE` as const : routed.source,
       cacheHit: routed.cacheHit,
+      routeResolution: {
+        provider: routed.source,
+        origin: routed.originResolved,
+        destination: routed.destinationResolved,
+      },
     };
   }
 
@@ -124,6 +136,7 @@ export class ClassifiedsDeliveryDistanceService {
     const zipCode = String(row.zipCode || '').replace(/\D/g, '').slice(0, 8);
     const parts = [
       [row.street, row.number].filter(Boolean).join(', '),
+      row.complement,
       row.neighborhood,
       [row.city, row.state].filter(Boolean).join(' - '),
       zipCode,
