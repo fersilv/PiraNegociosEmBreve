@@ -20,6 +20,11 @@ export class ClassifiedsDeliveryPreviewService {
     const suppliedDestination = raw.destinationAddress && typeof raw.destinationAddress === 'object'
       ? raw.destinationAddress as Record<string, unknown>
       : null;
+    const suppliedNumber = String(suppliedDestination?.number || '').trim();
+    const googleRoutingEnabled = Boolean(String(process.env.GOOGLE_ROUTES_API_KEY || '').trim());
+    if (googleRoutingEnabled && !suppliedNumber) {
+      throw new BadRequestException('Informe o número do endereço para calcular a rota real pelo Google.');
+    }
 
     const listingRows = await this.dataSource.query(
       `SELECT l.id,l.title,l.status,l."listingType",l."companyId",
@@ -62,6 +67,9 @@ export class ClassifiedsDeliveryPreviewService {
     );
     const origin = originRows[0];
     if (!origin) throw new BadRequestException('Origem de entrega indisponível.');
+    if (googleRoutingEnabled && !String(origin.number || '').trim()) {
+      throw new BadRequestException('A origem de entrega da empresa precisa ter número para calcular uma rota Google precisa.');
+    }
 
     let originLatitude = this.coordinate(origin.latitude, -90, 90);
     let originLongitude = this.coordinate(origin.longitude, -180, 180);
@@ -73,7 +81,6 @@ export class ClassifiedsDeliveryPreviewService {
     const destinationLatitude = this.coordinate(destination.latitude, -90, 90);
     const destinationLongitude = this.coordinate(destination.longitude, -180, 180);
 
-    const suppliedNumber = String(suppliedDestination?.number || '').trim();
     const routed = await resolveRoadDistance(
       this.dataSource,
       {
@@ -95,7 +102,7 @@ export class ClassifiedsDeliveryPreviewService {
     const distanceMeters = routed?.distanceMeters ?? null;
     const distanceSource = routed
       ? (routed.cacheHit ? `${routed.source}_CACHE` : routed.source)
-      : (String(process.env.GOOGLE_ROUTES_API_KEY || '').trim() ? 'GOOGLE_ROUTE_UNAVAILABLE' : 'ROAD_ROUTE_UNAVAILABLE');
+      : (googleRoutingEnabled ? 'GOOGLE_ROUTE_UNAVAILABLE' : 'ROAD_ROUTE_UNAVAILABLE');
 
     const aggregate = {
       weightGrams: listing.weightGrams == null ? null : Number(listing.weightGrams) * quantity,
