@@ -13,7 +13,7 @@ ALTER TABLE classified_orders
   DROP CONSTRAINT IF EXISTS classified_orders_order_mode_check;
 ALTER TABLE classified_orders
   ADD CONSTRAINT classified_orders_order_mode_check
-  CHECK ("orderMode" IN ('ONLINE_PAYMENT','PURCHASE_ORDER'));
+  CHECK ("orderMode" IN ('ONLINE_PAYMENT','PURCHASE_ORDER','PAY_ON_RECEIPT'));
 
 ALTER TABLE classified_offers
   ADD COLUMN IF NOT EXISTS "orderId" uuid NULL,
@@ -53,7 +53,7 @@ CREATE UNIQUE INDEX classified_orders_offer_uq
 ALTER TABLE classified_offers DROP CONSTRAINT IF EXISTS classified_offers_status_check;
 ALTER TABLE classified_offers
   ADD CONSTRAINT classified_offers_status_check
-  CHECK (status IN ('PENDING','ACCEPTED','REJECTED','EXPIRED','WITHDRAWN','CONSUMED'));
+  CHECK (status IN ('PENDING','ACCEPTED','REJECTED','EXPIRED','WITHDRAWN','REVOKED','CONSUMED'));
 
 -- Mantém a criação da conversa automática, mas oferta aceita NÃO pausa mais o anúncio.
 CREATE OR REPLACE FUNCTION settle_accepted_classified_offer()
