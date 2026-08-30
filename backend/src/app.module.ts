@@ -25,6 +25,7 @@ import { ClassifiedsModule } from './classifieds/classifieds.module';
 import { CompanyPlansModule } from './company-plans/company-plans.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { ComplianceModule } from './compliance/compliance.module';
+import { CompanyMcpModule } from './company-mcp/company-mcp.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { ComplianceModule } from './compliance/compliance.module';
       synchronize: process.env.NODE_ENV !== 'production',
     }),
     ExternalApiModule,
+    CompanyMcpModule,
     JobsModule,
     UsersModule,
     UploadsModule,
