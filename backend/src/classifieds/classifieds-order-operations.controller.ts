@@ -7,6 +7,11 @@ import { ClassifiedsOrderOperationsService } from './classifieds-order-operation
 export class ClassifiedsOrderOperationsController {
   constructor(private readonly operations: ClassifiedsOrderOperationsService) {}
 
+  @Get('me/orders/operations/summary')
+  summary(@Req() req: any) {
+    return this.operations.summary(req.user.uid);
+  }
+
   @Get('me/orders/operations')
   list(@Req() req: any) {
     return this.operations.list(req.user.uid);
