@@ -93,6 +93,146 @@ CREATE TRIGGER trg_settle_accepted_classified_offer
 AFTER UPDATE OF status ON classified_offers
 FOR EACH ROW EXECUTE FUNCTION settle_accepted_classified_offer();
 
+-- Qualquer checkout online que nascer para o comprador de uma oferta aceita ativa recebe
+-- automaticamente o preço negociado. A oferta não é tratada como desconto promocional:
+-- Pix/cartão não acumulam desconto e discountCents fica zerado.
+CREATE OR REPLACE FUNCTION pn_apply_accepted_offer_to_order()
+RETURNS trigger AS $$
+DECLARE
+  offer_row record;
+  rate_bps integer := 0;
+  min_fee integer := 0;
+  max_fee integer := NULL;
+  offer_unit_cents integer;
+  subtotal bigint;
+  platform_fee bigint;
+  shipping bigint := COALESCE(NEW."shippingCents",0);
+  buyer_fee bigint := COALESCE(NEW."buyerFeeCents",0);
+  offer_snapshot jsonb;
+BEGIN
+  IF NEW."orderMode" <> 'ONLINE_PAYMENT' OR NEW."offerId" IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT * INTO offer_row
+  FROM classified_offers
+  WHERE "listingId"=NEW."listingId"
+    AND "buyerUserId"=NEW."buyerUserId"
+    AND status='ACCEPTED'
+    AND "expiresAt">now()
+    AND "orderId" IS NULL
+  ORDER BY "respondedAt" DESC NULLS LAST,"updatedAt" DESC
+  LIMIT 1
+  FOR UPDATE;
+
+  IF offer_row.id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  offer_unit_cents := ROUND(offer_row.amount::numeric * 100)::integer;
+  IF offer_unit_cents <= 0 THEN
+    RETURN NEW;
+  END IF;
+
+  rate_bps := COALESCE(NULLIF(NEW.metadata->'feeRule'->>'rateBps','')::integer, 0);
+  min_fee := COALESCE(NULLIF(NEW.metadata->'feeRule'->>'minimumFeeCents','')::integer, 0);
+  BEGIN
+    max_fee := NULLIF(NEW.metadata->'feeRule'->>'maximumFeeCents','')::integer;
+  EXCEPTION WHEN invalid_text_representation THEN
+    max_fee := NULL;
+  END;
+
+  subtotal := offer_unit_cents::bigint * GREATEST(1,NEW.quantity);
+  platform_fee := ROUND(subtotal::numeric * rate_bps::numeric / 10000)::bigint;
+  platform_fee := GREATEST(platform_fee,min_fee);
+  IF max_fee IS NOT NULL THEN
+    platform_fee := LEAST(platform_fee,max_fee);
+  END IF;
+  platform_fee := LEAST(platform_fee,subtotal);
+
+  offer_snapshot := jsonb_build_object(
+    'id',offer_row.id,
+    'amount',offer_row.amount,
+    'amountCents',offer_unit_cents,
+    'expiresAt',offer_row."expiresAt",
+    'pricingMode','ACCEPTED_OFFER',
+    'paymentDiscountsSuppressed',true
+  );
+
+  NEW."offerId" := offer_row.id;
+  NEW."unitPriceCents" := offer_unit_cents;
+  NEW."discountCents" := 0;
+  NEW."itemSubtotalCents" := subtotal;
+  NEW."platformFeeCents" := platform_fee;
+  NEW."sellerNetCents" := GREATEST(0,subtotal-platform_fee);
+  NEW."applicationFeeCents" := platform_fee + shipping;
+  NEW."totalCents" := subtotal + shipping + buyer_fee;
+  NEW.metadata := COALESCE(NEW.metadata,'{}'::jsonb)
+    || jsonb_build_object('acceptedOffer',offer_snapshot,'pricingSource','ACCEPTED_OFFER');
+  NEW."paymentFinancialSnapshot" := COALESCE(NEW."paymentFinancialSnapshot",'{}'::jsonb)
+    || jsonb_build_object(
+      'itemSubtotalCents',subtotal,
+      'shippingCents',shipping,
+      'buyerFeeCents',buyer_fee,
+      'totalCents',NEW."totalCents",
+      'platformFeeCents',platform_fee,
+      'applicationFeeCents',NEW."applicationFeeCents",
+      'sellerNetCents',NEW."sellerNetCents",
+      'pricingSource','ACCEPTED_OFFER',
+      'acceptedOffer',offer_snapshot
+    );
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_pn_apply_accepted_offer_to_order ON classified_orders;
+CREATE TRIGGER trg_pn_apply_accepted_offer_to_order
+BEFORE INSERT ON classified_orders
+FOR EACH ROW EXECUTE FUNCTION pn_apply_accepted_offer_to_order();
+
+-- Vincula a oferta ao pedido depois que o pedido existe e corrige o snapshot do item
+-- que os checkouts inserem logo após criar classified_orders.
+CREATE OR REPLACE FUNCTION pn_claim_offer_after_order_insert()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW."offerId" IS NOT NULL THEN
+    UPDATE classified_offers
+    SET "orderId"=NEW.id,"updatedAt"=now()
+    WHERE id=NEW."offerId" AND status='ACCEPTED' AND "orderId" IS NULL;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_pn_claim_offer_after_order_insert ON classified_orders;
+CREATE TRIGGER trg_pn_claim_offer_after_order_insert
+AFTER INSERT ON classified_orders
+FOR EACH ROW EXECUTE FUNCTION pn_claim_offer_after_order_insert();
+
+CREATE OR REPLACE FUNCTION pn_align_offer_order_item_price()
+RETURNS trigger AS $$
+DECLARE
+  ord record;
+BEGIN
+  SELECT * INTO ord FROM classified_orders WHERE id=NEW."orderId";
+  IF ord."offerId" IS NULL OR NEW."listingId"<>ord."listingId" THEN
+    RETURN NEW;
+  END IF;
+  NEW."unitPriceCents" := ord."unitPriceCents";
+  NEW."discountCents" := 0;
+  NEW."totalCents" := ord."unitPriceCents"::bigint * NEW.quantity;
+  NEW."listingSnapshot" := COALESCE(NEW."listingSnapshot",'{}'::jsonb)
+    || jsonb_build_object('acceptedOffer',ord.metadata->'acceptedOffer','pricingSource','ACCEPTED_OFFER');
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_pn_align_offer_order_item_price ON classified_order_items;
+CREATE TRIGGER trg_pn_align_offer_order_item_price
+BEFORE INSERT ON classified_order_items
+FOR EACH ROW EXECUTE FUNCTION pn_align_offer_order_item_price();
+
 -- Pagamento online: a unidade já foi removida do saldo disponível como reserva.
 -- Na aprovação apenas consolidamos a venda, consumimos a oferta e, se configurado,
 -- pausamos a vitrine quando o estoque chegou a zero.
