@@ -74,10 +74,8 @@ CREATE TABLE IF NOT EXISTS classified_listing_events (
   CONSTRAINT classified_listing_events_listing_fk FOREIGN KEY ("listingId") REFERENCES classified_listings(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS classified_listing_events_listing_idx
-  ON classified_listing_events ("listingId", "createdAt" DESC);
-CREATE INDEX IF NOT EXISTS classified_listing_events_type_idx
-  ON classified_listing_events ("eventType", "createdAt" DESC);
+CREATE INDEX IF NOT EXISTS classified_listing_events_listing_idx ON classified_listing_events ("listingId", "createdAt" DESC);
+CREATE INDEX IF NOT EXISTS classified_listing_events_type_idx ON classified_listing_events ("eventType", "createdAt" DESC);
 
 ALTER TABLE classified_listings ADD COLUMN IF NOT EXISTS "moderationReason" text NULL;
 ALTER TABLE classified_listings ADD COLUMN IF NOT EXISTS "duplicateOfListingId" uuid NULL;
@@ -97,6 +95,8 @@ END $$;
 CREATE INDEX IF NOT EXISTS classified_listings_duplicate_idx
   ON classified_listings ("duplicateOfListingId") WHERE "duplicateOfListingId" IS NOT NULL;
 
+-- Aceitar uma oferta NAO reserva estoque e NAO muda a visibilidade do anuncio.
+-- A conversa e criada para a negociacao, enquanto a vitrine permanece publicada.
 CREATE OR REPLACE FUNCTION settle_accepted_classified_offer()
 RETURNS trigger AS $$
 BEGIN
@@ -106,10 +106,6 @@ BEGIN
     VALUES
       (NEW."listingId", NEW."buyerUserId", NEW."buyerCompanyId", NEW."sellerUserId", NEW."sellerCompanyId", now(), NULL, NULL)
     ON CONFLICT DO NOTHING;
-
-    UPDATE classified_listings
-    SET status = 'PAUSED', "updatedAt" = now()
-    WHERE id = NEW."listingId" AND status = 'PUBLISHED';
   END IF;
   RETURN NEW;
 END;
