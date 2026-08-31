@@ -60,15 +60,22 @@ export class ClassifiedsOrdersGateway implements OnGatewayConnection, OnGatewayD
     }
     try {
       const decoded = await this.firebaseService.getAuth().verifyIdToken(token);
-      const identity = await this.identities.active(decoded.uid);
-      if (identity.type !== 'COMPANY' || !identity.company?.id) {
-        client.disconnect(true);
-        return;
-      }
       client.data.uid = decoded.uid;
-      client.data.companyId = identity.company.id;
-      await client.join(this.companyRoom(identity.company.id));
-      client.emit('orders:ready', { companyId: identity.company.id, at: new Date().toISOString() });
+      await client.join(this.userRoom(decoded.uid));
+
+      let companyId: string | null = null;
+      try {
+        const identity = await this.identities.active(decoded.uid);
+        if (identity.type === 'COMPANY' && identity.company?.id) {
+          companyId = identity.company.id;
+          client.data.companyId = companyId;
+          await client.join(this.companyRoom(companyId));
+        }
+      } catch {
+        // Usuário comprador não precisa de uma identidade Business ativa para receber o próprio pedido.
+      }
+
+      client.emit('orders:ready', { userId: decoded.uid, companyId, at: new Date().toISOString() });
     } catch (error) {
       this.logger.debug(`Conexão de pedidos recusada: ${String(error)}`);
       client.disconnect(true);
@@ -81,7 +88,7 @@ export class ClassifiedsOrdersGateway implements OnGatewayConnection, OnGatewayD
 
   @SubscribeMessage('orders:ping')
   ping(@ConnectedSocket() client: Socket) {
-    return { ok: Boolean(client.data.companyId), at: new Date().toISOString() };
+    return { ok: Boolean(client.data.uid), at: new Date().toISOString() };
   }
 
   publishCompanyOrderChanged(companyId: string, orderId: string, reason: ClassifiedOrderRealtimeReason, snapshot?: Record<string, unknown> | null) {
@@ -90,6 +97,19 @@ export class ClassifiedsOrdersGateway implements OnGatewayConnection, OnGatewayD
     if (!cleanCompanyId || !cleanOrderId || !this.server) return;
     this.server.to(this.companyRoom(cleanCompanyId)).emit('orders:update', {
       companyId: cleanCompanyId,
+      orderId: cleanOrderId,
+      reason,
+      snapshot: snapshot || null,
+      at: new Date().toISOString(),
+    });
+  }
+
+  publishBuyerOrderChanged(userId: string, orderId: string, reason: ClassifiedOrderRealtimeReason, snapshot?: Record<string, unknown> | null) {
+    const cleanUserId = String(userId || '').trim();
+    const cleanOrderId = String(orderId || '').trim();
+    if (!cleanUserId || !cleanOrderId || !this.server) return;
+    this.server.to(this.userRoom(cleanUserId)).emit('orders:update', {
+      userId: cleanUserId,
       orderId: cleanOrderId,
       reason,
       snapshot: snapshot || null,
@@ -115,19 +135,7 @@ export class ClassifiedsOrdersGateway implements OnGatewayConnection, OnGatewayD
       this.pgListener = client;
       client.on('notification', (message) => {
         if (message.channel !== 'pira_classified_orders' || !message.payload) return;
-        try {
-          const payload = JSON.parse(message.payload) as Record<string, any>;
-          const statusChanged = payload.operation === 'UPDATE';
-          const reason: ClassifiedOrderRealtimeReason = payload.operation === 'INSERT'
-            ? 'CREATED'
-            : String(payload.paymentStatus || '') === 'APPROVED' ? 'PAYMENT' : statusChanged ? 'STATUS' : 'STATUS';
-          this.publishCompanyOrderChanged(String(payload.companyId || ''), String(payload.orderId || ''), reason, {
-            status: payload.status || null,
-            paymentStatus: payload.paymentStatus || null,
-          });
-        } catch (error) {
-          this.logger.debug(`Evento de pedido realtime inválido: ${String(error)}`);
-        }
+        void this.handleDatabaseNotification(message.payload);
       });
       client.on('error', (error) => {
         this.logger.warn(`Canal realtime de pedidos perdeu a conexão: ${String(error)}`);
@@ -143,6 +151,36 @@ export class ClassifiedsOrdersGateway implements OnGatewayConnection, OnGatewayD
       this.pgListener = null;
       if (listener) await listener.end().catch(() => undefined);
       this.scheduleReconnect();
+    }
+  }
+
+  private async handleDatabaseNotification(rawPayload: string) {
+    try {
+      const payload = JSON.parse(rawPayload) as Record<string, any>;
+      const orderId = String(payload.orderId || '').trim();
+      const companyId = String(payload.companyId || '').trim();
+      if (!orderId || !companyId) return;
+
+      const reason: ClassifiedOrderRealtimeReason = payload.operation === 'INSERT'
+        ? 'CREATED'
+        : String(payload.paymentStatus || '') === 'APPROVED'
+          ? 'PAYMENT'
+          : 'STATUS';
+      const snapshot = {
+        status: payload.status || null,
+        paymentStatus: payload.paymentStatus || null,
+      };
+
+      this.publishCompanyOrderChanged(companyId, orderId, reason, snapshot);
+
+      const buyerRows = await this.dataSource.query(
+        `SELECT "buyerUserId" FROM classified_orders WHERE id=$1 LIMIT 1`,
+        [orderId],
+      ).catch(() => []);
+      const buyerUserId = String(buyerRows[0]?.buyerUserId || '').trim();
+      if (buyerUserId) this.publishBuyerOrderChanged(buyerUserId, orderId, reason, snapshot);
+    } catch (error) {
+      this.logger.debug(`Evento de pedido realtime inválido: ${String(error)}`);
     }
   }
 
@@ -164,5 +202,9 @@ export class ClassifiedsOrdersGateway implements OnGatewayConnection, OnGatewayD
 
   private companyRoom(companyId: string) {
     return `classified-orders:company:${companyId}`;
+  }
+
+  private userRoom(userId: string) {
+    return `classified-orders:user:${userId}`;
   }
 }
