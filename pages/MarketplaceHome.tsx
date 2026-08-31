@@ -478,7 +478,7 @@ function PortalCard({ icon, eyebrow, title, text, to }: { icon: React.ReactNode;
   return (
     <Link to={to} className="group flex min-h-[210px] flex-col border-[#4b3328]/8 px-5 py-8 transition hover:bg-[#fffaf5] md:border-x md:px-7">
       <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#2d211c] text-[#f0bf9f]">{icon}</span>
-      <p className="mt-5 text-[9px] font-black uppercase tracking-[.18em] text-[#b96345]">{eyrow}</p>
+      <p className="mt-5 text-[9px] font-black uppercase tracking-[.18em] text-[#b96345]">{eyebrow}</p>
       <h3 className="mt-1 font-serif text-2xl font-bold">{title}</h3>
       <p className="mt-2 text-xs leading-5 text-[#735f54]">{text}</p>
       <span className="mt-auto pt-4 text-xs font-black text-[#9f5038]">Explorar <ArrowRight className="ml-1 inline h-3.5 w-3.5 transition group-hover:translate-x-1" /></span>
