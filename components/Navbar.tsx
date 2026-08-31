@@ -38,7 +38,7 @@ export function Navbar() {
           <span><span className="block font-serif text-xl font-bold leading-none text-[#2d211c]">PiraNegócios</span><span className="mt-1 block text-[9px] font-bold uppercase tracking-[0.2em] text-[#ad6e50]">Marketplace da região</span></span>
         </Link>
 
-        <nav className="hidden items-center gap-0.5 md:flex">
+        <nav className="hidden items-center gap-0.5 lg:flex">
           <Link to="/classificados" className="group inline-flex items-center gap-2 rounded-2xl border border-[#c96847]/20 bg-[#fff0e8] px-3.5 py-2.5 text-sm font-black text-[#a84f34] shadow-[0_8px_24px_rgba(201,104,71,.12)] transition hover:-translate-y-0.5 hover:border-[#c96847]/35 hover:bg-[#ffe7dc] hover:shadow-[0_12px_30px_rgba(201,104,71,.18)]">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#c96847] text-white shadow-sm transition group-hover:scale-105"><Tags className="h-4 w-4" /></span>
             <span>Classificados</span>{hasLiveAuction && <LiveAuctionDot />}
@@ -49,14 +49,14 @@ export function Navbar() {
           <Link to="/para-empresas" className="rounded-xl px-3 py-2 text-sm font-semibold text-[#5e4a40] transition hover:bg-[#f2e8df] hover:text-[#2d211c]">Para empresas</Link>
         </nav>
 
-        <div className="hidden items-center gap-2 md:flex">
+        <div className="hidden items-center gap-2 lg:flex">
           {user ? <Link to={workspacePath} className="inline-flex items-center gap-2 rounded-2xl bg-[#2d211c] px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-[#1f1714]"><User className="h-4 w-4" />Meu espaço</Link> : <><Link to="/login" className="rounded-2xl px-3.5 py-2.5 text-sm font-bold text-[#4f3b31] transition hover:bg-[#f2e8df]">Entrar</Link><Link to="/login?returnTo=%2Fclassificados%2Fpublicar" className="inline-flex items-center gap-2 rounded-2xl bg-[#c96847] px-4 py-2.5 text-sm font-bold text-white shadow-[0_10px_30px_rgba(201,104,71,.22)] transition hover:-translate-y-0.5 hover:bg-[#b75d3f]"><Tags className="h-4 w-4" />Anunciar</Link></>}
         </div>
 
-        <button type="button" onClick={() => setMobileOpen((value) => !value)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#4b3328]/10 bg-white text-[#4f3b31] md:hidden" aria-label={mobileOpen ? "Fechar menu" : "Abrir menu"}>{mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</button>
+        <button type="button" onClick={() => setMobileOpen((value) => !value)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#4b3328]/10 bg-white text-[#4f3b31] lg:hidden" aria-label={mobileOpen ? "Fechar menu" : "Abrir menu"}>{mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}</button>
       </div>
 
-      {mobileOpen && <div className="border-t border-[#4b3328]/10 bg-[#fffaf5] px-4 py-4 md:hidden"><div className="mx-auto flex max-w-7xl flex-col gap-1">
+      {mobileOpen && <div className="border-t border-[#4b3328]/10 bg-[#fffaf5] px-4 py-4 lg:hidden"><div className="mx-auto flex max-w-7xl flex-col gap-1">
         <Link onClick={() => setMobileOpen(false)} to="/classificados" className="mb-1 flex items-center justify-between gap-3 rounded-2xl border border-[#c96847]/20 bg-[#fff0e8] px-3 py-3 text-sm font-black text-[#a84f34] shadow-sm"><span className="inline-flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#c96847] text-white"><Tags className="h-4 w-4" /></span>Classificados</span>{hasLiveAuction && <LiveAuctionDot />}</Link>
         <Link onClick={() => setMobileOpen(false)} to="/vagas" className="rounded-xl px-3 py-3 text-sm font-bold text-[#4f3b31] hover:bg-[#f2e8df]">Vagas</Link>
         <Link onClick={() => setMobileOpen(false)} to="/carreiras" className="rounded-xl px-3 py-3 text-sm font-bold text-[#4f3b31] hover:bg-[#f2e8df]">Carreiras</Link>
