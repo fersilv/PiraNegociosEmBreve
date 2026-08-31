@@ -146,12 +146,12 @@ export class ClassifiedsOrderOperationsService {
       const nextStockReserved = payOnReceipt && status === 'COMPLETED' ? false : Boolean(order.stockReserved);
 
       const changed = await manager.query(
-        `UPDATE classified_orders SET status=$2,
+        `UPDATE classified_orders SET status=$2::varchar,
            "paymentStatus"=$3,
            "stockReserved"=$4,
-           "paidAt"=CASE WHEN $5::boolean AND $2='COMPLETED' THEN COALESCE("paidAt",now()) ELSE "paidAt" END,
-           "readyAt"=CASE WHEN $2='READY' THEN COALESCE("readyAt",now()) ELSE "readyAt" END,
-           "completedAt"=CASE WHEN $2='COMPLETED' THEN COALESCE("completedAt",now()) ELSE "completedAt" END,
+           "paidAt"=CASE WHEN $5::boolean AND $2::varchar='COMPLETED' THEN COALESCE("paidAt",now()) ELSE "paidAt" END,
+           "readyAt"=CASE WHEN $2::varchar='READY' THEN COALESCE("readyAt",now()) ELSE "readyAt" END,
+           "completedAt"=CASE WHEN $2::varchar='COMPLETED' THEN COALESCE("completedAt",now()) ELSE "completedAt" END,
            "updatedAt"=now()
          WHERE id=$1 RETURNING *`,
         [orderId, status, nextPaymentStatus, nextStockReserved, payOnReceipt],
