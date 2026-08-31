@@ -1,8 +1,10 @@
 import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { useAuth, type CompanyPermissionKey } from "../contexts/AuthContext";
+import { useAuth } from "../contexts/AuthContext";
 import { RegionalLoader } from "../components/RegionalLoader";
 import { Dashboard } from "./Dashboard";
+
+type CompanyPermissionKey = "companyProfile" | "recruitment" | "marketplace" | "finance" | "team";
 
 function requiredPermission(pathname: string): CompanyPermissionKey | null {
   if (
@@ -30,7 +32,7 @@ export default function CompanyWorkspaceAccessGate() {
   if (!user) return <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`} replace />;
 
   const elevated = profile?.type === "ADMIN" || profile?.isCompanyAdmin === true;
-  const companyAccess = profile?.companyAccess;
+  const companyAccess = (profile as any)?.companyAccess;
   const canEnterBusiness = Boolean(profile?.companyId && (elevated || companyAccess?.hasAnyPermission));
   if (!canEnterBusiness) return <Navigate to="/user" replace />;
 
