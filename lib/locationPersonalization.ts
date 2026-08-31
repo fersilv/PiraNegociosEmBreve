@@ -4,7 +4,8 @@ export interface VisitorLocationHint {
   country?: string | null;
   latitude?: number | null;
   longitude?: number | null;
-  source?: "cloudflare" | null;
+  accuracy?: number | null;
+  source?: "cloudflare" | "browser" | null;
 }
 
 export interface LocalityRecommendation {
@@ -50,7 +51,7 @@ function normalize(value: unknown) {
 
 function parseLocationLabel(value: string) {
   const clean = String(value || "").trim();
-  const match = clean.match(/^(.+?)(?:\s*,\s*|\s*\/\s*)([A-Z]{2})$/i);
+  const match = clean.match(/^(.+?)(?:\s*,\s*|\s*\/\s*|\s*-\s*)([A-Z]{2})$/i);
   const city = (match?.[1] || clean).trim();
   const state = (match?.[2] || "SP").toUpperCase();
   return { city, state, key: `${normalize(city)}|${normalize(state)}` };
@@ -89,12 +90,25 @@ export function buildLocalityRecommendation(
   hint: VisitorLocationHint | null | undefined,
   availableLocations: string[],
 ): LocalityRecommendation | null {
-  if (!hint?.city || (hint.country && normalize(hint.country) !== "br")) return null;
-  if (!availableLocations.length) return null;
+  if (!hint || !availableLocations.length) return null;
 
-  const detectedLabel = `${hint.city}${hint.state ? `, ${hint.state}` : ""}`;
-  const exact = availableLocations.find((location) => sameLocation(location, detectedLabel)) || null;
   const origin = visitorCoordinates(hint);
+  const hasCity = Boolean(hint.city);
+  if (!hasCity && !origin) return null;
+  if (
+    hint.country &&
+    normalize(hint.country) !== "br" &&
+    hint.source !== "browser"
+  ) return null;
+
+  const detectedLabel = hint.city
+    ? `${hint.city}${hint.state ? `, ${hint.state}` : ""}`
+    : hint.source === "browser"
+      ? "sua localização atual"
+      : null;
+  const exact = detectedLabel && hint.city
+    ? availableLocations.find((location) => sameLocation(location, detectedLabel)) || null
+    : null;
 
   const ranked = availableLocations
     .map((label, index) => {
