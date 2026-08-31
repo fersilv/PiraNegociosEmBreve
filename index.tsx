@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { ChunkRecoveryBoundary } from './components/ChunkRecoveryBoundary';
 import { registerPwaServiceWorker } from './lib/pwa';
 import { initResumePrint } from './lib/resumePrint';
 
@@ -14,7 +15,9 @@ initResumePrint();
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <ChunkRecoveryBoundary>
+      <App />
+    </ChunkRecoveryBoundary>
   </React.StrictMode>
 );
 
