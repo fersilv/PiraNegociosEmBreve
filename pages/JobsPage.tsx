@@ -8,21 +8,23 @@ import {
   ChevronRight,
   DollarSign,
   ExternalLink,
+  LocateFixed,
   MapPin,
   Search,
   SlidersHorizontal,
   X,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { FeedMonetizationSlot, shouldInsertFeedMonetizationSlot } from "../components/FeedMonetizationSlot";
 import { JobCard } from "../components/JobCard";
 import { JobModal } from "../components/JobModal";
 import { Navbar } from "../components/Navbar";
 import { SeoHead } from "../components/SeoHead";
+import { useVisitorLocation } from "../hooks/useVisitorLocation";
 import { api, asArray } from "../lib/api";
 import {
   buildLocalityRecommendation,
   localityRank,
-  type VisitorLocationHint,
 } from "../lib/locationPersonalization";
 import type { Job } from "../types/job";
 
@@ -106,7 +108,6 @@ export default function JobsPage() {
   const initialParams = useMemo(() => new URLSearchParams(location.search), []);
 
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [visitorLocation, setVisitorLocation] = useState<VisitorLocationHint | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [searchTerm, setSearchTerm] = useState(initialParams.get("q") || "");
@@ -118,21 +119,21 @@ export default function JobsPage() {
   const [salaryOnly, setSalaryOnly] = useState(false);
   const [sortBy, setSortBy] = useState<"recentes" | "antigas">("recentes");
   const [currentPage, setCurrentPage] = useState(1);
+  const {
+    location: visitorLocation,
+    status: locationStatus,
+    requestBrowserLocation,
+    usingPreciseLocation,
+  } = useVisitorLocation({ autoRequest: true });
 
   useEffect(() => {
     let active = true;
-    Promise.allSettled([api.get("/jobs"), api.get("/public/location-hint")])
-      .then(([jobsResult, locationResult]) => {
+    api.get("/jobs")
+      .then((response) => {
         if (!active) return;
-        if (jobsResult.status === "fulfilled") {
-          setJobs(asArray<Job>(jobsResult.value.data).filter((job) => job.active !== false));
-        } else {
-          console.error("Erro ao carregar vagas:", jobsResult.reason);
-        }
-        if (locationResult.status === "fulfilled") {
-          setVisitorLocation(locationResult.value.data as VisitorLocationHint);
-        }
+        setJobs(asArray<Job>(response.data).filter((job) => job.active !== false));
       })
+      .catch((error) => console.error("Erro ao carregar vagas:", error))
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
@@ -280,13 +281,22 @@ export default function JobsPage() {
                   Vagas de empresas, PATs, agências e fontes públicas reunidas com cidade, modalidade, PCD e origem identificados.
                 </p>
                 {locality?.recommendedLabel && (
-                  <div className="mt-4 inline-flex max-w-2xl items-start gap-2 rounded-2xl border border-[#c96847]/15 bg-white/55 px-3.5 py-2.5 text-xs font-semibold leading-5 text-[#6d5549]">
-                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#c96847]" />
-                    <span>
-                      {locality.exact
-                        ? `Você parece estar em ${locality.detectedLabel}. Sem filtros, mostramos primeiro as vagas daí e depois as cidades mais próximas.`
-                        : `Você parece estar em ${locality.detectedLabel}. Como não há vagas exatamente aí, começamos por ${locality.recommendedLabel}.`}
-                    </span>
+                  <div className="mt-4 flex w-fit max-w-2xl flex-col gap-2 rounded-2xl border border-[#c96847]/15 bg-white/55 px-3.5 py-2.5 text-xs font-semibold leading-5 text-[#6d5549] sm:flex-row sm:items-start">
+                    <div className="flex items-start gap-2">
+                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#c96847]" />
+                      <span>
+                        {usingPreciseLocation
+                          ? `Localização atual ativada. Sem filtros, começamos pelas vagas de ${locality.recommendedLabel} e seguimos pelas cidades mais próximas.`
+                          : locality.exact
+                            ? `Sua região foi identificada como ${locality.detectedLabel}. Sem filtros, mostramos primeiro as vagas daí e depois as cidades mais próximas.`
+                            : `Sua região aproximada é ${locality.detectedLabel}. Começamos por ${locality.recommendedLabel}, a localidade disponível mais próxima.`}
+                      </span>
+                    </div>
+                    {!usingPreciseLocation && (
+                      <button type="button" onClick={requestBrowserLocation} disabled={locationStatus === "requesting"} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[#c96847]/10 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-[.08em] text-[#a34e35] transition hover:bg-[#c96847]/15 disabled:opacity-50">
+                        <LocateFixed className="h-3.5 w-3.5" /> {locationStatus === "requesting" ? "Localizando..." : "Usar GPS"}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -430,7 +440,7 @@ export default function JobsPage() {
                   {searchTerm && <p className="mt-1 text-xs text-[#a08c81]">Resultados para “{searchTerm}”</p>}
                   {!searchTerm && locationFilter === "TODOS" && locality?.recommendedLabel && (
                     <p className="mt-1 text-xs font-semibold text-[#a05a43]">
-                      Ordenadas por proximidade a {locality.detectedLabel}, depois por data.
+                      Ordenadas por proximidade a {usingPreciseLocation ? "sua localização atual" : locality.detectedLabel}, depois por data.
                     </p>
                   )}
                 </div>
@@ -452,8 +462,16 @@ export default function JobsPage() {
                 </div>
               ) : currentJobs.length > 0 ? (
                 <div className="space-y-4">
-                  {currentJobs.map((job) => (
-                    <JobCard key={job.id} job={job} onClick={() => openJob(job)} />
+                  {currentJobs.map((job, index) => (
+                    <React.Fragment key={job.id}>
+                      <JobCard job={job} onClick={() => openJob(job)} />
+                      {shouldInsertFeedMonetizationSlot(index, 3, 6) && (
+                        <FeedMonetizationSlot
+                          placement="jobs-public-feed"
+                          slot={Math.floor((index - 3) / 6)}
+                        />
+                      )}
+                    </React.Fragment>
                   ))}
                 </div>
               ) : (
