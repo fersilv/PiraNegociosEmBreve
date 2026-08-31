@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, BadgeDollarSign, CheckCircle2, FileText, Loader2, MapPin, MessageCircle, PackageCheck, Search, ShieldCheck, ShoppingCart, Sparkles, X } from 'lucide-react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { io, type Socket } from 'socket.io-client';
 import { ClassifiedCheckoutModal } from '../components/classifieds/ClassifiedCheckoutModal';
 import { ClassifiedCommercePriceHero, type AcceptedClassifiedOffer } from '../components/classifieds/ClassifiedCommercePriceHero';
 import { ClassifiedFreightCalculator } from '../components/classifieds/ClassifiedFreightCalculator';
@@ -8,7 +9,7 @@ import { ClassifiedListingCard } from '../components/classifieds/ClassifiedListi
 import { ClassifiedMediaFrame } from '../components/classifieds/ClassifiedMediaFrame';
 import { useAuth } from '../contexts/AuthContext';
 import { useClassifiedsWorkspace } from '../contexts/ClassifiedsWorkspaceContext';
-import { api } from '../lib/api';
+import { API_URL, SOCKET_PATH, api } from '../lib/api';
 import type { ClassifiedCategory, ClassifiedListing, ClassifiedSearchResponse } from '../types/classifieds';
 
 export default function ClassifiedsExplorePageV3() {
@@ -44,10 +45,11 @@ function ExploreGrid() {
   </div>;
 }
 
-type InteractionContext = { hasOfferRelationship: boolean; conversationId?: string | null; chatAvailable: boolean; latestOffer?: { id: string; status: string; amount: number } | null };
+type InteractionContext = { hasOfferRelationship: boolean; conversationId?: string | null; chatAvailable: boolean; latestOffer?: { id: string; status: string; amount: number; expiresAt?: string | null } | null };
 
 function ListingDetail({ slug }: { slug: string }) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const { data } = useClassifiedsWorkspace();
   const [listing, setListing] = useState<ClassifiedListing | null>(null);
@@ -64,6 +66,21 @@ function ListingDetail({ slug }: { slug: string }) {
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [quoteScope, setQuoteScope] = useState('');
   const [selectedImage, setSelectedImage] = useState(0);
+  const [offersLive, setOffersLive] = useState(false);
+
+  const refreshOfferContext = async (listingId: string) => {
+    if (!user || !listingId) {
+      setAcceptedOffer(null);
+      setInteraction({ hasOfferRelationship: false, chatAvailable: false });
+      return;
+    }
+    const [offerResponse, interactionResponse] = await Promise.all([
+      api.get(`/classifieds/listings/${listingId}/my-accepted-offer`).catch(() => ({ data: null })),
+      api.get(`/classifieds/listings/${listingId}/interaction-context`).catch(() => ({ data: { hasOfferRelationship: false, chatAvailable: false } })),
+    ]);
+    setAcceptedOffer(offerResponse.data || null);
+    setInteraction(interactionResponse.data || { hasOfferRelationship: false, chatAvailable: false });
+  };
 
   useEffect(() => {
     let active = true;
@@ -86,12 +103,59 @@ function ListingDetail({ slug }: { slug: string }) {
     return () => { active = false; };
   }, [slug, user?.uid]);
 
+  useEffect(() => {
+    if (!user || !listing?.id || listing.listingType !== 'PRODUCT') return;
+    let socket: Socket | null = null;
+    let disposed = false;
+    let refreshTimer: number | null = null;
+    void (async () => {
+      const token = await user.getIdToken().catch(() => '');
+      if (!token || disposed) return;
+      const socketOrigin = new URL(API_URL, window.location.origin).origin;
+      socket = io(`${socketOrigin}/classified-offers`, {
+        path: SOCKET_PATH,
+        transports: ['websocket', 'polling'],
+        auth: { token },
+        reconnection: true,
+        reconnectionDelay: 500,
+        reconnectionDelayMax: 4000,
+      });
+      socket.on('connect', () => setOffersLive(true));
+      socket.on('disconnect', () => setOffersLive(false));
+      socket.on('offers:update', (payload: { listingId?: string }) => {
+        if (payload?.listingId !== listing.id) return;
+        if (refreshTimer) window.clearTimeout(refreshTimer);
+        refreshTimer = window.setTimeout(() => void refreshOfferContext(listing.id), 80);
+      });
+    })();
+    return () => {
+      disposed = true;
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      socket?.disconnect();
+      setOffersLive(false);
+    };
+  }, [user?.uid, listing?.id, listing?.listingType]);
+
+  useEffect(() => {
+    if (!user || !listing?.id || listing.listingType !== 'PRODUCT' || offersLive) return;
+    const interval = window.setInterval(() => void refreshOfferContext(listing.id), 7000);
+    return () => window.clearInterval(interval);
+  }, [user?.uid, listing?.id, listing?.listingType, offersLive]);
+
   const ownListing = useMemo(() => Boolean(listing && user && ((data?.activeIdentity === 'PERSONAL' && !listing.companyId && listing.sellerUserId === user.uid) || (data?.activeIdentity === 'COMPANY' && listing.companyId === data.company?.id))), [listing, user?.uid, data?.activeIdentity, data?.company?.id]);
   const canCheckout = Boolean(!ownListing && listing?.listingType === 'PRODUCT' && listing.commerceConfig?.onlineCheckout?.enabled === true);
   const canCart = Boolean(canCheckout && listing?.companyId && features?.cart === true && !acceptedOffer);
   const canOffer = Boolean(!ownListing && listing?.listingType === 'PRODUCT' && listing.price != null && !acceptedOffer);
   const canQuote = Boolean(!ownListing && listing?.listingType === 'SERVICE' && listing.companyId && features?.consultativeQuotes === true);
   const canBuyerChat = Boolean(!ownListing && listing?.listingType === 'PRODUCT' && interaction.chatAvailable);
+
+  useEffect(() => {
+    if (!canCheckout || searchParams.get('checkout') !== '1') return;
+    setCheckoutOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('checkout');
+    setSearchParams(next, { replace: true });
+  }, [canCheckout, searchParams, setSearchParams]);
 
   const startChat = async () => {
     if (!listing || working || !canBuyerChat) return;
@@ -111,6 +175,7 @@ function ListingDetail({ slug }: { slug: string }) {
       const response = await api.post(`/classifieds/listings/${listing.id}/offers`, { amount });
       setOfferOpen(false); setOfferAmount(''); setNotice('Oferta enviada. A conversa da negociação foi liberada.');
       setInteraction({ hasOfferRelationship: true, chatAvailable: true, conversationId: response.data?.conversationId || null, latestOffer: { id: response.data?.id, status: response.data?.status || 'PENDING', amount } });
+      await refreshOfferContext(listing.id);
     } catch (requestError: any) { setError(requestError?.response?.data?.message || 'Não foi possível enviar a oferta.'); }
     finally { setWorking(false); }
   };
@@ -160,14 +225,14 @@ function ListingDetail({ slug }: { slug: string }) {
 
             {listing.seller && <div className="mt-5 flex items-center gap-3 rounded-2xl bg-[#f7f7f5] p-3"><ClassifiedMediaFrame src={listing.seller.photoURL} alt="" className="h-11 w-11 rounded-full" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-black text-stone-900">{listing.seller.name}</p><p className="mt-0.5 text-[10px] font-bold text-stone-400">{listing.seller.type === 'COMPANY' ? 'Vendido por empresa' : 'Vendedor particular'}</p></div>{listing.seller.verified && <ShieldCheck className="h-5 w-5 text-emerald-600" />}</div>}
 
-            {acceptedOffer && <div className="mt-5 rounded-[22px] bg-emerald-950 p-4 text-white"><div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-emerald-200" /><p className="text-[9px] font-black uppercase tracking-[.14em] text-emerald-200">Sua oferta foi aceita</p></div><p className="mt-2 text-3xl font-black">{currency(acceptedOffer.amount)}</p><p className="mt-1 text-[10px] leading-5 text-emerald-100">Preço exclusivo liberado para este checkout. Não acumula outro desconto de forma de pagamento.</p></div>}
+            {acceptedOffer && <div className="mt-5 rounded-[22px] bg-emerald-950 p-4 text-white"><div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-emerald-200" /><p className="text-[9px] font-black uppercase tracking-[.14em] text-emerald-200">Sua oferta foi aceita</p></div><p className="mt-2 text-3xl font-black">{currency(acceptedOffer.amount)}</p><p className="mt-1 text-[11px] leading-5 text-emerald-100">Você tem até <strong>{deadline(acceptedOffer.expiresAt)}</strong> para realizar sua compra. Esse preço não acumula desconto de Pix ou cartão.</p></div>}
 
             <div className="mt-5 border-y border-stone-100 py-5"><ClassifiedCommercePriceHero listing={listing} acceptedOffer={acceptedOffer} />{hasTrackedStock && <p className={`mt-2 inline-flex items-center gap-1.5 text-[10px] font-black ${stock > 0 ? 'text-emerald-700' : 'text-red-600'}`}><CheckCircle2 className="h-3.5 w-3.5" />{stock > 0 ? `${stock} unidade${stock === 1 ? '' : 's'} disponível${stock === 1 ? '' : 'is'}` : 'Sem estoque no momento'}</p>}</div>
 
             {listing.listingType === 'PRODUCT' && <div className="mt-5"><ClassifiedFreightCalculator listing={listing} embedded /></div>}
 
             {!ownListing && <div className="mt-5 space-y-2">
-              {canCheckout && <button type="button" onClick={() => setCheckoutOpen(true)} className={`inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl px-5 text-sm font-black text-white shadow-lg transition hover:-translate-y-0.5 ${acceptedOffer ? 'bg-emerald-700 shadow-emerald-900/15' : 'bg-[#009ee3] shadow-sky-500/20'}`}><ShoppingCart className="h-5 w-5" />{acceptedOffer ? `Comprar por ${currency(acceptedOffer.amount)}` : 'Comprar agora'}</button>}
+              {canCheckout && <button type="button" onClick={() => setCheckoutOpen(true)} className={`inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl px-5 text-sm font-black text-white shadow-lg transition hover:-translate-y-0.5 ${acceptedOffer ? 'bg-emerald-700 shadow-emerald-900/15' : 'bg-[#009ee3] shadow-sky-500/20'}`}><ShoppingCart className="h-5 w-5" /> COMPRAR</button>}
               {canCart && <button type="button" disabled={working} onClick={() => void addToCart()} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-blue-50 text-xs font-black text-blue-800 ring-1 ring-blue-100"><ShoppingCart className="h-4 w-4" /> Adicionar ao carrinho</button>}
               {canOffer && <button type="button" onClick={() => setOfferOpen(true)} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-amber-50 text-xs font-black text-amber-900 ring-1 ring-amber-100"><BadgeDollarSign className="h-4 w-4" /> Fazer uma oferta</button>}
               {canQuote && <button type="button" onClick={() => setQuoteOpen(true)} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-violet-700 text-xs font-black text-white"><FileText className="h-4 w-4" /> Solicitar orçamento</button>}
@@ -180,10 +245,10 @@ function ListingDetail({ slug }: { slug: string }) {
       </aside>
     </div>
 
-    {!ownListing && canCheckout && <div className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white/95 p-3 backdrop-blur lg:hidden"><div className="mx-auto flex max-w-3xl items-center gap-3"><div className="min-w-0 flex-1"><p className="truncate text-[10px] font-black text-stone-500">{listing.title}</p><p className="text-base font-black text-stone-950">{acceptedOffer ? currency(acceptedOffer.amount) : currency(listing.price)}</p></div><button type="button" onClick={() => setCheckoutOpen(true)} className={`h-12 rounded-2xl px-5 text-xs font-black text-white ${acceptedOffer ? 'bg-emerald-700' : 'bg-[#009ee3]'}`}>Comprar</button></div></div>}
+    {!ownListing && canCheckout && <div className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white/95 p-3 backdrop-blur lg:hidden"><div className="mx-auto flex max-w-3xl items-center gap-3"><div className="min-w-0 flex-1"><p className="truncate text-[10px] font-black text-stone-500">{listing.title}</p><p className="text-base font-black text-stone-950">{acceptedOffer ? currency(acceptedOffer.amount) : currency(listing.price)}</p></div><button type="button" onClick={() => setCheckoutOpen(true)} className={`h-12 rounded-2xl px-5 text-xs font-black text-white ${acceptedOffer ? 'bg-emerald-700' : 'bg-[#009ee3]'}`}>COMPRAR</button></div></div>}
 
     <ClassifiedCheckoutModal listingId={listing.id} open={checkoutOpen} onClose={() => setCheckoutOpen(false)} />
-    {offerOpen && <Modal title="Fazer oferta" onClose={() => setOfferOpen(false)}><p className="text-sm leading-6 text-stone-500">Envie o valor que deseja pagar. A oferta abre uma conversa de negociação. Se a empresa aceitar, o preço negociado aparece diretamente no botão Comprar.</p><input autoFocus value={offerAmount} onChange={(event) => setOfferAmount(event.target.value)} placeholder="Ex.: 85,00" className="mt-4 h-12 w-full rounded-2xl bg-stone-50 px-4 text-lg font-black ring-1 ring-stone-200" /><button disabled={working} onClick={() => void submitOffer()} className="mt-4 h-12 w-full rounded-2xl bg-stone-900 text-sm font-black text-white">Enviar oferta</button></Modal>}
+    {offerOpen && <Modal title="Fazer oferta" onClose={() => setOfferOpen(false)}><p className="text-sm leading-6 text-stone-500">Envie o valor que deseja pagar. A oferta abre uma conversa de negociação. Se a empresa aceitar, o preço negociado fica disponível no checkout normal do produto.</p><input autoFocus value={offerAmount} onChange={(event) => setOfferAmount(event.target.value)} placeholder="Ex.: 85,00" className="mt-4 h-12 w-full rounded-2xl bg-stone-50 px-4 text-lg font-black ring-1 ring-stone-200" /><button disabled={working} onClick={() => void submitOffer()} className="mt-4 h-12 w-full rounded-2xl bg-stone-900 text-sm font-black text-white">Enviar oferta</button></Modal>}
     {quoteOpen && <Modal title="Solicitar orçamento" onClose={() => setQuoteOpen(false)}><textarea value={quoteScope} onChange={(event) => setQuoteScope(event.target.value)} rows={6} className="w-full rounded-2xl bg-stone-50 p-4 text-sm ring-1 ring-stone-200" placeholder="Descreva o serviço que você precisa..." /><button disabled={working} onClick={() => void requestQuote()} className="mt-4 h-12 w-full rounded-2xl bg-stone-900 text-sm font-black text-white">Enviar solicitação</button></Modal>}
   </div>;
 }
@@ -191,3 +256,4 @@ function ListingDetail({ slug }: { slug: string }) {
 function Trust({ text }: { text: string }) { return <div className="flex items-center gap-2 rounded-xl bg-stone-50 px-3 py-2 text-[9px] font-bold leading-4 text-stone-500"><ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600" />{text}</div>; }
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) { return <div className="fixed inset-0 z-[170] flex items-center justify-center bg-black/45 p-4"><button className="absolute inset-0" onClick={onClose} aria-label="Fechar" /><div className="relative w-full max-w-md rounded-[26px] bg-white p-5 shadow-2xl"><div className="flex items-center justify-between"><h2 className="font-serif text-2xl font-black">{title}</h2><button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-stone-100"><X className="h-4 w-4" /></button></div><div className="mt-4">{children}</div></div></div>; }
 function currency(value: unknown) { const n = Number(value); return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number.isFinite(n) ? n : 0); }
+function deadline(value: unknown) { const date = new Date(String(value || '')); if (Number.isNaN(date.getTime())) return 'o fim da validade da oferta'; return date.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
