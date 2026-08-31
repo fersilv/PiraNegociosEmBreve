@@ -1,12 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Filter, MapPin, Search, SlidersHorizontal, X } from 'lucide-react';
+import { ChevronDown, Filter, LocateFixed, MapPin, Search, SlidersHorizontal, X } from 'lucide-react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ClassifiedCategoryIcon } from '../components/classifieds/ClassifiedCategoryIcon';
 import { ClassifiedListingCard } from '../components/classifieds/ClassifiedListingCard';
+import { FeedMonetizationSlot, shouldInsertFeedMonetizationSlot } from '../components/FeedMonetizationSlot';
 import { Navbar } from '../components/Navbar';
 import { SeoHead } from '../components/SeoHead';
+import { useVisitorLocation } from '../hooks/useVisitorLocation';
 import { api } from '../lib/api';
-import type { ClassifiedCategory, ClassifiedSearchResponse } from '../types/classifieds';
+import { buildLocalityRecommendation, localityRank } from '../lib/locationPersonalization';
+import type { ClassifiedCategory, ClassifiedListing, ClassifiedSearchResponse } from '../types/classifieds';
+
+const listingLocation = (listing: ClassifiedListing) => [listing.city, listing.state].filter(Boolean).join(', ');
 
 export default function ClassifiedsSearchPage() {
   const { categorySlug } = useParams();
@@ -16,6 +21,7 @@ export default function ClassifiedsSearchPage() {
   const [loading, setLoading] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [queryText, setQueryText] = useState(searchParams.get('q') || '');
+  const { location, status: locationStatus, requestBrowserLocation, usingPreciseLocation } = useVisitorLocation({ autoRequest: true });
 
   const activeCategory = categorySlug || searchParams.get('category') || '';
   const serializedParams = searchParams.toString();
@@ -39,6 +45,13 @@ export default function ClassifiedsSearchPage() {
   useEffect(() => { setQueryText(searchParams.get('q') || ''); }, [serializedParams]);
 
   const category = useMemo(() => categories.find((item) => item.slug === activeCategory), [categories, activeCategory]);
+  const itemLocations = useMemo(() => Array.from(new Set(result.items.map(listingLocation).filter(Boolean))), [result.items]);
+  const locality = useMemo(() => buildLocalityRecommendation(location, itemLocations), [location, itemLocations]);
+  const hasExplicitLocationFilter = Boolean(searchParams.get('city') || searchParams.get('state'));
+  const displayItems = useMemo(() => {
+    if (hasExplicitLocationFilter || !locality) return result.items;
+    return [...result.items].sort((a, b) => localityRank(listingLocation(a), locality) - localityRank(listingLocation(b), locality));
+  }, [result.items, locality, hasExplicitLocationFilter]);
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -90,13 +103,16 @@ export default function ClassifiedsSearchPage() {
           <aside className="hidden lg:block"><div className="sticky top-[148px] rounded-[24px] bg-white p-5 ring-1 ring-[#4b3328]/10"><FilterPanel searchParams={searchParams} categories={categories} activeCategory={activeCategory} setParam={setParam} clearFilters={clearFilters} /></div></aside>
 
           <section className="min-w-0">
-            <div className="mb-5 flex items-start justify-between gap-4">
+            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div><p className="text-[10px] font-black uppercase tracking-[.16em] text-[#b06448]">{searchParams.get('listingType') === 'SERVICE' ? 'Serviços' : searchParams.get('listingType') === 'PRODUCT' ? 'Produtos' : category ? category.name : 'Marketplace regional'}</p><h1 className="mt-1 font-serif text-2xl font-bold sm:text-3xl">{searchParams.get('q') ? `Resultados para “${searchParams.get('q')}”` : category ? `Anúncios em ${category.name}` : 'Todos os classificados'}</h1><p className="mt-1 text-xs font-semibold text-[#8b756a]">{loading ? 'Buscando...' : `${result.total} ${result.total === 1 ? 'anúncio encontrado' : 'anúncios encontrados'}`}</p></div>
-              <label className="relative shrink-0"><select value={searchParams.get('sort') || 'recent'} onChange={(event) => setParam('sort', event.target.value)} className="h-10 appearance-none rounded-xl border-0 bg-white pl-3 pr-9 text-xs font-bold text-[#5c473d] outline-none ring-1 ring-[#4b3328]/10"><option value="recent">Mais relevantes</option><option value="price_asc">Menor preço</option><option value="price_desc">Maior preço</option><option value="oldest">Mais antigos</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#9e8d84]" /></label>
+              <div className="flex items-center gap-2">
+                {!hasExplicitLocationFilter && <button type="button" onClick={requestBrowserLocation} disabled={locationStatus === 'requesting'} className={`inline-flex h-10 items-center gap-2 rounded-xl px-3 text-[10px] font-black uppercase tracking-[.08em] ring-1 transition ${usingPreciseLocation ? 'bg-[#fff0e8] text-[#a84f34] ring-[#c96847]/20' : 'bg-white text-[#6e594e] ring-[#4b3328]/10'}`}><LocateFixed className="h-3.5 w-3.5" />{locationStatus === 'requesting' ? 'Localizando...' : usingPreciseLocation ? 'Perto de você' : 'Usar localização'}</button>}
+                <label className="relative shrink-0"><select value={searchParams.get('sort') || 'recent'} onChange={(event) => setParam('sort', event.target.value)} className="h-10 appearance-none rounded-xl border-0 bg-white pl-3 pr-9 text-xs font-bold text-[#5c473d] outline-none ring-1 ring-[#4b3328]/10"><option value="recent">Mais relevantes</option><option value="price_asc">Menor preço</option><option value="price_desc">Maior preço</option><option value="oldest">Mais antigos</option></select><ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#9e8d84]" /></label>
+              </div>
             </div>
 
-            {loading ? <SearchSkeleton /> : result.items.length ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-4">{result.items.map((listing) => <ClassifiedListingCard key={listing.id} listing={listing} />)}</div>
+            {loading ? <SearchSkeleton /> : displayItems.length ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-4">{displayItems.map((listing, index) => <React.Fragment key={listing.id}><ClassifiedListingCard listing={listing} />{shouldInsertFeedMonetizationSlot(index, 5, 8) && <FeedMonetizationSlot placement="classifieds-public-search" slot={Math.floor((index - 5) / 8)} className="col-span-full" />}</React.Fragment>)}</div>
             ) : <div className="rounded-[24px] border border-dashed border-[#4b3328]/20 bg-white px-6 py-14 text-center"><p className="font-serif text-2xl font-bold">Nada por aqui com esses filtros.</p><p className="mt-2 text-sm text-[#806b60]">Tente ampliar a localização ou remover algum filtro.</p><button onClick={clearFilters} className="mt-5 rounded-xl bg-[#2d211c] px-4 py-2.5 text-xs font-black text-white">Limpar filtros</button></div>}
 
             {result.pages > 1 && <div className="mt-8 flex items-center justify-center gap-2"><button disabled={result.page <= 1} onClick={() => setParam('page', String(Math.max(1, result.page - 1)))} className="rounded-xl bg-white px-4 py-2 text-xs font-bold ring-1 ring-[#4b3328]/10 disabled:opacity-35">Anterior</button><span className="px-2 text-xs font-bold text-[#806b60]">{result.page} / {result.pages}</span><button disabled={result.page >= result.pages} onClick={() => setParam('page', String(Math.min(result.pages, result.page + 1)))} className="rounded-xl bg-white px-4 py-2 text-xs font-bold ring-1 ring-[#4b3328]/10 disabled:opacity-35">Próxima</button></div>}

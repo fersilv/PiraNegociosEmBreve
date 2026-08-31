@@ -13,7 +13,10 @@ import { AuthenticatedClassifiedsChatWidget } from "./components/AuthenticatedCl
 import { RegionalLoader } from "./components/RegionalLoader";
 import { AdminWorkspaceReturn } from "./components/AdminWorkspaceReturn";
 
-const Home = lazy(() => import("./pages/Home"));
+const MarketplaceHome = lazy(() => import("./pages/MarketplaceHome"));
+const CareersPage = lazy(() => import("./pages/CareersPage"));
+const HowItWorksPage = lazy(() => import("./pages/HowItWorksPage"));
+const ForCompaniesPage = lazy(() => import("./pages/ForCompaniesPage"));
 const Login = lazy(() => import("./pages/Login").then((module) => ({ default: module.Login })));
 const Dashboard = lazy(() => import("./pages/Dashboard").then((module) => ({ default: module.Dashboard })));
 const WorkspaceJobsRoute = lazy(() => import("./pages/WorkspaceJobsRoute"));
@@ -64,7 +67,10 @@ export default function App() {
           {!isMinimalShell && <AdminWorkspaceReturn />}
           <Suspense fallback={<RouteLoader />}>
             <Routes>
-              <Route path="/" element={<Home />} />
+              <Route path="/" element={<MarketplaceHome />} />
+              <Route path="/carreiras" element={<CareersPage />} />
+              <Route path="/como-funciona" element={<HowItWorksPage />} />
+              <Route path="/para-empresas" element={<ForCompaniesPage />} />
               <Route path="/termos" element={<Terms />} />
               <Route path="/ajuda" element={<HelpCenterPage />} />
               <Route path="/ajuda/:slug" element={<HelpCenterPage />} />
