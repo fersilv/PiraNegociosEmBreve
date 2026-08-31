@@ -128,10 +128,40 @@ export class JobsService {
   private pickMutableFields(data: Partial<Job>): Partial<Job> {
     const sanitized: Partial<Job> = {};
     for (const field of JOB_MUTABLE_FIELDS) {
-      if (data[field] !== undefined)
-        (sanitized as Record<string, unknown>)[field] = data[field];
+      if (data[field] === undefined) continue;
+      (sanitized as Record<string, unknown>)[field] =
+        field === 'deadlineDate'
+          ? this.normalizeDeadlineDate(data[field])
+          : data[field];
     }
     return sanitized;
+  }
+
+  private normalizeDeadlineDate(value: unknown): string | null {
+    if (value === null) return null;
+    if (typeof value !== 'string')
+      throw new BadRequestException('A data limite da vaga é inválida.');
+
+    const normalized = value.trim();
+    if (!normalized) return null;
+
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+    if (!match)
+      throw new BadRequestException('A data limite da vaga é inválida.');
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (
+      parsed.getUTCFullYear() !== year ||
+      parsed.getUTCMonth() !== month - 1 ||
+      parsed.getUTCDate() !== day
+    ) {
+      throw new BadRequestException('A data limite da vaga é inválida.');
+    }
+
+    return normalized;
   }
 
   private async generateAvailableSlug(value: string): Promise<string> {
