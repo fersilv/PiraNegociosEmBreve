@@ -14,7 +14,7 @@ import { RegionalLoader } from "./components/RegionalLoader";
 import { AdminWorkspaceReturn } from "./components/AdminWorkspaceReturn";
 
 const MarketplaceHome = lazy(() => import("./pages/MarketplaceHome"));
-const Home = lazy(() => import("./pages/Home"));
+const CareersPage = lazy(() => import("./pages/CareersPage"));
 const HowItWorksPage = lazy(() => import("./pages/HowItWorksPage"));
 const ForCompaniesPage = lazy(() => import("./pages/ForCompaniesPage"));
 const Login = lazy(() => import("./pages/Login").then((module) => ({ default: module.Login })));
@@ -68,7 +68,7 @@ export default function App() {
           <Suspense fallback={<RouteLoader />}>
             <Routes>
               <Route path="/" element={<MarketplaceHome />} />
-              <Route path="/carreiras" element={<Home />} />
+              <Route path="/carreiras" element={<CareersPage />} />
               <Route path="/como-funciona" element={<HowItWorksPage />} />
               <Route path="/para-empresas" element={<ForCompaniesPage />} />
               <Route path="/termos" element={<Terms />} />
