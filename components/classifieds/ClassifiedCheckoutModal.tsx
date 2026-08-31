@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Banknote, CheckCircle2, ChevronLeft, Clipboard, CreditCard, Loader2, MapPin, PackageCheck, Plus, QrCode, ShoppingCart, Truck, X } from 'lucide-react';
+import { Banknote, CheckCircle2, ChevronLeft, Clipboard, CreditCard, Loader2, MapPin, PackageCheck, Plus, QrCode, ShoppingCart, Sparkles, Truck, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useFeedback } from '../../contexts/FeedbackContext';
 import { api } from '../../lib/api';
 import { SmartAddressFields } from './SmartAddressFields';
 
@@ -60,6 +61,7 @@ function loadMercadoPagoSdk() {
 const emptyAddress = { label: 'Principal', zipCode: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: '', latitude: null as number | null, longitude: null as number | null, placeId: null as string | null, isDefault: false, active: true };
 
 export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingId: string; open: boolean; onClose: () => void }) {
+  const { toast } = useFeedback();
   const [config, setConfig] = useState<CheckoutConfig | null>(null);
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
   const [addressId, setAddressId] = useState('');
@@ -85,6 +87,7 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
   const [result, setResult] = useState<OrderResult | null>(null);
   const brickController = useRef<any>(null);
   const idempotencyRef = useRef<string | null>(null);
+  const celebratedPaymentRef = useRef<string | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => () => { mounted.current = false; }, []);
@@ -103,6 +106,7 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     idempotencyRef.current = null;
+    celebratedPaymentRef.current = null;
     submittingRef.current = false;
     setLoading(true); setError(''); setResult(null); setConfig(null); setBrickReady(false); setQuantity(1);
     setStep('RECEIPT'); setMethod('PIX'); setReceiptMethod('CASH'); setNeedsChange(false); setChangeFor(''); setDeliveryNote(''); setQuoteOptions([]); setSelectedQuote(null); setShowNewAddress(false); setAddressForm({ ...emptyAddress });
@@ -136,6 +140,41 @@ export function ClassifiedCheckoutModal({ listingId, open, onClose }: { listingI
       setMethod(online.includes('PIX') ? 'PIX' : online.includes('CARD') ? 'CARD' : 'PAY_ON_RECEIPT');
     }
   }, [quantity, addressId, fulfillment]);
+
+  useEffect(() => {
+    if (!open || !result?.id) return;
+    const payOnReceipt = result.paymentOnReceipt === true || result.orderMode === 'PAY_ON_RECEIPT';
+    if (payOnReceipt || !['PENDING', 'IN_PROCESS'].includes(String(result.paymentStatus || '').toUpperCase())) return;
+
+    let disposed = false;
+    let running = false;
+    const refresh = async () => {
+      if (running || disposed) return;
+      running = true;
+      try {
+        const response = await api.get('/classifieds/me/purchases');
+        if (disposed) return;
+        const rows = Array.isArray(response.data) ? response.data : [];
+        const fresh = rows.find((item: OrderResult) => item.id === result.id);
+        if (!fresh) return;
+        setResult((current) => current?.id === result.id ? { ...current, ...fresh, processing: false } : current);
+      } catch {
+        // O resultado atual continua válido. A próxima rodada tenta reconciliar novamente.
+      } finally {
+        running = false;
+      }
+    };
+
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 1600);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [open, result?.id, result?.paymentStatus, result?.paymentOnReceipt, result?.orderMode]);
+
+  useEffect(() => {
+    if (!result?.id || result.paymentStatus !== 'APPROVED' || celebratedPaymentRef.current === result.id) return;
+    celebratedPaymentRef.current = result.id;
+    toast('Pagamento recebido! Seu pedido foi confirmado e a empresa já recebeu a atualização.', 'success');
+  }, [result?.id, result?.paymentStatus, toast]);
 
   const unitPrice = method === 'PIX'
     ? Number(config?.pricing.pixPrice ?? config?.pricing.currentPrice ?? 0)
@@ -319,7 +358,28 @@ function PaymentResult({ result }: { result: OrderResult }) {
   const approved = result.paymentStatus === 'APPROVED';
   const pending = result.paymentStatus === 'PENDING' || result.paymentStatus === 'IN_PROCESS' || result.processing;
   const copy = async () => { if (result.pix?.copyPaste) await navigator.clipboard.writeText(result.pix.copyPaste); };
-  return <div className="mx-auto max-w-xl py-4 text-center">{payOnReceipt || approved ? <CheckCircle2 className="mx-auto h-14 w-14 text-emerald-500" /> : pending && result.paymentMethod === 'PIX' ? <QrCode className="mx-auto h-14 w-14 text-[#009ee3]" /> : <PackageCheck className="mx-auto h-14 w-14 text-stone-400" />}<h3 className="mt-4 font-serif text-3xl font-black">{payOnReceipt ? 'Pedido confirmado' : approved ? 'Pagamento aprovado' : pending ? 'Pagamento iniciado' : 'Pedido registrado'}</h3><p className="mt-2 text-sm leading-6 text-stone-500">Pedido <strong>#{result.id.slice(0, 8).toUpperCase()}</strong> · {money(Number(result.totalCents || 0) / 100)}</p>{result.message && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">{result.message}</p>}{result.pix?.qrCodeBase64 && !approved && <img src={`data:image/png;base64,${result.pix.qrCodeBase64}`} alt="QR Code Pix" className="mx-auto mt-5 h-56 w-56 rounded-2xl bg-white p-2 ring-1 ring-stone-200" />}{result.pix?.copyPaste && !approved && <div className="mt-4 rounded-2xl bg-white p-4 text-left ring-1 ring-stone-200"><p className="text-[9px] font-black uppercase tracking-[.12em] text-stone-400">Pix copia e cola</p><p className="mt-2 break-all text-xs text-stone-600">{result.pix.copyPaste}</p><button type="button" onClick={() => void copy()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 py-2 text-xs font-black text-white"><Clipboard className="h-3.5 w-3.5" /> Copiar código Pix</button></div>}<Link to="/classificados/compras" className="mt-6 inline-flex rounded-2xl bg-[#3a222b] px-5 py-3 text-sm font-black text-white">Acompanhar minhas compras</Link></div>;
+
+  return <div className="mx-auto max-w-xl py-5 text-center">
+    {approved ? <PaymentReceivedAnimation /> : payOnReceipt ? <CheckCircle2 className="mx-auto h-14 w-14 text-emerald-500" /> : pending && result.paymentMethod === 'PIX' ? <QrCode className="mx-auto h-14 w-14 text-[#009ee3]" /> : <PackageCheck className="mx-auto h-14 w-14 text-stone-400" />}
+    <h3 className="mt-4 font-serif text-3xl font-black">{payOnReceipt ? 'Pedido confirmado' : approved ? 'Pagamento recebido!' : pending ? 'Aguardando confirmação' : result.paymentStatus === 'REFUNDED' ? 'Pagamento estornado' : 'Pedido registrado'}</h3>
+    <p className="mt-2 text-sm leading-6 text-stone-500">Pedido <strong>#{result.id.slice(0, 8).toUpperCase()}</strong> · {money(Number(result.totalCents || 0) / 100)}</p>
+    {approved && <p className="mx-auto mt-3 max-w-md text-sm font-semibold leading-6 text-emerald-800">Tudo certo. Seu pagamento foi confirmado e o pedido já está com a empresa.</p>}
+    {pending && !payOnReceipt && <div className="mx-auto mt-3 inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-2 text-[10px] font-black text-sky-700"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Esta tela atualiza sozinha assim que o pagamento for confirmado.</div>}
+    {result.message && !approved && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">{result.message}</p>}
+    {result.pix?.qrCodeBase64 && !approved && <img src={`data:image/png;base64,${result.pix.qrCodeBase64}`} alt="QR Code Pix" className="mx-auto mt-5 h-56 w-56 rounded-2xl bg-white p-2 ring-1 ring-stone-200" />}
+    {result.pix?.copyPaste && !approved && <div className="mt-4 rounded-2xl bg-white p-4 text-left ring-1 ring-stone-200"><p className="text-[9px] font-black uppercase tracking-[.12em] text-stone-400">Pix copia e cola</p><p className="mt-2 break-all text-xs text-stone-600">{result.pix.copyPaste}</p><button type="button" onClick={() => void copy()} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 py-2 text-xs font-black text-white"><Clipboard className="h-3.5 w-3.5" /> Copiar código Pix</button></div>}
+    <Link to="/classificados/compras" className="mt-6 inline-flex rounded-2xl bg-[#3a222b] px-5 py-3 text-sm font-black text-white">Acompanhar minhas compras</Link>
+  </div>;
+}
+
+function PaymentReceivedAnimation() {
+  return <div className="relative mx-auto flex h-24 w-24 items-center justify-center" aria-hidden="true">
+    <style>{`@keyframes pnPayRing{0%{transform:scale(.45);opacity:.75}100%{transform:scale(1.45);opacity:0}}@keyframes pnPayPop{0%{transform:scale(.55) rotate(-8deg);opacity:0}65%{transform:scale(1.08) rotate(2deg);opacity:1}100%{transform:scale(1) rotate(0);opacity:1}}@media(prefers-reduced-motion:reduce){.pn-pay-ring,.pn-pay-pop{animation:none!important}}`}</style>
+    <span className="pn-pay-ring absolute inset-2 rounded-full border-2 border-emerald-300" style={{ animation: 'pnPayRing 1.25s ease-out infinite' }} />
+    <span className="pn-pay-ring absolute inset-2 rounded-full border border-emerald-200" style={{ animation: 'pnPayRing 1.25s .38s ease-out infinite' }} />
+    <div className="pn-pay-pop relative flex h-16 w-16 items-center justify-center rounded-[22px] bg-emerald-600 text-white shadow-[0_16px_45px_rgba(5,150,105,.28)]" style={{ animation: 'pnPayPop .55s cubic-bezier(.2,.9,.25,1.2) both' }}><CheckCircle2 className="h-9 w-9" /></div>
+    <Sparkles className="pn-pay-pop absolute -right-1 top-1 h-5 w-5 text-amber-400" style={{ animation: 'pnPayPop .55s .18s cubic-bezier(.2,.9,.25,1.2) both' }} />
+  </div>;
 }
 
 function receiptAllowed(config: CheckoutConfig, fulfillment: Fulfillment) { const receipt = config.paymentOnReceipt; return Boolean(receipt?.enabled && (fulfillment === 'PICKUP' ? receipt.pickupEnabled : fulfillment === 'DELIVERY' ? receipt.deliveryEnabled : false) && receipt.methods?.length); }
