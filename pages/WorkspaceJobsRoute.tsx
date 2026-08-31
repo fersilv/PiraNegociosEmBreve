@@ -38,10 +38,11 @@ export default function WorkspaceJobsRoute({ workspace }: WorkspaceJobsRouteProp
   }
 
   if (workspace === "company") {
+    const companyAccess = (profile as any)?.companyAccess;
     const canRecruit = Boolean(
       isAdmin
       || profile?.isCompanyAdmin
-      || profile?.companyAccess?.permissions?.recruitment,
+      || companyAccess?.permissions?.recruitment,
     );
     if (!profile?.companyId || !canRecruit) return <Navigate to="/user" replace />;
     return (
