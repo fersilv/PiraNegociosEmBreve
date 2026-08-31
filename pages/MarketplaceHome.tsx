@@ -3,8 +3,8 @@ import {
   ArrowRight,
   BriefcaseBusiness,
   Building2,
-  CheckCircle2,
   Compass,
+  LocateFixed,
   MapPin,
   PackageSearch,
   Search,
@@ -12,21 +12,20 @@ import {
   ShoppingBag,
   Sparkles,
   Store,
-  Tags,
-  UsersRound,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { ClassifiedCategoryIcon } from "../components/classifieds/ClassifiedCategoryIcon";
 import { ClassifiedListingCard } from "../components/classifieds/ClassifiedListingCard";
+import { FeedMonetizationSlot } from "../components/FeedMonetizationSlot";
 import { JobCard } from "../components/JobCard";
 import { Navbar } from "../components/Navbar";
 import { SeoHead } from "../components/SeoHead";
 import { useAuth } from "../contexts/AuthContext";
+import { useVisitorLocation } from "../hooks/useVisitorLocation";
 import { api, asArray } from "../lib/api";
 import {
   buildLocalityRecommendation,
   localityRank,
-  type VisitorLocationHint,
 } from "../lib/locationPersonalization";
 import type {
   ClassifiedCategory,
@@ -50,10 +49,15 @@ export default function MarketplaceHome() {
   const [categories, setCategories] = useState<ClassifiedCategory[]>([]);
   const [listings, setListings] = useState<ClassifiedListing[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [visitorLocation, setVisitorLocation] = useState<VisitorLocationHint | null>(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [city, setCity] = useState("");
+  const {
+    location: visitorLocation,
+    status: locationStatus,
+    requestBrowserLocation,
+    usingPreciseLocation,
+  } = useVisitorLocation({ autoRequest: true });
 
   useEffect(() => {
     let active = true;
@@ -61,9 +65,8 @@ export default function MarketplaceHome() {
       api.get("/classifieds/categories"),
       api.get("/classifieds/listings?limit=30"),
       api.get("/jobs"),
-      api.get("/public/location-hint"),
     ])
-      .then(([categoriesResult, listingsResult, jobsResult, locationResult]) => {
+      .then(([categoriesResult, listingsResult, jobsResult]) => {
         if (!active) return;
 
         if (categoriesResult.status === "fulfilled") {
@@ -74,9 +77,6 @@ export default function MarketplaceHome() {
         }
         if (jobsResult.status === "fulfilled") {
           setJobs(asArray<Job>(jobsResult.value.data).filter((job) => job.active !== false));
-        }
-        if (locationResult.status === "fulfilled") {
-          setVisitorLocation(locationResult.value.data as VisitorLocationHint);
         }
       })
       .finally(() => active && setLoading(false));
@@ -176,7 +176,11 @@ export default function MarketplaceHome() {
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[.055] px-3.5 py-2 text-[10px] font-black uppercase tracking-[.18em] text-[#f0bf9f]">
                 <Compass className="h-3.5 w-3.5" />
-                {locality?.detectedLabel ? `Sua região · ${locality.detectedLabel}` : "Marketplace regional"}
+                {usingPreciseLocation
+                  ? "Localização atual ativada"
+                  : locality?.detectedLabel
+                    ? `Sua região · ${locality.detectedLabel}`
+                    : "Marketplace regional"}
               </div>
 
               <h1 className="mt-6 max-w-4xl font-serif text-5xl font-bold leading-[.96] tracking-[-.04em] text-white sm:text-6xl lg:text-7xl xl:text-[78px]">
@@ -244,9 +248,11 @@ export default function MarketplaceHome() {
                     <p className="text-[10px] font-black uppercase tracking-[.18em] text-[#e7a283]">Radar PiraNegócios</p>
                     <h2 className="mt-1 font-serif text-2xl font-bold">{locationHeadline}</h2>
                     <p className="mt-2 max-w-md text-xs leading-5 text-white/45">
-                      {locality?.detectedLabel
-                        ? "A vitrine prioriza o que está na sua cidade e nas localidades mais próximas disponíveis."
-                        : "Quando sua região puder ser identificada, a vitrine organiza o conteúdo mais próximo primeiro."}
+                      {usingPreciseLocation
+                        ? "Seu navegador compartilhou a localização atual. A vitrine agora prioriza as cidades realmente mais próximas."
+                        : locality?.detectedLabel
+                          ? "Enquanto a localização precisa não está disponível, usamos uma referência regional aproximada para ordenar a vitrine."
+                          : "Ative sua localização para colocar anúncios, serviços e vagas mais próximos no começo da vitrine."}
                     </p>
                   </div>
                   <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-[#f0bf9f]">
@@ -261,11 +267,28 @@ export default function MarketplaceHome() {
                   <StatCard value={loading ? "…" : allLocations.length.toLocaleString("pt-BR")} label="localidades ativas" />
                 </div>
 
-                <div className="mt-5 flex items-start gap-3 rounded-2xl border border-white/8 bg-black/10 p-4">
-                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#f0bf9f]" />
-                  <p className="text-xs leading-5 text-white/48">
-                    A localização usada aqui é aproximada e serve para ordenar a experiência. Você continua podendo explorar toda a região.
-                  </p>
+                <div className="mt-5 rounded-2xl border border-white/8 bg-black/10 p-4">
+                  <div className="flex items-start gap-3">
+                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#f0bf9f]" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs leading-5 text-white/48">
+                        {usingPreciseLocation
+                          ? "Localização precisa ativa. As coordenadas ficam nesta sessão do navegador e são usadas somente para ordenar o conteúdo por proximidade."
+                          : locationStatus === "requesting"
+                            ? "Aguardando a permissão de localização do navegador para melhorar a ordem da vitrine."
+                            : "A localização aproximada continua como fallback. Você pode tentar ativar o GPS do navegador quando quiser."}
+                      </p>
+                      {!usingPreciseLocation && locationStatus !== "requesting" && (
+                        <button
+                          type="button"
+                          onClick={requestBrowserLocation}
+                          className="mt-3 inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-[10px] font-black uppercase tracking-[.1em] text-white transition hover:bg-white/15"
+                        >
+                          <LocateFixed className="h-3.5 w-3.5 text-[#f0bf9f]" /> Usar minha localização
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -320,8 +343,17 @@ export default function MarketplaceHome() {
             <ListingSkeleton />
           ) : nearbyListings.length ? (
             <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">
-              {nearbyListings.map((listing) => (
-                <ClassifiedListingCard key={listing.id} listing={listing} />
+              {nearbyListings.map((listing, index) => (
+                <React.Fragment key={listing.id}>
+                  <ClassifiedListingCard listing={listing} />
+                  {index === 4 && (
+                    <FeedMonetizationSlot
+                      placement="marketplace-home-classifieds"
+                      slot={0}
+                      className="col-span-full"
+                    />
+                  )}
+                </React.Fragment>
               ))}
             </div>
           ) : (
@@ -377,7 +409,17 @@ export default function MarketplaceHome() {
               {loading ? (
                 [0, 1, 2].map((item) => <div key={item} className="h-48 animate-pulse rounded-[24px] bg-[#f0e7df]" />)
               ) : nearbyJobs.length ? (
-                nearbyJobs.map((job) => <JobCard key={job.id} job={job} onClick={() => openJob(job)} />)
+                nearbyJobs.map((job, index) => (
+                  <React.Fragment key={job.id}>
+                    <JobCard job={job} onClick={() => openJob(job)} />
+                    {index === 1 && (
+                      <FeedMonetizationSlot
+                        placement="marketplace-home-jobs"
+                        slot={0}
+                      />
+                    )}
+                  </React.Fragment>
+                ))
               ) : (
                 <EmptyState text="Nenhuma vaga pública encontrada neste momento." />
               )}
@@ -436,7 +478,7 @@ function PortalCard({ icon, eyebrow, title, text, to }: { icon: React.ReactNode;
   return (
     <Link to={to} className="group flex min-h-[210px] flex-col border-[#4b3328]/8 px-5 py-8 transition hover:bg-[#fffaf5] md:border-x md:px-7">
       <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#2d211c] text-[#f0bf9f]">{icon}</span>
-      <p className="mt-5 text-[9px] font-black uppercase tracking-[.18em] text-[#b96345]">{eyebrow}</p>
+      <p className="mt-5 text-[9px] font-black uppercase tracking-[.18em] text-[#b96345]">{eyrow}</p>
       <h3 className="mt-1 font-serif text-2xl font-bold">{title}</h3>
       <p className="mt-2 text-xs leading-5 text-[#735f54]">{text}</p>
       <span className="mt-auto pt-4 text-xs font-black text-[#9f5038]">Explorar <ArrowRight className="ml-1 inline h-3.5 w-3.5 transition group-hover:translate-x-1" /></span>
