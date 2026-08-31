@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Clock3,
   Gavel,
+  LocateFixed,
   MapPin,
   Radio,
   Search,
@@ -14,12 +15,18 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { ClassifiedCategoryIcon } from '../components/classifieds/ClassifiedCategoryIcon';
 import { ClassifiedListingCard } from '../components/classifieds/ClassifiedListingCard';
+import { FeedMonetizationSlot } from '../components/FeedMonetizationSlot';
 import { Navbar } from '../components/Navbar';
 import { SeoHead } from '../components/SeoHead';
 import { useAuth } from '../contexts/AuthContext';
+import { useVisitorLocation } from '../hooks/useVisitorLocation';
 import { auctionCurrentValue, loadPublicAuctions, type PublicClassifiedAuction } from '../lib/classifiedsAuctions';
 import { api } from '../lib/api';
+import { buildLocalityRecommendation, localityRank } from '../lib/locationPersonalization';
 import type { ClassifiedCategory, ClassifiedListing, ClassifiedSearchResponse } from '../types/classifieds';
+
+const listingLocation = (listing: ClassifiedListing) => [listing.city, listing.state].filter(Boolean).join(' - ');
+const listingDate = (listing: ClassifiedListing) => new Date(listing.publishedAt || listing.createdAt || listing.updatedAt || 0).getTime();
 
 export default function ClassifiedsHomePage() {
   const navigate = useNavigate();
@@ -32,6 +39,7 @@ export default function ClassifiedsHomePage() {
   const [city, setCity] = useState('');
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(Date.now());
+  const { location, status: locationStatus, requestBrowserLocation, usingPreciseLocation } = useVisitorLocation({ autoRequest: true });
 
   useEffect(() => {
     let active = true;
@@ -56,8 +64,15 @@ export default function ClassifiedsHomePage() {
     return () => window.clearInterval(timer);
   }, [auctions.length]);
 
-  const cities = useMemo(() => Array.from(new Set(recent.map((item) => `${item.city} - ${item.state}`).filter(Boolean))).sort(), [recent]);
-  const highlightItems = featured.length ? featured : recent.slice(0, 10);
+  const cities = useMemo(() => Array.from(new Set(recent.map(listingLocation).filter(Boolean))).sort(), [recent]);
+  const locality = useMemo(() => buildLocalityRecommendation(location, cities), [location, cities]);
+  const rankListings = (items: ClassifiedListing[]) => [...items].sort((a, b) => {
+    const locationDifference = localityRank(listingLocation(a), locality) - localityRank(listingLocation(b), locality);
+    if (locationDifference) return locationDifference;
+    return listingDate(b) - listingDate(a);
+  });
+  const rankedRecent = useMemo(() => rankListings(recent), [recent, locality]);
+  const highlightItems = useMemo(() => featured.length ? rankListings(featured) : rankedRecent.slice(0, 10), [featured, rankedRecent, locality]);
   const liveAuctions = auctions.filter((auction) => new Date(auction.endsAt).getTime() > now);
 
   const search = (event: React.FormEvent) => {
@@ -86,6 +101,7 @@ export default function ClassifiedsHomePage() {
                 <div className="flex flex-wrap items-center gap-2"><span className="inline-flex items-center gap-2 rounded-full border border-[#c96847]/15 bg-[#fff1e9] px-3 py-1.5 text-[9px] font-black uppercase tracking-[.17em] text-[#a84f34]"><Sparkles className="h-3.5 w-3.5" /> Classificados da região</span>{liveAuctions.length > 0 && <Link to="/classificados/leiloes" className="inline-flex items-center gap-2 rounded-full bg-[#2d211c] px-3 py-1.5 text-[9px] font-black uppercase tracking-[.15em] text-white"><Radio className="h-3.5 w-3.5 animate-pulse text-[#ff7b55] motion-reduce:animate-none" /> {liveAuctions.length} leilão{liveAuctions.length === 1 ? '' : 'ões'} ao vivo</Link>}</div>
                 <h1 className="mt-3 font-serif text-3xl font-bold leading-[.98] tracking-[-.035em] sm:text-4xl lg:text-5xl">Encontre. Negocie. Leve.</h1>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-[#725e53]">A vitrine já começa aqui: produtos e serviços locais, sem uma página de apresentação no caminho.</p>
+                <button type="button" onClick={requestBrowserLocation} disabled={locationStatus === 'requesting'} className={`mt-3 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-[.08em] ring-1 transition ${usingPreciseLocation ? 'bg-[#fff0e8] text-[#a84f34] ring-[#c96847]/20' : 'bg-white text-[#6e594e] ring-[#4b3328]/10'}`}><LocateFixed className="h-3.5 w-3.5" />{locationStatus === 'requesting' ? 'Localizando...' : usingPreciseLocation ? `Perto de ${locality?.recommendedLabel || 'você'}` : 'Usar minha localização'}</button>
               </div>
               <Link to={user ? '/classificados/publicar' : '/login?returnTo=%2Fclassificados%2Fpublicar'} className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-2xl bg-[#c96847] px-5 text-xs font-black text-white shadow-[0_12px_28px_rgba(201,104,71,.18)]">Anunciar agora <ArrowRight className="h-4 w-4" /></Link>
             </div>
@@ -110,7 +126,7 @@ export default function ClassifiedsHomePage() {
 
         <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           <div className="flex items-end justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[.17em] text-[#b06448]">Vitrine</p><h2 className="mt-1 font-serif text-2xl font-bold sm:text-3xl">O que está rolando por perto</h2></div><Link to="/classificados/busca?sort=recent" className="text-xs font-black text-[#a84f34]">Ver tudo</Link></div>
-          {loading ? <ListingSkeleton /> : highlightItems.length ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">{highlightItems.map((listing) => <ClassifiedListingCard key={listing.id} listing={listing} />)}</div> : <EmptyState />}
+          {loading ? <ListingSkeleton /> : highlightItems.length ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">{highlightItems.map((listing, index) => <React.Fragment key={listing.id}><ClassifiedListingCard listing={listing} />{index === 4 && <FeedMonetizationSlot placement="classifieds-home-highlight" slot={0} className="col-span-full" />}</React.Fragment>)}</div> : <EmptyState />}
         </section>
 
         <section className="mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
@@ -120,7 +136,7 @@ export default function ClassifiedsHomePage() {
 
         <section className="border-y border-[#4b3328]/10 bg-white"><div className="mx-auto grid max-w-7xl gap-6 px-4 py-9 sm:px-6 md:grid-cols-[1fr_auto] md:items-center lg:px-8"><div><div className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[.16em] text-[#b06448]"><Tag className="h-3.5 w-3.5" /> Tem algo para vender?</div><h2 className="mt-2 font-serif text-3xl font-bold tracking-[-.025em] sm:text-4xl">Seu anúncio entra na mesma vitrine que você acabou de explorar.</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-[#806b60]">Fotos, preço, localização e pronto. Empresas Elite ainda podem transformar produtos publicados em leilões ao vivo.</p></div><Link to={user ? '/classificados/publicar' : '/login?returnTo=%2Fclassificados%2Fpublicar'} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#c96847] px-6 text-sm font-black text-white shadow-[0_14px_30px_rgba(201,104,71,.20)]">Publicar anúncio <ArrowRight className="h-4 w-4" /></Link></div></section>
 
-        <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8"><div className="flex items-end justify-between"><div><p className="text-[10px] font-black uppercase tracking-[.17em] text-[#b06448]">Recém-publicados</p><h2 className="mt-1 font-serif text-2xl font-bold sm:text-3xl">Chegaram agora</h2></div></div>{recent.length ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">{recent.slice(0, 10).map((listing) => <ClassifiedListingCard key={listing.id} listing={listing} compact />)}</div> : !loading && <EmptyState />}</section>
+        <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8"><div className="flex items-end justify-between"><div><p className="text-[10px] font-black uppercase tracking-[.17em] text-[#b06448]">Recém-publicados</p><h2 className="mt-1 font-serif text-2xl font-bold sm:text-3xl">Chegaram agora</h2></div></div>{rankedRecent.length ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">{rankedRecent.slice(0, 10).map((listing, index) => <React.Fragment key={listing.id}><ClassifiedListingCard listing={listing} compact />{index === 4 && <FeedMonetizationSlot placement="classifieds-home-recent" slot={0} className="col-span-full" />}</React.Fragment>)}</div> : !loading && <EmptyState />}</section>
 
         <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8"><div className="grid gap-3 rounded-[26px] bg-[#2d211c] p-5 text-white sm:grid-cols-2 sm:p-6"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" /><div><p className="text-xs font-black">Anunciantes identificados</p><p className="mt-1 text-[10px] leading-5 text-white/45">Sinais de verificação aparecem nos anúncios e nas salas de leilão.</p></div></div><div className="flex items-start gap-3"><MapPin className="mt-0.5 h-5 w-5 shrink-0 text-[#ff9a78]" /><div><p className="text-xs font-black">Feito para a região</p><p className="mt-1 text-[10px] leading-5 text-white/45">Busca por cidade e localização para negociação realmente próxima.</p></div></div></div></section>
       </main>
