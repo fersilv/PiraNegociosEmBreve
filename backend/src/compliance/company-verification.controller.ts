@@ -63,8 +63,8 @@ export class CompanyVerificationController {
     const state = (same ? String(company?.legalState || '') : String(body.state || '')).trim().toUpperCase().slice(0, 2);
     if (!address || !city || state.length !== 2) throw new BadRequestException('Informe o endereço comercial completo.');
     const rows = await this.dataSource.query(
-      `UPDATE companies SET name=$2,"commercialAddressSameAsLegal"=$3,address=$4,city=$5,state=$6,
-       "cityState"=concat_ws(', ',NULLIF($5,''),NULLIF($6,'')),"updatedAt"=now()
+      `UPDATE companies SET name=$2::varchar,"commercialAddressSameAsLegal"=$3::boolean,address=$4::varchar,city=$5::varchar,state=$6::varchar,
+       "cityState"=concat_ws(', ',NULLIF($5::varchar,''),NULLIF($6::varchar,'')),"updatedAt"=now()
        WHERE id=$1 RETURNING id,name,address,city,state,"cityState","commercialAddressSameAsLegal"`,
       [companyId, name, same, address, city, state],
     );
