@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, createHmac, timingSafeEqual } from 'crypto';
-import { FindOptionsWhere, QueryFailedError, Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { Job } from '../jobs/entities/job.entity';
 import { slugify } from '../seo/seo.utils';
 import { ExternalApiClient } from './entities/external-api-client.entity';
@@ -170,18 +170,18 @@ export class ExternalJobsService {
       )
       .digest('hex');
 
-    const exactWhere: FindOptionsWhere<Job>[] = [];
-    if (data.sourceExternalId)
-      exactWhere.push({
-        sourceExternalId: data.sourceExternalId,
-        ingestionSourceId: client.id,
-        isInternal: false,
+    // sourceUrl can point to a collective job board (PAT/CAT) that contains
+    // several different openings. It is therefore evidence only, never an
+    // exact uniqueness key. sourceExternalId remains the strong exact signal
+    // for a given ingestion source.
+    if (data.sourceExternalId) {
+      const exact = await this.jobs.findOne({
+        where: {
+          sourceExternalId: data.sourceExternalId,
+          ingestionSourceId: client.id,
+          isInternal: false,
+        },
       });
-    if (data.sourceUrl)
-      exactWhere.push({ sourceUrl: data.sourceUrl, isInternal: false });
-
-    if (exactWhere.length > 0) {
-      const exact = await this.jobs.findOne({ where: exactWhere });
       if (exact) {
         return {
           duplicate: true,
@@ -191,10 +191,10 @@ export class ExternalJobsService {
           fingerprint,
           data,
           signals: {
-            sameSourceExternalId:
-              data.sourceExternalId &&
-              exact.sourceExternalId === data.sourceExternalId,
-            sameSourceUrl: data.sourceUrl && exact.sourceUrl === data.sourceUrl,
+            sameSourceExternalId: true,
+            sameSourceUrl: Boolean(
+              data.sourceUrl && exact.sourceUrl === data.sourceUrl,
+            ),
           },
         };
       }
@@ -228,7 +228,9 @@ export class ExternalJobsService {
             sameCompany: companyScore > 0.8,
             sameCity,
             sameSourceExternalId: false,
-            sameSourceUrl: false,
+            sameSourceUrl: Boolean(
+              data.sourceUrl && job.sourceUrl === data.sourceUrl,
+            ),
             titleSimilarity: Number(titleScore.toFixed(2)),
             companySimilarity: Number(companyScore.toFixed(2)),
           },
@@ -459,11 +461,9 @@ export class ExternalJobsService {
         `${this.normalize(data.title)}|${this.normalize(data.sourceName)}|${this.normalize(data.city)}|${data.state}`,
       )
       .digest('hex');
-    const duplicateWhere: FindOptionsWhere<Job>[] = [
-      { externalFingerprint: fingerprint },
-    ];
-    if (data.sourceUrl) duplicateWhere.push({ sourceUrl: data.sourceUrl });
-    const duplicate = await this.jobs.findOne({ where: duplicateWhere });
+    const duplicate = await this.jobs.findOne({
+      where: { externalFingerprint: fingerprint },
+    });
     if (duplicate && duplicate.id !== job.id)
       throw new ConflictException(
         'A alteração deixaria esta vaga duplicada de outra já cadastrada.',

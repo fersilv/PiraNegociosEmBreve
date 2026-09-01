@@ -113,6 +113,88 @@ describe('ExternalJobsService', () => {
     expect(result.matchType).toBe('LIKELY');
   });
 
+  it('não trata sourceUrl compartilhada como duplicata exata entre cargos diferentes', async () => {
+    const { service, jobs } = setup();
+    const sharedSourceUrl = 'https://prefeitura.example/pat/vagas';
+    jobs.find.mockResolvedValue([
+      {
+        id: 'job-pat-acougueiro',
+        title: 'Açougueiro',
+        sourceName: 'PAT Descalvado',
+        sourceUrl: sharedSourceUrl,
+        companyName: 'Confidencial',
+        city: 'Descalvado',
+        state: 'SP',
+        location: 'Descalvado, SP',
+        active: true,
+        moderationStatus: 'APPROVED',
+        createdAt: new Date(),
+      },
+    ]);
+
+    const result = await service.findDuplicate(
+      {
+        title: 'Assistente de Recursos Humanos',
+        sourceName: 'PAT Descalvado',
+        sourceUrl: sharedSourceUrl,
+        companyName: 'Confidencial',
+        city: 'Descalvado',
+        state: 'SP',
+        description: 'Atividades de recursos humanos.',
+      },
+      client,
+    );
+
+    expect(result.duplicate).toBe(false);
+    expect(result.matchType).not.toBe('EXACT');
+    expect(result.signals).toEqual(
+      expect.objectContaining({ sameSourceUrl: true }),
+    );
+    expect(jobs.findOne).not.toHaveBeenCalled();
+  });
+
+  it('mantém sourceExternalId da mesma origem como duplicata exata', async () => {
+    const { service, jobs } = setup();
+    jobs.findOne.mockResolvedValue({
+      id: 'job-mte-9218718',
+      title: 'Auxiliar Administrativo PCD',
+      sourceName: 'PAT Porto Ferreira',
+      sourceUrl: 'https://prefeitura.example/pat/vagas',
+      sourceExternalId: '9218718',
+      ingestionSourceId: client.id,
+      companyName: 'Transportadora Porto Ferreira',
+      city: 'Porto Ferreira',
+      state: 'SP',
+      location: 'Porto Ferreira, SP',
+      active: true,
+      moderationStatus: 'APPROVED',
+      createdAt: new Date(),
+    });
+
+    const result = await service.findDuplicate(
+      {
+        title: 'Auxiliar Administrativo PCD',
+        sourceName: 'PAT Porto Ferreira',
+        sourceUrl: 'https://prefeitura.example/pat/vagas',
+        sourceExternalId: '9218718',
+        companyName: 'Transportadora Porto Ferreira',
+        city: 'Porto Ferreira',
+        state: 'SP',
+        description: 'Atividades administrativas.',
+      },
+      client,
+    );
+
+    expect(result.duplicate).toBe(true);
+    expect(result.matchType).toBe('EXACT');
+    expect(result.signals).toEqual(
+      expect.objectContaining({
+        sameSourceExternalId: true,
+        sameSourceUrl: true,
+      }),
+    );
+  });
+
   it('lista todas as vagas com paginação por cursor, sem restringir às externas', async () => {
     const { service, jobs } = setup();
     const first = {
@@ -274,6 +356,50 @@ describe('ExternalJobsService', () => {
     await expect(
       service.update(current.id, { active: true } as ExternalJobInput, client),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('não usa sourceUrl compartilhada como conflito ao atualizar uma vaga', async () => {
+    const { service, jobs } = setup();
+    const current = {
+      id: 'job-api-shared-url',
+      ownerId: `api:${client.id}`,
+      ingestionSourceId: client.id,
+      ingestionSourceName: client.name,
+      isExternalListing: true,
+      title: 'Pedreiro',
+      description: 'Descrição original da oportunidade',
+      sourceName: 'PAT Araras',
+      sourceUrl: 'https://prefeitura.example/pat/vagas',
+      city: 'Araras',
+      state: 'SP',
+      type: 'CLT',
+      workModel: 'Presencial',
+      salary: null,
+      requirements: null,
+      applicationEmail: null,
+      applicationWhatsApp: null,
+      applicationUrl: null,
+      applicationUrlTitle: null,
+      externalApplicationInstructions: 'Candidatura presencial no PAT.',
+      deadlineDate: null,
+      active: false,
+      moderationStatus: 'PENDING',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    jobs.findOne.mockResolvedValueOnce(current).mockResolvedValueOnce(null);
+    jobs.save.mockImplementation(async (value) => value);
+
+    const result = await service.update(
+      current.id,
+      { description: 'Descrição atualizada da oportunidade.' },
+      client,
+    );
+
+    expect(result.updated).toBe(true);
+    expect(jobs.findOne).toHaveBeenNthCalledWith(2, {
+      where: { externalFingerprint: expect.any(String) },
+    });
   });
 
   it('não permite que uma chave edite vaga criada por outra origem', async () => {
