@@ -79,6 +79,26 @@ export class WhatsAppAdminController {
     return this.whatsapp.listGroups(id);
   }
 
+  @Get('instances/:id/group-automations')
+  groupAutomations(@Param('id') id: string) {
+    return this.whatsapp.listGroupAutomations(id);
+  }
+
+  @Put('instances/:id/group-automations/:groupId')
+  updateGroupAutomation(@Param('id') id: string, @Param('groupId') groupId: string, @Body() body: Record<string, unknown>) {
+    return this.whatsapp.updateGroupAutomation(id, groupId, body);
+  }
+
+  @Get('instances/:id/group-automations/:groupId/events')
+  groupAutomationEvents(@Param('id') id: string, @Param('groupId') groupId: string, @Query('limit') limit?: string) {
+    return this.whatsapp.listGroupAutomationEvents(id, groupId, Number(limit || 50));
+  }
+
+  @Get('instances/:id/member-onboarding')
+  memberOnboarding(@Param('id') id: string, @Query('limit') limit?: string) {
+    return this.whatsapp.getMemberOnboardingSummary(id, Number(limit || 100));
+  }
+
   @Get('instances/:id/channels') channels(@Param('id') id: string) {
     return this.whatsapp.listChannels(id);
   }
