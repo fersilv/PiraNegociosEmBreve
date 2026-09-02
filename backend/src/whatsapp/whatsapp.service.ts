@@ -475,15 +475,57 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   async saveContact(id: string, data: { phoneNumber?: string; name?: string; notes?: string }) {
     await this.getInstance(id);
+    const client = this.requireClient(id);
     const phoneNumber = this.onlyDigits(String(data.phoneNumber || ''));
     const name = String(data.name || '').trim().slice(0, 160);
     if (!phoneNumber || !name) throw new BadRequestException('Nome e telefone são obrigatórios.');
+
     const waId = `${phoneNumber}@c.us`;
+    const page = (client as any).waPage || (client as any).page;
+    if (!page?.evaluate) throw new BadRequestException('A sessão atual não permite salvar contatos no WhatsApp.');
+
+    let whatsappContact: Record<string, unknown> | null = null;
+    try {
+      whatsappContact = await page.evaluate(
+        async ({ contactId, displayName }: { contactId: string; displayName: string }) => {
+          const contactApi = (globalThis as any)?.WPP?.contact;
+          if (typeof contactApi?.save !== 'function') {
+            throw new Error('WPP.contact.save não está disponível nesta versão do WhatsApp Web.');
+          }
+
+          const parts = displayName.split(/\s+/).filter(Boolean);
+          const firstName = parts.shift() || displayName;
+          const lastName = parts.join(' ') || undefined;
+          const saved = await contactApi.save(contactId, firstName, {
+            ...(lastName ? { lastName } : {}),
+            syncAddressBook: false,
+          });
+
+          return {
+            id: saved?.id?._serialized || saved?.id || contactId,
+            name: saved?.name || saved?.pushname || displayName,
+            isMyContact: saved?.isMyContact ?? true,
+            syncToAddressbook: saved?.syncToAddressbook ?? false,
+          };
+        },
+        { contactId: waId, displayName: name },
+      );
+    } catch (error) {
+      throw new BadRequestException(`Não foi possível salvar o contato no WhatsApp: ${this.errorMessage(error)}`);
+    }
+
     let contact = await this.savedContacts.findOne({ where: { instanceId: id, waId } });
     if (!contact) contact = this.savedContacts.create({ instanceId: id, waId, phoneNumber, name, notes: null, metadata: null });
     contact.name = name;
     contact.notes = String(data.notes || '').trim() || null;
-    return this.savedContacts.save(contact);
+    contact.metadata = {
+      ...(contact.metadata || {}),
+      whatsappSaved: true,
+      syncToAddressbook: false,
+      whatsappSavedAt: new Date().toISOString(),
+    };
+    const stored = await this.savedContacts.save(contact);
+    return { ...stored, whatsappContact };
   }
 
   async listSavedContacts(id: string) {
