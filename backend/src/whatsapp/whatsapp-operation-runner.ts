@@ -183,6 +183,50 @@ export async function executeWppOperation(
   const capability = WPP_OPERATION_CAPABILITIES.find((item) => item.scope === scope);
   if (!capability) throw new BadRequestException('Operação WPPConnect não autorizada pelo catálogo.');
 
+  // Modo reservado para o MCP atual: reaproveita a função de escrita de vCards
+  // já autorizada para salvar contatos na agenda interna do próprio WhatsApp.
+  // Uso normal de sendContactVcardList permanece inalterado.
+  if (capability.method === 'sendContactVcardList' && args[0] === '__save_to_whatsapp__') {
+    const contacts = Array.isArray(args[1]) ? args[1] : [];
+    if (!contacts.length) {
+      throw new BadRequestException('Informe pelo menos um contato no segundo argumento.');
+    }
+    if (contacts.length > 200) {
+      throw new BadRequestException('Salve no máximo 200 contatos por chamada.');
+    }
+
+    const result: Array<Record<string, unknown>> = [];
+    for (const item of contacts) {
+      const raw = item && typeof item === 'object' ? (item as Record<string, unknown>) : {};
+      const contactId = String(raw.id || '').trim();
+      const name = String(raw.name || '').trim();
+      const phoneNumber = contactId.replace(/\D/g, '');
+      if (!phoneNumber || !name) {
+        result.push({ id: contactId || null, name: name || null, ok: false, error: 'Contato exige id/telefone e name.' });
+        continue;
+      }
+
+      try {
+        const saved = await whatsapp.saveContact(instanceId, { phoneNumber, name });
+        result.push({ id: `${phoneNumber}@c.us`, name, ok: true, saved: normalizeWppResult(saved) });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.push({ id: `${phoneNumber}@c.us`, name, ok: false, error: message.slice(0, 1000) });
+      }
+    }
+
+    return {
+      operation: 'saveContacts',
+      scope: capability.scope,
+      mode: 'whatsapp-contact-store',
+      syncAddressBook: false,
+      total: result.length,
+      saved: result.filter((item) => item.ok === true).length,
+      failed: result.filter((item) => item.ok !== true).length,
+      result,
+    };
+  }
+
   // Métodos on* do WPPConnect recebem callbacks. Não faz sentido permitir que
   // um cliente MCP injete uma função JavaScript. Em vez disso, a primeira
   // chamada ativa o listener no backend e todas as chamadas consultam um ring
