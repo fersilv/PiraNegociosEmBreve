@@ -1,4 +1,4 @@
-import { GroupLayer } from '@wppconnect-team/wppconnect/dist/api/layers/group.layer';
+import { Whatsapp } from '@wppconnect-team/wppconnect';
 
 type MembershipActionMethod = 'approveGroupMembershipRequest' | 'rejectGroupMembershipRequest';
 
@@ -24,7 +24,7 @@ function describeError(error: unknown): string {
 }
 
 function installMembershipAction(methodName: MembershipActionMethod) {
-  const prototype = GroupLayer.prototype as any;
+  const prototype = Whatsapp.prototype as any;
   const original = prototype[methodName];
   if (typeof original !== 'function') return;
 
