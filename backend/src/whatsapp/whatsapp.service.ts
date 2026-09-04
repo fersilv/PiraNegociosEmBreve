@@ -424,8 +424,16 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     const client = this.requireClient(id);
     const target = this.normalizeGroupId(groupId);
     const participant = this.normalizeParticipantId(participantId);
-    const result = await client.approveGroupMembershipRequest(target, participant);
-    return { ok: true, groupId: target, participantId: participant, result };
+    const canonical = await this.resolveCanonicalMemberId(client, participant);
+    const approval = await this.approveMembershipRequest(client, target, participant, canonical);
+    return {
+      ok: true,
+      groupId: target,
+      participantId: participant,
+      canonicalParticipantId: canonical,
+      approvedWith: approval.approvedWith,
+      result: approval.result,
+    };
   }
 
   async rejectGroupMembershipRequest(id: string, groupId: string, participantId: string) {
@@ -745,10 +753,17 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           continue;
         }
         try {
-          await client.approveGroupMembershipRequest(config.groupId, rawMemberId);
-          await this.recordGroupMemberEvent(instanceId, config.groupId, rawMemberId, canonical, null, 'AUTO_APPROVED_REQUEST', { requestMethod: request?.requestMethod || null });
+          const approval = await this.approveMembershipRequest(client, config.groupId, rawMemberId, canonical);
+          await this.recordGroupMemberEvent(instanceId, config.groupId, rawMemberId, canonical, null, 'AUTO_APPROVED_REQUEST', {
+            requestMethod: request?.requestMethod || null,
+            approvedWith: approval.approvedWith,
+          });
         } catch (error) {
-          await this.recordGroupMemberEvent(instanceId, config.groupId, rawMemberId, canonical, null, 'AUTO_APPROVAL_FAILED', { error: this.errorMessage(error) });
+          await this.recordGroupMemberEvent(instanceId, config.groupId, rawMemberId, canonical, null, 'AUTO_APPROVAL_FAILED', {
+            error: this.errorMessage(error),
+            rawMemberId,
+            canonicalMemberId: canonical,
+          });
         }
       }
     }
@@ -839,6 +854,37 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       config.channelUrl ? `📢 Acompanhe nosso canal no WhatsApp para novas oportunidades:\n${config.channelUrl}` : null,
       '📱 Salve o contato do PiraNegócios para conseguir visualizar nossos Status com novas vagas.',
     ].filter(Boolean).join('\n\n');
+  }
+
+  private async approveMembershipRequest(client: any, groupId: string, rawMemberId: string, canonicalMemberId?: string) {
+    const candidates = [...new Set(
+      [canonicalMemberId, rawMemberId]
+        .filter((value): value is string => Boolean(value))
+        .map((value) => this.normalizeParticipantId(value)),
+    )];
+    const attempts: Array<{ memberId: string; error: string }> = [];
+
+    for (const candidate of candidates) {
+      try {
+        const result = await client.approveGroupMembershipRequest(groupId, candidate);
+        if (Array.isArray(result) && result.length) {
+          const failures = result.filter((row: any) => row?.error);
+          if (failures.length === result.length) {
+            const detail = failures
+              .map((row: any) => this.errorMessage(row?.error))
+              .filter(Boolean)
+              .join('; ');
+            throw new Error(detail || `WhatsApp recusou a aprovação para ${candidate}.`);
+          }
+        }
+        return { result, approvedWith: candidate };
+      } catch (error) {
+        attempts.push({ memberId: candidate, error: this.errorMessage(error) });
+      }
+    }
+
+    const detail = attempts.map((attempt) => `${attempt.memberId}: ${attempt.error}`).join(' | ');
+    throw new Error(`Nenhum identificador conseguiu aprovar a solicitação. ${detail}`.slice(0, 2000));
   }
 
   private async resolveCanonicalMemberId(client: any, rawId: string) {
