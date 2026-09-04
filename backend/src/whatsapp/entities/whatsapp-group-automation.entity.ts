@@ -6,7 +6,7 @@ export class WhatsAppGroupAutomation {
   @PrimaryGeneratedColumn('uuid') id: string;
   @Column({ type: 'uuid' }) instanceId: string;
   @Column({ length: 120 }) groupId: string;
-  @Column({ length: 255, nullable: true }) groupName: string | null;
+  @Column({ type: 'varchar', length: 255, nullable: true }) groupName: string | null;
   @Column({ default: false }) monitored: boolean;
   @Column({ default: false }) approveMembers: boolean;
   @Column({ default: false }) saveContacts: boolean;
