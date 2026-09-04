@@ -6,6 +6,7 @@ import { json, urlencoded } from 'express';
 import { join } from 'path';
 import { Client } from 'pg';
 import { attachSpaFallback } from './spa-fallback';
+import { installWppconnectMembershipCompatibility } from './whatsapp/wppconnect-membership-compat';
 
 function configureChromiumSandboxForWhatsApp() {
   const runningAsRoot = typeof process.getuid === 'function' && process.getuid() === 0;
@@ -53,6 +54,7 @@ async function ensureDatabaseExists() {
 
 async function bootstrap() {
   configureChromiumSandboxForWhatsApp();
+  installWppconnectMembershipCompatibility();
   await ensureDatabaseExists();
 
   // Um arquivo binário de 20 MB ocupa aproximadamente 27 MB depois de virar
