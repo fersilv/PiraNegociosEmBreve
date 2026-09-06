@@ -86,12 +86,9 @@ export function CompanyProfilePage({ section = "commercial" }: { section?: Compa
         setCity(item?.city || "");
         setState(item?.state || "");
         setRapi10CatalogOptIn(item?.rapi10CatalogOptIn !== false);
-        setBusinessHoursText((Array.isArray(item?.businessHoursJson) ? item.businessHoursJson : []).join("
-"));
-        setSpecialDatesText((Array.isArray(item?.specialBusinessDatesJson) ? item.specialBusinessDatesJson : []).join("
-"));
-        setServicesText((Array.isArray(item?.servicesTagsJson) ? item.servicesTagsJson : []).join("
-"));
+        setBusinessHoursText((Array.isArray(item?.businessHoursJson) ? item.businessHoursJson : []).join("\n"));
+        setSpecialDatesText((Array.isArray(item?.specialBusinessDatesJson) ? item.specialBusinessDatesJson : []).join("\n"));
+        setServicesText((Array.isArray(item?.servicesTagsJson) ? item.servicesTagsJson : []).join("\n"));
       }
       if (employeesResult.status === "fulfilled") setEmployees(Array.isArray(employeesResult.value.data) ? employeesResult.value.data : []);
       if (plansResult.status === "fulfilled") setPlans(plansResult.value.data);
@@ -115,12 +112,9 @@ export function CompanyProfilePage({ section = "commercial" }: { section?: Compa
         city,
         state,
         rapi10CatalogOptIn,
-        businessHoursJson: businessHoursText.split("
-").map(v => v.trim()).filter(Boolean),
-        specialBusinessDatesJson: specialDatesText.split("
-").map(v => v.trim()).filter(Boolean),
-        servicesTagsJson: servicesText.split(/[,
-]/).map(v => v.trim()).filter(Boolean),
+        businessHoursJson: businessHoursText.split("\n").map(v => v.trim()).filter(Boolean),
+        specialBusinessDatesJson: specialDatesText.split("\n").map(v => v.trim()).filter(Boolean),
+        servicesTagsJson: servicesText.split(/[,\n]/).map(v => v.trim()).filter(Boolean),
       });
       await api.put(`/companies/${companyId}`, { description, website, phone, logoURL });
       if (user) await api.post("/users/me", { companyName: name, companyLogo: logoURL });
@@ -234,14 +228,9 @@ function CommercialSection(props: any) {
       <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
         <label className="flex items-start gap-3"><input type="checkbox" checked={rapi10CatalogOptIn} onChange={e => setRapi10CatalogOptIn(e.target.checked)} className="mt-1 h-4 w-4" /><span className="text-xs leading-5 text-stone-600"><strong className="block text-stone-900">Exibir no Catálogo Rapi10</strong>Ligado por padrão para empresas verificadas. A Central Rapi10 ainda confirma o ponto no mapa e a categoria antes da publicação.</span></label>
       </div>
-      <Field label="Horário de funcionamento"><textarea value={businessHoursText} onChange={e => setBusinessHoursText(e.target.value)} rows={5} className={inputClass} placeholder={'Seg a Sex · 08:00 às 18:00
-Sáb · 08:00 às 13:00
-Dom · Fechado'} /><span className="mt-1 block text-[10px] leading-4 text-stone-400">Uma linha por período. Essas informações aparecem no Catálogo Rapi10 e ajudam o cliente a entender quando o estabelecimento funciona.</span></Field>
-      <Field label="Datas e horários especiais"><textarea value={specialDatesText} onChange={e => setSpecialDatesText(e.target.value)} rows={4} className={inputClass} placeholder={'24/12/2026 · 08:00 às 14:00 · Véspera de Natal
-25/12/2026 · Fechado · Natal'} /></Field>
-      <Field label="Produtos, serviços ou atividades"><textarea value={servicesText} onChange={e => setServicesText(e.target.value)} rows={3} className={inputClass} placeholder={'Almoço executivo
-Delivery
-Eventos e encomendas'} /><span className="mt-1 block text-[10px] leading-4 text-stone-400">Use uma linha ou vírgula por item. Ajuda clientes a entenderem rapidamente o que o estabelecimento oferece.</span></Field>
+      <Field label="Horário de funcionamento"><textarea value={businessHoursText} onChange={e => setBusinessHoursText(e.target.value)} rows={5} className={inputClass} placeholder={'Seg a Sex · 08:00 às 18:00\nSáb · 08:00 às 13:00\nDom · Fechado'} /><span className="mt-1 block text-[10px] leading-4 text-stone-400">Uma linha por período. Essas informações aparecem no Catálogo Rapi10 e ajudam o cliente a entender quando o estabelecimento funciona.</span></Field>
+      <Field label="Datas e horários especiais"><textarea value={specialDatesText} onChange={e => setSpecialDatesText(e.target.value)} rows={4} className={inputClass} placeholder={'24/12/2026 · 08:00 às 14:00 · Véspera de Natal\n25/12/2026 · Fechado · Natal'} /></Field>
+      <Field label="Produtos, serviços ou atividades"><textarea value={servicesText} onChange={e => setServicesText(e.target.value)} rows={3} className={inputClass} placeholder={'Almoço executivo\nDelivery\nEventos e encomendas'} /><span className="mt-1 block text-[10px] leading-4 text-stone-400">Use uma linha ou vírgula por item. Ajuda clientes a entenderem rapidamente o que o estabelecimento oferece.</span></Field>
       <button onClick={() => void onSave()} disabled={working === "commercial"} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#0d4542] px-5 text-sm font-black text-white disabled:opacity-50"><Save className="h-4 w-4" />{working === "commercial" ? "Salvando..." : "Salvar perfil comercial"}</button></div>
     </section>
   </div>;
