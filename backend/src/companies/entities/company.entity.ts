@@ -116,6 +116,11 @@ export class Company {
   @Column({ default: true })
   commercialAddressSameAsLegal: boolean;
 
+  // Opt-in comercial para ser candidato ao catálogo de endereços da Rapi10.
+  // A publicação final ainda depende de categoria + localização validadas pela Central Rapi10.
+  @Column({ default: true })
+  rapi10CatalogEnabled: boolean;
+
   @Column({ nullable: true })
   website: string;
 

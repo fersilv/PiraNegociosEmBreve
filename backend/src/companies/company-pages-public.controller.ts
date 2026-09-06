@@ -1,6 +1,6 @@
 import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThan, Repository } from 'typeorm';
+import { In, MoreThan, Repository } from 'typeorm';
 import { Company, CompanyStatus } from './entities/company.entity';
 import { CompanyPage } from './entities/company-page.entity';
 import { CompanyPagePreview } from './entities/company-page-preview.entity';
@@ -18,6 +18,42 @@ export class CompanyPagesPublicController {
     @InjectRepository(Job)
     private readonly jobs: Repository<Job>,
   ) {}
+
+  @Get('rapi10/catalog')
+  async rapi10Catalog() {
+    const companies = await this.companies.find({
+      where: { verificationStatus: CompanyStatus.VERIFIED },
+      order: { updatedAt: 'DESC' },
+    });
+    if (!companies.length) return { complete: true, generatedAt: new Date().toISOString(), items: [] };
+    const pages = await this.pages.find({ where: { companyId: In(companies.map((company) => company.id)) } });
+    const byCompany = new Map(pages.map((page) => [page.companyId, page]));
+    const items = companies.map((company) => {
+      const page = byCompany.get(company.id);
+      const config: any = (page?.published || page?.draft || {}) as any;
+      const businessHours = config?.businessHours && typeof config.businessHours === 'object' ? config.businessHours : null;
+      return {
+        id: company.id,
+        slug: company.slug,
+        name: company.name,
+        description: company.description,
+        phone: company.phone,
+        whatsapp: config?.contacts?.whatsapp || null,
+        website: company.website,
+        address: company.address,
+        city: company.city,
+        state: company.state,
+        postalCode: company.commercialAddressSameAsLegal ? company.legalZipCode : null,
+        logoUrl: company.logoURL,
+        heroUrl: config?.cover?.enabled ? config?.cover?.url || null : null,
+        catalogEnabled: company.rapi10CatalogEnabled !== false,
+        businessHours,
+        specialDates: Array.isArray(businessHours?.specialDates) ? businessHours.specialDates : [],
+        updatedAt: company.updatedAt,
+      };
+    }).filter((item) => Boolean(item.name && item.address && item.city && item.state));
+    return { complete: true, generatedAt: new Date().toISOString(), items };
+  }
 
   @Get('company/:companyId')
   async published(@Param('companyId') companyId: string) {

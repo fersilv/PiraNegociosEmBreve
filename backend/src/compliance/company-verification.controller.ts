@@ -51,7 +51,7 @@ export class CompanyVerificationController {
     const companyId = await this.companyId(req.user.uid);
     await this.assertPermission(req.user.uid, companyId, 'companyProfile');
     const companies = await this.dataSource.query(
-      `SELECT "legalAddress","legalCity","legalState" FROM companies WHERE id=$1 LIMIT 1`,
+      `SELECT "legalAddress","legalCity","legalState","rapi10CatalogEnabled" FROM companies WHERE id=$1 LIMIT 1`,
       [companyId],
     );
     const company = companies[0];
@@ -61,12 +61,16 @@ export class CompanyVerificationController {
     const address = same ? String(company?.legalAddress || '') : String(body.address || '').trim().slice(0, 500);
     const city = same ? String(company?.legalCity || '') : String(body.city || '').trim().slice(0, 120);
     const state = (same ? String(company?.legalState || '') : String(body.state || '')).trim().toUpperCase().slice(0, 2);
+    const rapi10CatalogEnabled = body.rapi10CatalogEnabled == null
+      ? company?.rapi10CatalogEnabled !== false
+      : body.rapi10CatalogEnabled !== false;
     if (!address || !city || state.length !== 2) throw new BadRequestException('Informe o endereço comercial completo.');
     const rows = await this.dataSource.query(
       `UPDATE companies SET name=$2::varchar,"commercialAddressSameAsLegal"=$3::boolean,address=$4::varchar,city=$5::varchar,state=$6::varchar,
+       "rapi10CatalogEnabled"=$7::boolean,
        "cityState"=concat_ws(', ',NULLIF($5::varchar,''),NULLIF($6::varchar,'')),"updatedAt"=now()
-       WHERE id=$1 RETURNING id,name,address,city,state,"cityState","commercialAddressSameAsLegal"`,
-      [companyId, name, same, address, city, state],
+       WHERE id=$1 RETURNING id,name,address,city,state,"cityState","commercialAddressSameAsLegal","rapi10CatalogEnabled"`,
+      [companyId, name, same, address, city, state, rapi10CatalogEnabled],
     );
     return rows[0];
   }

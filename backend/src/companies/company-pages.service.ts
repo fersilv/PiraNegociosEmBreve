@@ -78,6 +78,7 @@ export class CompanyPagesService {
         showOnPage: true,
         timezone: 'America/Sao_Paulo',
         days: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+        specialDates: [],
       },
       legal: {
         termsEnabled: false,
@@ -323,12 +324,29 @@ export class CompanyPagesService {
         close: this.safeHour(interval?.close),
       })).filter((interval: { open: string; close: string }) => Boolean(interval.open && interval.close));
     }
+    const specialDates = (Array.isArray(input.specialDates) ? input.specialDates : []).slice(0, 60).map((item: AnyConfig) => {
+      const date = this.safeDate(item?.date);
+      if (!date) return null;
+      const closed = item?.closed === true;
+      const open = closed ? '' : this.safeHour(item?.open);
+      const close = closed ? '' : this.safeHour(item?.close);
+      if (!closed && (!open || !close)) return null;
+      return { date, label: safeText(item?.label, 80), closed, open, close };
+    }).filter(Boolean);
     return {
       enabled: input.enabled === true,
       showOnPage: input.showOnPage !== false,
       timezone,
       days,
+      specialDates,
     };
+  }
+
+  private safeDate(value: unknown) {
+    const text = String(value || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return '';
+    const date = new Date(`${text}T12:00:00Z`);
+    return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== text ? '' : text;
   }
 
   private safeHour(value: unknown) {

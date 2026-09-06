@@ -22,6 +22,7 @@
     "migrate:job-application-url": "node scripts/run-sql-migration.cjs migrations/20260822_job_application_url.sql",
     "migrate:mobile-upload": "node scripts/run-sql-migration.cjs migrations/20260824_mobile_upload_sessions.sql && node scripts/run-sql-migration.cjs migrations/20260824_mobile_upload_qr_pairing.sql",
     "migrate:company-pages": "node scripts/run-sql-migration.cjs migrations/20260824_company_page_builder.sql",
+    "migrate:rapi10-catalog": "node scripts/run-sql-migration.cjs migrations/20260906_rapi10_catalog_bridge.sql",
     "migrate:public-resume": "node scripts/run-sql-migration.cjs migrations/20260824_public_resume_builder.sql",
     "migrate:internal-jobs": "node scripts/run-sql-migration.cjs migrations/20260824_internal_jobs.sql",
     "migrate:product-feedback": "node scripts/run-sql-migration.cjs migrations/20260824_product_feedback_support.sql",
