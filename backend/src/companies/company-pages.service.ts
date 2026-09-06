@@ -331,7 +331,7 @@ export class CompanyPagesService {
       const open = closed ? '' : this.safeHour(item?.open);
       const close = closed ? '' : this.safeHour(item?.close);
       if (!closed && (!open || !close)) return null;
-      return { date, label: safeText(item?.label, 80), closed, open, close };
+      return { date, label: String(item?.label || '').slice(0, 80), closed, open, close };
     }).filter(Boolean);
     return {
       enabled: input.enabled === true,
