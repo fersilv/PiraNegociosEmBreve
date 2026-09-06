@@ -24,6 +24,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { api } from "../lib/api";
+import { WhatsAppGroupAutomationPanel } from "../components/admin/WhatsAppGroupAutomationPanel";
 
 type Instance = {
   id: string;
@@ -356,6 +357,8 @@ export function AdminWhatsAppPage() {
                 <RuntimeToggle icon={<Bot className="h-4 w-4" />} title="Concierge automático por IA" description="Quando ligado, somente mensagens diretas de pessoas entram no buffer de 15s e podem receber atendimento integrado ao site. Grupos, canais, status e notificações ficam fora." checked={Boolean(selected.conciergeEnabled)} disabled={busy === "concierge"} tone="violet" onChange={(enabled) => void run("concierge", () => api.put(`/admin/whatsapp/instances/${selected.id}`, { conciergeEnabled: enabled }), enabled ? "Atendimento automático ativado." : "Atendimento automático pausado.")} />
               </div>
             </section>
+
+            <WhatsAppGroupAutomationPanel instanceId={selected.id} connected={selected.connected} />
 
             <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm sm:p-6">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">

@@ -13,6 +13,9 @@ import { Repository } from 'typeorm';
 import * as wppconnect from '@wppconnect-team/wppconnect';
 import { WhatsAppApiKey } from './entities/whatsapp-api-key.entity';
 import { WhatsAppSavedContact } from './entities/whatsapp-contact.entity';
+import { WhatsAppGroupAutomation } from './entities/whatsapp-group-automation.entity';
+import { WhatsAppGroupMemberEvent } from './entities/whatsapp-group-member-event.entity';
+import { WhatsAppMemberOnboarding } from './entities/whatsapp-member-onboarding.entity';
 import {
   WhatsAppConnectionStatus,
   WhatsAppInstance,
@@ -38,12 +41,17 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private readonly states = new Map<string, RuntimeState>();
   private readonly connecting = new Map<string, Promise<void>>();
   private readonly expectedDisconnects = new Set<string>();
+  private readonly groupAutomationTimers = new Map<string, NodeJS.Timeout>();
+  private readonly onboardingLocks = new Set<string>();
 
   constructor(
     @InjectRepository(WhatsAppInstance) private readonly instances: Repository<WhatsAppInstance>,
     @InjectRepository(WhatsAppApiKey) private readonly keys: Repository<WhatsAppApiKey>,
     @InjectRepository(WhatsAppMessage) private readonly messages: Repository<WhatsAppMessage>,
     @InjectRepository(WhatsAppSavedContact) private readonly savedContacts: Repository<WhatsAppSavedContact>,
+    @InjectRepository(WhatsAppGroupAutomation) private readonly groupAutomations: Repository<WhatsAppGroupAutomation>,
+    @InjectRepository(WhatsAppGroupMemberEvent) private readonly groupMemberEvents: Repository<WhatsAppGroupMemberEvent>,
+    @InjectRepository(WhatsAppMemberOnboarding) private readonly memberOnboarding: Repository<WhatsAppMemberOnboarding>,
     private readonly concierge: WhatsAppConciergeService,
     private readonly alerts: WhatsAppAlertService,
   ) {}
@@ -61,6 +69,8 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    for (const timer of this.groupAutomationTimers.values()) clearInterval(timer);
+    this.groupAutomationTimers.clear();
     await Promise.allSettled(
       [...this.clients.values()].map((client) => Promise.resolve(client.close?.())),
     );
@@ -229,10 +239,18 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         const value = String(state || '');
         if (/DISCONNECTED|UNPAIRED|UNLAUNCHED|CONFLICT/i.test(value)) {
           this.clients.delete(id);
+          this.stopGroupAutomationLoop(id);
           void this.setStatusById(id, WhatsAppConnectionStatus.DISCONNECTED, value);
           void this.notifyUnexpectedDisconnect(instance, `onStateChange: ${value}`);
         }
       });
+
+      client.onParticipantsChanged?.((event: any) => {
+        void this.handleGroupParticipantEvent(id, event).catch((error) =>
+          this.logger.warn(`Falha ao processar alteração de participante ${id}: ${this.errorMessage(error)}`),
+        );
+      });
+      this.startGroupAutomationLoop(id);
     } catch (error) {
       const detail = this.errorMessage(error);
       this.logger.error(`Falha ao conectar WhatsApp ${id}: ${detail}`);
@@ -262,6 +280,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
           this.clients.delete(id);
         }
       }
+      this.stopGroupAutomationLoop(id);
       this.setRuntime(id, { qrCode: null, detail: logout ? 'Aparelho desvinculado.' : 'Sessão parada.' });
       await this.setStatus(instance, WhatsAppConnectionStatus.DISCONNECTED, null);
       return this.status(id);
@@ -405,8 +424,16 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     const client = this.requireClient(id);
     const target = this.normalizeGroupId(groupId);
     const participant = this.normalizeParticipantId(participantId);
-    const result = await client.approveGroupMembershipRequest(target, participant);
-    return { ok: true, groupId: target, participantId: participant, result };
+    const canonical = await this.resolveCanonicalMemberId(client, participant);
+    const approval = await this.approveMembershipRequest(client, target, participant, canonical);
+    return {
+      ok: true,
+      groupId: target,
+      participantId: participant,
+      canonicalParticipantId: canonical,
+      approvedWith: approval.approvedWith,
+      result: approval.result,
+    };
   }
 
   async rejectGroupMembershipRequest(id: string, groupId: string, participantId: string) {
@@ -462,6 +489,90 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Informe texto ou mídia para o status.');
     }
     return { ok: true };
+  }
+
+  async listGroupAutomations(id: string) {
+    await this.getInstance(id);
+    const configs = await this.groupAutomations.find({ where: { instanceId: id }, order: { groupName: 'ASC' } });
+    const client = this.clients.get(id);
+    if (!client) return configs.map((config) => ({ ...config, live: false, isAdmin: false, canSendGroupMessages: false, participantCount: null, pendingRequestCount: null, description: null }));
+
+    const groups = await this.listGroups(id);
+    const selfIds = await this.selfIdentifiers(client);
+    const byGroup = new Map(configs.map((config) => [config.groupId, config]));
+    return Promise.all(groups.map(async (group: any) => {
+      const groupId = this.serializeWid(group?.id);
+      const metadata = group?.groupMetadata || {};
+      const participants = Array.isArray(metadata?.participants) ? metadata.participants : [];
+      let isAdmin = participants.some((participant: any) => {
+        const pid = this.serializeWid(participant?.id || participant);
+        return selfIds.has(pid) && Boolean(participant?.isAdmin || participant?.isSuperAdmin);
+      });
+      if (!isAdmin) {
+        const admins = await client.getGroupAdmins?.(groupId).catch(() => []);
+        isAdmin = (Array.isArray(admins) ? admins : []).some((admin: any) => selfIds.has(this.serializeWid(admin?.id || admin)));
+      }
+      const config = byGroup.get(groupId);
+      const pending = Array.isArray(metadata?.pendingMembershipRequests) ? metadata.pendingMembershipRequests.length : Number(metadata?.pendingMembershipRequestsCount || 0);
+      return {
+        id: config?.id || null, instanceId: id, groupId,
+        groupName: String(group?.formattedTitle || group?.name || metadata?.subject || groupId).slice(0, 255),
+        description: typeof metadata?.desc === 'string' ? metadata.desc : null,
+        monitored: config?.monitored ?? false, approveMembers: config?.approveMembers ?? false,
+        saveContacts: config?.saveContacts ?? false, sendWelcome: config?.sendWelcome ?? false,
+        includeGroupDescription: config?.includeGroupDescription ?? true, rejectMembers: config?.rejectMembers ?? false,
+        removeMembers: config?.removeMembers ?? false, manageAdmins: config?.manageAdmins ?? false,
+        editGroupInfo: config?.editGroupInfo ?? false, sendGroupMessages: config?.sendGroupMessages ?? false,
+        welcomeTemplate: config?.welcomeTemplate ?? null, channelUrl: config?.channelUrl ?? null,
+        live: true, isAdmin, canSendGroupMessages: !Boolean(metadata?.announce) || isAdmin,
+        participantCount: participants.length || Number(metadata?.size || 0), pendingRequestCount: Number.isFinite(pending) ? pending : 0,
+        membershipApprovalMode: Boolean(metadata?.membershipApprovalMode),
+      };
+    }));
+  }
+
+  async updateGroupAutomation(id: string, groupId: string, data: Record<string, unknown>) {
+    await this.getInstance(id);
+    const target = this.normalizeGroupId(groupId);
+    this.requireClient(id);
+    const groups = await this.listGroupAutomations(id);
+    const live = groups.find((group: any) => group.groupId === target);
+    if (!live) throw new NotFoundException('Grupo não encontrado nesta sessão do WhatsApp.');
+
+    const adminOnly = ['approveMembers', 'rejectMembers', 'removeMembers', 'manageAdmins', 'editGroupInfo'];
+    if (!live.isAdmin && adminOnly.some((field) => data[field] === true)) throw new BadRequestException('Este número não é administrador deste grupo.');
+    if (data.sendGroupMessages === true && !live.canSendGroupMessages) throw new BadRequestException('Este número não possui permissão para enviar mensagens neste grupo.');
+
+    let row = await this.groupAutomations.findOne({ where: { instanceId: id, groupId: target } });
+    if (!row) row = this.groupAutomations.create({
+      instanceId: id, groupId: target, groupName: live.groupName, monitored: false, approveMembers: false,
+      saveContacts: false, sendWelcome: false, includeGroupDescription: true, rejectMembers: false,
+      removeMembers: false, manageAdmins: false, editGroupInfo: false, sendGroupMessages: false,
+      welcomeTemplate: null, channelUrl: null, metadata: null,
+    });
+    row.groupName = live.groupName;
+    for (const field of ['monitored','approveMembers','saveContacts','sendWelcome','includeGroupDescription','rejectMembers','removeMembers','manageAdmins','editGroupInfo','sendGroupMessages'] as const) {
+      if (typeof data[field] === 'boolean') (row as any)[field] = data[field];
+    }
+    if (typeof data.welcomeTemplate === 'string') row.welcomeTemplate = data.welcomeTemplate.trim().slice(0, 8000) || null;
+    if (data.welcomeTemplate === null) row.welcomeTemplate = null;
+    if (typeof data.channelUrl === 'string') {
+      const url = data.channelUrl.trim().slice(0, 1000);
+      if (url && !/^https:\/\//i.test(url)) throw new BadRequestException('O link do canal deve começar com https://.');
+      row.channelUrl = url || null;
+    }
+    const saved = await this.groupAutomations.save(row);
+    return { ...live, ...saved };
+  }
+
+  async listGroupAutomationEvents(id: string, groupId: string, limit = 50) {
+    await this.getInstance(id);
+    return this.groupMemberEvents.find({ where: { instanceId: id, groupId: this.normalizeGroupId(groupId) }, order: { occurredAt: 'DESC' }, take: Math.min(200, Math.max(1, limit)) });
+  }
+
+  async getMemberOnboardingSummary(id: string, limit = 100) {
+    await this.getInstance(id);
+    return this.memberOnboarding.find({ where: { instanceId: id }, order: { updatedAt: 'DESC' }, take: Math.min(500, Math.max(1, limit)) });
   }
 
   async listMessages(id: string, limit = 50) {
@@ -603,6 +714,218 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     key.active = true;
     await this.keys.save(key);
     return { apiKey: rawKey, warning: 'A chave anterior foi revogada. Copie a nova chave agora.' };
+  }
+
+  private startGroupAutomationLoop(instanceId: string) {
+    this.stopGroupAutomationLoop(instanceId);
+    const run = () => void this.reconcilePendingGroupRequests(instanceId).catch((error) =>
+      this.logger.warn(`Falha na reconciliação de grupos ${instanceId}: ${this.errorMessage(error)}`),
+    );
+    const timer = setInterval(run, 45_000);
+    timer.unref?.();
+    this.groupAutomationTimers.set(instanceId, timer);
+    const initial = setTimeout(run, 3_000);
+    initial.unref?.();
+  }
+
+  private stopGroupAutomationLoop(instanceId: string) {
+    const timer = this.groupAutomationTimers.get(instanceId);
+    if (timer) clearInterval(timer);
+    this.groupAutomationTimers.delete(instanceId);
+  }
+
+  private async reconcilePendingGroupRequests(instanceId: string) {
+    const client = this.clients.get(instanceId);
+    if (!client) return;
+    const configs = await this.groupAutomations.find({ where: { instanceId, monitored: true, approveMembers: true } });
+    if (!configs.length) return;
+    const overview = await this.listGroupAutomations(instanceId);
+    for (const config of configs) {
+      const group = overview.find((item: any) => item.groupId === config.groupId);
+      if (!group?.isAdmin) continue;
+      const requests = await client.getGroupMembershipRequests(config.groupId).catch(() => []);
+      for (const request of Array.isArray(requests) ? requests : []) {
+        const rawMemberId = this.serializeWid(request?.id || request?.wid || request?.participant);
+        if (!rawMemberId) continue;
+        const canonical = await this.resolveCanonicalMemberId(client, rawMemberId);
+        if (await this.hasUnresolvedAdminRemoval(instanceId, config.groupId, canonical)) {
+          await this.recordGroupMemberEvent(instanceId, config.groupId, rawMemberId, canonical, null, 'AUTO_APPROVAL_SKIPPED_REMOVED', { requestMethod: request?.requestMethod || null });
+          continue;
+        }
+        try {
+          const approval = await this.approveMembershipRequest(client, config.groupId, rawMemberId, canonical);
+          await this.recordGroupMemberEvent(instanceId, config.groupId, rawMemberId, canonical, null, 'AUTO_APPROVED_REQUEST', {
+            requestMethod: request?.requestMethod || null,
+            approvedWith: approval.approvedWith,
+          });
+        } catch (error) {
+          await this.recordGroupMemberEvent(instanceId, config.groupId, rawMemberId, canonical, null, 'AUTO_APPROVAL_FAILED', {
+            error: this.errorMessage(error),
+            rawMemberId,
+            canonicalMemberId: canonical,
+          });
+        }
+      }
+    }
+  }
+
+  private async handleGroupParticipantEvent(instanceId: string, event: any) {
+    const client = this.clients.get(instanceId);
+    if (!client) return;
+    const groupId = this.serializeWid(event?.groupId || event?.chatId || event?.group?.id);
+    if (!groupId?.endsWith('@g.us')) return;
+    const config = await this.groupAutomations.findOne({ where: { instanceId, groupId, monitored: true } });
+    if (!config) return;
+
+    const action = String(event?.action || event?.operation || '').toLowerCase();
+    const actorWaId = this.serializeWid(event?.by || event?.author || event?.actor) || null;
+    const rawWho = Array.isArray(event?.who) ? event.who : Array.isArray(event?.participants) ? event.participants : [event?.who || event?.participant];
+    for (const item of rawWho.filter(Boolean)) {
+      const memberWaId = this.serializeWid((item as any)?.id || item) || null;
+      if (!memberWaId) continue;
+      const canonical = await this.resolveCanonicalMemberId(client, memberWaId);
+      let eventType = action.toUpperCase() || 'PARTICIPANT_CHANGED';
+      if (action === 'remove') eventType = actorWaId && actorWaId !== memberWaId ? 'REMOVED_BY_ADMIN' : 'REMOVAL_UNCERTAIN';
+      else if (action === 'leaver') eventType = 'LEFT_VOLUNTARILY';
+      else if (action === 'join' || action === 'add') {
+        const hadRemoval = await this.hasUnresolvedAdminRemoval(instanceId, groupId, canonical);
+        eventType = hadRemoval && actorWaId ? 'READMITTED_BY_ADMIN' : 'JOINED';
+      } else if (action === 'promote') eventType = 'PROMOTED_ADMIN';
+      else if (action === 'demote') eventType = 'DEMOTED_ADMIN';
+
+      await this.recordGroupMemberEvent(instanceId, groupId, memberWaId, canonical, actorWaId, eventType, {
+        action: event?.action || null, operation: event?.operation || null, byPushName: event?.byPushName || event?.authorPushName || null,
+      });
+      if (action === 'join' || action === 'add') await this.processNewGroupMember(instanceId, config, groupId, memberWaId, canonical);
+    }
+  }
+
+  private async processNewGroupMember(instanceId: string, config: WhatsAppGroupAutomation, groupId: string, memberWaId: string, canonicalWaId: string) {
+    if (!config.saveContacts && !config.sendWelcome) return;
+    if (await this.hasUnresolvedAdminRemoval(instanceId, groupId, canonicalWaId)) return;
+    const client = this.clients.get(instanceId);
+    if (!client) return;
+    const lockKey = `${instanceId}:${canonicalWaId}`;
+    if (this.onboardingLocks.has(lockKey)) return;
+    this.onboardingLocks.add(lockKey);
+    try {
+      let onboarding = await this.memberOnboarding.findOne({ where: { instanceId, canonicalWaId } });
+      if (!onboarding) onboarding = this.memberOnboarding.create({ instanceId, canonicalWaId, phoneNumber: canonicalWaId.endsWith('@c.us') ? this.onlyDigits(canonicalWaId) : null, contactSavedAt: null, welcomeSentAt: null, welcomeMessageId: null, originGroupId: null, metadata: null });
+      const contact = await client.getContact(memberWaId).catch(() => null);
+      const fallbackName = `Contato ${this.onlyDigits(canonicalWaId).slice(-4) || 'WhatsApp'}`;
+      const contactName = String(contact?.pushname || contact?.formattedName || contact?.name || contact?.notifyName || fallbackName).trim().slice(0, 160);
+
+      if (config.saveContacts && !onboarding.contactSavedAt && canonicalWaId.endsWith('@c.us')) {
+        try {
+          await this.saveContact(instanceId, { phoneNumber: this.onlyDigits(canonicalWaId), name: contactName });
+          onboarding.contactSavedAt = new Date();
+          onboarding.metadata = { ...(onboarding.metadata || {}), contactName };
+        } catch (error) {
+          await this.recordGroupMemberEvent(instanceId, groupId, memberWaId, canonicalWaId, null, 'CONTACT_SAVE_FAILED', { error: this.errorMessage(error) });
+        }
+      }
+
+      if (config.sendWelcome && !onboarding.welcomeSentAt) {
+        const group = (await this.listGroups(instanceId)).find((item: any) => this.serializeWid(item?.id) === groupId);
+        const groupName = String(group?.formattedTitle || group?.name || config.groupName || 'grupo').trim();
+        const description = config.includeGroupDescription && typeof group?.groupMetadata?.desc === 'string' ? group.groupMetadata.desc.trim() : '';
+        const result = await client.sendText(canonicalWaId, this.buildGroupWelcomeMessage(config, groupName, description));
+        onboarding.welcomeSentAt = new Date();
+        onboarding.welcomeMessageId = this.serializeWid(result?.id?._serialized || result?.id).slice(0, 160) || null;
+        onboarding.originGroupId = groupId;
+        await this.recordGroupMemberEvent(instanceId, groupId, memberWaId, canonicalWaId, null, 'WELCOME_SENT', { providerMessageId: onboarding.welcomeMessageId });
+      } else if (config.sendWelcome && onboarding.welcomeSentAt) {
+        await this.recordGroupMemberEvent(instanceId, groupId, memberWaId, canonicalWaId, null, 'WELCOME_SKIPPED_ALREADY_SENT', { welcomeSentAt: onboarding.welcomeSentAt.toISOString(), originGroupId: onboarding.originGroupId });
+      }
+      await this.memberOnboarding.save(onboarding);
+    } finally {
+      this.onboardingLocks.delete(lockKey);
+    }
+  }
+
+  private buildGroupWelcomeMessage(config: WhatsAppGroupAutomation, groupName: string, groupDescription: string) {
+    const siteUrl = 'https://piranegocios.com.br';
+    if (config.welcomeTemplate) return config.welcomeTemplate.replace(/\{\{groupName\}\}/g, groupName).replace(/\{\{groupDescription\}\}/g, groupDescription).replace(/\{\{siteUrl\}\}/g, siteUrl).replace(/\{\{channelUrl\}\}/g, config.channelUrl || '').trim();
+    return [
+      `👋 Bem-vindo(a) ao ${groupName}!`,
+      groupDescription ? `Para facilitar, seguem as regras e informações do grupo:\n\n${groupDescription}` : null,
+      `💼 Além das vagas compartilhadas por aqui, você encontra oportunidades atualizadas no PiraNegócios:\n${siteUrl}`,
+      '📄 Cadastre gratuitamente seu currículo no nosso banco de talentos para também poder ser encontrado por empresas.',
+      config.channelUrl ? `📢 Acompanhe nosso canal no WhatsApp para novas oportunidades:\n${config.channelUrl}` : null,
+      '📱 Salve o contato do PiraNegócios para conseguir visualizar nossos Status com novas vagas.',
+    ].filter(Boolean).join('\n\n');
+  }
+
+  private async approveMembershipRequest(client: any, groupId: string, rawMemberId: string, canonicalMemberId?: string) {
+    const candidates = [...new Set(
+      [canonicalMemberId, rawMemberId]
+        .filter((value): value is string => Boolean(value))
+        .map((value) => this.normalizeParticipantId(value)),
+    )];
+    const attempts: Array<{ memberId: string; error: string }> = [];
+
+    for (const candidate of candidates) {
+      try {
+        const result = await client.approveGroupMembershipRequest(groupId, candidate);
+        if (Array.isArray(result) && result.length) {
+          const failures = result.filter((row: any) => row?.error);
+          if (failures.length === result.length) {
+            const detail = failures
+              .map((row: any) => this.errorMessage(row?.error))
+              .filter(Boolean)
+              .join('; ');
+            throw new Error(detail || `WhatsApp recusou a aprovação para ${candidate}.`);
+          }
+        }
+        return { result, approvedWith: candidate };
+      } catch (error) {
+        attempts.push({ memberId: candidate, error: this.errorMessage(error) });
+      }
+    }
+
+    const detail = attempts.map((attempt) => `${attempt.memberId}: ${attempt.error}`).join(' | ');
+    throw new Error(`Nenhum identificador conseguiu aprovar a solicitação. ${detail}`.slice(0, 2000));
+  }
+
+  private async resolveCanonicalMemberId(client: any, rawId: string) {
+    const normalized = this.normalizeParticipantId(rawId);
+    if (normalized.endsWith('@c.us')) return normalized;
+    try {
+      const entry = await client.getPnLidEntry(normalized);
+      for (const candidate of [entry?.pn, entry?.phone, entry?.phoneNumber, entry?.wid, entry?.id]) {
+        const value = this.serializeWid(candidate);
+        if (value?.endsWith('@c.us')) return value;
+      }
+    } catch {}
+    return normalized;
+  }
+
+  private async selfIdentifiers(client: any) {
+    const values = new Set<string>();
+    const host = await client.getWid?.().catch(() => null);
+    const hostId = this.serializeWid(host);
+    if (hostId) values.add(hostId);
+    try {
+      const entry = hostId ? await client.getPnLidEntry(hostId) : null;
+      for (const candidate of [entry?.pn, entry?.lid, entry?.phone, entry?.wid, entry?.id]) {
+        const value = this.serializeWid(candidate);
+        if (value) values.add(value);
+      }
+    } catch {}
+    return values;
+  }
+
+  private async hasUnresolvedAdminRemoval(instanceId: string, groupId: string, canonicalWaId: string) {
+    const events = await this.groupMemberEvents.find({ where: { instanceId, groupId, memberCanonicalId: canonicalWaId }, order: { occurredAt: 'DESC' }, take: 100 });
+    for (const event of events) {
+      if (event.eventType === 'READMITTED_BY_ADMIN') return false;
+      if (event.eventType === 'REMOVED_BY_ADMIN' || event.eventType === 'REMOVAL_UNCERTAIN') return true;
+    }
+    return false;
+  }
+
+  private async recordGroupMemberEvent(instanceId: string, groupId: string, memberWaId: string | null, memberCanonicalId: string | null, actorWaId: string | null, eventType: string, payload: Record<string, unknown> | null) {
+    return this.groupMemberEvents.save(this.groupMemberEvents.create({ instanceId, groupId, memberWaId, memberCanonicalId, actorWaId, eventType: eventType.slice(0, 60), payload, occurredAt: new Date() }));
   }
 
   private requireClient(id: string) {

@@ -20,6 +20,9 @@ import { OAuthBrokerService } from './oauth-broker.service';
 import { WhatsAppApiKey } from './entities/whatsapp-api-key.entity';
 import { WhatsAppConversation, WhatsAppPhoneOtp } from './entities/whatsapp-concierge.entity';
 import { WhatsAppSavedContact } from './entities/whatsapp-contact.entity';
+import { WhatsAppGroupAutomation } from './entities/whatsapp-group-automation.entity';
+import { WhatsAppGroupMemberEvent } from './entities/whatsapp-group-member-event.entity';
+import { WhatsAppMemberOnboarding } from './entities/whatsapp-member-onboarding.entity';
 import { WhatsAppInstance } from './entities/whatsapp-instance.entity';
 import { WhatsAppMessage } from './entities/whatsapp-message.entity';
 import {
@@ -52,6 +55,9 @@ import { WhatsAppService } from './whatsapp.service';
       WhatsAppApiKey,
       WhatsAppMessage,
       WhatsAppSavedContact,
+      WhatsAppGroupAutomation,
+      WhatsAppGroupMemberEvent,
+      WhatsAppMemberOnboarding,
       WhatsAppOAuthClient,
       WhatsAppOAuthCode,
       WhatsAppOAuthToken,
