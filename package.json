@@ -16,11 +16,12 @@
     "migrate:payments": "npm --prefix backend run migrate:payments",
     "migrate:company-plans": "npm --prefix backend run migrate:company-plans",
     "migrate:classifieds": "npm --prefix backend run migrate:classifieds",
-    "migrate:app": "npm run migrate:payments && npm run migrate:company-plans && npm run migrate:classifieds",
+    "migrate:app": "npm run migrate:payments && npm run migrate:company-plans && npm run migrate:classifieds && npm run migrate:rapi10-catalog",
     "build:db-ready": "npm run migrate:app && npm run build:all",
     "release:prod": "npm run build:db-ready",
     "typecheck": "tsc --noEmit",
-    "start": "node dist/server.cjs"
+    "start": "node dist/server.cjs",
+    "migrate:rapi10-catalog": "npm --prefix backend run migrate:rapi10-catalog"
   },
   "dependencies": {
     "@codemirror/lang-css": "^6.3.1",

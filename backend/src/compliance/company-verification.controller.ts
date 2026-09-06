@@ -62,11 +62,18 @@ export class CompanyVerificationController {
     const city = same ? String(company?.legalCity || '') : String(body.city || '').trim().slice(0, 120);
     const state = (same ? String(company?.legalState || '') : String(body.state || '')).trim().toUpperCase().slice(0, 2);
     if (!address || !city || state.length !== 2) throw new BadRequestException('Informe o endereço comercial completo.');
+    const cleanLines = (value: unknown, maxItems: number, maxLength: number) => (Array.isArray(value) ? value : [])
+      .map((item) => String(item || '').trim().slice(0, maxLength)).filter(Boolean).slice(0, maxItems);
+    const rapi10CatalogOptIn = body.rapi10CatalogOptIn !== false;
+    const businessHoursJson = cleanLines(body.businessHoursJson, 14, 160);
+    const specialBusinessDatesJson = cleanLines(body.specialBusinessDatesJson, 40, 220);
+    const servicesTagsJson = cleanLines(body.servicesTagsJson, 40, 120);
     const rows = await this.dataSource.query(
-      `UPDATE companies SET name=$2,"commercialAddressSameAsLegal"=$3,address=$4,city=$5,state=$6,
-       "cityState"=concat_ws(', ',NULLIF($5,''),NULLIF($6,'')),"updatedAt"=now()
-       WHERE id=$1 RETURNING id,name,address,city,state,"cityState","commercialAddressSameAsLegal"`,
-      [companyId, name, same, address, city, state],
+      `UPDATE companies SET name=$2::varchar,"commercialAddressSameAsLegal"=$3::boolean,address=$4::varchar,city=$5::varchar,state=$6::varchar,
+       "cityState"=concat_ws(', ',NULLIF($5::varchar,''),NULLIF($6::varchar,'')),"rapi10CatalogOptIn"=$7::boolean,
+       "businessHoursJson"=$8::jsonb,"specialBusinessDatesJson"=$9::jsonb,"servicesTagsJson"=$10::jsonb,"updatedAt"=now()
+       WHERE id=$1 RETURNING id,name,address,city,state,"cityState","commercialAddressSameAsLegal","rapi10CatalogOptIn","businessHoursJson","specialBusinessDatesJson","servicesTagsJson"`,
+      [companyId, name, same, address, city, state, rapi10CatalogOptIn, JSON.stringify(businessHoursJson), JSON.stringify(specialBusinessDatesJson), JSON.stringify(servicesTagsJson)],
     );
     return rows[0];
   }

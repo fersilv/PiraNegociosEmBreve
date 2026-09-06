@@ -55,6 +55,10 @@ export function CompanyProfilePage({ section = "commercial" }: { section?: Compa
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
+  const [rapi10CatalogOptIn, setRapi10CatalogOptIn] = useState(true);
+  const [businessHoursText, setBusinessHoursText] = useState("");
+  const [specialDatesText, setSpecialDatesText] = useState("");
+  const [servicesText, setServicesText] = useState("");
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "colaborador">("colaborador");
@@ -81,6 +85,13 @@ export function CompanyProfilePage({ section = "commercial" }: { section?: Compa
         setAddress(item?.address || "");
         setCity(item?.city || "");
         setState(item?.state || "");
+        setRapi10CatalogOptIn(item?.rapi10CatalogOptIn !== false);
+        setBusinessHoursText((Array.isArray(item?.businessHoursJson) ? item.businessHoursJson : []).join("
+"));
+        setSpecialDatesText((Array.isArray(item?.specialBusinessDatesJson) ? item.specialBusinessDatesJson : []).join("
+"));
+        setServicesText((Array.isArray(item?.servicesTagsJson) ? item.servicesTagsJson : []).join("
+"));
       }
       if (employeesResult.status === "fulfilled") setEmployees(Array.isArray(employeesResult.value.data) ? employeesResult.value.data : []);
       if (plansResult.status === "fulfilled") setPlans(plansResult.value.data);
@@ -103,6 +114,13 @@ export function CompanyProfilePage({ section = "commercial" }: { section?: Compa
         address,
         city,
         state,
+        rapi10CatalogOptIn,
+        businessHoursJson: businessHoursText.split("
+").map(v => v.trim()).filter(Boolean),
+        specialBusinessDatesJson: specialDatesText.split("
+").map(v => v.trim()).filter(Boolean),
+        servicesTagsJson: servicesText.split(/[,
+]/).map(v => v.trim()).filter(Boolean),
       });
       await api.put(`/companies/${companyId}`, { description, website, phone, logoURL });
       if (user) await api.post("/users/me", { companyName: name, companyLogo: logoURL });
@@ -179,7 +197,7 @@ export function CompanyProfilePage({ section = "commercial" }: { section?: Compa
     <CompanyTabs active={section} />
     {message && <div className="rounded-2xl bg-stone-900 px-4 py-3 text-sm font-bold text-white">{message}</div>}
 
-    {section === "commercial" && <CommercialSection company={company} name={name} setName={setName} description={description} setDescription={setDescription} logoURL={logoURL} setLogoURL={setLogoURL} website={website} setWebsite={setWebsite} phone={phone} setPhone={setPhone} sameAddress={sameAddress} setSameAddress={setSameAddress} address={address} setAddress={setAddress} city={city} setCity={setCity} state={state} setState={setState} working={working} onSave={saveCommercial} onRefreshRegistry={refreshRegistry} />}
+    {section === "commercial" && <CommercialSection company={company} name={name} setName={setName} description={description} setDescription={setDescription} logoURL={logoURL} setLogoURL={setLogoURL} website={website} setWebsite={setWebsite} phone={phone} setPhone={setPhone} sameAddress={sameAddress} setSameAddress={setSameAddress} address={address} setAddress={setAddress} city={city} setCity={setCity} state={state} setState={setState} rapi10CatalogOptIn={rapi10CatalogOptIn} setRapi10CatalogOptIn={setRapi10CatalogOptIn} businessHoursText={businessHoursText} setBusinessHoursText={setBusinessHoursText} specialDatesText={specialDatesText} setSpecialDatesText={setSpecialDatesText} servicesText={servicesText} setServicesText={setServicesText} working={working} onSave={saveCommercial} onRefreshRegistry={refreshRegistry} />}
     {section === "finance" && <FinanceSection plans={plans} checkout={checkout} working={working} onSubscribe={subscribe} />}
     {section === "team" && <TeamSection employees={employees} userId={user?.uid || ""} inviteName={inviteName} setInviteName={setInviteName} inviteEmail={inviteEmail} setInviteEmail={setInviteEmail} inviteRole={inviteRole} setInviteRole={setInviteRole} working={working} onInvite={invite} onChangeRole={changeRole} />}
     {section === "settings" && <SettingsSection company={company} />}
@@ -198,7 +216,7 @@ function CompanyTabs({ active }: { active: CompanyProfileSection }) {
 }
 
 function CommercialSection(props: any) {
-  const { company, name, setName, description, setDescription, logoURL, setLogoURL, website, setWebsite, phone, setPhone, sameAddress, setSameAddress, address, setAddress, city, setCity, state, setState, working, onSave, onRefreshRegistry } = props;
+  const { company, name, setName, description, setDescription, logoURL, setLogoURL, website, setWebsite, phone, setPhone, sameAddress, setSameAddress, address, setAddress, city, setCity, state, setState, rapi10CatalogOptIn, setRapi10CatalogOptIn, businessHoursText, setBusinessHoursText, specialDatesText, setSpecialDatesText, servicesText, setServicesText, working, onSave, onRefreshRegistry } = props;
   const legalAddress = [company.legalAddress, [company.legalCity, company.legalState].filter(Boolean).join("/")].filter(Boolean).join(", ");
   return <div className="grid gap-5 lg:grid-cols-[.9fr_1.1fr]">
     <section className="rounded-[28px] bg-white p-5 ring-1 ring-stone-200 sm:p-6">
@@ -213,6 +231,17 @@ function CommercialSection(props: any) {
       <div className="mt-5 space-y-4"><FileUpload label="Logotipo" accept="image/*" value={logoURL} onChange={setLogoURL} type="avatar" placeholder="Logo da empresa" /><Field label="Nome comercial"><input value={name} onChange={e => setName(e.target.value)} className={inputClass} /></Field><Field label="Apresentação"><textarea value={description} onChange={e => setDescription(e.target.value)} rows={4} className={inputClass} /></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Telefone comercial"><input value={phone} onChange={e => setPhone(e.target.value)} className={inputClass} /></Field><Field label="Site"><input value={website} onChange={e => setWebsite(e.target.value)} className={inputClass} placeholder="https://" /></Field></div>
       <label className="flex items-start gap-3 rounded-2xl bg-stone-50 p-4"><input type="checkbox" checked={sameAddress} onChange={e => setSameAddress(e.target.checked)} className="mt-1 h-4 w-4" /><span className="text-xs leading-5 text-stone-600"><strong className="block text-stone-900">Endereço comercial igual ao jurídico</strong>Quando marcado, o endereço comercial acompanha a consulta do CNPJ.</span></label>
       {!sameAddress && <div className="grid gap-4 sm:grid-cols-[1.5fr_1fr_.45fr]"><Field label="Endereço comercial"><input value={address} onChange={e => setAddress(e.target.value)} className={inputClass} /></Field><Field label="Cidade"><input value={city} onChange={e => setCity(e.target.value)} className={inputClass} /></Field><Field label="UF"><input maxLength={2} value={state} onChange={e => setState(e.target.value.toUpperCase())} className={inputClass} /></Field></div>}
+      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
+        <label className="flex items-start gap-3"><input type="checkbox" checked={rapi10CatalogOptIn} onChange={e => setRapi10CatalogOptIn(e.target.checked)} className="mt-1 h-4 w-4" /><span className="text-xs leading-5 text-stone-600"><strong className="block text-stone-900">Exibir no Catálogo Rapi10</strong>Ligado por padrão para empresas verificadas. A Central Rapi10 ainda confirma o ponto no mapa e a categoria antes da publicação.</span></label>
+      </div>
+      <Field label="Horário de funcionamento"><textarea value={businessHoursText} onChange={e => setBusinessHoursText(e.target.value)} rows={5} className={inputClass} placeholder={'Seg a Sex · 08:00 às 18:00
+Sáb · 08:00 às 13:00
+Dom · Fechado'} /><span className="mt-1 block text-[10px] leading-4 text-stone-400">Uma linha por período. Essas informações aparecem no Catálogo Rapi10 e ajudam o cliente a entender quando o estabelecimento funciona.</span></Field>
+      <Field label="Datas e horários especiais"><textarea value={specialDatesText} onChange={e => setSpecialDatesText(e.target.value)} rows={4} className={inputClass} placeholder={'24/12/2026 · 08:00 às 14:00 · Véspera de Natal
+25/12/2026 · Fechado · Natal'} /></Field>
+      <Field label="Produtos, serviços ou atividades"><textarea value={servicesText} onChange={e => setServicesText(e.target.value)} rows={3} className={inputClass} placeholder={'Almoço executivo
+Delivery
+Eventos e encomendas'} /><span className="mt-1 block text-[10px] leading-4 text-stone-400">Use uma linha ou vírgula por item. Ajuda clientes a entenderem rapidamente o que o estabelecimento oferece.</span></Field>
       <button onClick={() => void onSave()} disabled={working === "commercial"} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#0d4542] px-5 text-sm font-black text-white disabled:opacity-50"><Save className="h-4 w-4" />{working === "commercial" ? "Salvando..." : "Salvar perfil comercial"}</button></div>
     </section>
   </div>;

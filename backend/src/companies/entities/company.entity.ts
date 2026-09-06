@@ -135,6 +135,20 @@ export class Company {
   @Column({ nullable: true })
   phone: string;
 
+  // Benefício de integração: empresas verificadas podem aparecer como candidatas no Catálogo Rapi10.
+  // O opt-in é ligado por padrão, mas a publicação depende de validação operacional de endereço/categoria na Rapi10.
+  @Column({ default: true })
+  rapi10CatalogOptIn: boolean;
+
+  @Column({ type: 'jsonb', nullable: true })
+  businessHoursJson: string[] | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  specialBusinessDatesJson: string[] | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  servicesTagsJson: string[] | null;
+
   @Column({ type: 'enum', enum: CompanyStatus, default: CompanyStatus.DRAFT })
   verificationStatus: CompanyStatus;
 

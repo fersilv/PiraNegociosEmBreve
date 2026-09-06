@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, Query } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MoreThan, Repository } from 'typeorm';
 import { Company, CompanyStatus } from './entities/company.entity';
@@ -18,6 +18,43 @@ export class CompanyPagesPublicController {
     @InjectRepository(Job)
     private readonly jobs: Repository<Job>,
   ) {}
+
+  @Get('rapi10/catalog')
+  async rapi10Catalog(@Query('city') city?: string, @Query('state') state?: string) {
+    const cityFilter = String(city || '').trim().toLocaleLowerCase('pt-BR');
+    const stateFilter = String(state || '').trim().toUpperCase();
+    const companies = await this.companies.find({
+      where: { verificationStatus: CompanyStatus.VERIFIED, rapi10CatalogOptIn: true },
+      order: { updatedAt: 'DESC' },
+      take: 2000,
+    });
+    return companies
+      .filter((company) => company.address?.trim() && company.city?.trim() && company.state?.trim())
+      .filter((company) => !cityFilter || String(company.city || '').trim().toLocaleLowerCase('pt-BR') === cityFilter)
+      .filter((company) => !stateFilter || String(company.state || '').trim().toUpperCase() === stateFilter)
+      .map((company) => ({
+        source: 'PIRANEGOCIOS',
+        companyId: company.id,
+        slug: company.slug,
+        name: company.name,
+        description: company.description || '',
+        websiteUrl: company.website || null,
+        phone: company.phone || null,
+        address: company.address,
+        city: company.city,
+        state: company.state,
+        logoUrl: company.logoURL || null,
+        socialInstagram: company.socialInstagram || null,
+        socialLinkedin: company.socialLinkedin || null,
+        socialFacebook: company.socialFacebook || null,
+        businessHours: Array.isArray(company.businessHoursJson) ? company.businessHoursJson : [],
+        specialDates: Array.isArray(company.specialBusinessDatesJson) ? company.specialBusinessDatesJson : [],
+        services: Array.isArray(company.servicesTagsJson) ? company.servicesTagsJson : [],
+        publicPageUrl: company.slug ? `/${company.slug}` : null,
+        verified: true,
+        updatedAt: company.updatedAt,
+      }));
+  }
 
   @Get('company/:companyId')
   async published(@Param('companyId') companyId: string) {
