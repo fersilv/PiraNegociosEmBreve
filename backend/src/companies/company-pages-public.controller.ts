@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
+import { BadGatewayException, Controller, Get, NotFoundException, Param } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, MoreThan, Repository } from 'typeorm';
 import { Company, CompanyStatus } from './entities/company.entity';
@@ -53,6 +53,41 @@ export class CompanyPagesPublicController {
       };
     }).filter((item) => Boolean(item.name && item.address && item.city && item.state));
     return { complete: true, generatedAt: new Date().toISOString(), items };
+  }
+
+  @Get('company/:companyId/reviews')
+  async reviews(@Param('companyId') companyId: string) {
+    const company = await this.companies.findOne({
+      where: { id: companyId, verificationStatus: CompanyStatus.VERIFIED },
+      select: { id: true },
+    });
+    if (!company) throw new NotFoundException('Empresa pública não encontrada.');
+    const base = String(process.env.RAPI10_PUBLIC_API_URL || 'https://rapi10.piranegocios.com.br/api/v1').replace(/\/$/, '');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6500);
+    try {
+      const response = await fetch(`${base}/catalog/companies/${encodeURIComponent(companyId)}/reviews`, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+        signal: controller.signal,
+      });
+      if (response.status === 404) return { place: { companyId }, summary: { average: null, count: 0 }, reviews: [] };
+      if (!response.ok) throw new BadGatewayException('As avaliações estão temporariamente indisponíveis.');
+      const payload: any = await response.json();
+      return {
+        place: payload?.place || { companyId },
+        summary: {
+          average: payload?.summary?.average == null ? null : Number(payload.summary.average),
+          count: Math.max(0, Number(payload?.summary?.count || 0)),
+        },
+        reviews: Array.isArray(payload?.reviews) ? payload.reviews.slice(0, 200) : [],
+      };
+    } catch (error) {
+      if (error instanceof BadGatewayException) throw error;
+      throw new BadGatewayException('As avaliações estão temporariamente indisponíveis.');
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   @Get('company/:companyId')

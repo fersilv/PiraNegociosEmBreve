@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { Navbar } from "../components/Navbar";
 import { SeoHead } from "../components/SeoHead";
 import { CompanyClassifiedsShowcase } from "../components/company-page/CompanyClassifiedsShowcase";
+import { CompanyReviewsShowcase } from "../components/company-page/CompanyReviewsShowcase";
 import {
   CompanyPageConfig,
   CompanySiteRenderer,
@@ -99,6 +100,7 @@ export default function PublicCompanyPage() {
         structuredData={structuredData}
       />
       <CompanySiteRenderer company={company} jobs={jobs} page={page} />
+      <CompanyReviewsShowcase companyId={company.id} companyName={company.name} />
       {!commerceTheme && <CompanyClassifiedsShowcase companyId={company.id} companyName={company.name} variant="default" />}
     </>
   );
