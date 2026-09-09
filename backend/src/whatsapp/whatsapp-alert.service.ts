@@ -18,6 +18,17 @@ export class WhatsAppAlertService {
     error?: unknown;
     context?: Record<string, unknown>;
   }) {
+    // Operational error e-mails are intentionally opt-in. They were previously
+    // enabled whenever Resend was configured, which could flood the inbox and
+    // consume the transactional e-mail quota during repeated failures.
+    const emailAlertsEnabled =
+      String(process.env.WHATSAPP_ERROR_EMAIL_ALERTS_ENABLED || '')
+        .trim()
+        .toLowerCase() === 'true';
+    if (!emailAlertsEnabled) {
+      return { status: 'NOT_CONFIGURED' as const };
+    }
+
     const apiKey = String(process.env.RESEND_API_KEY || '').trim();
     const from = String(process.env.TRANSACTIONAL_EMAIL_FROM || '').trim();
     const to = String(process.env.WHATSAPP_ALERT_EMAIL || 'aviso@piranegocios.com.br').trim();
