@@ -39,7 +39,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(WhatsAppService.name);
   private readonly clients = new Map<string, any>();
   private readonly states = new Map<string, RuntimeState>();
-  private readonly connecting = new Map<string, Promise<void>>();
+  private readonly connecting = new Set<string>();
   private readonly expectedDisconnects = new Set<string>();
   private readonly groupAutomationTimers = new Map<string, NodeJS.Timeout>();
   private readonly onboardingLocks = new Set<string>();
@@ -62,7 +62,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       if (!instance.lastConnectedAt) continue;
       void this.connect(instance.id).catch((error) =>
         this.logger.warn(
-          `Não foi possível restaurar automaticamente a sessão ${instance.id}: ${this.errorMessage(error)}`,
+          `NÃ£o foi possÃ­vel restaurar automaticamente a sessÃ£o ${instance.id}: ${this.errorMessage(error)}`,
         ),
       );
     }
@@ -83,13 +83,13 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   async getInstance(id: string) {
     const instance = await this.instances.findOne({ where: { id } });
-    if (!instance) throw new NotFoundException('Número do WhatsApp não encontrado.');
+    if (!instance) throw new NotFoundException('NÃºmero do WhatsApp nÃ£o encontrado.');
     return instance;
   }
 
   async createInstance(createdById: string, data: Record<string, unknown>) {
     const name = String(data.name || '').trim().slice(0, 100);
-    if (!name) throw new BadRequestException('Informe um nome para identificar este número.');
+    if (!name) throw new BadRequestException('Informe um nome para identificar este nÃºmero.');
     const purpose = String(data.purpose || '').trim().slice(0, 180) || null;
     const phoneNumber = this.onlyDigits(String(data.phoneNumber || '')) || null;
     const allowedScopes = sanitizeWhatsAppScopes(data.allowedScopes);
@@ -145,22 +145,35 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   }
 
   async connect(id: string) {
-    const instance = await this.getInstance(id);
-    if (!instance.active) throw new BadRequestException('Ative o número antes de conectar.');
+    // Reserve the instance synchronously, before the first await. Previously two
+    // near-simultaneous requests could both pass the guard and launch Chromium
+    // against the same WPPConnect userDataDir.
     if (this.clients.has(id) || this.connecting.has(id)) return this.status(id);
+    this.connecting.add(id);
 
-    await this.setStatus(instance, WhatsAppConnectionStatus.CONNECTING, null);
-    this.setRuntime(id, { qrCode: null, detail: 'Abrindo sessão do WhatsApp Web...' });
-
-    const task = this.connectInternal(instance)
-      .catch((error) => {
-        this.logger.error(`Falha ao abrir sessão WhatsApp ${id}: ${this.errorMessage(error)}`);
-      })
-      .finally(() => {
+    try {
+      const instance = await this.getInstance(id);
+      if (!instance.active) throw new BadRequestException('Ative o nÃºmero antes de conectar.');
+      if (this.clients.has(id)) {
         this.connecting.delete(id);
-      });
-    this.connecting.set(id, task);
-    return this.status(id);
+        return this.status(id);
+      }
+
+      await this.setStatus(instance, WhatsAppConnectionStatus.CONNECTING, null);
+      this.setRuntime(id, { qrCode: null, detail: 'Abrindo sessÃ£o do WhatsApp Web...' });
+
+      void this.connectInternal(instance)
+        .catch((error) => {
+          this.logger.error(`Falha ao abrir sessÃ£o WhatsApp ${id}: ${this.errorMessage(error)}`);
+        })
+        .finally(() => {
+          this.connecting.delete(id);
+        });
+      return this.status(id);
+    } catch (error) {
+      this.connecting.delete(id);
+      throw error;
+    }
   }
 
   private async connectInternal(instance: WhatsAppInstance) {
@@ -193,7 +206,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         statusFind: (statusSession: string) => {
           const status = String(statusSession || '').toLowerCase();
           if (status.includes('logged') && !status.includes('notlogged')) {
-            this.setRuntime(id, { qrCode: null, detail: 'Sessão autenticada.' });
+            this.setRuntime(id, { qrCode: null, detail: 'SessÃ£o autenticada.' });
             void this.setStatusById(id, WhatsAppConnectionStatus.CONNECTED, null, true);
           } else if (status.includes('notlogged')) {
             void this.setStatusById(id, WhatsAppConnectionStatus.QR_REQUIRED, null);
@@ -247,7 +260,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
       client.onParticipantsChanged?.((event: any) => {
         void this.handleGroupParticipantEvent(id, event).catch((error) =>
-          this.logger.warn(`Falha ao processar alteração de participante ${id}: ${this.errorMessage(error)}`),
+          this.logger.warn(`Falha ao processar alteraÃ§Ã£o de participante ${id}: ${this.errorMessage(error)}`),
         );
       });
       this.startGroupAutomationLoop(id);
@@ -258,7 +271,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
       await this.setStatusById(id, WhatsAppConnectionStatus.ERROR, detail);
       await this.alerts.send({
         severity: instance.isPrimarySupport ? 'CRITICAL' : 'ATTENTION',
-        title: 'Falha ao conectar sessão do WhatsApp',
+        title: 'Falha ao conectar sessÃ£o do WhatsApp',
         instanceName: instance.name,
         instanceId: instance.id,
         error,
@@ -281,7 +294,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         }
       }
       this.stopGroupAutomationLoop(id);
-      this.setRuntime(id, { qrCode: null, detail: logout ? 'Aparelho desvinculado.' : 'Sessão parada.' });
+      this.setRuntime(id, { qrCode: null, detail: logout ? 'Aparelho desvinculado.' : 'SessÃ£o parada.' });
       await this.setStatus(instance, WhatsAppConnectionStatus.DISCONNECTED, null);
       return this.status(id);
     } finally {
@@ -297,14 +310,14 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   async checkNumberStatus(id: string, phone: string) {
     const client = this.requireClient(id);
     const digits = this.onlyDigits(phone);
-    if (!digits) throw new BadRequestException('Telefone inválido.');
+    if (!digits) throw new BadRequestException('Telefone invÃ¡lido.');
     return client.checkNumberStatus(`${digits}@c.us`);
   }
 
   async resolvePnLid(id: string, phoneOrLid: string) {
     const client = this.requireClient(id);
     const target = String(phoneOrLid || '').trim();
-    if (!target) throw new BadRequestException('Identificador do WhatsApp inválido.');
+    if (!target) throw new BadRequestException('Identificador do WhatsApp invÃ¡lido.');
     return client.getPnLidEntry(target.includes('@') ? target : `${this.onlyDigits(target)}@c.us`);
   }
 
@@ -345,7 +358,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   async getGroupMedia(id: string, messageId: string) {
     const client = this.requireClient(id);
     const message = await client.getMessageById(String(messageId || '').trim());
-    if (!message) throw new NotFoundException('Mensagem não encontrada no WhatsApp.');
+    if (!message) throw new NotFoundException('Mensagem nÃ£o encontrada no WhatsApp.');
     const data = await client.downloadMedia(message);
     const mimeType = String(message?.mimetype || message?.mimeType || 'application/octet-stream');
     return {
@@ -365,7 +378,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   async joinGroup(id: string, inviteCodeOrLink: string) {
     const client = this.requireClient(id);
     const invite = String(inviteCodeOrLink || '').trim();
-    if (!invite) throw new BadRequestException('Informe o link ou código de convite do grupo.');
+    if (!invite) throw new BadRequestException('Informe o link ou cÃ³digo de convite do grupo.');
     const info = await client.getGroupInfoFromInviteLink(invite).catch(() => null);
     const result = await client.joinGroup(invite);
     return { ok: true, info, result };
@@ -391,7 +404,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     const client = this.requireClient(id);
     const target = this.normalizeGroupId(groupId);
     const clean = String(text || '').trim();
-    if (!clean) throw new BadRequestException('A resposta está vazia.');
+    if (!clean) throw new BadRequestException('A resposta estÃ¡ vazia.');
     const result = await client.sendText(target, clean, { quotedMsg: String(messageId || '').trim() });
     await this.storeOutbound(id, target, clean, 'text', result);
     return { ok: true, groupId: target, quotedMessageId: messageId, result };
@@ -400,7 +413,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   async reactToGroupMessage(id: string, messageId: string, reaction: string | false) {
     const client = this.requireClient(id);
     const target = String(messageId || '').trim();
-    if (!target) throw new BadRequestException('messageId não informado.');
+    if (!target) throw new BadRequestException('messageId nÃ£o informado.');
     return { ok: true, result: await client.sendReactionToMessage(target, reaction) };
   }
 
@@ -408,7 +421,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     const client = this.requireClient(id);
     const target = this.normalizeGroupId(groupId);
     const msgId = String(messageId || '').trim();
-    if (!msgId) throw new BadRequestException('messageId não informado.');
+    if (!msgId) throw new BadRequestException('messageId nÃ£o informado.');
     const result = await client.deleteMessage(target, msgId);
     return { ok: true, groupId: target, messageId: msgId, result };
   }
@@ -425,15 +438,44 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     const target = this.normalizeGroupId(groupId);
     const participant = this.normalizeParticipantId(participantId);
     const canonical = await this.resolveCanonicalMemberId(client, participant);
-    const approval = await this.approveMembershipRequest(client, target, participant, canonical);
-    return {
-      ok: true,
-      groupId: target,
-      participantId: participant,
-      canonicalParticipantId: canonical,
-      approvedWith: approval.approvedWith,
-      result: approval.result,
-    };
+    const config = await this.groupAutomations.findOne({ where: { instanceId: id, groupId: target, monitored: true } });
+
+    try {
+      const approval = await this.approveMembershipRequest(client, target, participant, canonical);
+      await this.recordGroupMemberEvent(id, target, participant, canonical, null, 'MANUAL_APPROVED_REQUEST', {
+        approvedWith: approval.approvedWith,
+      });
+      if (config) await this.processNewGroupMember(id, config, target, participant, canonical);
+      return {
+        ok: true,
+        groupId: target,
+        participantId: participant,
+        canonicalParticipantId: canonical,
+        approvedWith: approval.approvedWith,
+        result: approval.result,
+      };
+    } catch (error) {
+      // Some WhatsApp builds complete the approval server-side but WPPConnect still
+      // throws while parsing the response. Verify real membership before treating
+      // the operation as failed, and never couple onboarding to the provider reply.
+      const confirmed = await this.waitForConfirmedGroupMember(client, target, [participant, canonical]);
+      if (!confirmed) throw error;
+
+      await this.recordGroupMemberEvent(id, target, participant, confirmed.canonicalWaId, null, 'APPROVAL_CONFIRMED_AFTER_ERROR', {
+        error: this.errorMessage(error),
+        confirmedMemberWaId: confirmed.memberWaId,
+      });
+      if (config) await this.processNewGroupMember(id, config, target, confirmed.memberWaId, confirmed.canonicalWaId);
+      return {
+        ok: true,
+        groupId: target,
+        participantId: participant,
+        canonicalParticipantId: confirmed.canonicalWaId,
+        approvedWith: null,
+        result: null,
+        warning: `O provedor retornou erro, mas o membro foi confirmado no grupo: ${this.errorMessage(error)}`.slice(0, 500),
+      };
+    }
   }
 
   async rejectGroupMembershipRequest(id: string, groupId: string, participantId: string) {
@@ -452,7 +494,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   async sendText(id: string, target: string, text: string) {
     const cleanText = String(text || '').trim();
-    if (!cleanText) throw new BadRequestException('A mensagem está vazia.');
+    if (!cleanText) throw new BadRequestException('A mensagem estÃ¡ vazia.');
     const chatId = this.normalizeChatId(target);
     const client = this.requireClient(id);
     const result = await client.sendText(chatId, cleanText);
@@ -461,7 +503,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   }
 
   async sendMedia(id: string, target: string, media: string, filename?: string, caption?: string) {
-    if (!media) throw new BadRequestException('Informe a mídia em URL, caminho ou base64.');
+    if (!media) throw new BadRequestException('Informe a mÃ­dia em URL, caminho ou base64.');
     const chatId = this.normalizeChatId(target);
     const client = this.requireClient(id);
     const result = await client.sendFile(chatId, media, filename || 'arquivo', caption || '');
@@ -486,7 +528,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     } else if (data.text?.trim()) {
       await client.sendTextStatus(data.text.trim(), {});
     } else {
-      throw new BadRequestException('Informe texto ou mídia para o status.');
+      throw new BadRequestException('Informe texto ou mÃ­dia para o status.');
     }
     return { ok: true };
   }
@@ -537,11 +579,11 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     this.requireClient(id);
     const groups = await this.listGroupAutomations(id);
     const live = groups.find((group: any) => group.groupId === target);
-    if (!live) throw new NotFoundException('Grupo não encontrado nesta sessão do WhatsApp.');
+    if (!live) throw new NotFoundException('Grupo nÃ£o encontrado nesta sessÃ£o do WhatsApp.');
 
     const adminOnly = ['approveMembers', 'rejectMembers', 'removeMembers', 'manageAdmins', 'editGroupInfo'];
-    if (!live.isAdmin && adminOnly.some((field) => data[field] === true)) throw new BadRequestException('Este número não é administrador deste grupo.');
-    if (data.sendGroupMessages === true && !live.canSendGroupMessages) throw new BadRequestException('Este número não possui permissão para enviar mensagens neste grupo.');
+    if (!live.isAdmin && adminOnly.some((field) => data[field] === true)) throw new BadRequestException('Este nÃºmero nÃ£o Ã© administrador deste grupo.');
+    if (data.sendGroupMessages === true && !live.canSendGroupMessages) throw new BadRequestException('Este nÃºmero nÃ£o possui permissÃ£o para enviar mensagens neste grupo.');
 
     let row = await this.groupAutomations.findOne({ where: { instanceId: id, groupId: target } });
     if (!row) row = this.groupAutomations.create({
@@ -558,7 +600,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     if (data.welcomeTemplate === null) row.welcomeTemplate = null;
     if (typeof data.channelUrl === 'string') {
       const url = data.channelUrl.trim().slice(0, 1000);
-      if (url && !/^https:\/\//i.test(url)) throw new BadRequestException('O link do canal deve começar com https://.');
+      if (url && !/^https:\/\//i.test(url)) throw new BadRequestException('O link do canal deve comeÃ§ar com https://.');
       row.channelUrl = url || null;
     }
     const saved = await this.groupAutomations.save(row);
@@ -589,11 +631,11 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     const client = this.requireClient(id);
     const phoneNumber = this.onlyDigits(String(data.phoneNumber || ''));
     const name = String(data.name || '').trim().slice(0, 160);
-    if (!phoneNumber || !name) throw new BadRequestException('Nome e telefone são obrigatórios.');
+    if (!phoneNumber || !name) throw new BadRequestException('Nome e telefone sÃ£o obrigatÃ³rios.');
 
     const waId = `${phoneNumber}@c.us`;
     const page = (client as any).waPage || (client as any).page;
-    if (!page?.evaluate) throw new BadRequestException('A sessão atual não permite salvar contatos no WhatsApp.');
+    if (!page?.evaluate) throw new BadRequestException('A sessÃ£o atual nÃ£o permite salvar contatos no WhatsApp.');
 
     let whatsappContact: Record<string, unknown> | null = null;
     try {
@@ -601,7 +643,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         async ({ contactId, displayName }: { contactId: string; displayName: string }) => {
           const contactApi = (globalThis as any)?.WPP?.contact;
           if (typeof contactApi?.save !== 'function') {
-            throw new Error('WPP.contact.save não está disponível nesta versão do WhatsApp Web.');
+            throw new Error('WPP.contact.save nÃ£o estÃ¡ disponÃ­vel nesta versÃ£o do WhatsApp Web.');
           }
 
           const parts = displayName.split(/\s+/).filter(Boolean);
@@ -622,7 +664,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         { contactId: waId, displayName: name },
       );
     } catch (error) {
-      throw new BadRequestException(`Não foi possível salvar o contato no WhatsApp: ${this.errorMessage(error)}`);
+      throw new BadRequestException(`NÃ£o foi possÃ­vel salvar o contato no WhatsApp: ${this.errorMessage(error)}`);
     }
 
     let contact = await this.savedContacts.findOne({ where: { instanceId: id, waId } });
@@ -668,10 +710,10 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   async createKey(instanceId: string, createdById: string, data: Record<string, unknown>) {
     const instance = await this.getInstance(instanceId);
     const name = String(data.name || '').trim().slice(0, 100);
-    if (!name) throw new BadRequestException('Dê um nome para a chave.');
+    if (!name) throw new BadRequestException('DÃª um nome para a chave.');
     const requested = sanitizeWhatsAppScopes(data.scopes);
     const scopes = requested.filter((scope) => instance.allowedScopes.includes(scope));
-    if (!scopes.length) throw new BadRequestException('Selecione pelo menos uma permissão liberada para este número.');
+    if (!scopes.length) throw new BadRequestException('Selecione pelo menos uma permissÃ£o liberada para este nÃºmero.');
     const rawKey = this.newKey();
     const key = await this.keys.save(
       this.keys.create({
@@ -689,13 +731,13 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     return {
       key: this.publicKey(key),
       apiKey: rawKey,
-      warning: 'Copie agora. A chave completa não será exibida novamente.',
+      warning: 'Copie agora. A chave completa nÃ£o serÃ¡ exibida novamente.',
     };
   }
 
   async updateKey(keyId: string, data: Record<string, unknown>) {
     const key = await this.keys.findOne({ where: { id: keyId } });
-    if (!key) throw new NotFoundException('Chave do WhatsApp não encontrada.');
+    if (!key) throw new NotFoundException('Chave do WhatsApp nÃ£o encontrada.');
     const instance = await this.getInstance(key.instanceId);
     if (typeof data.name === 'string' && data.name.trim()) key.name = data.name.trim().slice(0, 100);
     if (typeof data.active === 'boolean') key.active = data.active;
@@ -707,7 +749,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   async rotateKey(keyId: string) {
     const key = await this.keys.findOne({ where: { id: keyId } });
-    if (!key) throw new NotFoundException('Chave do WhatsApp não encontrada.');
+    if (!key) throw new NotFoundException('Chave do WhatsApp nÃ£o encontrada.');
     const rawKey = this.newKey();
     key.keyPrefix = rawKey.slice(0, 24);
     key.keyHash = this.hash(rawKey);
@@ -719,7 +761,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
   private startGroupAutomationLoop(instanceId: string) {
     this.stopGroupAutomationLoop(instanceId);
     const run = () => void this.reconcilePendingGroupRequests(instanceId).catch((error) =>
-      this.logger.warn(`Falha na reconciliação de grupos ${instanceId}: ${this.errorMessage(error)}`),
+      this.logger.warn(`Falha na reconciliaÃ§Ã£o de grupos ${instanceId}: ${this.errorMessage(error)}`),
     );
     const timer = setInterval(run, 45_000);
     timer.unref?.();
@@ -758,12 +800,25 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
             requestMethod: request?.requestMethod || null,
             approvedWith: approval.approvedWith,
           });
+          // Do not depend exclusively on onParticipantsChanged. Some WhatsApp
+          // versions do not emit the event reliably after approving a request.
+          await this.processNewGroupMember(instanceId, config, config.groupId, rawMemberId, canonical);
         } catch (error) {
-          await this.recordGroupMemberEvent(instanceId, config.groupId, rawMemberId, canonical, null, 'AUTO_APPROVAL_FAILED', {
-            error: this.errorMessage(error),
-            rawMemberId,
-            canonicalMemberId: canonical,
-          });
+          const confirmed = await this.waitForConfirmedGroupMember(client, config.groupId, [rawMemberId, canonical]);
+          if (confirmed) {
+            await this.recordGroupMemberEvent(instanceId, config.groupId, rawMemberId, confirmed.canonicalWaId, null, 'AUTO_APPROVAL_CONFIRMED_AFTER_ERROR', {
+              error: this.errorMessage(error),
+              confirmedMemberWaId: confirmed.memberWaId,
+              rawMemberId,
+            });
+            await this.processNewGroupMember(instanceId, config, config.groupId, confirmed.memberWaId, confirmed.canonicalWaId);
+          } else {
+            await this.recordGroupMemberEvent(instanceId, config.groupId, rawMemberId, canonical, null, 'AUTO_APPROVAL_FAILED', {
+              error: this.errorMessage(error),
+              rawMemberId,
+              canonicalMemberId: canonical,
+            });
+          }
         }
       }
     }
@@ -847,13 +902,42 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     const siteUrl = 'https://piranegocios.com.br';
     if (config.welcomeTemplate) return config.welcomeTemplate.replace(/\{\{groupName\}\}/g, groupName).replace(/\{\{groupDescription\}\}/g, groupDescription).replace(/\{\{siteUrl\}\}/g, siteUrl).replace(/\{\{channelUrl\}\}/g, config.channelUrl || '').trim();
     return [
-      `👋 Bem-vindo(a) ao ${groupName}!`,
-      groupDescription ? `Para facilitar, seguem as regras e informações do grupo:\n\n${groupDescription}` : null,
-      `💼 Além das vagas compartilhadas por aqui, você encontra oportunidades atualizadas no PiraNegócios:\n${siteUrl}`,
-      '📄 Cadastre gratuitamente seu currículo no nosso banco de talentos para também poder ser encontrado por empresas.',
-      config.channelUrl ? `📢 Acompanhe nosso canal no WhatsApp para novas oportunidades:\n${config.channelUrl}` : null,
-      '📱 Salve o contato do PiraNegócios para conseguir visualizar nossos Status com novas vagas.',
+      `ð Bem-vindo(a) ao ${groupName}!`,
+      groupDescription ? `Para facilitar, seguem as regras e informaÃ§Ãµes do grupo:\n\n${groupDescription}` : null,
+      `ð¼ AlÃ©m das vagas compartilhadas por aqui, vocÃª encontra oportunidades atualizadas no PiraNegÃ³cios:\n${siteUrl}`,
+      'ð Cadastre gratuitamente seu currÃ­culo no nosso banco de talentos para tambÃ©m poder ser encontrado por empresas.',
+      config.channelUrl ? `ð¢ Acompanhe nosso canal no WhatsApp para novas oportunidades:\n${config.channelUrl}` : null,
+      'ð± Salve o contato do PiraNegÃ³cios para conseguir visualizar nossos Status com novas vagas.',
     ].filter(Boolean).join('\n\n');
+  }
+
+  private async waitForConfirmedGroupMember(
+    client: any,
+    groupId: string,
+    candidateIds: string[],
+    attempts = 5,
+    delayMs = 700,
+  ): Promise<{ memberWaId: string; canonicalWaId: string } | null> {
+    const targets = new Set(
+      candidateIds
+        .filter(Boolean)
+        .map((value) => this.normalizeParticipantId(value)),
+    );
+
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const members = await client.getGroupMembers(groupId).catch(() => []);
+      for (const member of Array.isArray(members) ? members : []) {
+        const memberWaId = this.serializeWid(member?.id || member?.wid || member);
+        if (!memberWaId) continue;
+        const normalizedMember = this.normalizeParticipantId(memberWaId);
+        const canonicalWaId = await this.resolveCanonicalMemberId(client, normalizedMember);
+        if (targets.has(normalizedMember) || targets.has(canonicalWaId)) {
+          return { memberWaId: normalizedMember, canonicalWaId };
+        }
+      }
+      if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    return null;
   }
 
   private async approveMembershipRequest(client: any, groupId: string, rawMemberId: string, canonicalMemberId?: string) {
@@ -874,7 +958,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
               .map((row: any) => this.errorMessage(row?.error))
               .filter(Boolean)
               .join('; ');
-            throw new Error(detail || `WhatsApp recusou a aprovação para ${candidate}.`);
+            throw new Error(detail || `WhatsApp recusou a aprovaÃ§Ã£o para ${candidate}.`);
           }
         }
         return { result, approvedWith: candidate };
@@ -884,7 +968,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
     }
 
     const detail = attempts.map((attempt) => `${attempt.memberId}: ${attempt.error}`).join(' | ');
-    throw new Error(`Nenhum identificador conseguiu aprovar a solicitação. ${detail}`.slice(0, 2000));
+    throw new Error(`Nenhum identificador conseguiu aprovar a solicitaÃ§Ã£o. ${detail}`.slice(0, 2000));
   }
 
   private async resolveCanonicalMemberId(client: any, rawId: string) {
@@ -930,7 +1014,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   private requireClient(id: string) {
     const client = this.clients.get(id);
-    if (!client) throw new BadRequestException('Este número não está conectado ao WhatsApp.');
+    if (!client) throw new BadRequestException('Este nÃºmero nÃ£o estÃ¡ conectado ao WhatsApp.');
     return client;
   }
 
@@ -1005,7 +1089,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         await this.instances.save(instance);
       }
     } catch {
-      // O telefone é apenas enriquecimento; a sessão conectada continua válida.
+      // O telefone Ã© apenas enriquecimento; a sessÃ£o conectada continua vÃ¡lida.
     }
   }
 
@@ -1033,7 +1117,7 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
         }),
       );
     } catch (error) {
-      this.logger.warn(`Não foi possível persistir mensagem recebida: ${this.errorMessage(error)}`);
+      this.logger.warn(`NÃ£o foi possÃ­vel persistir mensagem recebida: ${this.errorMessage(error)}`);
     }
   }
 
@@ -1074,25 +1158,25 @@ export class WhatsAppService implements OnModuleInit, OnModuleDestroy {
 
   private normalizeGroupId(groupId: string) {
     const value = String(groupId || '').trim();
-    if (!value.endsWith('@g.us')) throw new BadRequestException('Informe um groupId válido terminado em @g.us.');
+    if (!value.endsWith('@g.us')) throw new BadRequestException('Informe um groupId vÃ¡lido terminado em @g.us.');
     return value;
   }
 
   private normalizeParticipantId(participantId: string) {
     const value = String(participantId || '').trim();
-    if (!value) throw new BadRequestException('Participante não informado.');
+    if (!value) throw new BadRequestException('Participante nÃ£o informado.');
     if (/@(?:c\.us|lid)$/.test(value)) return value;
     const digits = this.onlyDigits(value);
-    if (!digits) throw new BadRequestException('Participante inválido.');
+    if (!digits) throw new BadRequestException('Participante invÃ¡lido.');
     return `${digits}@c.us`;
   }
 
   private normalizeChatId(target: string) {
     const value = String(target || '').trim();
-    if (!value) throw new BadRequestException('Destino não informado.');
+    if (!value) throw new BadRequestException('Destino nÃ£o informado.');
     if (/@(?:c\.us|g\.us|newsletter|lid)$/.test(value)) return value;
     const digits = this.onlyDigits(value);
-    if (!digits) throw new BadRequestException('Destino inválido.');
+    if (!digits) throw new BadRequestException('Destino invÃ¡lido.');
     return `${digits}@c.us`;
   }
 
