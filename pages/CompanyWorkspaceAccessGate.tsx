@@ -14,6 +14,7 @@ function requiredPermission(pathname: string): CompanyPermissionKey | null {
   ) return "recruitment";
   if (pathname.startsWith("/company/financeiro") || pathname.startsWith("/company/planos")) return "finance";
   if (pathname.startsWith("/company/equipe")) return "team";
+  if (pathname.startsWith("/company/integracoes")) return "marketplace";
   if (
     pathname.startsWith("/company/pagina")
     || pathname.startsWith("/company/comercial")

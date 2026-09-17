@@ -52,6 +52,7 @@ import { AdminWhatsAppPage } from "./AdminWhatsAppPage";
 import IdentityVerificationPage from "./IdentityVerificationPage";
 import AdminIdentityVerificationsPage from "./AdminIdentityVerificationsPage";
 import AdminClassifiedReviewsPage from "./AdminClassifiedReviewsPage";
+import { CompanyPdvIntegrationPage } from "./CompanyPdvIntegrationPage";
 
 function AdminPage({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -146,15 +147,15 @@ function VerifiedCompanyPageRoute({ companyId }: { companyId: string }) {
     return () => { active = false; };
   }, [companyId]);
 
-  if (loading) return <div className="min-h-[50vh] flex items-center justify-center text-stone-500">Verificando acesso à Minha Página...</div>;
+  if (loading) return <div className="min-h-[50vh] flex items-center justify-center text-stone-500">Verificando acesso Ã  Minha PÃ¡gina...</div>;
   if (!verified) {
     return (
       <div className="mx-auto max-w-3xl rounded-3xl border border-amber-200 bg-amber-50 p-7 text-amber-950 shadow-sm">
-        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">Minha Página</p>
-        <h1 className="mt-2 font-serif text-3xl font-black">Disponível após a verificação da empresa</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-amber-900/80">Apenas empresas verificadas podem criar e publicar uma página própria no PiraNegócios. A validação é feita por consulta do CNPJ, responsável e selfie, sem documentação empresarial obrigatória.</p>
-        {failed && <p className="mt-3 text-xs font-semibold text-amber-800">Não foi possível confirmar o status da empresa agora.</p>}
-        <Link to="/company/verificacao" className="mt-5 inline-flex rounded-2xl bg-stone-900 px-4 py-3 text-xs font-black text-white">Ir para Verificação</Link>
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">Minha PÃ¡gina</p>
+        <h1 className="mt-2 font-serif text-3xl font-black">DisponÃ­vel apÃ³s a verificaÃ§Ã£o da empresa</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-amber-900/80">Apenas empresas verificadas podem criar e publicar uma pÃ¡gina prÃ³pria no PiraNegÃ³cios. A validaÃ§Ã£o Ã© feita por consulta do CNPJ, responsÃ¡vel e selfie, sem documentaÃ§Ã£o empresarial obrigatÃ³ria.</p>
+        {failed && <p className="mt-3 text-xs font-semibold text-amber-800">NÃ£o foi possÃ­vel confirmar o status da empresa agora.</p>}
+        <Link to="/company/verificacao" className="mt-5 inline-flex rounded-2xl bg-stone-900 px-4 py-3 text-xs font-black text-white">Ir para VerificaÃ§Ã£o</Link>
       </div>
     );
   }
@@ -175,6 +176,7 @@ function CompanyRoutes({ companyId }: { companyId?: string }) {
       <Route path="contratacao" element={companyOnly(<CompanyHiringConfig />)} />
       <Route path="planos" element={companyOnly(<CompanyPlansPage />)} />
       <Route path="pagamentos" element={companyOnly(<CompanyFinancialTransactionsPage />)} />
+      <Route path="integracoes/pdv" element={companyOnly(<CompanyPdvIntegrationPage />)} />
       <Route path="pagina" element={companyOnly(companyId ? <VerifiedCompanyPageRoute companyId={companyId} /> : null)} />
       <Route path="notificacoes" element={companyOnly(<NotificationPreferencesPage />)} />
       <Route path="verificacao" element={companyOnly(<IdentityVerificationPage />)} />
@@ -192,8 +194,8 @@ function CompanySharedNavigation() {
   const location = useLocation();
   const links = [
     ["/company", "Business"],
-    ["/company/pagamentos", "Transações financeiras"],
-    ["/company/planos", "Planos e cobrança"],
+    ["/company/pagamentos", "TransaÃ§Ãµes financeiras"],
+    ["/company/planos", "Planos e cobranÃ§a"],
     ["/classificados/explorar", "Classificados Business"],
   ];
   return <nav className="mb-5 flex gap-2 overflow-x-auto rounded-2xl bg-white/75 p-2 shadow-sm ring-1 ring-stone-200">{links.map(([to,label]) => {

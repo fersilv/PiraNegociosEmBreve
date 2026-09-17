@@ -39,7 +39,7 @@ O Pira armazena access/refresh token cifrados com AES-256-GCM usando `PDV_INTEGR
 4. Cliente OAuth no Pira implementado.
 5. Importação, associação, sync manual e auto-sync de catálogo implementados no backend.
 6. O Pira reutiliza o mesmo `ClassifiedsService` para criação/atualização, sem bypass de regras.
-7. Painel empresarial para conexão/configuração está sendo acoplado ao workspace.
+7. Painel empresarial `/company/integracoes/pdv` implementado com conexão OAuth, defaults, sync manual, leitura de vendas, associação e overrides por produto.
 
 ### Continuação planejada
 - Webhooks assinados para reduzir latência do polling e manter polling como reconciliação/fallback.
