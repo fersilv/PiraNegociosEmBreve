@@ -15,6 +15,9 @@ export class PdvIntegrationController {
   @Post('products/link-existing') @UseGuards(FirebaseAuthGuard) link(@Req() req:any,@Body() body:any){ return this.integration.linkExisting(req.user.uid,String(body.companyId||''),body); }
   @Patch('products/:pdvProductId') @UseGuards(FirebaseAuthGuard) productSettings(@Req() req:any,@Param('pdvProductId') pdvProductId:string,@Body() body:any){ return this.integration.configureProduct(req.user.uid,String(body.companyId||''),pdvProductId,body); }
   @Post('sync') @UseGuards(FirebaseAuthGuard) sync(@Req() req:any,@Body() body:any){ return this.integration.sync(req.user.uid,String(body.companyId||''),body,'MANUAL'); }
+  @Get('local-products') @UseGuards(FirebaseAuthGuard) localProducts(@Req() req:any,@Query('companyId') companyId:string){ return this.integration.localProducts(req.user.uid,companyId); }
+  @Post('push') @UseGuards(FirebaseAuthGuard) push(@Req() req:any,@Body() body:any){ return this.integration.pushProducts(req.user.uid,String(body.companyId||''),Array.isArray(body.listingIds)?body.listingIds:undefined); }
+  @Post('push/:listingId') @UseGuards(FirebaseAuthGuard) pushOne(@Req() req:any,@Param('listingId') listingId:string,@Body() body:any){ return this.integration.pushProduct(req.user.uid,String(body.companyId||''),listingId); }
   @Get('sales') @UseGuards(FirebaseAuthGuard) sales(@Req() req:any,@Query('companyId') companyId:string,@Query('updatedSince') updatedSince?:string){ return this.integration.sales(req.user.uid,companyId,updatedSince); }
   @Post('sales/sync') @UseGuards(FirebaseAuthGuard) syncSales(@Req() req:any,@Body() body:any){ return this.integration.syncSales(req.user.uid,String(body.companyId||'')); }
 }
