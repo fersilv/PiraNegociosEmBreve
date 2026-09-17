@@ -222,7 +222,9 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
         const syncPrice=link?Boolean(link.syncPrice):Boolean(settings.syncPrice);
         const syncStock=link?Boolean(link.syncStock):Boolean(settings.syncStock);
         const categorySlug=await this.resolveCategorySlug(companyId,product,settings);
-        const payload=this.toListingPayload(product,settings,{syncPrice,syncStock,visible:effectiveVisible},categorySlug);
+        const currentListing=link?.listingId?(await this.dataSource.query(`SELECT price,"catalogConfig","commerceConfig" FROM classified_listings WHERE id=$1::uuid AND "companyId"=$2::uuid LIMIT 1`,[link.listingId,companyId]))[0]:null;
+        const initialImport=!link?.listingId;
+        const payload=this.toListingPayload(product,settings,{syncPrice:initialImport||syncPrice,syncStock:initialImport||syncStock,visible:effectiveVisible},categorySlug,currentListing?.catalogConfig);
         let listing:any;
         if(link?.listingId){ delete payload.attributes; listing=await this.classifieds.updateForCompanyIntegration(uid,companyId,String(link.listingId),payload); }
         else{
@@ -350,14 +352,16 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     const syncPrice=link?Boolean(link.syncPrice):Boolean(settings.syncPrice);
     const syncStock=link?Boolean(link.syncStock):Boolean(settings.syncStock);
     const categorySlug=await this.resolveCategorySlug(companyId,product,settings);
+    const currentListing=link?.listingId?(await this.dataSource.query(`SELECT price,"catalogConfig","commerceConfig" FROM classified_listings WHERE id=$1::uuid AND "companyId"=$2::uuid LIMIT 1`,[link.listingId,companyId]))[0]:null;
     let payload:any;
     if(options.eventType==='product.stock_updated'&&link?.listingId){
       if(!syncStock) return {pdvProductId:canonicalPdvProductId,listingId:link.listingId,status:'SKIPPED',reason:'stock_sync_disabled'};
       payload={commerceConfig:{onlineCheckout:{stockQuantity:this.productStock(product)}}};
-      const variants=this.variantCatalogConfig(product);
+      const variants=this.variantCatalogConfig(product,currentListing?.catalogConfig,{syncPrice:false,syncStock:true});
       if(variants) payload.catalogConfig=variants;
     }else{
-      payload=this.toListingPayload(product,settings,{syncPrice,syncStock,visible:effectiveVisible},categorySlug);
+      const initialImport=!link?.listingId;
+      payload=this.toListingPayload(product,settings,{syncPrice:initialImport||syncPrice,syncStock:initialImport||syncStock,visible:effectiveVisible},categorySlug,currentListing?.catalogConfig);
       if(link?.listingId) delete payload.attributes;
     }
     let listing:any;
@@ -467,7 +471,7 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     const lastSync=new Date(link.lastSyncedAt).getTime();
     const remoteTime=product?.updatedAt?new Date(product.updatedAt).getTime():0;
     if(remoteTime&&remoteTime<=lastSync) return {status:'UNCHANGED',fields:[] as string[]};
-    const listing=(await this.dataSource.query(`SELECT id,title,description,price,attributes,"commerceConfig","updatedAt" FROM classified_listings WHERE id=$1::uuid AND "companyId"=$2::uuid LIMIT 1`,[link.listingId,companyId]))[0];
+    const listing=(await this.dataSource.query(`SELECT id,title,description,price,attributes,"catalogConfig","commerceConfig","updatedAt" FROM classified_listings WHERE id=$1::uuid AND "companyId"=$2::uuid LIMIT 1`,[link.listingId,companyId]))[0];
     if(!listing) return {status:'APPLY',fields:[] as string[]};
     const localTime=listing.updatedAt?new Date(listing.updatedAt).getTime():0;
     if(localTime<=lastSync||!remoteTime||remoteTime<=lastSync) return {status:'APPLY',fields:[] as string[]};
@@ -484,8 +488,9 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     const money=(value:any)=>Number(Number(value??0).toFixed(2));
     const stock=Number(this.json(listing.commerceConfig,{})?.onlineCheckout?.stockQuantity??0);
     if(link.syncStock!==false&&stock!==this.productStock(previous)) fields.push('stock');
-    if(this.variantFingerprintFromListing(listing)!==this.variantFingerprintFromProduct(previous)) fields.push('variants');
-    if(stockOnly) return fields.filter((field)=>field==='stock');
+    const variantsDiffer=this.variantFingerprintFromListing(listing,link.syncPrice!==false,link.syncStock!==false,stockOnly)!==this.variantFingerprintFromProduct(previous,link.syncPrice!==false,link.syncStock!==false,stockOnly);
+    if(variantsDiffer) fields.push('variants');
+    if(stockOnly) return fields.filter((field)=>field==='stock'||field==='variants');
     if(String(listing.title||'')!==String(previous?.name||'')) fields.push('title');
     const expectedDescription=String(previous?.description||'Produto sincronizado com o PDV Inteligente.');
     if(String(listing.description||'')!==expectedDescription) fields.push('description');
@@ -498,7 +503,7 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     return [...new Set(fields)];
   }
 
-  private toListingPayload(product:any,settings:any,flags:{syncPrice:boolean;syncStock:boolean;visible:boolean},categorySlug?:string) {
+  private toListingPayload(product:any,settings:any,flags:{syncPrice:boolean;syncStock:boolean;visible:boolean},categorySlug?:string,existingCatalog:any=null) {
     const body:any={
       categorySlug:String(categorySlug||settings.defaultCategorySlug||'outros'),
       listingType:'PRODUCT',
@@ -510,8 +515,8 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     };
     if(flags.syncPrice) body.price=Number(product.salePrice??product.price??0);
     if(flags.syncStock) body.commerceConfig={onlineCheckout:{stockQuantity:this.productStock(product)}};
-    const variants=this.variantCatalogConfig(product);
-    if(variants) body.catalogConfig=variants;
+    const variants=this.variantCatalogConfig(product,existingCatalog,{syncPrice:flags.syncPrice,syncStock:flags.syncStock});
+    body.catalogConfig=variants;
     if(product.image) body.images=[product.image];
     return body;
   }
@@ -537,24 +542,34 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     return (values.length?values.join(' · '):String(variation?.name||variation?.sku||'Variação')).slice(0,120);
   }
 
-  private variantCatalogConfig(product:any){
+  private variantCatalogConfig(product:any,existingCatalog:any=null,flags:{syncPrice:boolean;syncStock:boolean}={syncPrice:true,syncStock:true}){
     const variants=Array.isArray(product?.variations)?product.variations:[];
-    if(!variants.length) return null;
-    return {
-      pricingStrategy:'BASE',
-      optionGroups:[{
-        id:'pdv-variants',name:'Variação',kind:'VARIANT',selectionType:'SINGLE',minSelections:1,maxSelections:1,pricingStrategy:'BASE',
-        options:variants.map((variation:any)=>{
-          const attributes=this.variationAttributes(variation?.variationAttributes);
-          return {
-            id:String(variation?.id||''),externalProductId:String(variation?.id||''),label:this.variantLabel(variation,attributes),
-            ...(variation?.sku?{sku:String(variation.sku)}:{}),...(variation?.barcode?{barcode:String(variation.barcode)}:{}),
-            price:Math.max(0,Number(variation?.salePrice??variation?.price??product?.salePrice??0)),
-            stockQuantity:Math.max(0,Number(variation?.stock||0)),attributes,active:variation?.active!==false,
-          };
-        }).filter((item:any)=>item.id),
-      }],
+    const existingGroups=Array.isArray(existingCatalog?.optionGroups)?existingCatalog.optionGroups:[];
+    const existingGroup=existingGroups.find((item:any)=>String(item?.id)==='pdv-variants');
+    const otherGroups=existingGroups.filter((item:any)=>String(item?.id)!=='pdv-variants');
+    const existingOptions=Array.isArray(existingGroup?.options)?existingGroup.options:[];
+    if(!variants.length){
+      if(!otherGroups.length) return null;
+      return {...(existingCatalog&&typeof existingCatalog==='object'?existingCatalog:{}),optionGroups:otherGroups};
+    }
+    const pdvGroup={
+      id:'pdv-variants',name:'Variação',kind:'VARIANT',selectionType:'SINGLE',minSelections:1,maxSelections:1,pricingStrategy:'BASE',
+      options:variants.map((variation:any)=>{
+        const id=String(variation?.id||'');
+        const attributes=this.variationAttributes(variation?.variationAttributes);
+        const existing=existingOptions.find((item:any)=>String(item?.externalProductId||item?.id||'')===id);
+        const remotePrice=Math.max(0,Number(variation?.salePrice??variation?.price??product?.salePrice??0));
+        const remoteStock=Math.max(0,Number(variation?.stock||0));
+        return {
+          ...(existing||{}),id,externalProductId:id,label:this.variantLabel(variation,attributes),
+          ...(variation?.sku?{sku:String(variation.sku)}:{sku:undefined}),...(variation?.barcode?{barcode:String(variation.barcode)}:{barcode:undefined}),
+          price:flags.syncPrice||existing?.price===undefined?remotePrice:Number(existing.price),
+          stockQuantity:flags.syncStock||existing?.stockQuantity===undefined?remoteStock:existing.stockQuantity,
+          attributes,active:variation?.active!==false,
+        };
+      }).filter((item:any)=>item.id),
     };
+    return {...(existingCatalog&&typeof existingCatalog==='object'?existingCatalog:{}),pricingStrategy:'BASE',optionGroups:[...otherGroups,pdvGroup]};
   }
 
   private piraVariants(catalog:any){
@@ -566,12 +581,21 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     })).filter((item:any)=>item.pdvProductId||item.sku||item.barcode);
   }
 
-  private variantFingerprintFromProduct(product:any){
-    const config=this.variantCatalogConfig(product); return this.hash(this.stableJson(config?.optionGroups?.[0]?.options||[]));
+  private variantComparable(options:any[],includePrice:boolean,includeStock:boolean,stockOnly=false){
+    return options.map((option:any)=>({
+      id:String(option?.externalProductId||option?.id||''),
+      ...(stockOnly?{}:{label:String(option?.label||''),sku:String(option?.sku||''),barcode:String(option?.barcode||''),attributes:option?.attributes||{},active:option?.active!==false}),
+      ...(includePrice&&!stockOnly?{price:Number(option?.price||0)}:{}),
+      ...(includeStock?{stockQuantity:Math.max(0,Number(option?.stockQuantity||0))}:{}),
+    })).sort((a:any,b:any)=>a.id.localeCompare(b.id));
   }
-  private variantFingerprintFromListing(listing:any){
+  private variantFingerprintFromProduct(product:any,includePrice=true,includeStock=true,stockOnly=false){
+    const config=this.variantCatalogConfig(product,null,{syncPrice:true,syncStock:true});
+    return this.hash(this.stableJson(this.variantComparable(config?.optionGroups?.[0]?.options||[],includePrice,includeStock,stockOnly)));
+  }
+  private variantFingerprintFromListing(listing:any,includePrice=true,includeStock=true,stockOnly=false){
     const catalog=this.json(listing?.catalogConfig,{}); const group=Array.isArray(catalog?.optionGroups)?catalog.optionGroups.find((item:any)=>String(item?.id)==='pdv-variants'):null;
-    return this.hash(this.stableJson(Array.isArray(group?.options)?group.options:[]));
+    return this.hash(this.stableJson(this.variantComparable(Array.isArray(group?.options)?group.options:[],includePrice,includeStock,stockOnly)));
   }
 
   private normalizeLabel(value:any){ return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase().replace(/\s+/g,' '); }
