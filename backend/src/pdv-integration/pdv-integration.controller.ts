@@ -12,6 +12,8 @@ export class PdvIntegrationController {
   @Get('status') @UseGuards(FirebaseAuthGuard) status(@Req() req:any,@Query('companyId') companyId:string){ return this.integration.status(req.user.uid,companyId); }
   @Patch('settings') @UseGuards(FirebaseAuthGuard) settings(@Req() req:any,@Body() body:any){ return this.integration.updateSettings(req.user.uid,String(body.companyId||''),body); }
   @Delete('connection') @UseGuards(FirebaseAuthGuard) disconnect(@Req() req:any,@Query('companyId') companyId:string){ return this.integration.disconnect(req.user.uid,companyId); }
+  @Get('categories') @UseGuards(FirebaseAuthGuard) categories(@Req() req:any,@Query('companyId') companyId:string){ return this.integration.categories(req.user.uid,companyId); }
+  @Patch('categories/:pdvCategoryId') @UseGuards(FirebaseAuthGuard) categoryMap(@Req() req:any,@Param('pdvCategoryId') pdvCategoryId:string,@Body() body:any){ return this.integration.mapCategory(req.user.uid,String(body.companyId||''),pdvCategoryId,body.categorySlug); }
   @Get('products') @UseGuards(FirebaseAuthGuard) products(@Req() req:any,@Query('companyId') companyId:string){ return this.integration.products(req.user.uid,companyId); }
   @Post('products/link-existing') @UseGuards(FirebaseAuthGuard) link(@Req() req:any,@Body() body:any){ return this.integration.linkExisting(req.user.uid,String(body.companyId||''),body); }
   @Post('products/:pdvProductId/resolve') @UseGuards(FirebaseAuthGuard) resolve(@Req() req:any,@Param('pdvProductId') pdvProductId:string,@Body() body:any){ return this.integration.resolveConflict(req.user.uid,String(body.companyId||''),pdvProductId,body.strategy); }

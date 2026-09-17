@@ -12,7 +12,7 @@ export type ClassifiedOfferStatus = 'PENDING'|'ACCEPTED'|'REJECTED'|'EXPIRED'|'W
 export interface ClassifiedCategory { slug:string; name:string; icon?:string|null; parentSlug?:string|null; sortOrder?:number; isActive?:boolean; attributeSchema?:Array<{key:string;label:string;type?:'text'|'number'|'select';options?:string[]}>|null }
 export interface ClassifiedListingImage { id?:string; url:string; sortOrder?:number; isPrimary?:boolean }
 export interface ClassifiedSeller { id:string;type:'COMPANY'|'PERSON';name:string;photoURL?:string|null;verified?:boolean;memberSince?:string|null;city?:string|null;state?:string|null;companySlug?:string|null }
-export interface ClassifiedCatalogOption { id:string;label:string;priceDelta?:number;price?:number;active?:boolean;sku?:string;imageUrl?:string }
+export interface ClassifiedCatalogOption { id:string;label:string;priceDelta?:number;price?:number;active?:boolean;sku?:string;barcode?:string;imageUrl?:string;externalProductId?:string;stockQuantity?:number|null;attributes?:Record<string,string|number|boolean|null> }
 export interface ClassifiedCatalogOptionGroup { id:string;name:string;kind:'VARIANT'|'MODIFIER';selectionType:'SINGLE'|'MULTIPLE';minSelections?:number;maxSelections?:number;pricingStrategy?:ClassifiedCatalogPricingStrategy;options:ClassifiedCatalogOption[] }
 export interface ClassifiedCatalogConfig { optionGroups?:ClassifiedCatalogOptionGroup[];pricingStrategy?:ClassifiedCatalogPricingStrategy }
 

@@ -539,6 +539,10 @@ function cleanCatalogConfig(value: unknown): ClassifiedCatalogConfig | null {
       ...(numericParam(option?.price) !== null ? { price: numericParam(option.price)! } : {}),
       ...(typeof option?.active === 'boolean' ? { active: option.active } : {}),
       ...(cleanText(option?.sku, 80) ? { sku: cleanText(option.sku, 80) } : {}),
+      ...(cleanText(option?.barcode, 120) ? { barcode: cleanText(option.barcode, 120) } : {}),
+      ...(cleanText(option?.externalProductId, 120) ? { externalProductId: cleanText(option.externalProductId, 120) } : {}),
+      ...(option?.stockQuantity === null ? { stockQuantity: null } : numericParam(option?.stockQuantity) !== null ? { stockQuantity: clampInt(option.stockQuantity, 0, 1_000_000, 0) } : {}),
+      ...(plainAttributes(option?.attributes) ? { attributes: plainAttributes(option.attributes)! } : {}),
       ...(sanitizeImageUrl(option?.imageUrl) ? { imageUrl: sanitizeImageUrl(option.imageUrl)! } : {}),
     })).filter((option: any) => option.label) : [];
     return {

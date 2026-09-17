@@ -145,6 +145,28 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  async categories(uid:string,companyId:string){
+    await this.identities.integrationCompany(uid,companyId,true);
+    const [remote,local,links]=await Promise.all([
+      this.remoteCategories(companyId),
+      this.dataSource.query(`SELECT slug,name,"parentSlug","isActive" FROM classified_categories WHERE "isActive"=true ORDER BY "sortOrder",name`),
+      this.dataSource.query(`SELECT * FROM pdv_category_links WHERE "companyId"=$1::uuid`,[companyId]),
+    ]);
+    return { remote, local, links };
+  }
+
+  async mapCategory(uid:string,companyId:string,pdvCategoryIdRaw:unknown,categorySlugRaw:unknown){
+    await this.identities.integrationCompany(uid,companyId,true);
+    const pdvCategoryId=String(pdvCategoryIdRaw||'').trim(),categorySlug=String(categorySlugRaw||'').trim();
+    if(!pdvCategoryId||!categorySlug) throw new BadRequestException('pdvCategoryId e categorySlug são obrigatórios.');
+    const local=(await this.dataSource.query(`SELECT slug,name FROM classified_categories WHERE slug=$1 AND "isActive"=true LIMIT 1`,[categorySlug]))[0];
+    if(!local) throw new BadRequestException('Categoria do PiraNegócios inválida ou inativa.');
+    const remote=(await this.remoteCategories(companyId)).find((item:any)=>String(item.id)===pdvCategoryId);
+    if(!remote) throw new BadRequestException('Categoria do PDV não encontrada.');
+    await this.upsertCategoryLink(companyId,pdvCategoryId,categorySlug,remote);
+    return { pdvCategoryId, categorySlug, remote, local };
+  }
+
   async linkExisting(uid:string, companyId:string, body:Record<string,unknown>) {
     await this.identities.integrationCompany(uid, companyId, true);
     const pdvProductId=String(body.pdvProductId||'').trim(), listingId=String(body.listingId||'').trim();
@@ -199,7 +221,8 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
         const effectiveVisible=visiblePreference&&remoteAvailable;
         const syncPrice=link?Boolean(link.syncPrice):Boolean(settings.syncPrice);
         const syncStock=link?Boolean(link.syncStock):Boolean(settings.syncStock);
-        const payload=this.toListingPayload(product,settings,{syncPrice,syncStock,visible:effectiveVisible});
+        const categorySlug=await this.resolveCategorySlug(companyId,product,settings);
+        const payload=this.toListingPayload(product,settings,{syncPrice,syncStock,visible:effectiveVisible},categorySlug);
         let listing:any;
         if(link?.listingId){ delete payload.attributes; listing=await this.classifieds.updateForCompanyIntegration(uid,companyId,String(link.listingId),payload); }
         else{
@@ -283,6 +306,8 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     if(eventType==='product.removed'){
       const productId=aggregateId||String(data?.id||'');
       if(!productId) throw new BadRequestException('Webhook de remoção sem productId.');
+      const parentProductId=String(data?.parentProductId||'').trim();
+      if(parentProductId) return this.syncRemoteProduct(uid,companyId,parentProductId,{eventType:'product.updated',force:true});
       const link=(await this.dataSource.query(`SELECT * FROM pdv_product_links WHERE "companyId"=$1::uuid AND "pdvProductId"=$2 LIMIT 1`,[companyId,productId]))[0];
       if(!link) return {status:'UNLINKED',pdvProductId:productId};
       if(link.listingId&&link.syncEnabled!==false) await this.classifieds.setVisibilityForCompanyIntegration(uid,companyId,String(link.listingId),false);
@@ -304,42 +329,46 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     const connection=await this.connection(companyId,true);
     const settings={...DEFAULT_SETTINGS,...this.json(connection.settings,{})} as any;
     const product=await this.remoteProduct(companyId,pdvProductId);
-    let link=(await this.dataSource.query(`SELECT * FROM pdv_product_links WHERE "companyId"=$1::uuid AND "pdvProductId"=$2 LIMIT 1`,[companyId,pdvProductId]))[0];
+    const canonicalPdvProductId=String(product?.id||pdvProductId);
+    let link=(await this.dataSource.query(`SELECT * FROM pdv_product_links WHERE "companyId"=$1::uuid AND "pdvProductId"=$2 LIMIT 1`,[companyId,canonicalPdvProductId]))[0];
     if(!link){
       const match=await this.findExistingMatch(companyId,product);
       if(match){
-        await this.upsertLink(companyId,pdvProductId,match.id,{visible:settings.visibleByDefault,syncEnabled:true,syncPrice:settings.syncPrice,syncStock:settings.syncStock});
-        link={pdvProductId,listingId:match.id,visible:settings.visibleByDefault,syncEnabled:true,syncPrice:settings.syncPrice,syncStock:settings.syncStock,remoteAvailable:true};
+        await this.upsertLink(companyId,canonicalPdvProductId,match.id,{visible:settings.visibleByDefault,syncEnabled:true,syncPrice:settings.syncPrice,syncStock:settings.syncStock});
+        link={pdvProductId:canonicalPdvProductId,listingId:match.id,visible:settings.visibleByDefault,syncEnabled:true,syncPrice:settings.syncPrice,syncStock:settings.syncStock,remoteAvailable:true};
       }
     }
-    if(link&&link.syncEnabled===false) return {pdvProductId,status:'SKIPPED',reason:'sync_disabled'};
+    if(link&&link.syncEnabled===false) return {pdvProductId:canonicalPdvProductId,status:'SKIPPED',reason:'sync_disabled'};
     if(link?.listingId&&!options.force){
       const disposition=await this.syncDisposition(companyId,link,product,options.eventType==='product.stock_updated');
-      if(disposition.status==='UNCHANGED') return {pdvProductId,listingId:link.listingId,status:'SKIPPED',reason:'remote_unchanged'};
-      if(disposition.status==='CONFLICT') return {pdvProductId,listingId:link.listingId,status:'CONFLICT',fields:disposition.fields};
+      if(disposition.status==='UNCHANGED') return {pdvProductId:canonicalPdvProductId,listingId:link.listingId,status:'SKIPPED',reason:'remote_unchanged'};
+      if(disposition.status==='CONFLICT') return {pdvProductId:canonicalPdvProductId,listingId:link.listingId,status:'CONFLICT',fields:disposition.fields};
     }
     const visiblePreference=link?Boolean(link.visible):Boolean(settings.visibleByDefault);
     const remoteAvailable=product.active!==false;
     const effectiveVisible=visiblePreference&&remoteAvailable;
     const syncPrice=link?Boolean(link.syncPrice):Boolean(settings.syncPrice);
     const syncStock=link?Boolean(link.syncStock):Boolean(settings.syncStock);
+    const categorySlug=await this.resolveCategorySlug(companyId,product,settings);
     let payload:any;
     if(options.eventType==='product.stock_updated'&&link?.listingId){
-      if(!syncStock) return {pdvProductId,listingId:link.listingId,status:'SKIPPED',reason:'stock_sync_disabled'};
-      payload={commerceConfig:{onlineCheckout:{stockQuantity:Math.max(0,Number(product.stock||0))}}};
+      if(!syncStock) return {pdvProductId:canonicalPdvProductId,listingId:link.listingId,status:'SKIPPED',reason:'stock_sync_disabled'};
+      payload={commerceConfig:{onlineCheckout:{stockQuantity:this.productStock(product)}}};
+      const variants=this.variantCatalogConfig(product);
+      if(variants) payload.catalogConfig=variants;
     }else{
-      payload=this.toListingPayload(product,settings,{syncPrice,syncStock,visible:effectiveVisible});
+      payload=this.toListingPayload(product,settings,{syncPrice,syncStock,visible:effectiveVisible},categorySlug);
       if(link?.listingId) delete payload.attributes;
     }
     let listing:any;
     if(link?.listingId) listing=await this.classifieds.updateForCompanyIntegration(uid,companyId,String(link.listingId),payload);
     else{
       listing=await this.classifieds.createForCompanyIntegration(uid,companyId,payload);
-      await this.upsertLink(companyId,pdvProductId,listing.id,{visible:visiblePreference,syncEnabled:true,syncPrice,syncStock});
+      await this.upsertLink(companyId,canonicalPdvProductId,listing.id,{visible:visiblePreference,syncEnabled:true,syncPrice,syncStock});
     }
     if(options.eventType!=='product.stock_updated') await this.classifieds.setVisibilityForCompanyIntegration(uid,companyId,listing.id,effectiveVisible);
-    await this.dataSource.query(`UPDATE pdv_product_links SET "remoteSnapshot"=$3::jsonb,"lastPdvUpdatedAt"=$4,"lastSyncedAt"=now(),"remoteAvailable"=$5,"lastDirection"='PDV_TO_PIRA',"conflictState"='NONE',"conflictSnapshot"=NULL,"updatedAt"=now() WHERE "companyId"=$1::uuid AND "pdvProductId"=$2`,[companyId,pdvProductId,JSON.stringify(product),product.updatedAt||null,remoteAvailable]);
-    return {pdvProductId,listingId:listing.id,status:'SYNCED',remoteAvailable};
+    await this.dataSource.query(`UPDATE pdv_product_links SET "remoteSnapshot"=$3::jsonb,"lastPdvUpdatedAt"=$4,"lastSyncedAt"=now(),"remoteAvailable"=$5,"lastDirection"='PDV_TO_PIRA',"conflictState"='NONE',"conflictSnapshot"=NULL,"updatedAt"=now() WHERE "companyId"=$1::uuid AND "pdvProductId"=$2`,[companyId,canonicalPdvProductId,JSON.stringify(product),product.updatedAt||null,remoteAvailable]);
+    return {pdvProductId:canonicalPdvProductId,listingId:listing.id,status:'SYNCED',remoteAvailable,sourceProductId:pdvProductId};
   }
 
   async resolveConflict(uid:string,companyId:string,pdvProductId:string,strategyRaw:unknown){
@@ -389,8 +418,10 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     `,[listingId,companyId]);
     const listing=rows[0];
     if(!listing) throw new BadRequestException('Produto do PiraNegócios não encontrado para esta empresa.');
-    const attrs=this.json(listing.attributes,{}), commerce=this.json(listing.commerceConfig,{});
+    const attrs=this.json(listing.attributes,{}), commerce=this.json(listing.commerceConfig,{}), catalog=this.json(listing.catalogConfig,{});
     const stock=Number(commerce?.onlineCheckout?.stockQuantity ?? 0);
+    const pdvCategoryId=await this.resolvePdvCategoryId(companyId,String(listing.categorySlug||''));
+    const variants=this.piraVariants(catalog);
     const payload:any={
       externalProductId: listing.id,
       product:{
@@ -403,7 +434,10 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
         brand:attrs.brand||undefined,
         unit:attrs.unit||undefined,
         image:listing.image||undefined,
-        type:'simple',
+        ...(pdvCategoryId?{categoryId:pdvCategoryId}:{}),
+        type:variants.length?'variable':'simple',
+        hasVariations:variants.length>0,
+        ...(variants.length?{variations:variants}:{}),
       },
     };
     if(listing.pdvProductId) payload.pdvProductId=String(listing.pdvProductId);
@@ -449,7 +483,8 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     const fields:string[]=[];
     const money=(value:any)=>Number(Number(value??0).toFixed(2));
     const stock=Number(this.json(listing.commerceConfig,{})?.onlineCheckout?.stockQuantity??0);
-    if(link.syncStock!==false&&stock!==Number(previous?.stock??0)) fields.push('stock');
+    if(link.syncStock!==false&&stock!==this.productStock(previous)) fields.push('stock');
+    if(this.variantFingerprintFromListing(listing)!==this.variantFingerprintFromProduct(previous)) fields.push('variants');
     if(stockOnly) return fields.filter((field)=>field==='stock');
     if(String(listing.title||'')!==String(previous?.name||'')) fields.push('title');
     const expectedDescription=String(previous?.description||'Produto sincronizado com o PDV Inteligente.');
@@ -463,7 +498,113 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     return [...new Set(fields)];
   }
 
-  private toListingPayload(product:any,settings:any,flags:{syncPrice:boolean;syncStock:boolean;visible:boolean}) { const body:any={categorySlug:String(settings.defaultCategorySlug||'outros'),listingType:'PRODUCT',title:String(product.name||'Produto PDV').slice(0,160),description:String(product.description||`Produto sincronizado com o PDV Inteligente.`),condition:'NEW',attributes:{integrationSource:'PDV_INTELIGENTE',pdvProductId:String(product.id||''),sku:product.sku||null,barcode:product.barcode||null,brand:product.brand||null,unit:product.unit||null},status:flags.visible?'PUBLISHED':'DRAFT'}; if(flags.syncPrice) body.price=Number(product.salePrice??product.price??0); if(flags.syncStock) body.commerceConfig={onlineCheckout:{stockQuantity:Math.max(0,Number(product.stock||0))}}; if(product.image) body.images=[product.image]; return body; }
+  private toListingPayload(product:any,settings:any,flags:{syncPrice:boolean;syncStock:boolean;visible:boolean},categorySlug?:string) {
+    const body:any={
+      categorySlug:String(categorySlug||settings.defaultCategorySlug||'outros'),
+      listingType:'PRODUCT',
+      title:String(product.name||'Produto PDV').slice(0,160),
+      description:String(product.description||`Produto sincronizado com o PDV Inteligente.`),
+      condition:'NEW',
+      attributes:{integrationSource:'PDV_INTELIGENTE',pdvProductId:String(product.id||''),sku:product.sku||null,barcode:product.barcode||null,brand:product.brand||null,unit:product.unit||null},
+      status:flags.visible?'PUBLISHED':'DRAFT',
+    };
+    if(flags.syncPrice) body.price=Number(product.salePrice??product.price??0);
+    if(flags.syncStock) body.commerceConfig={onlineCheckout:{stockQuantity:this.productStock(product)}};
+    const variants=this.variantCatalogConfig(product);
+    if(variants) body.catalogConfig=variants;
+    if(product.image) body.images=[product.image];
+    return body;
+  }
+
+  private productStock(product:any){
+    const variants=Array.isArray(product?.variations)?product.variations:[];
+    if(variants.length) return variants.filter((item:any)=>item?.active!==false).reduce((sum:number,item:any)=>sum+Math.max(0,Number(item?.stock||0)),0);
+    return Math.max(0,Number(product?.stock||0));
+  }
+
+  private variationAttributes(value:any):Record<string,string|number|boolean|null>{
+    const parsed=this.json(value,{});
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed)) return {};
+    const output:Record<string,string|number|boolean|null>={};
+    for(const [key,item] of Object.entries(parsed).slice(0,20)){
+      if(item===null||typeof item==='string'||typeof item==='number'||typeof item==='boolean') output[String(key).slice(0,80)]=item as any;
+    }
+    return output;
+  }
+
+  private variantLabel(variation:any,attributes:Record<string,any>){
+    const values=Object.values(attributes).map((value)=>String(value??'').trim()).filter(Boolean);
+    return (values.length?values.join(' · '):String(variation?.name||variation?.sku||'Variação')).slice(0,120);
+  }
+
+  private variantCatalogConfig(product:any){
+    const variants=Array.isArray(product?.variations)?product.variations:[];
+    if(!variants.length) return null;
+    return {
+      pricingStrategy:'BASE',
+      optionGroups:[{
+        id:'pdv-variants',name:'Variação',kind:'VARIANT',selectionType:'SINGLE',minSelections:1,maxSelections:1,pricingStrategy:'BASE',
+        options:variants.map((variation:any)=>{
+          const attributes=this.variationAttributes(variation?.variationAttributes);
+          return {
+            id:String(variation?.id||''),externalProductId:String(variation?.id||''),label:this.variantLabel(variation,attributes),
+            ...(variation?.sku?{sku:String(variation.sku)}:{}),...(variation?.barcode?{barcode:String(variation.barcode)}:{}),
+            price:Math.max(0,Number(variation?.salePrice??variation?.price??product?.salePrice??0)),
+            stockQuantity:Math.max(0,Number(variation?.stock||0)),attributes,active:variation?.active!==false,
+          };
+        }).filter((item:any)=>item.id),
+      }],
+    };
+  }
+
+  private piraVariants(catalog:any){
+    const group=Array.isArray(catalog?.optionGroups)?catalog.optionGroups.find((item:any)=>String(item?.id)==='pdv-variants'):null;
+    const options=Array.isArray(group?.options)?group.options:[];
+    return options.map((option:any)=>({
+      pdvProductId:String(option?.externalProductId||option?.id||''),name:String(option?.label||'Variação'),sku:option?.sku||undefined,barcode:option?.barcode||undefined,
+      salePrice:Math.max(0,Number(option?.price||0)),stock:Math.max(0,Number(option?.stockQuantity||0)),variationAttributes:option?.attributes||{},active:option?.active!==false,
+    })).filter((item:any)=>item.pdvProductId||item.sku||item.barcode);
+  }
+
+  private variantFingerprintFromProduct(product:any){
+    const config=this.variantCatalogConfig(product); return this.hash(this.stableJson(config?.optionGroups?.[0]?.options||[]));
+  }
+  private variantFingerprintFromListing(listing:any){
+    const catalog=this.json(listing?.catalogConfig,{}); const group=Array.isArray(catalog?.optionGroups)?catalog.optionGroups.find((item:any)=>String(item?.id)==='pdv-variants'):null;
+    return this.hash(this.stableJson(Array.isArray(group?.options)?group.options:[]));
+  }
+
+  private normalizeLabel(value:any){ return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase().replace(/\s+/g,' '); }
+  private async resolveCategorySlug(companyId:string,product:any,settings:any){
+    const pdvCategoryId=String(product?.categoryId||product?.category?.id||'').trim();
+    if(!pdvCategoryId) return String(settings.defaultCategorySlug||'outros');
+    const existing=(await this.dataSource.query(`SELECT "categorySlug" FROM pdv_category_links WHERE "companyId"=$1::uuid AND "pdvCategoryId"=$2 LIMIT 1`,[companyId,pdvCategoryId]))[0];
+    if(existing?.categorySlug) return String(existing.categorySlug);
+    const remoteName=this.normalizeLabel(product?.category?.name);
+    if(remoteName){
+      const locals=await this.dataSource.query(`SELECT slug,name FROM classified_categories WHERE "isActive"=true`);
+      const exact=locals.find((item:any)=>this.normalizeLabel(item.name)===remoteName);
+      if(exact){ await this.upsertCategoryLink(companyId,pdvCategoryId,String(exact.slug),product?.category||{id:pdvCategoryId,name:product?.category?.name}); return String(exact.slug); }
+    }
+    return String(settings.defaultCategorySlug||'outros');
+  }
+  private async resolvePdvCategoryId(companyId:string,categorySlug:string){
+    if(!categorySlug) return undefined;
+    const existing=(await this.dataSource.query(`SELECT "pdvCategoryId" FROM pdv_category_links WHERE "companyId"=$1::uuid AND "categorySlug"=$2 ORDER BY "updatedAt" DESC LIMIT 1`,[companyId,categorySlug]))[0];
+    if(existing?.pdvCategoryId) return String(existing.pdvCategoryId);
+    try{
+      const local=(await this.dataSource.query(`SELECT name FROM classified_categories WHERE slug=$1 LIMIT 1`,[categorySlug]))[0];
+      const remote=await this.remoteCategories(companyId); const name=this.normalizeLabel(local?.name);
+      const exact=remote.find((item:any)=>this.normalizeLabel(item?.name)===name);
+      if(exact?.id){ await this.upsertCategoryLink(companyId,String(exact.id),categorySlug,exact); return String(exact.id); }
+    }catch{}
+    return undefined;
+  }
+  private async upsertCategoryLink(companyId:string,pdvCategoryId:string,categorySlug:string,remote:any){
+    await this.dataSource.query(`INSERT INTO pdv_category_links(id,"companyId","pdvCategoryId","categorySlug","remoteSnapshot") VALUES($1,$2::uuid,$3,$4,$5::jsonb) ON CONFLICT ("companyId","pdvCategoryId") DO UPDATE SET "categorySlug"=EXCLUDED."categorySlug","remoteSnapshot"=EXCLUDED."remoteSnapshot","updatedAt"=now()`,[randomUUID(),companyId,pdvCategoryId,categorySlug,JSON.stringify(remote||{})]);
+  }
+  private async remoteCategories(companyId:string){ const value=await this.pdvJson(companyId,'/integrations/piranegocios/categories'); return Array.isArray(value)?value:[]; }
+
 
   private async findExistingMatch(companyId:string,product:any){ const sku=String(product.sku||'').trim(),barcode=String(product.barcode||'').trim(); if(!sku&&!barcode) return null; const rows=await this.dataSource.query(`SELECT id,title FROM classified_listings WHERE "companyId"=$1::uuid AND "listingType"='PRODUCT' AND status<>'ARCHIVED' AND ((NULLIF($2,'') IS NOT NULL AND (attributes->>'sku'=$2 OR attributes->>'pdvSku'=$2)) OR (NULLIF($3,'') IS NOT NULL AND (attributes->>'barcode'=$3 OR attributes->>'pdvBarcode'=$3))) ORDER BY "updatedAt" DESC LIMIT 2`,[companyId,sku,barcode]); return rows.length===1?rows[0]:null; }
   private async upsertLink(companyId:string,pdvProductId:string,listingId:string,opts:any){ await this.dataSource.query(`INSERT INTO pdv_product_links(id,"companyId","pdvProductId","listingId","syncEnabled",visible,"syncPrice","syncStock") VALUES($1,$2::uuid,$3,$4::uuid,$5,$6,$7,$8) ON CONFLICT ("companyId","pdvProductId") DO UPDATE SET "listingId"=EXCLUDED."listingId","syncEnabled"=EXCLUDED."syncEnabled",visible=EXCLUDED.visible,"syncPrice"=EXCLUDED."syncPrice","syncStock"=EXCLUDED."syncStock","remoteAvailable"=true,"updatedAt"=now()`,[randomUUID(),companyId,pdvProductId,listingId,opts.syncEnabled===undefined?true:Boolean(opts.syncEnabled),opts.visible===undefined?true:Boolean(opts.visible),opts.syncPrice===undefined?true:Boolean(opts.syncPrice),opts.syncStock===undefined?true:Boolean(opts.syncStock)]); }
