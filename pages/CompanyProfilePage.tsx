@@ -55,6 +55,7 @@ export function CompanyProfilePage({ section = "commercial" }: { section?: Compa
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
+  const [rapi10CatalogEnabled, setRapi10CatalogEnabled] = useState(true);
   const [inviteName, setInviteName] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "colaborador">("colaborador");
@@ -81,6 +82,7 @@ export function CompanyProfilePage({ section = "commercial" }: { section?: Compa
         setAddress(item?.address || "");
         setCity(item?.city || "");
         setState(item?.state || "");
+        setRapi10CatalogEnabled(item?.rapi10CatalogEnabled !== false);
       }
       if (employeesResult.status === "fulfilled") setEmployees(Array.isArray(employeesResult.value.data) ? employeesResult.value.data : []);
       if (plansResult.status === "fulfilled") setPlans(plansResult.value.data);
@@ -103,6 +105,7 @@ export function CompanyProfilePage({ section = "commercial" }: { section?: Compa
         address,
         city,
         state,
+        rapi10CatalogEnabled,
       });
       await api.put(`/companies/${companyId}`, { description, website, phone, logoURL });
       if (user) await api.post("/users/me", { companyName: name, companyLogo: logoURL });
@@ -179,7 +182,7 @@ export function CompanyProfilePage({ section = "commercial" }: { section?: Compa
     <CompanyTabs active={section} />
     {message && <div className="rounded-2xl bg-stone-900 px-4 py-3 text-sm font-bold text-white">{message}</div>}
 
-    {section === "commercial" && <CommercialSection company={company} name={name} setName={setName} description={description} setDescription={setDescription} logoURL={logoURL} setLogoURL={setLogoURL} website={website} setWebsite={setWebsite} phone={phone} setPhone={setPhone} sameAddress={sameAddress} setSameAddress={setSameAddress} address={address} setAddress={setAddress} city={city} setCity={setCity} state={state} setState={setState} working={working} onSave={saveCommercial} onRefreshRegistry={refreshRegistry} />}
+    {section === "commercial" && <CommercialSection company={company} name={name} setName={setName} description={description} setDescription={setDescription} logoURL={logoURL} setLogoURL={setLogoURL} website={website} setWebsite={setWebsite} phone={phone} setPhone={setPhone} sameAddress={sameAddress} setSameAddress={setSameAddress} address={address} setAddress={setAddress} city={city} setCity={setCity} state={state} setState={setState} rapi10CatalogEnabled={rapi10CatalogEnabled} setRapi10CatalogEnabled={setRapi10CatalogEnabled} working={working} onSave={saveCommercial} onRefreshRegistry={refreshRegistry} />}
     {section === "finance" && <FinanceSection plans={plans} checkout={checkout} working={working} onSubscribe={subscribe} />}
     {section === "team" && <TeamSection employees={employees} userId={user?.uid || ""} inviteName={inviteName} setInviteName={setInviteName} inviteEmail={inviteEmail} setInviteEmail={setInviteEmail} inviteRole={inviteRole} setInviteRole={setInviteRole} working={working} onInvite={invite} onChangeRole={changeRole} />}
     {section === "settings" && <SettingsSection company={company} />}
@@ -198,7 +201,7 @@ function CompanyTabs({ active }: { active: CompanyProfileSection }) {
 }
 
 function CommercialSection(props: any) {
-  const { company, name, setName, description, setDescription, logoURL, setLogoURL, website, setWebsite, phone, setPhone, sameAddress, setSameAddress, address, setAddress, city, setCity, state, setState, working, onSave, onRefreshRegistry } = props;
+  const { company, name, setName, description, setDescription, logoURL, setLogoURL, website, setWebsite, phone, setPhone, sameAddress, setSameAddress, address, setAddress, city, setCity, state, setState, rapi10CatalogEnabled, setRapi10CatalogEnabled, working, onSave, onRefreshRegistry } = props;
   const legalAddress = [company.legalAddress, [company.legalCity, company.legalState].filter(Boolean).join("/")].filter(Boolean).join(", ");
   return <div className="grid gap-5 lg:grid-cols-[.9fr_1.1fr]">
     <section className="rounded-[28px] bg-white p-5 ring-1 ring-stone-200 sm:p-6">
@@ -213,6 +216,7 @@ function CommercialSection(props: any) {
       <div className="mt-5 space-y-4"><FileUpload label="Logotipo" accept="image/*" value={logoURL} onChange={setLogoURL} type="avatar" placeholder="Logo da empresa" /><Field label="Nome comercial"><input value={name} onChange={e => setName(e.target.value)} className={inputClass} /></Field><Field label="Apresentação"><textarea value={description} onChange={e => setDescription(e.target.value)} rows={4} className={inputClass} /></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Telefone comercial"><input value={phone} onChange={e => setPhone(e.target.value)} className={inputClass} /></Field><Field label="Site"><input value={website} onChange={e => setWebsite(e.target.value)} className={inputClass} placeholder="https://" /></Field></div>
       <label className="flex items-start gap-3 rounded-2xl bg-stone-50 p-4"><input type="checkbox" checked={sameAddress} onChange={e => setSameAddress(e.target.checked)} className="mt-1 h-4 w-4" /><span className="text-xs leading-5 text-stone-600"><strong className="block text-stone-900">Endereço comercial igual ao jurídico</strong>Quando marcado, o endereço comercial acompanha a consulta do CNPJ.</span></label>
       {!sameAddress && <div className="grid gap-4 sm:grid-cols-[1.5fr_1fr_.45fr]"><Field label="Endereço comercial"><input value={address} onChange={e => setAddress(e.target.value)} className={inputClass} /></Field><Field label="Cidade"><input value={city} onChange={e => setCity(e.target.value)} className={inputClass} /></Field><Field label="UF"><input maxLength={2} value={state} onChange={e => setState(e.target.value.toUpperCase())} className={inputClass} /></Field></div>}
+      <label className={`flex items-start gap-3 rounded-2xl border p-4 ${rapi10CatalogEnabled ? "border-emerald-200 bg-emerald-50" : "border-stone-200 bg-stone-50"}`}><input type="checkbox" checked={rapi10CatalogEnabled} onChange={e => setRapi10CatalogEnabled(e.target.checked)} className="mt-1 h-4 w-4" /><span className="text-xs leading-5 text-stone-600"><strong className="block text-stone-900">Exibir no Catálogo Rapi10</strong>{company.isVerified || company.verificationStatus === "VERIFIED" ? "Por padrão, empresas verificadas podem aparecer no catálogo regional da Rapi10. A Central ainda confirma categoria e o ponto exato no mapa antes da publicação." : "A preferência fica salva agora e passa a valer quando a empresa for verificada. A Central Rapi10 ainda valida o ponto antes de publicar."}</span></label>
       <button onClick={() => void onSave()} disabled={working === "commercial"} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#0d4542] px-5 text-sm font-black text-white disabled:opacity-50"><Save className="h-4 w-4" />{working === "commercial" ? "Salvando..." : "Salvar perfil comercial"}</button></div>
     </section>
   </div>;

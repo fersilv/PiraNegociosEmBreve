@@ -34,7 +34,7 @@ export function CompanyBusinessHours({ config }: { config?: CompanyPageConfig['b
         <span className="min-w-0 flex-1"><span className={`block text-[10px] font-black uppercase tracking-[.12em] ${status.open ? 'text-emerald-700' : 'text-stone-500'}`}>{status.open ? 'ABERTO agora' : 'FECHADO agora'}</span><span className="mt-0.5 block truncate text-[11px] font-bold text-stone-500">{status.caption}</span></span>
         <ChevronDown className={`h-4 w-4 shrink-0 text-stone-400 transition ${openDetails ? 'rotate-180' : ''}`} />
       </button>
-      {openDetails && <div className="mt-2 rounded-2xl border border-black/10 bg-white/98 p-3.5 text-stone-700 shadow-[0_18px_45px_rgba(0,0,0,.16)] backdrop-blur-xl"><div className="space-y-2">{DAYS.map((day) => { const intervals = config?.days?.[day.key] || []; const today = day.jsDay === status.weekday; return <div key={day.key} className={`grid grid-cols-[82px_1fr] gap-3 rounded-lg px-2 py-1.5 text-[11px] ${today ? 'bg-stone-100 font-black' : ''}`}><span>{day.label}</span><span className="text-right text-stone-500">{intervals.length ? intervals.map((interval) => `${interval.open}–${interval.close}`).join(' · ') : 'Fechado'}</span></div>; })}</div><p className="mt-3 border-t border-stone-100 pt-2 text-[9px] font-semibold text-stone-400">Horários informados pela empresa · {timezone}</p></div>}
+      {openDetails && <div className="mt-2 rounded-2xl border border-black/10 bg-white/98 p-3.5 text-stone-700 shadow-[0_18px_45px_rgba(0,0,0,.16)] backdrop-blur-xl"><div className="space-y-2">{DAYS.map((day) => { const intervals = config?.days?.[day.key] || []; const today = day.jsDay === status.weekday; return <div key={day.key} className={`grid grid-cols-[82px_1fr] gap-3 rounded-lg px-2 py-1.5 text-[11px] ${today ? 'bg-stone-100 font-black' : ''}`}><span>{day.label}</span><span className="text-right text-stone-500">{intervals.length ? intervals.map((interval) => `${interval.open}–${interval.close}`).join(' · ') : 'Fechado'}</span></div>; })}</div>{config?.specialDates?.length ? <div className="mt-3 border-t border-stone-100 pt-3"><p className="mb-2 text-[9px] font-black uppercase tracking-[.12em] text-stone-400">Datas especiais</p><div className="space-y-1.5">{config.specialDates.slice(0,8).map((item) => <div key={`${item.date}-${item.label || ''}`} className="flex items-center justify-between gap-3 text-[10px]"><span>{new Date(`${item.date}T12:00:00`).toLocaleDateString('pt-BR')} {item.label ? `· ${item.label}` : ''}</span><b>{item.closed ? 'Fechado' : `${item.open}–${item.close}`}</b></div>)}</div></div> : null}<p className="mt-3 border-t border-stone-100 pt-2 text-[9px] font-semibold text-stone-400">Horários informados pela empresa · {timezone}</p></div>}
     </div>
   );
 }
@@ -43,11 +43,18 @@ function businessStatus(config: NonNullable<CompanyPageConfig['businessHours']>,
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     weekday: 'short',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
   }).formatToParts(date);
   const weekdayText = parts.find((item) => item.type === 'weekday')?.value || 'Mon';
+  const year = parts.find((item) => item.type === 'year')?.value || '';
+  const month = parts.find((item) => item.type === 'month')?.value || '';
+  const day = parts.find((item) => item.type === 'day')?.value || '';
+  const isoDate = `${year}-${month}-${day}`;
   const hour = Number(parts.find((item) => item.type === 'hour')?.value || 0);
   const minute = Number(parts.find((item) => item.type === 'minute')?.value || 0);
   const weekday = ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>)[weekdayText] ?? 1;
@@ -55,7 +62,9 @@ function businessStatus(config: NonNullable<CompanyPageConfig['businessHours']>,
   const previousWeekday = (weekday + 6) % 7;
   const previousKey = DAYS.find((item) => item.jsDay === previousWeekday)?.key || 'sun';
   const minutes = hour * 60 + minute;
-  const todayIntervals = config.days?.[dayKey] || [];
+  const special = config.specialDates?.find((item) => item.date === isoDate);
+  if (special?.closed) return { open: false, caption: special.label ? `Fechado · ${special.label}` : 'Fechado hoje', weekday };
+  const todayIntervals = special?.open && special?.close ? [{ open: special.open, close: special.close }] : (config.days?.[dayKey] || []);
   const previousIntervals = config.days?.[previousKey] || [];
 
   for (const interval of todayIntervals) {
