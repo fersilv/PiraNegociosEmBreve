@@ -35,6 +35,8 @@ type CartItem = {
   image?: string | null;
   quantity: number;
   available: boolean;
+  variantId?: string | null;
+  variant?: { id?:string; label?:string; sku?:string; barcode?:string; price?:number; stockQuantity?:number|null; attributes?:Record<string,string|number|boolean|null> } | null;
   pricing?: { currentPrice?: number | null; pixPrice?: number | null; cardPrice?: number | null };
 };
 
@@ -256,6 +258,7 @@ export default function ClassifiedsCartPage() {
                   <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-stone-100">{item.image && <img src={item.image} alt="" className="h-full w-full object-cover" />}</div>
                   <div className="min-w-0 flex-1">
                     <Link to={`/classificados/explorar/${item.slug}`} className="font-black text-stone-900 hover:underline">{item.title}</Link>
+                    {item.variant&&<p className="mt-1 text-[11px] font-black text-emerald-700">{item.variant.label}{item.variant.sku?` · SKU ${item.variant.sku}`:''}</p>}
                     <p className="mt-1 text-sm font-bold text-stone-500">{moneyFromNumber(item.pricing?.currentPrice)}</p>
                     <div className="mt-3 flex items-center gap-2">
                       <button disabled={working || item.quantity <= 1} onClick={() => void setQuantity(item, item.quantity - 1)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-100 disabled:opacity-40"><Minus className="h-3.5 w-3.5" /></button>

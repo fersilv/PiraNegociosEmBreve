@@ -66,6 +66,7 @@ function ListingDetail({ slug }: { slug: string }) {
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [quoteScope, setQuoteScope] = useState('');
   const [selectedImage, setSelectedImage] = useState(0);
+  const [selectedVariantId, setSelectedVariantId] = useState('');
   const [offersLive, setOffersLive] = useState(false);
 
   const refreshOfferContext = async (listingId: string) => {
@@ -89,7 +90,7 @@ function ListingDetail({ slug }: { slug: string }) {
       .then(async ([listingResponse, featureResponse]) => {
         if (!active) return;
         const next = listingResponse.data as ClassifiedListing;
-        setListing(next); setFeatures(featureResponse.data || {}); setSelectedImage(0);
+        setListing(next); setFeatures(featureResponse.data || {}); setSelectedImage(0); setSelectedVariantId('');
         if (user && next.listingType === 'PRODUCT') {
           const [offerResponse, interactionResponse] = await Promise.all([
             api.get(`/classifieds/listings/${next.id}/my-accepted-offer`).catch(() => ({ data: null })),
@@ -143,19 +144,24 @@ function ListingDetail({ slug }: { slug: string }) {
   }, [user?.uid, listing?.id, listing?.listingType, offersLive]);
 
   const ownListing = useMemo(() => Boolean(listing && user && ((data?.activeIdentity === 'PERSONAL' && !listing.companyId && listing.sellerUserId === user.uid) || (data?.activeIdentity === 'COMPANY' && listing.companyId === data.company?.id))), [listing, user?.uid, data?.activeIdentity, data?.company?.id]);
+  const variantOptions = useMemo(() => { const groups=listing?.catalogConfig?.optionGroups||[]; const group=groups.find((item:any)=>item.id==='pdv-variants'&&item.kind==='VARIANT'); return Array.isArray(group?.options)?group.options:[]; }, [listing?.catalogConfig]);
+  const hasPdvVariants=variantOptions.length>0;
+  const selectedVariant=variantOptions.find((item:any)=>String(item.id||item.externalProductId||'')===selectedVariantId)||null;
   const canCheckout = Boolean(!ownListing && listing?.listingType === 'PRODUCT' && listing.commerceConfig?.onlineCheckout?.enabled === true);
+  const canDirectCheckout=Boolean(canCheckout&&!hasPdvVariants);
   const canCart = Boolean(canCheckout && listing?.companyId && features?.cart === true && !acceptedOffer);
-  const canOffer = Boolean(!ownListing && listing?.listingType === 'PRODUCT' && listing.price != null && !acceptedOffer);
+  const canVariantPurchase=Boolean(canCart&&hasPdvVariants);
+  const canOffer = Boolean(!ownListing && listing?.listingType === 'PRODUCT' && listing.price != null && !acceptedOffer && !hasPdvVariants);
   const canQuote = Boolean(!ownListing && listing?.listingType === 'SERVICE' && listing.companyId && features?.consultativeQuotes === true);
   const canBuyerChat = Boolean(!ownListing && listing?.listingType === 'PRODUCT' && interaction.chatAvailable);
 
   useEffect(() => {
-    if (!canCheckout || searchParams.get('checkout') !== '1') return;
+    if (!canDirectCheckout || searchParams.get('checkout') !== '1') return;
     setCheckoutOpen(true);
     const next = new URLSearchParams(searchParams);
     next.delete('checkout');
     setSearchParams(next, { replace: true });
-  }, [canCheckout, searchParams, setSearchParams]);
+  }, [canDirectCheckout, searchParams, setSearchParams]);
 
   const startChat = async () => {
     if (!listing || working || !canBuyerChat) return;
@@ -180,10 +186,14 @@ function ListingDetail({ slug }: { slug: string }) {
     finally { setWorking(false); }
   };
 
-  const addToCart = async () => {
+  const addToCart = async (goToCart=false) => {
     if (!listing || working) return;
+    if(hasPdvVariants&&!selectedVariant){ setError('Escolha uma variação antes de continuar.'); return; }
     setWorking(true); setError('');
-    try { await api.post(`/classifieds/cart/items/${listing.id}`, { quantity: 1 }); setNotice('Produto adicionado ao carrinho.'); }
+    try {
+      await api.post(`/classifieds/cart/items/${listing.id}`, { quantity: 1, ...(selectedVariant?{variantId:String(selectedVariant.id||selectedVariant.externalProductId)}:{}) });
+      if(goToCart) navigate('/classificados/carrinho'); else setNotice(selectedVariant?`${selectedVariant.label} adicionada ao carrinho.`:'Produto adicionado ao carrinho.');
+    }
     catch (requestError: any) { setError(requestError?.response?.data?.message || 'Não foi possível adicionar ao carrinho.'); }
     finally { setWorking(false); }
   };
@@ -200,8 +210,8 @@ function ListingDetail({ slug }: { slug: string }) {
   if (loading) return <div className="flex min-h-[55vh] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-stone-400" /></div>;
   if (!listing) return <div className="mx-auto max-w-xl rounded-3xl bg-white p-8 text-center"><p className="font-black">{error || 'Anúncio não encontrado.'}</p></div>;
   const images = listing.images || [];
-  const stock = Number((listing.commerceConfig as any)?.onlineCheckout?.stockQuantity);
-  const hasTrackedStock = Number.isFinite(stock);
+  const stock = hasPdvVariants ? Number(selectedVariant?.stockQuantity) : Number((listing.commerceConfig as any)?.onlineCheckout?.stockQuantity);
+  const hasTrackedStock = hasPdvVariants ? Boolean(selectedVariant && selectedVariant.stockQuantity !== null && selectedVariant.stockQuantity !== undefined) : Number.isFinite(stock);
   const condition = String((listing as any).condition || '').trim();
   const categoryName = String((listing as any).categoryName || (listing as any).category?.name || '').trim();
 
@@ -229,11 +239,14 @@ function ListingDetail({ slug }: { slug: string }) {
 
             <div className="mt-5 border-y border-stone-100 py-5"><ClassifiedCommercePriceHero listing={listing} acceptedOffer={acceptedOffer} />{hasTrackedStock && <p className={`mt-2 inline-flex items-center gap-1.5 text-[10px] font-black ${stock > 0 ? 'text-emerald-700' : 'text-red-600'}`}><CheckCircle2 className="h-3.5 w-3.5" />{stock > 0 ? `${stock} unidade${stock === 1 ? '' : 's'} disponível${stock === 1 ? '' : 'is'}` : 'Sem estoque no momento'}</p>}</div>
 
+            {hasPdvVariants && <div className="mt-5 rounded-[22px] bg-stone-50 p-4 ring-1 ring-stone-200"><p className="text-[10px] font-black uppercase tracking-[.12em] text-stone-500">Escolha a variação</p><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">{variantOptions.map((option:any)=>{const optionId=String(option.id||option.externalProductId||'');const optionStock=option.stockQuantity===null||option.stockQuantity===undefined?null:Number(option.stockQuantity);const unavailable=option.active===false||(optionStock!==null&&optionStock<=0);return <button key={optionId} type="button" disabled={unavailable} onClick={()=>{setSelectedVariantId(optionId);setError('');}} className={`rounded-2xl border px-3 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-45 ${selectedVariantId===optionId?'border-emerald-600 bg-emerald-50 ring-2 ring-emerald-100':'border-stone-200 bg-white'}`}><span className="block text-xs font-black text-stone-900">{option.label}</span><span className="mt-1 block text-[10px] font-bold text-stone-500">{option.price!==undefined?currency(option.price):currency(listing.price)}{optionStock!==null?` · ${optionStock} em estoque`:''}</span></button>;})}</div>{!selectedVariant&&<p className="mt-3 text-[11px] font-bold text-amber-700">Selecione uma opção para liberar a compra.</p>}</div>}
+
             {listing.listingType === 'PRODUCT' && <div className="mt-5"><ClassifiedFreightCalculator listing={listing} embedded /></div>}
 
             {!ownListing && <div className="mt-5 space-y-2">
-              {canCheckout && <button type="button" onClick={() => setCheckoutOpen(true)} className={`inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl px-5 text-sm font-black text-white shadow-lg transition hover:-translate-y-0.5 ${acceptedOffer ? 'bg-emerald-700 shadow-emerald-900/15' : 'bg-[#009ee3] shadow-sky-500/20'}`}><ShoppingCart className="h-5 w-5" /> COMPRAR</button>}
-              {canCart && <button type="button" disabled={working} onClick={() => void addToCart()} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-blue-50 text-xs font-black text-blue-800 ring-1 ring-blue-100"><ShoppingCart className="h-4 w-4" /> Adicionar ao carrinho</button>}
+              {canDirectCheckout && <button type="button" onClick={() => setCheckoutOpen(true)} className={`inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl px-5 text-sm font-black text-white shadow-lg transition hover:-translate-y-0.5 ${acceptedOffer ? 'bg-emerald-700 shadow-emerald-900/15' : 'bg-[#009ee3] shadow-sky-500/20'}`}><ShoppingCart className="h-5 w-5" /> COMPRAR</button>}
+              {canVariantPurchase && <button type="button" disabled={working||!selectedVariant} onClick={() => void addToCart(true)} className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[#009ee3] px-5 text-sm font-black text-white shadow-lg disabled:opacity-45"><ShoppingCart className="h-5 w-5" /> COMPRAR ESTA VARIAÇÃO</button>}
+              {canCart && <button type="button" disabled={working||(hasPdvVariants&&!selectedVariant)} onClick={() => void addToCart()} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-blue-50 text-xs font-black text-blue-800 ring-1 ring-blue-100 disabled:opacity-45"><ShoppingCart className="h-4 w-4" /> Adicionar ao carrinho</button>}
               {canOffer && <button type="button" onClick={() => setOfferOpen(true)} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-amber-50 text-xs font-black text-amber-900 ring-1 ring-amber-100"><BadgeDollarSign className="h-4 w-4" /> Fazer uma oferta</button>}
               {canQuote && <button type="button" onClick={() => setQuoteOpen(true)} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-violet-700 text-xs font-black text-white"><FileText className="h-4 w-4" /> Solicitar orçamento</button>}
               {canBuyerChat && <button type="button" disabled={working} onClick={() => void startChat()} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-stone-100 text-xs font-black text-stone-700"><MessageCircle className="h-4 w-4" /> Conversa da oferta</button>}
@@ -245,9 +258,9 @@ function ListingDetail({ slug }: { slug: string }) {
       </aside>
     </div>
 
-    {!ownListing && canCheckout && <div className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white/95 p-3 backdrop-blur lg:hidden"><div className="mx-auto flex max-w-3xl items-center gap-3"><div className="min-w-0 flex-1"><p className="truncate text-[10px] font-black text-stone-500">{listing.title}</p><p className="text-base font-black text-stone-950">{acceptedOffer ? currency(acceptedOffer.amount) : currency(listing.price)}</p></div><button type="button" onClick={() => setCheckoutOpen(true)} className={`h-12 rounded-2xl px-5 text-xs font-black text-white ${acceptedOffer ? 'bg-emerald-700' : 'bg-[#009ee3]'}`}>COMPRAR</button></div></div>}
+    {!ownListing && (canDirectCheckout||canVariantPurchase) && <div className="fixed inset-x-0 bottom-0 z-40 border-t border-stone-200 bg-white/95 p-3 backdrop-blur lg:hidden"><div className="mx-auto flex max-w-3xl items-center gap-3"><div className="min-w-0 flex-1"><p className="truncate text-[10px] font-black text-stone-500">{selectedVariant?.label||listing.title}</p><p className="text-base font-black text-stone-950">{acceptedOffer ? currency(acceptedOffer.amount) : currency(selectedVariant?.price??listing.price)}</p></div><button type="button" disabled={working||(hasPdvVariants&&!selectedVariant)} onClick={() => hasPdvVariants ? void addToCart(true) : setCheckoutOpen(true)} className={`h-12 rounded-2xl px-5 text-xs font-black text-white disabled:opacity-45 ${acceptedOffer ? 'bg-emerald-700' : 'bg-[#009ee3]'}`}>COMPRAR</button></div></div>}
 
-    <ClassifiedCheckoutModal listingId={listing.id} open={checkoutOpen} onClose={() => setCheckoutOpen(false)} />
+    {!hasPdvVariants&&<ClassifiedCheckoutModal listingId={listing.id} open={checkoutOpen} onClose={() => setCheckoutOpen(false)} />}
     {offerOpen && <Modal title="Fazer oferta" onClose={() => setOfferOpen(false)}><p className="text-sm leading-6 text-stone-500">Envie o valor que deseja pagar. A oferta abre uma conversa de negociação. Se a empresa aceitar, o preço negociado fica disponível no checkout normal do produto.</p><input autoFocus value={offerAmount} onChange={(event) => setOfferAmount(event.target.value)} placeholder="Ex.: 85,00" className="mt-4 h-12 w-full rounded-2xl bg-stone-50 px-4 text-lg font-black ring-1 ring-stone-200" /><button disabled={working} onClick={() => void submitOffer()} className="mt-4 h-12 w-full rounded-2xl bg-stone-900 text-sm font-black text-white">Enviar oferta</button></Modal>}
     {quoteOpen && <Modal title="Solicitar orçamento" onClose={() => setQuoteOpen(false)}><textarea value={quoteScope} onChange={(event) => setQuoteScope(event.target.value)} rows={6} className="w-full rounded-2xl bg-stone-50 p-4 text-sm ring-1 ring-stone-200" placeholder="Descreva o serviço que você precisa..." /><button disabled={working} onClick={() => void requestQuote()} className="mt-4 h-12 w-full rounded-2xl bg-stone-900 text-sm font-black text-white">Enviar solicitação</button></Modal>}
   </div>;

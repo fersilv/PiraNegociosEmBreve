@@ -31,21 +31,26 @@ O Pira armazena access/refresh token cifrados com AES-256-GCM usando `PDV_INTEGR
 - `pdv_product_links`: vínculo por produto + visibilidade/sync/preço/estoque.
 - `pdv_sale_links`: vendas observadas do PDV, sem conversão automática em pedido.
 - `pdv_integration_events`: auditoria do fluxo.
+- `pdv_category_links`: mapeamento por empresa entre categoria do PDV e taxonomia do Pira.
 
 ### Estado atual
-1. Branches criadas.
-2. OAuth server + permissões no PDV implementados.
-3. API OAuth PDV para produtos/vendas implementada.
-4. Cliente OAuth no Pira implementado.
-5. Importação, associação, sync manual e auto-sync de catálogo implementados no backend.
-6. O Pira reutiliza o mesmo `ClassifiedsService` para criação/atualização, sem bypass de regras.
-7. Painel empresarial `/company/integracoes/pdv` implementado com conexão OAuth, defaults, sync manual, leitura de vendas, associação e overrides por produto.
+1. Branches isoladas criadas, sem merge/deploy automático.
+2. OAuth server + permissões granulares no PDV implementados.
+3. API OAuth PDV para produtos, categorias e vendas implementada.
+4. Cliente OAuth no Pira implementado com tokens e segredo de webhook cifrados.
+5. Importação, associação, sync manual, auto-sync de reconciliação e push Pira -> PDV implementados para catálogo.
+6. Webhooks assinados/idempotentes PDV -> Pira implementados para produto, estoque e venda.
+7. Conflitos bidirecionais de produto são detectados e exigem escolha explícita PDV/Pira.
+8. Categorias possuem mapeamento persistente por empresa, com match exato automático e edição visual no painel.
+9. Produto variável do PDV permanece um único anúncio no Pira, com cada filho real preservado como variante canônica com ID, atributos, SKU, código, preço, estoque e estado próprios.
+10. Carrinho/pedido do Pira persistem a variante selecionada, reservam/devolvem seu estoque específico e mantêm snapshot da variante no pedido.
+11. O Pira continua reutilizando `ClassifiedsService` e regras comerciais existentes, sem bypass de publicação, checkout ou identidade empresarial.
 
-### Continuação planejada
-- Webhooks assinados para reduzir latência do polling e manter polling como reconciliação/fallback.
-- Sincronização Pira -> PDV de alterações permitidas, com proteção contra loop e versionamento/idempotência.
-- Mapeamento visual de categorias/variações e conflitos.
-- Processos de venda bidirecionais somente após contrato explícito de status/pagamento/entrega, sem substituir as regras comerciais do Pira.
+### Próximas pendências
+- Validar build integral e testes ponta a ponta em ambiente com dependências/banco antes de qualquer deploy.
+- Definir contrato explícito para uma venda originada no Pira virar venda/baixa definitiva no PDV sem duplicar reserva, pagamento ou entrega.
+- Cobrir cenários de reconciliação com pedido pendente enquanto uma variante é removida/inativada no PDV.
+- Processos de venda bidirecionais completos continuam bloqueados até existir contrato explícito de status/pagamento/entrega.
 
 
 ### Webhooks assinados e idempotência
@@ -57,9 +62,9 @@ O Pira armazena access/refresh token cifrados com AES-256-GCM usando `PDV_INTEGR
 - O polling periódico continua ativo como reconciliação/fallback para recuperar qualquer divergência ou indisponibilidade temporária de webhook.
 
 ### Checkpoint 2026-09-17
-- PDV: outbox assinada, retry e eventos de produto/estoque/venda implementados na branch `Integracao-Piranegocios`.
-- Pira: receptor assinado/idempotente implementado na branch `Integracao-PDV-Inteligente` e segredo de webhook passa a fazer parte do vínculo OAuth.
-- Próximo foco: detecção/resolução explícita de conflitos bidirecionais e reconciliação de produtos removidos durante polling.
+- PDV `Integracao-Piranegocios`: outbox/webhooks, categorias e produto pai + variações expostos à integração. Checkpoint de categorias/variações: `d4fbcdb53c09f66c935707a710f568c5caf3aa97`.
+- Pira `Integracao-PDV-Inteligente`: receptor assinado, conflitos, categorias, variantes canônicas e carrinho com estoque por variante implementados em checkpoints separados.
+- Nenhuma dessas branches foi mesclada ou implantada em produção nesta etapa.
 
 
 ### Conflitos bidirecionais
@@ -68,3 +73,18 @@ O Pira armazena access/refresh token cifrados com AES-256-GCM usando `PDV_INTEGR
 - A empresa resolve explicitamente com **Usar dados do PDV** ou **Usar dados do Pira**. A resolução atualiza snapshots/direção e limpa o conflito.
 - Evento exclusivamente de estoque só compara/aplica estoque; uma alteração de título local não bloqueia uma baixa de estoque do PDV.
 - Produto removido, ausente ou inativo no PDV fica `remoteAvailable=false` e é ocultado no Pira quando o vínculo está sincronizado, sem excluir anúncio, histórico ou preferência de visibilidade. Se voltar a ficar disponível, a preferência de visibilidade pode ser restaurada.
+
+
+### Categorias e variações canônicas
+- `GET /integrations/piranegocios/categories` no PDV usa o escopo `categories:read`. O Pira mantém `pdv_category_links` por empresa.
+- Na entrada PDV -> Pira, categoria já mapeada vence; sem mapa, nome exatamente equivalente (normalizado) pode ser associado automaticamente; sem correspondência segura, permanece o `defaultCategorySlug` configurado.
+- Na saída Pira -> PDV, o Pira reutiliza apenas um mapeamento seguro já conhecido ou equivalência exata; não cria categoria remota por adivinhação.
+- Produto pai com `variations[]` vira um único anúncio. O grupo reservado `pdv-variants` possui uma opção por filho real do PDV. Não são montadas combinações cartesianas de tamanho/cor, portanto uma combinação inexistente nunca nasce artificialmente no Pira.
+- Cada opção sincronizada pode carregar `externalProductId`, `sku`, `barcode`, `price`, `stockQuantity`, `attributes` e `active`.
+- Webhook disparado por um filho é canonicalizado no Pira para o produto pai. Remoção de um filho força reconciliação do pai; remoção do pai segue a regra de indisponibilidade sem apagar histórico.
+
+### Estoque de variante no checkout
+- `classified_cart_items` e `classified_order_items` passam a armazenar `variantId` e `variantSnapshot`; a unicidade do carrinho/pedido considera anúncio + variante.
+- Ao reservar uma variante, o Pira reduz o saldo da opção e o saldo agregado do anúncio na mesma transação. Cancelamento/rejeição devolve ambos quando a variante ainda existe no catálogo atual.
+- O pedido congela a variante efetivamente comprada no snapshot, evitando que uma edição posterior troque silenciosamente o item histórico.
+- Produtos com `pdv-variants` não usam o checkout unitário legado: a seleção passa pelo carrinho, que conhece a variante. O backend também bloqueia o caminho antigo, não apenas a interface.
