@@ -71,9 +71,9 @@ export class ClassifiedsIdentityService {
 
   async select(uid: string, identityRaw: unknown) {
     const identity = String(identityRaw || '').toUpperCase() as ClassifiedIdentityType;
-    if (!['PERSONAL', 'COMPANY'].includes(identity)) throw new BadRequestException('Identidade inválida.');
+    if (!['PERSONAL', 'COMPANY'].includes(identity)) throw new BadRequestException('Identidade invÃ¡lida.');
     const { company, companyEligible } = await this.baseContext(uid);
-    if (identity === 'COMPANY' && (!company || !companyEligible)) throw new ForbiddenException('Você não tem permissão para usar esta empresa no Marketplace.');
+    if (identity === 'COMPANY' && (!company || !companyEligible)) throw new ForbiddenException('VocÃª nÃ£o tem permissÃ£o para usar esta empresa no Marketplace.');
     let preference = await this.preferences.findOne({ where: { userId: uid } });
     if (!preference) preference = this.preferences.create({ userId: uid });
     preference.lastIdentityType = identity;
@@ -83,7 +83,7 @@ export class ClassifiedsIdentityService {
   }
 
   async acceptPersonalTerms(uid: string, accepted: unknown) {
-    if (accepted !== true) throw new BadRequestException('É necessário aceitar os Termos de Uso do Marketplace para publicar.');
+    if (accepted !== true) throw new BadRequestException('Ã necessÃ¡rio aceitar os Termos de Uso do Marketplace para publicar.');
     await this.baseContext(uid);
     let preference = await this.preferences.findOne({ where: { userId: uid } });
     if (!preference) preference = this.preferences.create({ userId: uid });
@@ -96,16 +96,16 @@ export class ClassifiedsIdentityService {
 
   async configureCompany(uid: string, body: Record<string, unknown>) {
     const { company, companyEligible, companyVerified } = await this.baseContext(uid);
-    if (!company || !companyEligible) throw new ForbiddenException('Você não pode configurar o Marketplace desta empresa.');
+    if (!company || !companyEligible) throw new ForbiddenException('VocÃª nÃ£o pode configurar o Marketplace desta empresa.');
     if (!companyVerified) throw new ForbiddenException('A empresa precisa estar verificada para publicar no Marketplace.');
     let profile = await this.companyProfiles.findOne({ where: { companyId: company.id } });
     const hasCurrentTerms = Boolean(profile?.termsAcceptedAt && profile.termsVersion === CLASSIFIEDS_TERMS_VERSION);
-    if (body.acceptedTerms !== true && !hasCurrentTerms) throw new BadRequestException('Aceite os Termos de Uso do Marketplace antes da primeira publicação.');
+    if (body.acceptedTerms !== true && !hasCurrentTerms) throw new BadRequestException('Aceite os Termos de Uso do Marketplace antes da primeira publicaÃ§Ã£o.');
     if (!profile) profile = this.companyProfiles.create({ companyId: company.id });
 
     const canSellProducts = body.canSellProducts !== undefined ? Boolean(body.canSellProducts) : profile.canSellProducts;
     const canOfferServices = body.canOfferServices !== undefined ? Boolean(body.canOfferServices) : profile.canOfferServices;
-    if (!canSellProducts && !canOfferServices) throw new BadRequestException('Marque venda de produtos, prestação de serviços ou as duas opções.');
+    if (!canSellProducts && !canOfferServices) throw new BadRequestException('Marque venda de produtos, prestaÃ§Ã£o de serviÃ§os ou as duas opÃ§Ãµes.');
     profile.status = 'ACTIVE';
     profile.canSellProducts = canSellProducts;
     profile.canOfferServices = canOfferServices;
@@ -137,14 +137,14 @@ export class ClassifiedsIdentityService {
     if (!type) throw new BadRequestException('Escolha se deseja usar o Marketplace como perfil pessoal ou como empresa.');
     if (type === 'PERSONAL') {
       const currentTerms = Boolean(preference?.personalTermsAcceptedAt && preference.personalTermsVersion === CLASSIFIEDS_TERMS_VERSION);
-      if (requireReady && !currentTerms) throw new ForbiddenException('Aceite os Termos de Uso do Marketplace antes da sua primeira publicação.');
+      if (requireReady && !currentTerms) throw new ForbiddenException('Aceite os Termos de Uso do Marketplace antes da sua primeira publicaÃ§Ã£o.');
       return { type, user, company: null, companyProfile: null };
     }
-    if (!company || !companyEligible) throw new ForbiddenException('A identidade da empresa não está disponível para sua conta no Marketplace.');
+    if (!company || !companyEligible) throw new ForbiddenException('A identidade da empresa nÃ£o estÃ¡ disponÃ­vel para sua conta no Marketplace.');
     const companyProfile = await this.companyProfiles.findOne({ where: { companyId: company.id } });
     const companyTermsCurrent = Boolean(companyProfile?.termsAcceptedAt && companyProfile.termsVersion === CLASSIFIEDS_TERMS_VERSION);
     if (requireReady && !companyVerified) throw new ForbiddenException('A empresa precisa estar verificada antes de publicar no Marketplace.');
-    if (requireReady && (!companyTermsCurrent || companyProfile?.status !== 'ACTIVE')) throw new ForbiddenException('Conclua a adesão ao Marketplace e aceite os termos antes da primeira publicação.');
+    if (requireReady && (!companyTermsCurrent || companyProfile?.status !== 'ACTIVE')) throw new ForbiddenException('Conclua a adesÃ£o ao Marketplace e aceite os termos antes da primeira publicaÃ§Ã£o.');
     return { type, user, company, companyProfile };
   }
 
@@ -153,16 +153,36 @@ export class ClassifiedsIdentityService {
   async assertCompanyOperator(uid: string, companyId: string) {
     const user = await this.users.findOne({ where: { id: uid } });
     const company = await this.companies.findOne({ where: { id: companyId } });
-    if (!user || !company) throw new ForbiddenException('Empresa ou usuário não encontrado.');
+    if (!user || !company) throw new ForbiddenException('Empresa ou usuÃ¡rio nÃ£o encontrado.');
     if (company.ownerId === uid) return { user, company };
     const membership = await this.membership(uid, companyId);
-    if (!membership || (membership.role !== 'PRIMARY_ADMIN' && membership.role !== 'ADMIN' && membership.permissions?.marketplace !== true)) throw new ForbiddenException('Seu perfil não tem permissão para administrar o Marketplace desta empresa.');
+    if (!membership || (membership.role !== 'PRIMARY_ADMIN' && membership.role !== 'ADMIN' && membership.permissions?.marketplace !== true)) throw new ForbiddenException('Seu perfil nÃ£o tem permissÃ£o para administrar o Marketplace desta empresa.');
     return { user, company };
+  }
+
+
+  async integrationCompany(uid: string, companyId: string, requireReady = true): Promise<ActiveClassifiedIdentity> {
+    const { user, company } = await this.assertCompanyOperator(uid, companyId);
+    const companyProfile = await this.companyProfiles.findOne({ where: { companyId } });
+    const companyVerified = Boolean(company.verificationStatus === CompanyStatus.VERIFIED || company.isVerified);
+    const termsCurrent = Boolean(
+      companyProfile?.termsAcceptedAt && companyProfile.termsVersion === CLASSIFIEDS_TERMS_VERSION,
+    );
+    if (requireReady && !companyVerified) {
+      throw new ForbiddenException('A empresa precisa estar verificada antes de importar produtos para o Marketplace.');
+    }
+    if (requireReady && (!termsCurrent || companyProfile?.status !== 'ACTIVE')) {
+      throw new ForbiddenException('Conclua a adesão ao Marketplace e aceite os termos antes de sincronizar produtos.');
+    }
+    if (requireReady && companyProfile?.canSellProducts === false) {
+      throw new ForbiddenException('Esta empresa não habilitou venda de produtos nos Classificados.');
+    }
+    return { type: 'COMPANY', user, company, companyProfile };
   }
 
   private async baseContext(uid: string) {
     const user = await this.users.findOne({ where: { id: uid } });
-    if (!user) throw new ForbiddenException('Usuário não encontrado.');
+    if (!user) throw new ForbiddenException('UsuÃ¡rio nÃ£o encontrado.');
 
     let company = user.companyId ? await this.companies.findOne({ where: { id: user.companyId } }) : null;
     if (!company) company = await this.companies.findOne({ where: { ownerId: uid } });
@@ -181,9 +201,9 @@ export class ClassifiedsIdentityService {
 
     let membership = company ? await this.membership(uid, company.id) : null;
 
-    // Migração transparente para contas empresariais criadas antes de company_memberships.
-    // PRIMARY_ADMIN é reservado ao proprietário. Outros administradores legados entram
-    // como ADMIN para não colidir com o índice que permite um único admin principal ativo.
+    // MigraÃ§Ã£o transparente para contas empresariais criadas antes de company_memberships.
+    // PRIMARY_ADMIN Ã© reservado ao proprietÃ¡rio. Outros administradores legados entram
+    // como ADMIN para nÃ£o colidir com o Ã­ndice que permite um Ãºnico admin principal ativo.
     const legacyCompanyAdmin = Boolean(
       company && !membership && user.companyId === company.id && user.isCompanyAdmin,
     );
@@ -210,7 +230,7 @@ export class ClassifiedsIdentityService {
       membership = rows[0] || null;
     }
 
-    // Quando a empresa foi recuperada pelo ownerId ou pela tabela nova de vínculos,
+    // Quando a empresa foi recuperada pelo ownerId ou pela tabela nova de vÃ­nculos,
     // repara os campos legados que ainda abastecem algumas telas antigas.
     if (company && !user.companyId && (company.ownerId === uid || membership)) {
       await this.dataSource.query(

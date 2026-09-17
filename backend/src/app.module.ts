@@ -26,6 +26,7 @@ import { CompanyPlansModule } from './company-plans/company-plans.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { CompanyMcpModule } from './company-mcp/company-mcp.module';
+import { PdvIntegrationModule } from './pdv-integration/pdv-integration.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { CompanyMcpModule } from './company-mcp/company-mcp.module';
     }),
     ExternalApiModule,
     CompanyMcpModule,
+    PdvIntegrationModule,
     JobsModule,
     UsersModule,
     UploadsModule,

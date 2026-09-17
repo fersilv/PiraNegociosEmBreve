@@ -8,7 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Repository } from 'typeorm';
 import { Company, CompanyStatus } from '../companies/entities/company.entity';
 import { User } from '../users/entities/user.entity';
-import { ClassifiedsIdentityService } from './classifieds-identity.service';
+import { ActiveClassifiedIdentity, ClassifiedsIdentityService } from './classifieds-identity.service';
 import { ClassifiedCategory } from './entities/classified-category.entity';
 import { ClassifiedFavorite } from './entities/classified-favorite.entity';
 import { ClassifiedListingImage } from './entities/classified-listing-image.entity';
@@ -142,7 +142,7 @@ export class ClassifiedsService {
 
   async getPublicBySlug(slug: string) {
     const listing = await this.listingsRepo.findOne({ where: { slug, status: 'PUBLISHED' } });
-    if (!listing || !listing.publicationChannels?.length) throw new NotFoundException('Anúncio não encontrado.');
+    if (!listing || !listing.publicationChannels?.length) throw new NotFoundException('AnÃºncio nÃ£o encontrado.');
 
     await this.listingsRepo.increment({ id: listing.id }, 'viewsCount', 1);
     listing.viewsCount += 1;
@@ -208,24 +208,32 @@ export class ClassifiedsService {
 
   async create(uid: string, body: Record<string, unknown>) {
     const identity = await this.identities.active(uid);
+    return this.createWithIdentity(uid, body, identity);
+  }
+
+  async createForCompanyIntegration(uid: string, companyId: string, body: Record<string, unknown>) {
+    const identity = await this.identities.integrationCompany(uid, companyId, true);
+    return this.createWithIdentity(uid, body, identity);
+  }
+
+  private async createWithIdentity(uid: string, body: Record<string, unknown>, identity: ActiveClassifiedIdentity) {
     const user = identity.user;
     const company = identity.company;
-
     const categorySlug = cleanText(body.categorySlug, 80);
     await this.assertCategory(categorySlug);
 
     const listingType = enumValue(body.listingType, LISTING_TYPES, categorySlug === 'servicos' ? 'SERVICE' : 'PRODUCT');
     if (identity.type === 'COMPANY') {
       if (listingType === 'PRODUCT' && identity.companyProfile?.canSellProducts === false) {
-        throw new ForbiddenException('Esta empresa não habilitou venda de produtos nos Classificados.');
+        throw new ForbiddenException('Esta empresa nÃ£o habilitou venda de produtos nos Classificados.');
       }
       if (listingType === 'SERVICE' && identity.companyProfile?.canOfferServices === false) {
-        throw new ForbiddenException('Esta empresa não habilitou prestação de serviços nos Classificados.');
+        throw new ForbiddenException('Esta empresa nÃ£o habilitou prestaÃ§Ã£o de serviÃ§os nos Classificados.');
       }
     }
 
-    const title = requiredText(body.title, 160, 'Informe o título do anúncio.');
-    const description = requiredText(body.description, 12_000, 'Informe a descrição do anúncio.');
+    const title = requiredText(body.title, 160, 'Informe o tÃ­tulo do anÃºncio.');
+    const description = requiredText(body.description, 12_000, 'Informe a descriÃ§Ã£o do anÃºncio.');
     const city = requiredText(body.city || company?.city || user.city, 120, 'Informe a cidade.');
     const state = requiredText(body.state || company?.state || user.state, 2, 'Informe o estado.').toUpperCase();
     const priceType = enumValue(body.priceType, PRICE_TYPES, listingType === 'SERVICE' ? 'CONTACT' : 'FIXED');
@@ -285,20 +293,31 @@ export class ClassifiedsService {
 
     const saved = await this.listingsRepo.save(listing);
     await this.replaceImages(saved.id, body.images);
-    return this.getMineById(uid, saved.id);
+    const [hydrated] = await this.hydrateListings([saved], uid);
+    return hydrated;
   }
 
   async update(uid: string, id: string, body: Record<string, unknown>) {
     const listing = await this.assertOwner(uid, id);
+    return this.updateListingForOwner(uid, listing, body);
+  }
 
+  async updateForCompanyIntegration(uid: string, companyId: string, id: string, body: Record<string, unknown>) {
+    await this.identities.integrationCompany(uid, companyId, true);
+    const listing = await this.listingsRepo.findOne({ where: { id, companyId } });
+    if (!listing) throw new NotFoundException('Produto do catálogo não encontrado para esta empresa.');
+    return this.updateListingForOwner(uid, listing, body);
+  }
+
+  private async updateListingForOwner(uid: string, listing: ClassifiedListing, body: Record<string, unknown>) {
     if (body.categorySlug !== undefined) {
       const categorySlug = cleanText(body.categorySlug, 80);
       await this.assertCategory(categorySlug);
       listing.categorySlug = categorySlug;
     }
     if (body.listingType !== undefined) listing.listingType = enumValue(body.listingType, LISTING_TYPES, listing.listingType);
-    if (body.title !== undefined) listing.title = requiredText(body.title, 160, 'Informe o título.');
-    if (body.description !== undefined) listing.description = requiredText(body.description, 12_000, 'Informe a descrição.');
+    if (body.title !== undefined) listing.title = requiredText(body.title, 160, 'Informe o tÃ­tulo.');
+    if (body.description !== undefined) listing.description = requiredText(body.description, 12_000, 'Informe a descriÃ§Ã£o.');
     if (body.city !== undefined) listing.city = requiredText(body.city, 120, 'Informe a cidade.');
     if (body.state !== undefined) listing.state = requiredText(body.state, 2, 'Informe o estado.').toUpperCase();
     if (body.neighborhood !== undefined) listing.neighborhood = cleanNullable(body.neighborhood, 140);
@@ -330,17 +349,40 @@ export class ClassifiedsService {
 
     await this.listingsRepo.save(listing);
     if (Array.isArray(body.images)) await this.replaceImages(listing.id, body.images);
-    return this.getMineById(uid, listing.id);
+    const [hydrated] = await this.hydrateListings([listing], uid);
+    return hydrated;
+  }
+
+
+  async setVisibilityForCompanyIntegration(uid: string, companyId: string, id: string, visible: boolean) {
+    await this.identities.integrationCompany(uid, companyId, visible);
+    const listing = await this.listingsRepo.findOne({ where: { id, companyId } });
+    if (!listing) throw new NotFoundException('Produto do catálogo não encontrado para esta empresa.');
+    if (visible) {
+      await this.assertCategory(listing.categorySlug);
+      if (!listing.title || !listing.description || !listing.city || !listing.state) {
+        throw new BadRequestException('Complete título, descrição e localização antes de publicar.');
+      }
+      validatePrice(listing.listingType, listing.priceType, listing.price);
+      if (!listing.publicationChannels?.length) throw new BadRequestException('Escolha onde este anúncio será exibido.');
+      listing.status = 'PUBLISHED';
+      listing.publishedAt = listing.publishedAt || new Date();
+    } else if (listing.status === 'PUBLISHED') {
+      listing.status = 'PAUSED';
+    }
+    await this.listingsRepo.save(listing);
+    const [hydrated] = await this.hydrateListings([listing], uid);
+    return hydrated;
   }
 
   async publish(uid: string, id: string) {
     const listing = await this.assertOwner(uid, id);
     await this.assertCategory(listing.categorySlug);
     if (!listing.title || !listing.description || !listing.city || !listing.state) {
-      throw new BadRequestException('Complete título, descrição e localização antes de publicar.');
+      throw new BadRequestException('Complete tÃ­tulo, descriÃ§Ã£o e localizaÃ§Ã£o antes de publicar.');
     }
     validatePrice(listing.listingType, listing.priceType, listing.price);
-    if (!listing.publicationChannels?.length) throw new BadRequestException('Escolha onde este anúncio será exibido.');
+    if (!listing.publicationChannels?.length) throw new BadRequestException('Escolha onde este anÃºncio serÃ¡ exibido.');
     listing.status = 'PUBLISHED';
     listing.publishedAt = listing.publishedAt || new Date();
     await this.listingsRepo.save(listing);
@@ -357,7 +399,7 @@ export class ClassifiedsService {
 
   async toggleFavorite(uid: string, listingId: string) {
     const listing = await this.listingsRepo.findOne({ where: { id: listingId, status: 'PUBLISHED' } });
-    if (!listing || !listing.publicationChannels?.includes('CLASSIFIEDS')) throw new NotFoundException('Anúncio não encontrado.');
+    if (!listing || !listing.publicationChannels?.includes('CLASSIFIEDS')) throw new NotFoundException('AnÃºncio nÃ£o encontrado.');
 
     const existing = await this.favoritesRepo.findOne({ where: { userId: uid, listingId } });
     let favorited = false;
@@ -426,11 +468,11 @@ export class ClassifiedsService {
       this.listingsRepo.findOne({ where: { id } }),
       this.identities.active(uid),
     ]);
-    if (!listing) throw new NotFoundException('Anúncio não encontrado.');
+    if (!listing) throw new NotFoundException('AnÃºncio nÃ£o encontrado.');
     if (identity.type === 'COMPANY') {
-      if (listing.companyId !== identity.company!.id) throw new ForbiddenException('Este anúncio pertence a outra identidade.');
+      if (listing.companyId !== identity.company!.id) throw new ForbiddenException('Este anÃºncio pertence a outra identidade.');
     } else if (listing.sellerUserId !== uid || listing.companyId) {
-      throw new ForbiddenException('Este anúncio pertence a outra identidade.');
+      throw new ForbiddenException('Este anÃºncio pertence a outra identidade.');
     }
     return listing;
   }
@@ -438,7 +480,7 @@ export class ClassifiedsService {
   private async assertCategory(slug: string) {
     if (!slug) throw new BadRequestException('Escolha uma categoria.');
     const category = await this.categoriesRepo.findOne({ where: { slug, isActive: true } });
-    if (!category) throw new BadRequestException('Categoria inválida ou indisponível.');
+    if (!category) throw new BadRequestException('Categoria invÃ¡lida ou indisponÃ­vel.');
     return category;
   }
 
@@ -455,9 +497,9 @@ export class ClassifiedsService {
 
 function validatePrice(listingType: ClassifiedListingType, priceType: ClassifiedPriceType, price: string | null) {
   if (listingType === 'PRODUCT' && priceType === 'CONTACT') {
-    throw new BadRequestException('Produtos precisam ter preço informado.');
+    throw new BadRequestException('Produtos precisam ter preÃ§o informado.');
   }
-  if (priceType !== 'CONTACT' && price === null) throw new BadRequestException('Informe um preço válido.');
+  if (priceType !== 'CONTACT' && price === null) throw new BadRequestException('Informe um preÃ§o vÃ¡lido.');
 }
 
 function cleanText(value: unknown, max: number) {
