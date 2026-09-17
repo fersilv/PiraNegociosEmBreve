@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { PdvIntegrationService } from './pdv-integration.service';
@@ -6,6 +6,7 @@ import { PdvIntegrationService } from './pdv-integration.service';
 @Controller('pdv-integration')
 export class PdvIntegrationController {
   constructor(private readonly integration:PdvIntegrationService) {}
+  @Post('webhooks') webhook(@Headers() headers:Record<string,string|string[]|undefined>,@Body() body:any){ return this.integration.receiveWebhook(headers,body); }
   @Post('connect') @UseGuards(FirebaseAuthGuard) connect(@Req() req:any,@Body() body:any){ return this.integration.startOAuth(req.user.uid,String(body.companyId||''),body.pdvBaseUrl); }
   @Get('oauth/callback') async callback(@Query('code') code:string,@Query('state') state:string,@Res() res:Response){ const result=await this.integration.finishOAuth(code,state); res.redirect(302,`${this.integration.publicBaseUrl()}/company/integracoes/pdv?connected=1&companyId=${encodeURIComponent(result.companyId)}`); }
   @Get('status') @UseGuards(FirebaseAuthGuard) status(@Req() req:any,@Query('companyId') companyId:string){ return this.integration.status(req.user.uid,companyId); }

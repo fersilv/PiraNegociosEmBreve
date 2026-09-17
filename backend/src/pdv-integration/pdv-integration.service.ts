@@ -1,5 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleDestroy, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'crypto';
+import { BadRequestException, ForbiddenException, Injectable, Logger, OnModuleDestroy, OnModuleInit, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import { DataSource } from 'typeorm';
 import { ClassifiedsIdentityService } from '../classifieds/classifieds-identity.service';
 import { ClassifiedsService } from '../classifieds/classifieds.service';
@@ -42,22 +42,25 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
 
   publicBaseUrl() { return String(process.env.PUBLIC_BASE_URL || 'https://piranegocios.com.br').replace(/\/+$/, ''); }
   callbackUrl() { return `${this.publicBaseUrl()}/api/pdv-integration/oauth/callback`; }
+  webhookUrl() { return `${this.publicBaseUrl()}/api/pdv-integration/webhooks`; }
 
   async startOAuth(uid: string, companyId: string, rawBase?: unknown) {
     await this.identities.assertCompanyOperator(uid, companyId);
     const pdvBaseUrl = this.normalizeBase(rawBase);
     const registration = await this.httpJson(`${pdvBaseUrl}/oauth/piranegocios/register`, {
-      method: 'POST', body: JSON.stringify({ client_name: 'PiraNegócios', redirect_uris: [this.callbackUrl()] }),
+      method: 'POST', body: JSON.stringify({ client_name: 'PiraNegócios', redirect_uris: [this.callbackUrl()], webhook_uri: this.webhookUrl() }),
       headers: { 'Content-Type': 'application/json' },
     });
     const clientId = String(registration?.client_id || '');
+    const webhookSecret = String(registration?.webhook_secret || '');
     if (!clientId) throw new ServiceUnavailableException('O PDV não devolveu um client_id OAuth válido.');
+    if (!webhookSecret) throw new ServiceUnavailableException('O PDV não devolveu o segredo de assinatura do webhook.');
     const verifier = randomBytes(48).toString('base64url');
     const challenge = createHash('sha256').update(verifier).digest('base64url');
     const state = `pn_pdv_${randomBytes(30).toString('hex')}`;
     await this.dataSource.query(
-      `INSERT INTO pdv_oauth_states(id,"stateHash","companyId","userId","pdvBaseUrl","clientId","codeVerifierEncrypted",scopes,"expiresAt") VALUES($1,$2,$3::uuid,$4,$5,$6,$7,$8::jsonb,$9)`,
-      [randomUUID(), this.hash(state), companyId, uid, pdvBaseUrl, clientId, this.encrypt(verifier), JSON.stringify(PDV_SCOPES), new Date(Date.now() + 10 * 60 * 1000)],
+      `INSERT INTO pdv_oauth_states(id,"stateHash","companyId","userId","pdvBaseUrl","clientId","codeVerifierEncrypted","webhookSecretEncrypted",scopes,"expiresAt") VALUES($1,$2,$3::uuid,$4,$5,$6,$7,$8,$9::jsonb,$10)`,
+      [randomUUID(), this.hash(state), companyId, uid, pdvBaseUrl, clientId, this.encrypt(verifier), this.encrypt(webhookSecret), JSON.stringify(PDV_SCOPES), new Date(Date.now() + 10 * 60 * 1000)],
     );
     const url = new URL(`${pdvBaseUrl}/oauth/piranegocios/authorize`);
     url.searchParams.set('response_type', 'code'); url.searchParams.set('client_id', clientId);
@@ -88,10 +91,10 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     await this.dataSource.transaction(async (manager) => {
       await manager.query(`UPDATE pdv_oauth_states SET "usedAt"=now() WHERE id=$1::uuid`, [pending.id]);
       await manager.query(
-        `INSERT INTO pdv_integrations(id,"companyId","connectedByUserId","pdvBaseUrl","clientId","accessTokenEncrypted","refreshTokenEncrypted","accessExpiresAt",scopes,settings,status)
-         VALUES($1,$2::uuid,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,'CONNECTED')
-         ON CONFLICT ("companyId") DO UPDATE SET "connectedByUserId"=EXCLUDED."connectedByUserId","pdvBaseUrl"=EXCLUDED."pdvBaseUrl","clientId"=EXCLUDED."clientId","accessTokenEncrypted"=EXCLUDED."accessTokenEncrypted","refreshTokenEncrypted"=EXCLUDED."refreshTokenEncrypted","accessExpiresAt"=EXCLUDED."accessExpiresAt",scopes=EXCLUDED.scopes,status='CONNECTED',"lastError"=NULL,"updatedAt"=now()`,
-        [randomUUID(), pending.companyId, pending.userId, pending.pdvBaseUrl, pending.clientId, this.encrypt(String(token.access_token)), this.encrypt(String(token.refresh_token)), new Date(Date.now() + Number(token.expires_in || 3600) * 1000), JSON.stringify(scopes), JSON.stringify(DEFAULT_SETTINGS)],
+        `INSERT INTO pdv_integrations(id,"companyId","connectedByUserId","pdvBaseUrl","clientId","webhookSecretEncrypted","accessTokenEncrypted","refreshTokenEncrypted","accessExpiresAt",scopes,settings,status)
+         VALUES($1,$2::uuid,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,'CONNECTED')
+         ON CONFLICT ("companyId") DO UPDATE SET "connectedByUserId"=EXCLUDED."connectedByUserId","pdvBaseUrl"=EXCLUDED."pdvBaseUrl","clientId"=EXCLUDED."clientId","webhookSecretEncrypted"=EXCLUDED."webhookSecretEncrypted","accessTokenEncrypted"=EXCLUDED."accessTokenEncrypted","refreshTokenEncrypted"=EXCLUDED."refreshTokenEncrypted","accessExpiresAt"=EXCLUDED."accessExpiresAt",scopes=EXCLUDED.scopes,status='CONNECTED',"lastError"=NULL,"updatedAt"=now()`,
+        [randomUUID(), pending.companyId, pending.userId, pending.pdvBaseUrl, pending.clientId, pending.webhookSecretEncrypted, this.encrypt(String(token.access_token)), this.encrypt(String(token.refresh_token)), new Date(Date.now() + Number(token.expires_in || 3600) * 1000), JSON.stringify(scopes), JSON.stringify(DEFAULT_SETTINGS)],
       );
     });
     return { companyId: pending.companyId, connected: true, scopes };
@@ -102,7 +105,7 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     const connection = await this.connection(companyId, false);
     if (!connection) return { connected: false, settings: DEFAULT_SETTINGS };
     const counts = await this.dataSource.query(`SELECT count(*)::int AS total,count(*) FILTER (WHERE "listingId" IS NOT NULL)::int AS linked,count(*) FILTER (WHERE visible=true)::int AS visible FROM pdv_product_links WHERE "companyId"=$1::uuid`, [companyId]);
-    return { connected: connection.status === 'CONNECTED', status: connection.status, pdvBaseUrl: connection.pdvBaseUrl, scopes: this.json(connection.scopes, []), settings: { ...DEFAULT_SETTINGS, ...this.json(connection.settings, {}) }, lastManualSyncAt: connection.lastManualSyncAt, lastAutoSyncAt: connection.lastAutoSyncAt, lastSalesSyncAt: connection.lastSalesSyncAt, lastError: connection.lastError, products: counts[0] || { total:0, linked:0, visible:0 } };
+    return { connected: connection.status === 'CONNECTED', status: connection.status, pdvBaseUrl: connection.pdvBaseUrl, scopes: this.json(connection.scopes, []), settings: { ...DEFAULT_SETTINGS, ...this.json(connection.settings, {}) }, lastManualSyncAt: connection.lastManualSyncAt, lastAutoSyncAt: connection.lastAutoSyncAt, lastSalesSyncAt: connection.lastSalesSyncAt, lastWebhookAt: connection.lastWebhookAt, lastError: connection.lastError, products: counts[0] || { total:0, linked:0, visible:0 } };
   }
 
   async updateSettings(uid: string, companyId: string, patch: Record<string, unknown>) {
@@ -117,7 +120,13 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
 
   async disconnect(uid: string, companyId: string) {
     await this.identities.assertCompanyOperator(uid, companyId);
-    await this.dataSource.query(`UPDATE pdv_integrations SET status='DISCONNECTED',"accessTokenEncrypted"='',"refreshTokenEncrypted"='',"updatedAt"=now() WHERE "companyId"=$1::uuid`, [companyId]);
+    const connection = await this.connection(companyId, false);
+    if (connection?.status === 'CONNECTED') {
+      await this.pdvJson(companyId, '/integrations/piranegocios/disconnect', { method: 'POST' }).catch((error:any) => {
+        this.logger.warn(`Não foi possível revogar imediatamente o cliente OAuth no PDV: ${error?.message || error}`);
+      });
+    }
+    await this.dataSource.query(`UPDATE pdv_integrations SET status='DISCONNECTED',"accessTokenEncrypted"='',"refreshTokenEncrypted"='',"webhookSecretEncrypted"=NULL,"updatedAt"=now() WHERE "companyId"=$1::uuid`, [companyId]);
     return { disconnected: true };
   }
 
@@ -182,7 +191,7 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
           await this.upsertLink(companyId,pdvProductId,listing.id,{visible,syncEnabled:true,syncPrice,syncStock});
         }
         await this.classifieds.setVisibilityForCompanyIntegration(uid,companyId,listing.id,visible);
-        await this.dataSource.query(`UPDATE pdv_product_links SET "remoteSnapshot"=$3::jsonb,"lastPdvUpdatedAt"=$4,"lastSyncedAt"=now(),"updatedAt"=now() WHERE "companyId"=$1::uuid AND "pdvProductId"=$2`,[companyId,pdvProductId,JSON.stringify(product),product.updatedAt||null]);
+        await this.dataSource.query(`UPDATE pdv_product_links SET "remoteSnapshot"=$3::jsonb,"lastPdvUpdatedAt"=$4,"lastSyncedAt"=now(),"remoteAvailable"=true,"lastDirection"='PDV_TO_PIRA',"updatedAt"=now() WHERE "companyId"=$1::uuid AND "pdvProductId"=$2`,[companyId,pdvProductId,JSON.stringify(product),product.updatedAt||null]);
         results.push({pdvProductId,listingId:listing.id,status:'SYNCED'});
       } catch(error:any){ results.push({pdvProductId,status:'ERROR',error:String(error?.message||error)}); }
     }
@@ -190,6 +199,107 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     await this.dataSource.query(`UPDATE pdv_integrations SET ${stamp}=now(),"lastError"=$2,"updatedAt"=now() WHERE "companyId"=$1::uuid`,[companyId,results.some(r=>r.status==='ERROR')?'Alguns produtos falharam na sincronização.':null]);
     await this.recordEvent(companyId,'PDV_TO_PIRA','PRODUCT_SYNC',null,results.some(r=>r.status==='ERROR')?'PARTIAL':'SUCCESS',{mode,total:results.length,results});
     return {mode,total:results.length,synced:results.filter(r=>r.status==='SYNCED').length,skipped:results.filter(r=>r.status==='SKIPPED').length,failed:results.filter(r=>r.status==='ERROR').length,results};
+  }
+
+  async receiveWebhook(headers:Record<string,string|string[]|undefined>, body:any) {
+    const clientId=this.header(headers,'x-pdv-client-id');
+    const eventId=this.header(headers,'x-pdv-event-id');
+    const eventType=this.header(headers,'x-pdv-event-type');
+    const timestamp=this.header(headers,'x-pdv-timestamp');
+    const signature=this.header(headers,'x-pdv-signature');
+    if(!clientId||!eventId||!eventType||!timestamp||!signature) throw new UnauthorizedException('Webhook PDV sem cabeçalhos de assinatura obrigatórios.');
+    if(String(body?.eventId||'')!==eventId||String(body?.type||'')!==eventType) throw new UnauthorizedException('Identidade do evento diverge dos cabeçalhos assinados.');
+    const timestampNumber=Number(timestamp);
+    if(!Number.isFinite(timestampNumber)||Math.abs(Date.now()-timestampNumber)>5*60*1000) throw new UnauthorizedException('Webhook PDV expirado ou com timestamp inválido.');
+    const connection=(await this.dataSource.query(`SELECT * FROM pdv_integrations WHERE "clientId"=$1 AND status='CONNECTED' LIMIT 1`,[clientId]))[0];
+    if(!connection?.webhookSecretEncrypted) throw new UnauthorizedException('Integração PDV não reconhecida para este webhook.');
+    const data=body?.data??{};
+    const expected=this.webhookSignature(this.decrypt(String(connection.webhookSecretEncrypted)),timestamp,eventId,eventType,data);
+    if(!this.safeEqual(expected,signature)) throw new UnauthorizedException('Assinatura do webhook PDV inválida.');
+    const payloadHash=this.hash(this.stableJson(data));
+    const inserted=await this.dataSource.query(`INSERT INTO pdv_integration_events(id,"companyId",direction,kind,"externalId","sourceEventId","payloadHash",status,payload) VALUES($1,$2::uuid,'PDV_TO_PIRA',$3,$4,$5,$6,'PROCESSING',$7::jsonb) ON CONFLICT DO NOTHING RETURNING id`,[randomUUID(),connection.companyId,eventType,String(body?.aggregateId||'')||null,eventId,payloadHash,JSON.stringify(body||{})]);
+    let eventRow=inserted[0];
+    if(!eventRow){
+      const existing=(await this.dataSource.query(`SELECT id,status FROM pdv_integration_events WHERE "companyId"=$1::uuid AND "sourceEventId"=$2 LIMIT 1`,[connection.companyId,eventId]))[0];
+      if(!existing) throw new ServiceUnavailableException('Não foi possível registrar a idempotência do webhook.');
+      if(existing.status!=='ERROR') return {accepted:true,duplicate:true,eventId};
+      await this.dataSource.query(`UPDATE pdv_integration_events SET status='PROCESSING',error=NULL,"updatedAt"=now() WHERE id=$1::uuid`,[existing.id]);
+      eventRow=existing;
+    }
+    const settings={...DEFAULT_SETTINGS,...this.json(connection.settings,{})} as any;
+    if(settings.automaticSync!==true){
+      await this.dataSource.query(`UPDATE pdv_integration_events SET status='IGNORED',"processedAt"=now(),"updatedAt"=now() WHERE id=$1::uuid`,[eventRow.id]);
+      await this.dataSource.query(`UPDATE pdv_integrations SET "lastWebhookAt"=now(),"updatedAt"=now() WHERE id=$1::uuid`,[connection.id]);
+      return {accepted:true,ignored:true,eventId};
+    }
+    try{
+      const result=await this.processWebhookEvent(connection,eventType,String(body?.aggregateId||''),data);
+      await this.dataSource.query(`UPDATE pdv_integration_events SET status='SUCCESS',"processedAt"=now(),error=NULL,"updatedAt"=now() WHERE id=$1::uuid`,[eventRow.id]);
+      await this.dataSource.query(`UPDATE pdv_integrations SET "lastWebhookAt"=now(),"lastError"=NULL,"updatedAt"=now() WHERE id=$1::uuid`,[connection.id]);
+      return {accepted:true,eventId,result};
+    }catch(error:any){
+      const message=String(error?.message||error).slice(0,2000);
+      await this.dataSource.query(`UPDATE pdv_integration_events SET status='ERROR',error=$2,"updatedAt"=now() WHERE id=$1::uuid`,[eventRow.id,message]).catch(()=>undefined);
+      await this.dataSource.query(`UPDATE pdv_integrations SET "lastError"=$2,"updatedAt"=now() WHERE id=$1::uuid`,[connection.id,message]).catch(()=>undefined);
+      throw error;
+    }
+  }
+
+  private async processWebhookEvent(connection:any,eventType:string,aggregateId:string,data:any){
+    const uid=String(connection.connectedByUserId),companyId=String(connection.companyId);
+    if(['product.created','product.updated','product.stock_updated'].includes(eventType)){
+      const productId=aggregateId||String(data?.id||'');
+      if(!productId) throw new BadRequestException('Webhook de produto sem productId.');
+      return this.syncRemoteProduct(uid,companyId,productId);
+    }
+    if(eventType==='product.removed'){
+      const productId=aggregateId||String(data?.id||'');
+      if(!productId) throw new BadRequestException('Webhook de remoção sem productId.');
+      const link=(await this.dataSource.query(`SELECT * FROM pdv_product_links WHERE "companyId"=$1::uuid AND "pdvProductId"=$2 LIMIT 1`,[companyId,productId]))[0];
+      if(!link) return {status:'UNLINKED',pdvProductId:productId};
+      if(link.listingId&&link.syncEnabled!==false) await this.classifieds.setVisibilityForCompanyIntegration(uid,companyId,String(link.listingId),false);
+      await this.dataSource.query(`UPDATE pdv_product_links SET "remoteAvailable"=false,"remoteSnapshot"=$3::jsonb,"lastPdvUpdatedAt"=now(),"lastSyncedAt"=now(),"lastDirection"='PDV_TO_PIRA',"updatedAt"=now() WHERE "companyId"=$1::uuid AND "pdvProductId"=$2`,[companyId,productId,JSON.stringify(data||{})]);
+      return {status:'REMOTE_REMOVED',pdvProductId:productId,listingId:link.listingId||null};
+    }
+    if(eventType.startsWith('sale.')){
+      const saleId=aggregateId||String(data?.id||'');
+      if(!saleId) throw new BadRequestException('Webhook de venda sem saleId.');
+      await this.dataSource.query(`INSERT INTO pdv_sale_links(id,"companyId","pdvSaleId","remoteSnapshot",status,"lastSyncedAt") VALUES($1,$2::uuid,$3,$4::jsonb,'OBSERVED',now()) ON CONFLICT ("companyId","pdvSaleId") DO UPDATE SET "remoteSnapshot"=EXCLUDED."remoteSnapshot",status='OBSERVED',"lastSyncedAt"=now(),"updatedAt"=now()`,[randomUUID(),companyId,saleId,JSON.stringify(data||{})]);
+      await this.dataSource.query(`UPDATE pdv_integrations SET "lastSalesSyncAt"=now(),"updatedAt"=now() WHERE "companyId"=$1::uuid`,[companyId]);
+      return {status:'OBSERVED',pdvSaleId:saleId,createdOrder:false,eventType};
+    }
+    return {status:'IGNORED_EVENT_TYPE',eventType};
+  }
+
+  private async syncRemoteProduct(uid:string,companyId:string,pdvProductId:string){
+    await this.identities.integrationCompany(uid,companyId,true);
+    const connection=await this.connection(companyId,true);
+    const settings={...DEFAULT_SETTINGS,...this.json(connection.settings,{})} as any;
+    const product=await this.remoteProduct(companyId,pdvProductId);
+    let link=(await this.dataSource.query(`SELECT * FROM pdv_product_links WHERE "companyId"=$1::uuid AND "pdvProductId"=$2 LIMIT 1`,[companyId,pdvProductId]))[0];
+    if(!link){
+      const match=await this.findExistingMatch(companyId,product);
+      if(match){
+        await this.upsertLink(companyId,pdvProductId,match.id,{visible:settings.visibleByDefault,syncEnabled:true,syncPrice:settings.syncPrice,syncStock:settings.syncStock});
+        link={pdvProductId,listingId:match.id,visible:settings.visibleByDefault,syncEnabled:true,syncPrice:settings.syncPrice,syncStock:settings.syncStock};
+      }
+    }
+    if(link&&link.syncEnabled===false) return {pdvProductId,status:'SKIPPED',reason:'sync_disabled'};
+    const visible=link?Boolean(link.visible):Boolean(settings.visibleByDefault);
+    const syncPrice=link?Boolean(link.syncPrice):Boolean(settings.syncPrice);
+    const syncStock=link?Boolean(link.syncStock):Boolean(settings.syncStock);
+    const payload=this.toListingPayload(product,settings,{syncPrice,syncStock,visible});
+    let listing:any;
+    if(link?.listingId){
+      delete payload.attributes;
+      listing=await this.classifieds.updateForCompanyIntegration(uid,companyId,String(link.listingId),payload);
+    }else{
+      listing=await this.classifieds.createForCompanyIntegration(uid,companyId,payload);
+      await this.upsertLink(companyId,pdvProductId,listing.id,{visible,syncEnabled:true,syncPrice,syncStock});
+    }
+    await this.classifieds.setVisibilityForCompanyIntegration(uid,companyId,listing.id,visible);
+    await this.dataSource.query(`UPDATE pdv_product_links SET "remoteSnapshot"=$3::jsonb,"lastPdvUpdatedAt"=$4,"lastSyncedAt"=now(),"remoteAvailable"=true,"lastDirection"='PDV_TO_PIRA',"conflictState"='NONE',"conflictSnapshot"=NULL,"updatedAt"=now() WHERE "companyId"=$1::uuid AND "pdvProductId"=$2`,[companyId,pdvProductId,JSON.stringify(product),product.updatedAt||null]);
+    return {pdvProductId,listingId:listing.id,status:'SYNCED'};
   }
 
   async sales(uid:string,companyId:string,updatedSince?:string){ await this.identities.assertCompanyOperator(uid,companyId); const query=updatedSince?`?updatedSince=${encodeURIComponent(updatedSince)}`:''; return this.pdvJson(companyId,`/integrations/piranegocios/sales${query}`); }
@@ -266,7 +376,8 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
   private toListingPayload(product:any,settings:any,flags:{syncPrice:boolean;syncStock:boolean;visible:boolean}) { const body:any={categorySlug:String(settings.defaultCategorySlug||'outros'),listingType:'PRODUCT',title:String(product.name||'Produto PDV').slice(0,160),description:String(product.description||`Produto sincronizado com o PDV Inteligente.`),condition:'NEW',attributes:{integrationSource:'PDV_INTELIGENTE',pdvProductId:String(product.id||''),sku:product.sku||null,barcode:product.barcode||null,brand:product.brand||null,unit:product.unit||null},status:flags.visible?'PUBLISHED':'DRAFT'}; if(flags.syncPrice) body.price=Number(product.salePrice??product.price??0); if(flags.syncStock) body.commerceConfig={onlineCheckout:{stockQuantity:Math.max(0,Number(product.stock||0))}}; if(product.image) body.images=[product.image]; return body; }
 
   private async findExistingMatch(companyId:string,product:any){ const sku=String(product.sku||'').trim(),barcode=String(product.barcode||'').trim(); if(!sku&&!barcode) return null; const rows=await this.dataSource.query(`SELECT id,title FROM classified_listings WHERE "companyId"=$1::uuid AND "listingType"='PRODUCT' AND status<>'ARCHIVED' AND ((NULLIF($2,'') IS NOT NULL AND (attributes->>'sku'=$2 OR attributes->>'pdvSku'=$2)) OR (NULLIF($3,'') IS NOT NULL AND (attributes->>'barcode'=$3 OR attributes->>'pdvBarcode'=$3))) ORDER BY "updatedAt" DESC LIMIT 2`,[companyId,sku,barcode]); return rows.length===1?rows[0]:null; }
-  private async upsertLink(companyId:string,pdvProductId:string,listingId:string,opts:any){ await this.dataSource.query(`INSERT INTO pdv_product_links(id,"companyId","pdvProductId","listingId","syncEnabled",visible,"syncPrice","syncStock") VALUES($1,$2::uuid,$3,$4::uuid,$5,$6,$7,$8) ON CONFLICT ("companyId","pdvProductId") DO UPDATE SET "listingId"=EXCLUDED."listingId","syncEnabled"=EXCLUDED."syncEnabled",visible=EXCLUDED.visible,"syncPrice"=EXCLUDED."syncPrice","syncStock"=EXCLUDED."syncStock","updatedAt"=now()`,[randomUUID(),companyId,pdvProductId,listingId,opts.syncEnabled===undefined?true:Boolean(opts.syncEnabled),opts.visible===undefined?true:Boolean(opts.visible),opts.syncPrice===undefined?true:Boolean(opts.syncPrice),opts.syncStock===undefined?true:Boolean(opts.syncStock)]); }
+  private async upsertLink(companyId:string,pdvProductId:string,listingId:string,opts:any){ await this.dataSource.query(`INSERT INTO pdv_product_links(id,"companyId","pdvProductId","listingId","syncEnabled",visible,"syncPrice","syncStock") VALUES($1,$2::uuid,$3,$4::uuid,$5,$6,$7,$8) ON CONFLICT ("companyId","pdvProductId") DO UPDATE SET "listingId"=EXCLUDED."listingId","syncEnabled"=EXCLUDED."syncEnabled",visible=EXCLUDED.visible,"syncPrice"=EXCLUDED."syncPrice","syncStock"=EXCLUDED."syncStock","remoteAvailable"=true,"updatedAt"=now()`,[randomUUID(),companyId,pdvProductId,listingId,opts.syncEnabled===undefined?true:Boolean(opts.syncEnabled),opts.visible===undefined?true:Boolean(opts.visible),opts.syncPrice===undefined?true:Boolean(opts.syncPrice),opts.syncStock===undefined?true:Boolean(opts.syncStock)]); }
+  private async remoteProduct(companyId:string,pdvProductId:string){ return this.pdvJson(companyId,`/integrations/piranegocios/products/${encodeURIComponent(pdvProductId)}`); }
   private async remoteProducts(companyId:string){ const value=await this.pdvJson(companyId,'/integrations/piranegocios/products'); return Array.isArray(value)?value:[]; }
   private async pdvJson(companyId:string,path:string,init:RequestInit={}){ const connection=await this.ensureFreshToken(await this.connection(companyId,true)); const headers:any={...(init.headers||{}),Authorization:`Bearer ${this.decrypt(connection.accessTokenEncrypted)}`,'Content-Type':'application/json'}; return this.httpJson(`${connection.pdvBaseUrl}${path}`,{...init,headers}); }
   private async ensureFreshToken(connection:any){ if(new Date(connection.accessExpiresAt).getTime()>Date.now()+60000) return connection; const resource=`${connection.pdvBaseUrl}/integrations/piranegocios`; const token=await this.httpJson(`${connection.pdvBaseUrl}/oauth/piranegocios/token`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({grant_type:'refresh_token',refresh_token:this.decrypt(connection.refreshTokenEncrypted),client_id:connection.clientId,resource})}); await this.dataSource.query(`UPDATE pdv_integrations SET "accessTokenEncrypted"=$2,"refreshTokenEncrypted"=$3,"accessExpiresAt"=$4,scopes=$5::jsonb,"updatedAt"=now() WHERE id=$1::uuid`,[connection.id,this.encrypt(String(token.access_token)),this.encrypt(String(token.refresh_token)),new Date(Date.now()+Number(token.expires_in||3600)*1000),JSON.stringify(String(token.scope||'').split(/\s+/).filter((s:string)=>s&&s!=='offline_access'))]); return (await this.dataSource.query(`SELECT * FROM pdv_integrations WHERE id=$1::uuid`,[connection.id]))[0]; }
@@ -276,6 +387,10 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
   private encryptionKey(){ const secret=String(process.env.PDV_INTEGRATION_ENCRYPTION_KEY||process.env.JWT_SECRET||'').trim(); if(!secret) throw new ServiceUnavailableException('Configure PDV_INTEGRATION_ENCRYPTION_KEY antes de usar a integração.'); return createHash('sha256').update(secret).digest(); }
   private encrypt(value:string){ const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',this.encryptionKey(),iv); const encrypted=Buffer.concat([cipher.update(value,'utf8'),cipher.final()]); return `${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${encrypted.toString('base64url')}`; }
   private decrypt(value:string){ const [ivRaw,tagRaw,dataRaw]=String(value||'').split('.'); if(!ivRaw||!tagRaw||!dataRaw) throw new ServiceUnavailableException('Credencial do PDV inválida.'); const decipher=createDecipheriv('aes-256-gcm',this.encryptionKey(),Buffer.from(ivRaw,'base64url')); decipher.setAuthTag(Buffer.from(tagRaw,'base64url')); return Buffer.concat([decipher.update(Buffer.from(dataRaw,'base64url')),decipher.final()]).toString('utf8'); }
+  private header(headers:Record<string,string|string[]|undefined>,name:string){ const value=headers[name]??headers[name.toLowerCase()]??headers[name.toUpperCase()]; return Array.isArray(value)?String(value[0]||''):String(value||''); }
+  private stableJson(value:any):string{ if(value===null||value===undefined)return JSON.stringify(value??null); if(Array.isArray(value))return `[${value.map((item)=>this.stableJson(item)).join(',')}]`; if(typeof value==='object'){ const entries=Object.entries(value).sort(([a],[b])=>a.localeCompare(b)); return `{${entries.map(([key,item])=>`${JSON.stringify(key)}:${this.stableJson(item)}`).join(',')}}`; } return JSON.stringify(value); }
+  private webhookSignature(secret:string,timestamp:string,eventId:string,eventType:string,data:any){ const digest=this.hash(this.stableJson(data)); return createHmac('sha256',secret).update(`${timestamp}.${eventId}.${eventType}.${digest}`).digest('hex'); }
+  private safeEqual(a:string,b:string){ const left=Buffer.from(a),right=Buffer.from(b); return left.length===right.length&&timingSafeEqual(left,right); }
   private hash(value:string){return createHash('sha256').update(value).digest('hex');}
   private json(value:any,fallback:any){ if(value===null||value===undefined)return fallback; if(typeof value==='object')return value; try{return JSON.parse(value);}catch{return fallback;} }
   private async recordEvent(companyId:string,direction:string,kind:string,externalId:string|null,status:string,payload:any,error?:string){ await this.dataSource.query(`INSERT INTO pdv_integration_events(id,"companyId",direction,kind,"externalId",status,payload,error) VALUES($1,$2::uuid,$3,$4,$5,$6,$7::jsonb,$8)`,[randomUUID(),companyId,direction,kind,externalId,status,JSON.stringify(payload||{}),error||null]).catch(()=>undefined); }

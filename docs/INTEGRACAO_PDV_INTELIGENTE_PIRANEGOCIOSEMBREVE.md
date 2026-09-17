@@ -46,3 +46,17 @@ O Pira armazena access/refresh token cifrados com AES-256-GCM usando `PDV_INTEGR
 - Sincronização Pira -> PDV de alterações permitidas, com proteção contra loop e versionamento/idempotência.
 - Mapeamento visual de categorias/variações e conflitos.
 - Processos de venda bidirecionais somente após contrato explícito de status/pagamento/entrega, sem substituir as regras comerciais do Pira.
+
+
+### Webhooks assinados e idempotência
+- O PDV registra `webhook_uri` junto do cliente OAuth e devolve um segredo derivado por cliente; o Pira armazena esse segredo cifrado com AES-256-GCM.
+- Alterações de produto, estoque e vendas entram primeiro em uma outbox persistente no PDV. O worker envia de forma assíncrona, com timeout, lock, retry exponencial e limite de tentativas. A operação normal do PDV não depende da disponibilidade do Pira.
+- Cada entrega usa `X-PDV-Client-Id`, `X-PDV-Event-Id`, `X-PDV-Event-Type`, `X-PDV-Timestamp` e `X-PDV-Signature` HMAC-SHA256. O timestamp tem tolerância de 5 minutos.
+- O Pira registra `sourceEventId` com índice único por empresa. Eventos repetidos já concluídos não são processados novamente; eventos que falharam podem ser reprocessados pelo retry do PDV.
+- `product.created`, `product.updated` e `product.stock_updated` sincronizam apenas o produto afetado. `product.removed` não apaga histórico no Pira: marca a origem como indisponível e oculta o anúncio sincronizado. `sale.*` continua somente OBSERVED, sem fabricar pedido Pira.
+- O polling periódico continua ativo como reconciliação/fallback para recuperar qualquer divergência ou indisponibilidade temporária de webhook.
+
+### Checkpoint 2026-09-17
+- PDV: outbox assinada, retry e eventos de produto/estoque/venda implementados na branch `Integracao-Piranegocios`.
+- Pira: receptor assinado/idempotente implementado na branch `Integracao-PDV-Inteligente` e segredo de webhook passa a fazer parte do vínculo OAuth.
+- Próximo foco: detecção/resolução explícita de conflitos bidirecionais e reconciliação de produtos removidos durante polling.
