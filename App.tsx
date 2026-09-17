@@ -26,7 +26,6 @@ const JobsEntryPage = lazy(() => import("./pages/JobsEntryPage"));
 const PublicJobPage = lazy(() => import("./pages/PublicJobPage"));
 const PublicCompanyPage = lazy(() => import("./pages/PublicCompanyPage"));
 const CompanyCollectionPage = lazy(() => import("./pages/CompanyCollectionPage"));
-const CompanyPagePreviewPage = lazy(() => import("./pages/CompanyPagePreviewPage"));
 const CityJobsPage = lazy(() => import("./pages/CityJobsPage"));
 const EmbedJobsWidget = lazy(() => import("./pages/EmbedJobsWidget"));
 const MobileUploadPage = lazy(() => import("./pages/MobileUploadPage"));
@@ -48,10 +47,9 @@ export default function App() {
   const pathname = window.location.pathname;
   const isEmbed = pathname.startsWith("/embed");
   const isMobileTransfer = pathname.startsWith("/transferir/");
-  const isCompanyPreview = pathname.startsWith("/preview/empresa/");
   const isTalentInvite = pathname.startsWith("/convites/vaga/");
   const isCompanyVerificationInvite = pathname.startsWith("/empresa/autorizar/");
-  const isMinimalShell = isEmbed || isMobileTransfer || isCompanyPreview || isTalentInvite || isCompanyVerificationInvite;
+  const isMinimalShell = isEmbed || isMobileTransfer || isTalentInvite || isCompanyVerificationInvite;
 
   return (
     <FeedbackProvider>
@@ -60,7 +58,7 @@ export default function App() {
         {!isMinimalShell && <CookieConsent />}
         <PublicResumeAccountBridge />
         <BrowserRouter>
-          {!isMobileTransfer && !isCompanyPreview && !isTalentInvite && !isCompanyVerificationInvite && <AnalyticsTracker />}
+          {!isMobileTransfer && !isTalentInvite && !isCompanyVerificationInvite && <AnalyticsTracker />}
           <PublicResumeResponsiveStyles />
           <PublicResumeExitIntent />
           {!isMinimalShell && <PublishedResumeCompanyBridge />}
@@ -124,7 +122,6 @@ export default function App() {
               <Route path="/curriculo-online" element={<Navigate to="/criador-de-curriculo" replace />} />
               <Route path="/embed/vagas" element={<EmbedJobsWidget />} />
               <Route path="/transferir/:sessionId" element={<MobileUploadPage />} />
-              <Route path="/preview/empresa/:token" element={<CompanyPagePreviewPage />} />
               <Route path="/convites/vaga/:token" element={<TalentInvitePage />} />
               <Route path="/empresa/autorizar/:token" element={<CompanyVerificationAuthorizationPage />} />
               <Route path="/login" element={<Login />} />

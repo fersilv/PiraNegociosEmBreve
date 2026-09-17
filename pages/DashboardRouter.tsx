@@ -38,7 +38,7 @@ import { AdminJobIntegrationsPage } from "./AdminJobIntegrationsPage";
 import { PaymentMethodsPage } from "./PaymentMethodsPage";
 import { AiIntegrationsPanel } from "../components/AiIntegrationsPanel";
 import { CompanyProfilePage } from "./CompanyProfilePage";
-import { CompanyPageBuilder } from "./CompanyPageBuilder";
+import { CompanySiteSettingsPage } from "./CompanySiteSettingsPage";
 import { CompanyJobPage } from "./CompanyJobPage";
 import { CompanyJobInvitesPage } from "./CompanyJobInvitesPage";
 import { CompanyHiringConfig } from "./CompanyHiringConfig";
@@ -159,7 +159,7 @@ function VerifiedCompanyPageRoute({ companyId }: { companyId: string }) {
       </div>
     );
   }
-  return <CompanyPageBuilder />;
+  return <CompanySiteSettingsPage />;
 }
 
 function CompanyRoutes({ companyId }: { companyId?: string }) {

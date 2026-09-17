@@ -29,27 +29,10 @@ import ClassifiedsSettingsPage from './ClassifiedsSettingsPage';
 import UserClassifiedsPage from './UserClassifiedsPage';
 import { CompanyPlansPage } from './CompanyPlansPage';
 import { CompanyProfilePage } from './CompanyProfilePage';
-import { CompanyPageBuilderV3 } from './CompanyPageBuilderV3';
-import { CompanyPageBuilderV4 } from './CompanyPageBuilderV4';
+import { CompanySiteSettingsPage } from './CompanySiteSettingsPage';
 
-function VerifiedCompanyPageRoute({ companyId }: { companyId: string }) {
-  const [hasPageVersion, setHasPageVersion] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    api.get(`/companies/${companyId}/page`)
-      .then((response) => {
-        if (!active) return;
-        setHasPageVersion(Boolean(response.data?.draft?.version ?? response.data?.page?.version));
-      })
-      .catch(() => {
-        if (active) setHasPageVersion(true);
-      });
-    return () => { active = false; };
-  }, [companyId]);
-
-  if (hasPageVersion == null) return <div className="p-8 text-stone-500">Carregando...</div>;
-  return hasPageVersion ? <CompanyPageBuilderV4 /> : <CompanyPageBuilderV3 />;
+function VerifiedCompanyPageRoute({ companyId: _companyId }: { companyId: string }) {
+  return <CompanySiteSettingsPage />;
 }
 
 export default function ClassifiedsWorkspacePage() {

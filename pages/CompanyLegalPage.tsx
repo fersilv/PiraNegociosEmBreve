@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Loader2, ShieldCheck } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { CompanyPageConfig, PublicCompanyLike } from '../components/company-page/CompanySiteRenderer';
+import type { CompanyPageConfig, PublicCompanyLike } from '../components/company-page/CompanySiteRenderer';
 import { SeoHead } from '../components/SeoHead';
 
 export function CompanyLegalPage({ type }: { type: 'terms' | 'privacy' }) {
