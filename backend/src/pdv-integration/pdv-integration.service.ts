@@ -104,8 +104,8 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     await this.identities.assertCompanyOperator(uid, companyId);
     const connection = await this.connection(companyId, false);
     if (!connection) return { connected: false, settings: DEFAULT_SETTINGS };
-    const counts = await this.dataSource.query(`SELECT count(*)::int AS total,count(*) FILTER (WHERE "listingId" IS NOT NULL)::int AS linked,count(*) FILTER (WHERE visible=true)::int AS visible FROM pdv_product_links WHERE "companyId"=$1::uuid`, [companyId]);
-    return { connected: connection.status === 'CONNECTED', status: connection.status, pdvBaseUrl: connection.pdvBaseUrl, scopes: this.json(connection.scopes, []), settings: { ...DEFAULT_SETTINGS, ...this.json(connection.settings, {}) }, lastManualSyncAt: connection.lastManualSyncAt, lastAutoSyncAt: connection.lastAutoSyncAt, lastSalesSyncAt: connection.lastSalesSyncAt, lastWebhookAt: connection.lastWebhookAt, lastError: connection.lastError, products: counts[0] || { total:0, linked:0, visible:0 } };
+    const counts = await this.dataSource.query(`SELECT count(*)::int AS total,count(*) FILTER (WHERE "listingId" IS NOT NULL)::int AS linked,count(*) FILTER (WHERE visible=true AND "remoteAvailable"=true)::int AS visible,count(*) FILTER (WHERE "conflictState"='PENDING')::int AS conflicts,count(*) FILTER (WHERE "remoteAvailable"=false)::int AS unavailable FROM pdv_product_links WHERE "companyId"=$1::uuid`, [companyId]);
+    return { connected: connection.status === 'CONNECTED', status: connection.status, pdvBaseUrl: connection.pdvBaseUrl, scopes: this.json(connection.scopes, []), settings: { ...DEFAULT_SETTINGS, ...this.json(connection.settings, {}) }, lastManualSyncAt: connection.lastManualSyncAt, lastAutoSyncAt: connection.lastAutoSyncAt, lastSalesSyncAt: connection.lastSalesSyncAt, lastWebhookAt: connection.lastWebhookAt, lastError: connection.lastError, products: counts[0] || { total:0, linked:0, visible:0, conflicts:0, unavailable:0 } };
   }
 
   async updateSettings(uid: string, companyId: string, patch: Record<string, unknown>) {
@@ -161,44 +161,72 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     const link=rows[0]; if(!link) throw new BadRequestException('Importe ou associe este produto antes de configurá-lo.');
     const next={syncEnabled:patch.syncEnabled===undefined?link.syncEnabled:Boolean(patch.syncEnabled),visible:patch.visible===undefined?link.visible:Boolean(patch.visible),syncPrice:patch.syncPrice===undefined?link.syncPrice:Boolean(patch.syncPrice),syncStock:patch.syncStock===undefined?link.syncStock:Boolean(patch.syncStock)};
     await this.upsertLink(companyId,pdvProductId,link.listingId,next);
-    if(link.listingId && patch.visible!==undefined) await this.classifieds.setVisibilityForCompanyIntegration(uid,companyId,link.listingId,next.visible);
+    if(link.listingId && patch.visible!==undefined) await this.classifieds.setVisibilityForCompanyIntegration(uid,companyId,link.listingId,next.visible && link.remoteAvailable!==false);
     return { ...link, ...next };
   }
 
   async sync(uid:string, companyId:string, options:Record<string,unknown>={}, mode:SyncMode='MANUAL') {
     await this.identities.integrationCompany(uid, companyId, true);
-    const connection=await this.connection(companyId,true); const settings={...DEFAULT_SETTINGS,...this.json(connection.settings,{})} as any;
+    const connection=await this.connection(companyId,true);
+    const settings={...DEFAULT_SETTINGS,...this.json(connection.settings,{})} as any;
     const selected=Array.isArray(options.productIds)?new Set(options.productIds.map(String)):null;
-    const remote=await this.remoteProducts(companyId); const links=await this.dataSource.query(`SELECT * FROM pdv_product_links WHERE "companyId"=$1::uuid`,[companyId]);
+    const remote=await this.remoteProducts(companyId);
+    const links=await this.dataSource.query(`SELECT * FROM pdv_product_links WHERE "companyId"=$1::uuid`,[companyId]);
     const results:any[]=[];
+    const remoteIds=new Set<string>();
     for(const product of remote){
       const pdvProductId=String(product.id||''); if(!pdvProductId) continue;
+      remoteIds.add(pdvProductId);
       let link=links.find((item:any)=>String(item.pdvProductId)===pdvProductId);
-      if(selected && !selected.has(pdvProductId)) continue;
-      if(!link && !selected && settings.importAllProducts!==true) continue;
-      try {
+      if(selected&&!selected.has(pdvProductId)) continue;
+      if(!link&&!selected&&settings.importAllProducts!==true) continue;
+      try{
         if(!link){
           const match=await this.findExistingMatch(companyId,product);
-          if(match){ await this.upsertLink(companyId,pdvProductId,match.id,{visible:settings.visibleByDefault,syncEnabled:true,syncPrice:settings.syncPrice,syncStock:settings.syncStock}); link={pdvProductId,listingId:match.id,visible:settings.visibleByDefault,syncEnabled:true,syncPrice:settings.syncPrice,syncStock:settings.syncStock}; }
+          if(match){
+            await this.upsertLink(companyId,pdvProductId,match.id,{visible:settings.visibleByDefault,syncEnabled:true,syncPrice:settings.syncPrice,syncStock:settings.syncStock});
+            link={pdvProductId,listingId:match.id,visible:settings.visibleByDefault,syncEnabled:true,syncPrice:settings.syncPrice,syncStock:settings.syncStock,remoteAvailable:true};
+          }
         }
-        if(link && link.syncEnabled===false){ results.push({pdvProductId,status:'SKIPPED',reason:'sync_disabled'}); continue; }
-        const visible=link?Boolean(link.visible):Boolean(settings.visibleByDefault), syncPrice=link?Boolean(link.syncPrice):Boolean(settings.syncPrice), syncStock=link?Boolean(link.syncStock):Boolean(settings.syncStock);
-        const payload=this.toListingPayload(product,settings,{syncPrice,syncStock,visible});
+        if(link&&link.syncEnabled===false){ results.push({pdvProductId,status:'SKIPPED',reason:'sync_disabled'}); continue; }
+        if(link?.listingId&&mode==='AUTO'){
+          const disposition=await this.syncDisposition(companyId,link,product,false);
+          if(disposition.status==='UNCHANGED'){ results.push({pdvProductId,status:'SKIPPED',reason:'remote_unchanged'}); continue; }
+          if(disposition.status==='CONFLICT'){ results.push({pdvProductId,listingId:link.listingId,status:'CONFLICT',fields:disposition.fields}); continue; }
+        }
+        const visiblePreference=link?Boolean(link.visible):Boolean(settings.visibleByDefault);
+        const remoteAvailable=product.active!==false;
+        const effectiveVisible=visiblePreference&&remoteAvailable;
+        const syncPrice=link?Boolean(link.syncPrice):Boolean(settings.syncPrice);
+        const syncStock=link?Boolean(link.syncStock):Boolean(settings.syncStock);
+        const payload=this.toListingPayload(product,settings,{syncPrice,syncStock,visible:effectiveVisible});
         let listing:any;
-        if(link?.listingId) { delete payload.attributes; listing=await this.classifieds.updateForCompanyIntegration(uid,companyId,String(link.listingId),payload); }
-        else {
+        if(link?.listingId){ delete payload.attributes; listing=await this.classifieds.updateForCompanyIntegration(uid,companyId,String(link.listingId),payload); }
+        else{
           listing=await this.classifieds.createForCompanyIntegration(uid,companyId,payload);
-          await this.upsertLink(companyId,pdvProductId,listing.id,{visible,syncEnabled:true,syncPrice,syncStock});
+          await this.upsertLink(companyId,pdvProductId,listing.id,{visible:visiblePreference,syncEnabled:true,syncPrice,syncStock});
         }
-        await this.classifieds.setVisibilityForCompanyIntegration(uid,companyId,listing.id,visible);
-        await this.dataSource.query(`UPDATE pdv_product_links SET "remoteSnapshot"=$3::jsonb,"lastPdvUpdatedAt"=$4,"lastSyncedAt"=now(),"remoteAvailable"=true,"lastDirection"='PDV_TO_PIRA',"updatedAt"=now() WHERE "companyId"=$1::uuid AND "pdvProductId"=$2`,[companyId,pdvProductId,JSON.stringify(product),product.updatedAt||null]);
-        results.push({pdvProductId,listingId:listing.id,status:'SYNCED'});
-      } catch(error:any){ results.push({pdvProductId,status:'ERROR',error:String(error?.message||error)}); }
+        await this.classifieds.setVisibilityForCompanyIntegration(uid,companyId,listing.id,effectiveVisible);
+        await this.dataSource.query(`UPDATE pdv_product_links SET "remoteSnapshot"=$3::jsonb,"lastPdvUpdatedAt"=$4,"lastSyncedAt"=now(),"remoteAvailable"=$5,"lastDirection"='PDV_TO_PIRA',"conflictState"='NONE',"conflictSnapshot"=NULL,"updatedAt"=now() WHERE "companyId"=$1::uuid AND "pdvProductId"=$2`,[companyId,pdvProductId,JSON.stringify(product),product.updatedAt||null,remoteAvailable]);
+        results.push({pdvProductId,listingId:listing.id,status:'SYNCED',remoteAvailable});
+      }catch(error:any){ results.push({pdvProductId,status:'ERROR',error:String(error?.message||error)}); }
+    }
+    if(!selected){
+      for(const link of links){
+        const pdvProductId=String(link.pdvProductId||'');
+        if(!pdvProductId||remoteIds.has(pdvProductId)||link.remoteAvailable===false) continue;
+        try{
+          if(link.listingId&&link.syncEnabled!==false) await this.classifieds.setVisibilityForCompanyIntegration(uid,companyId,String(link.listingId),false);
+          await this.dataSource.query(`UPDATE pdv_product_links SET "remoteAvailable"=false,"lastSyncedAt"=now(),"lastDirection"='PDV_TO_PIRA',"updatedAt"=now() WHERE id=$1::uuid`,[link.id]);
+          results.push({pdvProductId,listingId:link.listingId||null,status:'REMOTE_REMOVED'});
+        }catch(error:any){ results.push({pdvProductId,status:'ERROR',error:String(error?.message||error)}); }
+      }
     }
     const stamp=mode==='AUTO'?'"lastAutoSyncAt"':'"lastManualSyncAt"';
-    await this.dataSource.query(`UPDATE pdv_integrations SET ${stamp}=now(),"lastError"=$2,"updatedAt"=now() WHERE "companyId"=$1::uuid`,[companyId,results.some(r=>r.status==='ERROR')?'Alguns produtos falharam na sincronização.':null]);
-    await this.recordEvent(companyId,'PDV_TO_PIRA','PRODUCT_SYNC',null,results.some(r=>r.status==='ERROR')?'PARTIAL':'SUCCESS',{mode,total:results.length,results});
-    return {mode,total:results.length,synced:results.filter(r=>r.status==='SYNCED').length,skipped:results.filter(r=>r.status==='SKIPPED').length,failed:results.filter(r=>r.status==='ERROR').length,results};
+    const hasError=results.some(r=>r.status==='ERROR');
+    await this.dataSource.query(`UPDATE pdv_integrations SET ${stamp}=now(),"lastError"=$2,"updatedAt"=now() WHERE "companyId"=$1::uuid`,[companyId,hasError?'Alguns produtos falharam na sincronização.':null]);
+    await this.recordEvent(companyId,'PDV_TO_PIRA','PRODUCT_SYNC',null,hasError?'PARTIAL':'SUCCESS',{mode,total:results.length,results});
+    return {mode,total:results.length,synced:results.filter(r=>r.status==='SYNCED').length,skipped:results.filter(r=>r.status==='SKIPPED').length,conflicts:results.filter(r=>r.status==='CONFLICT').length,removed:results.filter(r=>r.status==='REMOTE_REMOVED').length,failed:results.filter(r=>r.status==='ERROR').length,results};
   }
 
   async receiveWebhook(headers:Record<string,string|string[]|undefined>, body:any) {
@@ -250,7 +278,7 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     if(['product.created','product.updated','product.stock_updated'].includes(eventType)){
       const productId=aggregateId||String(data?.id||'');
       if(!productId) throw new BadRequestException('Webhook de produto sem productId.');
-      return this.syncRemoteProduct(uid,companyId,productId);
+      return this.syncRemoteProduct(uid,companyId,productId,{eventType});
     }
     if(eventType==='product.removed'){
       const productId=aggregateId||String(data?.id||'');
@@ -271,7 +299,7 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     return {status:'IGNORED_EVENT_TYPE',eventType};
   }
 
-  private async syncRemoteProduct(uid:string,companyId:string,pdvProductId:string){
+  private async syncRemoteProduct(uid:string,companyId:string,pdvProductId:string,options:{eventType?:string;force?:boolean}={}){
     await this.identities.integrationCompany(uid,companyId,true);
     const connection=await this.connection(companyId,true);
     const settings={...DEFAULT_SETTINGS,...this.json(connection.settings,{})} as any;
@@ -281,25 +309,52 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
       const match=await this.findExistingMatch(companyId,product);
       if(match){
         await this.upsertLink(companyId,pdvProductId,match.id,{visible:settings.visibleByDefault,syncEnabled:true,syncPrice:settings.syncPrice,syncStock:settings.syncStock});
-        link={pdvProductId,listingId:match.id,visible:settings.visibleByDefault,syncEnabled:true,syncPrice:settings.syncPrice,syncStock:settings.syncStock};
+        link={pdvProductId,listingId:match.id,visible:settings.visibleByDefault,syncEnabled:true,syncPrice:settings.syncPrice,syncStock:settings.syncStock,remoteAvailable:true};
       }
     }
     if(link&&link.syncEnabled===false) return {pdvProductId,status:'SKIPPED',reason:'sync_disabled'};
-    const visible=link?Boolean(link.visible):Boolean(settings.visibleByDefault);
+    if(link?.listingId&&!options.force){
+      const disposition=await this.syncDisposition(companyId,link,product,options.eventType==='product.stock_updated');
+      if(disposition.status==='UNCHANGED') return {pdvProductId,listingId:link.listingId,status:'SKIPPED',reason:'remote_unchanged'};
+      if(disposition.status==='CONFLICT') return {pdvProductId,listingId:link.listingId,status:'CONFLICT',fields:disposition.fields};
+    }
+    const visiblePreference=link?Boolean(link.visible):Boolean(settings.visibleByDefault);
+    const remoteAvailable=product.active!==false;
+    const effectiveVisible=visiblePreference&&remoteAvailable;
     const syncPrice=link?Boolean(link.syncPrice):Boolean(settings.syncPrice);
     const syncStock=link?Boolean(link.syncStock):Boolean(settings.syncStock);
-    const payload=this.toListingPayload(product,settings,{syncPrice,syncStock,visible});
-    let listing:any;
-    if(link?.listingId){
-      delete payload.attributes;
-      listing=await this.classifieds.updateForCompanyIntegration(uid,companyId,String(link.listingId),payload);
+    let payload:any;
+    if(options.eventType==='product.stock_updated'&&link?.listingId){
+      if(!syncStock) return {pdvProductId,listingId:link.listingId,status:'SKIPPED',reason:'stock_sync_disabled'};
+      payload={commerceConfig:{onlineCheckout:{stockQuantity:Math.max(0,Number(product.stock||0))}}};
     }else{
-      listing=await this.classifieds.createForCompanyIntegration(uid,companyId,payload);
-      await this.upsertLink(companyId,pdvProductId,listing.id,{visible,syncEnabled:true,syncPrice,syncStock});
+      payload=this.toListingPayload(product,settings,{syncPrice,syncStock,visible:effectiveVisible});
+      if(link?.listingId) delete payload.attributes;
     }
-    await this.classifieds.setVisibilityForCompanyIntegration(uid,companyId,listing.id,visible);
-    await this.dataSource.query(`UPDATE pdv_product_links SET "remoteSnapshot"=$3::jsonb,"lastPdvUpdatedAt"=$4,"lastSyncedAt"=now(),"remoteAvailable"=true,"lastDirection"='PDV_TO_PIRA',"conflictState"='NONE',"conflictSnapshot"=NULL,"updatedAt"=now() WHERE "companyId"=$1::uuid AND "pdvProductId"=$2`,[companyId,pdvProductId,JSON.stringify(product),product.updatedAt||null]);
-    return {pdvProductId,listingId:listing.id,status:'SYNCED'};
+    let listing:any;
+    if(link?.listingId) listing=await this.classifieds.updateForCompanyIntegration(uid,companyId,String(link.listingId),payload);
+    else{
+      listing=await this.classifieds.createForCompanyIntegration(uid,companyId,payload);
+      await this.upsertLink(companyId,pdvProductId,listing.id,{visible:visiblePreference,syncEnabled:true,syncPrice,syncStock});
+    }
+    if(options.eventType!=='product.stock_updated') await this.classifieds.setVisibilityForCompanyIntegration(uid,companyId,listing.id,effectiveVisible);
+    await this.dataSource.query(`UPDATE pdv_product_links SET "remoteSnapshot"=$3::jsonb,"lastPdvUpdatedAt"=$4,"lastSyncedAt"=now(),"remoteAvailable"=$5,"lastDirection"='PDV_TO_PIRA',"conflictState"='NONE',"conflictSnapshot"=NULL,"updatedAt"=now() WHERE "companyId"=$1::uuid AND "pdvProductId"=$2`,[companyId,pdvProductId,JSON.stringify(product),product.updatedAt||null,remoteAvailable]);
+    return {pdvProductId,listingId:listing.id,status:'SYNCED',remoteAvailable};
+  }
+
+  async resolveConflict(uid:string,companyId:string,pdvProductId:string,strategyRaw:unknown){
+    await this.identities.integrationCompany(uid,companyId,true);
+    const strategy=String(strategyRaw||'').toUpperCase();
+    if(!['PDV','PIRA'].includes(strategy)) throw new BadRequestException('Escolha PDV ou PIRA para resolver o conflito.');
+    const link=(await this.dataSource.query(`SELECT * FROM pdv_product_links WHERE "companyId"=$1::uuid AND "pdvProductId"=$2 LIMIT 1`,[companyId,pdvProductId]))[0];
+    if(!link?.listingId) throw new BadRequestException('Produto não possui vínculo com o catálogo do Pira.');
+    if(link.conflictState!=='PENDING') return {resolved:false,reason:'no_pending_conflict'};
+    if(strategy==='PDV'){
+      const result=await this.syncRemoteProduct(uid,companyId,pdvProductId,{eventType:'product.updated',force:true});
+      return {resolved:true,strategy,result};
+    }
+    const result=await this.pushProduct(uid,companyId,String(link.listingId));
+    return {resolved:true,strategy,result};
   }
 
   async sales(uid:string,companyId:string,updatedSince?:string){ await this.identities.assertCompanyOperator(uid,companyId); const query=updatedSince?`?updatedSince=${encodeURIComponent(updatedSince)}`:''; return this.pdvJson(companyId,`/integrations/piranegocios/sales${query}`); }
@@ -312,7 +367,7 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     return this.dataSource.query(`
       SELECT l.id,l.title,l.description,l.price,l.status,l.attributes,l."commerceConfig",l."updatedAt",
              img.url AS image,
-             link."pdvProductId",link."syncEnabled",link.visible,link."syncPrice",link."syncStock",link."lastSyncedAt"
+             link."pdvProductId",link."syncEnabled",link.visible,link."syncPrice",link."syncStock",link."lastSyncedAt",link."remoteAvailable",link."conflictState",link."conflictSnapshot",link."lastDirection"
       FROM classified_listings l
       LEFT JOIN pdv_product_links link ON link."companyId"=l."companyId" AND link."listingId"=l.id
       LEFT JOIN LATERAL (
@@ -326,7 +381,7 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
   async pushProduct(uid:string, companyId:string, listingId:string) {
     await this.identities.integrationCompany(uid, companyId, true);
     const rows=await this.dataSource.query(`
-      SELECT l.*,img.url AS image,link."pdvProductId",link."syncEnabled",link.visible,link."syncPrice",link."syncStock"
+      SELECT l.*,img.url AS image,link."pdvProductId",link."syncEnabled",link.visible,link."syncPrice",link."syncStock",link."remoteAvailable",link."conflictState",link."conflictSnapshot",link."lastSyncedAt"
       FROM classified_listings l
       LEFT JOIN pdv_product_links link ON link."companyId"=l."companyId" AND link."listingId"=l.id
       LEFT JOIN LATERAL (SELECT url FROM classified_listing_images WHERE "listingId"=l.id ORDER BY "sortOrder" ASC,"createdAt" ASC LIMIT 1) img ON true
@@ -357,7 +412,7 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
     if(!pdvProductId) throw new ServiceUnavailableException('O PDV não devolveu o ID do produto sincronizado.');
     const connection=await this.connection(companyId,true), settings={...DEFAULT_SETTINGS,...this.json(connection.settings,{})} as any;
     await this.upsertLink(companyId,pdvProductId,listing.id,{syncEnabled:listing.syncEnabled===undefined?true:listing.syncEnabled,visible:listing.visible===undefined?listing.status==='PUBLISHED':listing.visible,syncPrice:listing.syncPrice===undefined?settings.syncPrice:listing.syncPrice,syncStock:listing.syncStock===undefined?settings.syncStock:listing.syncStock});
-    await this.dataSource.query(`UPDATE pdv_product_links SET "lastSyncedAt"=now(),"updatedAt"=now() WHERE "companyId"=$1::uuid AND "pdvProductId"=$2`,[companyId,pdvProductId]);
+    await this.dataSource.query(`UPDATE pdv_product_links SET "lastSyncedAt"=now(),"lastPiraUpdatedAt"=$3,"lastPdvUpdatedAt"=$4,"remoteSnapshot"=$5::jsonb,"remoteAvailable"=true,"lastDirection"='PIRA_TO_PDV',"conflictState"='NONE',"conflictSnapshot"=NULL,"updatedAt"=now() WHERE "companyId"=$1::uuid AND "pdvProductId"=$2`,[companyId,pdvProductId,listing.updatedAt||new Date(),result?.product?.updatedAt||null,JSON.stringify(result?.product||{})]);
     await this.recordEvent(companyId,'PIRA_TO_PDV','PRODUCT_UPSERT',listing.id,'SUCCESS',{pdvProductId,action:result?.action,matchedBy:result?.matchedBy});
     return {listingId:listing.id,pdvProductId,action:result?.action||'updated',matchedBy:result?.matchedBy||null,product:result?.product||null};
   }
@@ -372,6 +427,41 @@ export class PdvIntegrationService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async autoSyncTick(){ const rows=await this.dataSource.query(`SELECT "companyId","connectedByUserId",settings FROM pdv_integrations WHERE status='CONNECTED'`); for(const row of rows){ const settings={...DEFAULT_SETTINGS,...this.json(row.settings,{})}; if(settings.automaticSync!==true) continue; try{ await this.sync(String(row.connectedByUserId),String(row.companyId),{},'AUTO'); await this.syncSales(String(row.connectedByUserId),String(row.companyId)); }catch(error:any){ this.logger.warn(`Falha auto-sync PDV ${row.companyId}: ${error?.message||error}`); await this.dataSource.query(`UPDATE pdv_integrations SET "lastError"=$2,"updatedAt"=now() WHERE "companyId"=$1::uuid`,[row.companyId,String(error?.message||error).slice(0,2000)]).catch(()=>undefined); } } }
+
+  private async syncDisposition(companyId:string,link:any,product:any,stockOnly=false){
+    if(!link?.listingId||!link.lastSyncedAt) return {status:'APPLY',fields:[] as string[]};
+    const lastSync=new Date(link.lastSyncedAt).getTime();
+    const remoteTime=product?.updatedAt?new Date(product.updatedAt).getTime():0;
+    if(remoteTime&&remoteTime<=lastSync) return {status:'UNCHANGED',fields:[] as string[]};
+    const listing=(await this.dataSource.query(`SELECT id,title,description,price,attributes,"commerceConfig","updatedAt" FROM classified_listings WHERE id=$1::uuid AND "companyId"=$2::uuid LIMIT 1`,[link.listingId,companyId]))[0];
+    if(!listing) return {status:'APPLY',fields:[] as string[]};
+    const localTime=listing.updatedAt?new Date(listing.updatedAt).getTime():0;
+    if(localTime<=lastSync||!remoteTime||remoteTime<=lastSync) return {status:'APPLY',fields:[] as string[]};
+    const previous=this.json(link.remoteSnapshot,{});
+    const fields=this.localDivergenceFields(listing,previous,link,stockOnly);
+    if(!fields.length) return {status:'APPLY',fields};
+    const snapshot={detectedAt:new Date().toISOString(),lastSyncedAt:link.lastSyncedAt,fields,local:listing,remote:product,previousRemote:previous};
+    await this.dataSource.query(`UPDATE pdv_product_links SET "conflictState"='PENDING',"conflictSnapshot"=$3::jsonb,"updatedAt"=now() WHERE "companyId"=$1::uuid AND "pdvProductId"=$2`,[companyId,String(link.pdvProductId),JSON.stringify(snapshot)]);
+    return {status:'CONFLICT',fields};
+  }
+
+  private localDivergenceFields(listing:any,previous:any,link:any,stockOnly=false){
+    const fields:string[]=[];
+    const money=(value:any)=>Number(Number(value??0).toFixed(2));
+    const stock=Number(this.json(listing.commerceConfig,{})?.onlineCheckout?.stockQuantity??0);
+    if(link.syncStock!==false&&stock!==Number(previous?.stock??0)) fields.push('stock');
+    if(stockOnly) return fields.filter((field)=>field==='stock');
+    if(String(listing.title||'')!==String(previous?.name||'')) fields.push('title');
+    const expectedDescription=String(previous?.description||'Produto sincronizado com o PDV Inteligente.');
+    if(String(listing.description||'')!==expectedDescription) fields.push('description');
+    if(link.syncPrice!==false&&money(listing.price)!==money(previous?.salePrice??previous?.price??0)) fields.push('price');
+    const attrs=this.json(listing.attributes,{});
+    for(const [field,remoteKey] of [['sku','sku'],['barcode','barcode'],['brand','brand'],['unit','unit']] as Array<[string,string]>){
+      const localValue=attrs[field]??attrs[`pdv${field.charAt(0).toUpperCase()}${field.slice(1)}`]??null;
+      if(String(localValue??'')!==String(previous?.[remoteKey]??'')) fields.push(field);
+    }
+    return [...new Set(fields)];
+  }
 
   private toListingPayload(product:any,settings:any,flags:{syncPrice:boolean;syncStock:boolean;visible:boolean}) { const body:any={categorySlug:String(settings.defaultCategorySlug||'outros'),listingType:'PRODUCT',title:String(product.name||'Produto PDV').slice(0,160),description:String(product.description||`Produto sincronizado com o PDV Inteligente.`),condition:'NEW',attributes:{integrationSource:'PDV_INTELIGENTE',pdvProductId:String(product.id||''),sku:product.sku||null,barcode:product.barcode||null,brand:product.brand||null,unit:product.unit||null},status:flags.visible?'PUBLISHED':'DRAFT'}; if(flags.syncPrice) body.price=Number(product.salePrice??product.price??0); if(flags.syncStock) body.commerceConfig={onlineCheckout:{stockQuantity:Math.max(0,Number(product.stock||0))}}; if(product.image) body.images=[product.image]; return body; }
 

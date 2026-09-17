@@ -60,3 +60,11 @@ O Pira armazena access/refresh token cifrados com AES-256-GCM usando `PDV_INTEGR
 - PDV: outbox assinada, retry e eventos de produto/estoque/venda implementados na branch `Integracao-Piranegocios`.
 - Pira: receptor assinado/idempotente implementado na branch `Integracao-PDV-Inteligente` e segredo de webhook passa a fazer parte do vínculo OAuth.
 - Próximo foco: detecção/resolução explícita de conflitos bidirecionais e reconciliação de produtos removidos durante polling.
+
+
+### Conflitos bidirecionais
+- O vínculo guarda `lastSyncedAt`, snapshots e timestamps dos dois lados. No auto-sync, produto remoto sem alteração desde o último sync é ignorado, preservando alterações locais.
+- Se o mesmo produto divergiu localmente e também mudou no PDV desde o último sync, o Pira marca `conflictState=PENDING` em vez de escolher silenciosamente um lado.
+- A empresa resolve explicitamente com **Usar dados do PDV** ou **Usar dados do Pira**. A resolução atualiza snapshots/direção e limpa o conflito.
+- Evento exclusivamente de estoque só compara/aplica estoque; uma alteração de título local não bloqueia uma baixa de estoque do PDV.
+- Produto removido, ausente ou inativo no PDV fica `remoteAvailable=false` e é ocultado no Pira quando o vínculo está sincronizado, sem excluir anúncio, histórico ou preferência de visibilidade. Se voltar a ficar disponível, a preferência de visibilidade pode ser restaurada.
