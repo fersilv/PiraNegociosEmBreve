@@ -14,7 +14,7 @@ export class ClassifiedsCartController {
 
   @Post('items/:listingId')
   add(@Req() req: any, @Param('listingId') listingId: string, @Body() body: Record<string, unknown>) {
-    return this.cart.add(req.user.uid, listingId, body.quantity, body.replaceOtherCompany === true);
+    return this.cart.add(req.user.uid, listingId, body.quantity, body.replaceOtherCompany === true, body.variantId);
   }
 
   @Patch('items/:itemId')

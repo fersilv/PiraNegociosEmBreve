@@ -162,6 +162,7 @@ export class ClassifiedsCheckoutService implements OnModuleInit, OnModuleDestroy
       const listing = rows[0];
       this.assertCheckoutListing(listing);
       this.assertNotSeller(uid, listing);
+      if(this.hasPdvVariants(listing.catalogConfig)) throw new BadRequestException('Escolha a variação e use o carrinho para concluir esta compra.');
 
       const fulfillmentMode = this.fulfillmentMode(body.fulfillmentMode, this.fulfillmentModes(listing));
       const fulfillmentData = this.fulfillmentData(body.fulfillmentData);
@@ -398,6 +399,12 @@ export class ClassifiedsCheckoutService implements OnModuleInit, OnModuleDestroy
       note: String(source.note || '').trim().slice(0, 500) || null,
       address: String(source.address || '').trim().slice(0, 500) || null,
     };
+  }
+
+  private hasPdvVariants(catalogRaw:any){
+    const groups=Array.isArray(catalogRaw?.optionGroups)?catalogRaw.optionGroups:[];
+    const group=groups.find((item:any)=>String(item?.id||'')==='pdv-variants'&&String(item?.kind||'').toUpperCase()==='VARIANT');
+    return Boolean(group&&Array.isArray(group.options)&&group.options.length);
   }
 
   private stockQuantity(config: any): number | null {

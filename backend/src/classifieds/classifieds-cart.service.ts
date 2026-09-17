@@ -32,7 +32,7 @@ export class ClassifiedsCartService {
     return this.presentCart(rows[0]);
   }
 
-  async add(uid: string, listingId: string, quantityRaw: unknown, replaceOtherCompany = false) {
+  async add(uid: string, listingId: string, quantityRaw: unknown, replaceOtherCompany = false, variantIdRaw?: unknown) {
     this.assertEnabled();
     const quantity = this.quantity(quantityRaw);
     const listingRows = await this.dataSource.query(
@@ -41,6 +41,9 @@ export class ClassifiedsCartService {
     );
     const listing = listingRows[0];
     this.assertCartListing(uid, listing);
+    const requestedVariantId=String(variantIdRaw||'').trim();
+    const variant=this.resolveCartVariant(listing,requestedVariantId,true);
+    const variantId=variant?String(variant.id):'';
 
     return this.dataSource.transaction(async (manager) => {
       const carts = await manager.query(`SELECT * FROM classified_carts WHERE "buyerUserId"=$1 AND status='ACTIVE' FOR UPDATE`, [uid]);
@@ -64,10 +67,14 @@ export class ClassifiedsCartService {
         const created = await manager.query(`INSERT INTO classified_carts("buyerUserId","companyId",status,"fulfillmentMode") VALUES ($1,$2,'ACTIVE','PICKUP') RETURNING *`, [uid, listing.companyId]);
         cart = created[0];
       }
+      const existingItem=(await manager.query(`SELECT quantity FROM classified_cart_items WHERE "cartId"=$1 AND "listingId"=$2 AND "variantId"=$3 LIMIT 1`,[cart.id,listingId,variantId]))[0];
+      const nextQuantity=Number(existingItem?.quantity||0)+quantity;
+      const variantStock=this.variantStock(variant);
+      if(variant&&variantStock!==null&&variantStock<nextQuantity) throw new BadRequestException(`Estoque insuficiente para a variação ${variant.label}.`);
       await manager.query(
-        `INSERT INTO classified_cart_items("cartId","listingId",quantity) VALUES ($1,$2,$3)
-         ON CONFLICT ("cartId","listingId") DO UPDATE SET quantity=LEAST(999,classified_cart_items.quantity+EXCLUDED.quantity),"updatedAt"=now()`,
-        [cart.id, listingId, quantity],
+        `INSERT INTO classified_cart_items("cartId","listingId","variantId","variantSnapshot",quantity) VALUES ($1,$2,$3,$4::jsonb,$5)
+         ON CONFLICT ("cartId","listingId","variantId") DO UPDATE SET quantity=LEAST(999,classified_cart_items.quantity+EXCLUDED.quantity),"variantSnapshot"=EXCLUDED."variantSnapshot","updatedAt"=now()`,
+        [cart.id, listingId, variantId, variant?JSON.stringify(variant):null, quantity],
       );
       await manager.query(`UPDATE classified_carts SET "updatedAt"=now() WHERE id=$1`, [cart.id]);
       return this.presentCart(cart, manager);
@@ -78,14 +85,15 @@ export class ClassifiedsCartService {
     this.assertEnabled();
     const quantity = this.quantity(quantityRaw);
     await this.assertCartMutable(uid);
-    const rows = await this.dataSource.query(
-      `UPDATE classified_cart_items i SET quantity=$3,"updatedAt"=now()
-       FROM classified_carts c
-       WHERE i.id=$1 AND i."cartId"=c.id AND c."buyerUserId"=$2 AND c.status='ACTIVE'
-       RETURNING i.*`,
-      [itemId, uid, quantity],
-    );
-    if (!rows[0]) throw new NotFoundException('Item do carrinho não encontrado.');
+    const rows=await this.dataSource.query(`SELECT i.*,l."catalogConfig",l.status,l.title FROM classified_cart_items i JOIN classified_carts c ON c.id=i."cartId" JOIN classified_listings l ON l.id=i."listingId" WHERE i.id=$1 AND c."buyerUserId"=$2 AND c.status='ACTIVE' LIMIT 1`,[itemId,uid]);
+    const item=rows[0];
+    if(!item) throw new NotFoundException('Item do carrinho não encontrado.');
+    if(String(item.variantId||'')){
+      const variant=this.resolveCartVariant(item,String(item.variantId),true);
+      const stock=this.variantStock(variant);
+      if(stock!==null&&stock<quantity) throw new BadRequestException(`Estoque insuficiente para a variação ${variant?.label||''}.`);
+    }
+    await this.dataSource.query(`UPDATE classified_cart_items SET quantity=$2,"updatedAt"=now() WHERE id=$1`,[itemId,quantity]);
     return this.current(uid);
   }
 
@@ -182,7 +190,7 @@ export class ClassifiedsCartService {
       if (cart.metadata?.pendingOrderId) throw new BadRequestException('Este carrinho já possui um pagamento em andamento.');
 
       const itemRows = await manager.query(
-        `SELECT i.id AS "cartItemId",i.quantity,l.*,c.name AS "companyName",img.url AS image
+        `SELECT i.id AS "cartItemId",i.quantity,i."variantId",i."variantSnapshot",l.*,c.name AS "companyName",img.url AS image
          FROM classified_cart_items i
          JOIN classified_listings l ON l.id=i."listingId"
          JOIN companies c ON c.id=l."companyId"
@@ -206,7 +214,9 @@ export class ClassifiedsCartService {
       const items: any[] = [];
 
       for (const listing of itemRows) {
-        const pricing = this.sales.effectivePricing(listing.price, listing.commerceConfig);
+        const variant=String(listing.variantId||'')?this.resolveCartVariant(listing,String(listing.variantId),true):null;
+        const basePrice=variant?.price??listing.price;
+        const pricing = this.sales.effectivePricing(basePrice, listing.commerceConfig);
         const unitPrice = method === 'PIX' ? pricing.pixPrice : pricing.cardPrice;
         if (unitPrice == null || Number(unitPrice) <= 0) throw new BadRequestException(`Preço inválido para ${listing.title}.`);
         const unitPriceCents = this.toCents(unitPrice);
@@ -214,18 +224,22 @@ export class ClassifiedsCartService {
         const totalCents = unitPriceCents * quantity;
         const base = pricing.currentPrice == null ? Number(unitPrice) : Number(pricing.currentPrice);
         const itemDiscountCents = Math.max(0, this.toCentsAllowZero(base) * quantity - totalCents);
-        const stock = this.stockQuantity(listing.commerceConfig);
-        if (stock != null && stock < quantity) throw new BadRequestException(`Estoque insuficiente para ${listing.title}.`);
+        const stock = variant?this.variantStock(variant):this.stockQuantity(listing.commerceConfig);
+        if (stock != null && stock < quantity) throw new BadRequestException(variant?`Estoque insuficiente para a variação ${variant.label}.`:`Estoque insuficiente para ${listing.title}.`);
         if (stock != null) {
           anyStockReserved = true;
+          const parentStock=this.stockQuantity(listing.commerceConfig);
+          const nextCommerce=parentStock==null?listing.commerceConfig:this.withStock(listing.commerceConfig,parentStock-quantity);
+          const nextCatalog=variant?this.withVariantStock(listing.catalogConfig,String(variant.id),stock-quantity):listing.catalogConfig;
           await manager.query(
-            `UPDATE classified_listings SET "commerceConfig"=$2::jsonb,"updatedAt"=now() WHERE id=$1`,
-            [listing.id, JSON.stringify(this.withStock(listing.commerceConfig, stock - quantity))],
+            `UPDATE classified_listings SET "commerceConfig"=$2::jsonb,"catalogConfig"=$3::jsonb,"updatedAt"=now() WHERE id=$1`,
+            [listing.id, JSON.stringify(nextCommerce||{}), nextCatalog?JSON.stringify(nextCatalog):null],
           );
+          listing.commerceConfig=nextCommerce; listing.catalogConfig=nextCatalog;
         }
         itemSubtotalCents += totalCents;
         discountCents += itemDiscountCents;
-        items.push({ listing, quantity, unitPriceCents, totalCents, discountCents: itemDiscountCents, pricing, stockReserved: stock != null });
+        items.push({ listing, variant, quantity, unitPriceCents, totalCents, discountCents: itemDiscountCents, pricing, stockReserved: stock != null });
       }
 
       let shippingCents = 0;
@@ -343,17 +357,19 @@ export class ClassifiedsCartService {
       for (const item of items) {
         await manager.query(
           `INSERT INTO classified_order_items(
-            "orderId","listingId",quantity,"unitPriceCents","discountCents","totalCents","titleSnapshot","listingSnapshot","stockReserved"
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)`,
+            "orderId","listingId","variantId","variantSnapshot",quantity,"unitPriceCents","discountCents","totalCents","titleSnapshot","listingSnapshot","stockReserved"
+          ) VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,$10::jsonb,$11)`,
           [
             order.id,
             item.listing.id,
+            item.variant?String(item.variant.id):'',
+            item.variant?JSON.stringify(item.variant):null,
             item.quantity,
             item.unitPriceCents,
             item.discountCents,
             item.totalCents,
             item.listing.title,
-            JSON.stringify({ id: item.listing.id, title: item.listing.title, slug: item.listing.slug, image: item.listing.image || null, pricing: item.pricing }),
+            JSON.stringify({ id: item.listing.id, title: item.listing.title, slug: item.listing.slug, image: item.listing.image || null, pricing: item.pricing, variant: item.variant || null }),
             item.stockReserved,
           ],
         );
@@ -492,11 +508,17 @@ export class ClassifiedsCartService {
         const listings = await manager.query(`SELECT * FROM classified_listings WHERE id=$1 FOR UPDATE`, [item.listingId]);
         const listing = listings[0];
         if (!listing) continue;
-        const stock = this.stockQuantity(listing.commerceConfig);
-        if (stock != null) {
+        const quantity=Number(item.quantity||1);
+        const parentStock = this.stockQuantity(listing.commerceConfig);
+        const variantId=String(item.variantId||'');
+        const variant=variantId?this.findVariantOption(listing.catalogConfig,variantId):null;
+        const variantStock=this.variantStock(variant);
+        if (parentStock != null || variantStock != null) {
+          const nextCommerce=parentStock==null?listing.commerceConfig:this.withStock(listing.commerceConfig,parentStock+quantity);
+          const nextCatalog=variant&&variantStock!=null?this.withVariantStock(listing.catalogConfig,variantId,variantStock+quantity):listing.catalogConfig;
           await manager.query(
-            `UPDATE classified_listings SET "commerceConfig"=$2::jsonb,"updatedAt"=now() WHERE id=$1`,
-            [listing.id, JSON.stringify(this.withStock(listing.commerceConfig, stock + Number(item.quantity || 1)))],
+            `UPDATE classified_listings SET "commerceConfig"=$2::jsonb,"catalogConfig"=$3::jsonb,"updatedAt"=now() WHERE id=$1`,
+            [listing.id, JSON.stringify(nextCommerce||{}), nextCatalog?JSON.stringify(nextCatalog):null],
           );
         }
       }
@@ -519,7 +541,7 @@ export class ClassifiedsCartService {
   private async presentCart(cart: any, manager?: CartManager) {
     const query = manager?.query.bind(manager) || this.dataSource.query.bind(this.dataSource);
     const items = await query(
-      `SELECT i.id AS "cartItemId",i.quantity,l.id AS "listingId",l.title,l.slug,l.price,l.status,l."companyId",l."commerceConfig",img.url AS image
+      `SELECT i.id AS "cartItemId",i.quantity,i."variantId",i."variantSnapshot",l.id AS "listingId",l.title,l.slug,l.price,l.status,l."companyId",l."commerceConfig",l."catalogConfig",img.url AS image
        FROM classified_cart_items i JOIN classified_listings l ON l.id=i."listingId"
        LEFT JOIN LATERAL (
          SELECT url FROM classified_listing_images WHERE "listingId"=l.id ORDER BY "sortOrder","createdAt" LIMIT 1
@@ -531,18 +553,25 @@ export class ClassifiedsCartService {
     let subtotalCents = 0;
     let quantity = 0;
     const presented = items.map((item: any) => {
-      const pricing = this.sales.effectivePricing(item.price, item.commerceConfig);
+      const variantId=String(item.variantId||'');
+      const variant=variantId?this.findVariantOption(item.catalogConfig,variantId):null;
+      const fallbackVariant=item.variantSnapshot&&typeof item.variantSnapshot==='object'?item.variantSnapshot:null;
+      const selectedVariant=variant||fallbackVariant;
+      const pricing = this.sales.effectivePricing(selectedVariant?.price??item.price, item.commerceConfig);
       const unitCents = pricing.currentPrice == null ? 0 : this.toCentsAllowZero(pricing.currentPrice);
       subtotalCents += unitCents * Number(item.quantity);
       quantity += Number(item.quantity);
+      const variantStock=this.variantStock(variant);
       return {
         cartItemId: item.cartItemId,
         listingId: item.listingId,
         title: item.title,
         slug: item.slug,
-        image: item.image || null,
+        image: selectedVariant?.imageUrl || item.image || null,
         quantity: Number(item.quantity),
-        available: item.status === 'PUBLISHED',
+        variantId:variantId||null,
+        variant:selectedVariant||null,
+        available: item.status === 'PUBLISHED' && (!variantId || Boolean(variant) && variant.active!==false && (variantStock==null || variantStock>0)),
         pricing,
       };
     });
@@ -680,6 +709,43 @@ export class ClassifiedsCartService {
   private moneyFromProvider(value: unknown) {
     const n = Number(value);
     return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
+  }
+
+  private pdvVariantGroup(catalogRaw:any){
+    const catalog=catalogRaw&&typeof catalogRaw==='object'?catalogRaw:{};
+    const groups=Array.isArray(catalog.optionGroups)?catalog.optionGroups:[];
+    return groups.find((group:any)=>String(group?.id||'')==='pdv-variants'&&String(group?.kind||'').toUpperCase()==='VARIANT')||null;
+  }
+
+  private findVariantOption(catalogRaw:any,variantId:string){
+    const group=this.pdvVariantGroup(catalogRaw); if(!group) return null;
+    const options=Array.isArray(group.options)?group.options:[];
+    return options.find((option:any)=>String(option?.id||option?.externalProductId||'')===variantId||String(option?.externalProductId||'')===variantId)||null;
+  }
+
+  private resolveCartVariant(listing:any,variantId:string,requireActive=true){
+    const group=this.pdvVariantGroup(listing?.catalogConfig);
+    if(!group){ if(variantId) throw new BadRequestException('Este produto não possui a variação informada.'); return null; }
+    if(!variantId) throw new BadRequestException('Escolha uma variação antes de adicionar este produto ao carrinho.');
+    const option=this.findVariantOption(listing.catalogConfig,variantId);
+    if(!option) throw new BadRequestException('A variação selecionada não está mais disponível.');
+    if(requireActive&&option.active===false) throw new BadRequestException('A variação selecionada está indisponível.');
+    return option;
+  }
+
+  private variantStock(option:any):number|null{
+    if(!option||option.stockQuantity===null||option.stockQuantity===undefined||option.stockQuantity==='') return null;
+    const value=Math.floor(Number(option.stockQuantity)); return Number.isFinite(value)?Math.max(0,value):null;
+  }
+
+  private withVariantStock(catalogRaw:any,variantId:string,stockQuantity:number){
+    const catalog=catalogRaw&&typeof catalogRaw==='object'?structuredClone(catalogRaw):{};
+    const groups=Array.isArray(catalog.optionGroups)?catalog.optionGroups:[];
+    const group=groups.find((item:any)=>String(item?.id||'')==='pdv-variants');
+    if(!group||!Array.isArray(group.options)) return catalog;
+    const option=group.options.find((item:any)=>String(item?.id||item?.externalProductId||'')===variantId||String(item?.externalProductId||'')===variantId);
+    if(option) option.stockQuantity=Math.max(0,Math.floor(stockQuantity));
+    return catalog;
   }
 
   private stockQuantity(config: any): number | null {
