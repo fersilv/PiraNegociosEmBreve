@@ -38,15 +38,46 @@ export function classifiedCommercePricing(listing: Pick<ClassifiedListing, 'pric
   };
 }
 
-export function classifiedPrice(listing: Pick<ClassifiedListing, 'price' | 'priceType' | 'commerceConfig'>) {
+function classifiedPriceForValue(listing: Pick<ClassifiedListing, 'priceType'>, numeric: number | null) {
   if (listing.priceType === 'CONTACT') return 'Solicite um orçamento';
-  const pricing = classifiedCommercePricing(listing);
-  const numeric = pricing.currentPrice;
   if (numeric == null || !Number.isFinite(numeric)) return 'Preço a combinar';
   const formatted = money(numeric);
   if (listing.priceType === 'NEGOTIABLE') return `${formatted} · negociável`;
   if (listing.priceType === 'STARTING_AT') return `A partir de ${formatted}`;
   return formatted;
+}
+
+export function classifiedPrice(listing: Pick<ClassifiedListing, 'price' | 'priceType' | 'commerceConfig'>) {
+  const pricing = classifiedCommercePricing(listing);
+  return classifiedPriceForValue(listing, pricing.currentPrice);
+}
+
+function classifiedBestPaymentOffer(listing: Pick<ClassifiedListing, 'priceType' | 'commerceConfig'>, pricing: ReturnType<typeof classifiedCommercePricing>) {
+  const reference = pricing.currentPrice;
+  if (listing.priceType === 'CONTACT' || reference == null || !Number.isFinite(reference)) {
+    return { price: reference, method: null as 'PIX' | 'CARD' | null, discountPercent: 0 };
+  }
+
+  const candidates: Array<{ price: number; method: 'PIX' | 'CARD' }> = [];
+  const pixEnabled = listing.commerceConfig?.paymentPricing?.pix?.enabled === true;
+  const cardEnabled = listing.commerceConfig?.paymentPricing?.card?.enabled === true;
+
+  if (pixEnabled && pricing.pixPrice != null && Number.isFinite(pricing.pixPrice) && pricing.pixPrice < reference) {
+    candidates.push({ price: pricing.pixPrice, method: 'PIX' });
+  }
+  if (cardEnabled && pricing.cardPrice != null && Number.isFinite(pricing.cardPrice) && pricing.cardPrice < reference) {
+    candidates.push({ price: pricing.cardPrice, method: 'CARD' });
+  }
+
+  candidates.sort((a, b) => a.price - b.price || (a.method === 'PIX' ? -1 : 1));
+  const best = candidates[0];
+  if (!best) return { price: reference, method: null as 'PIX' | 'CARD' | null, discountPercent: 0 };
+
+  return {
+    price: best.price,
+    method: best.method,
+    discountPercent: Math.max(1, Math.round(((reference - best.price) / reference) * 100)),
+  };
 }
 
 export function ClassifiedListingCard({ listing, compact = false, onFavoriteChange, detailBasePath = '/classificados/anuncio', onClick }: {
@@ -65,6 +96,7 @@ export function ClassifiedListingCard({ listing, compact = false, onFavoriteChan
   const auction = useLiveAuctionForListing(listing.id);
   const image = listing.images?.[0]?.url;
   const pricing = classifiedCommercePricing(listing);
+  const bestOffer = classifiedBestPaymentOffer(listing, pricing);
   const pixSpecial = listing.commerceConfig?.paymentPricing?.pix?.enabled && pricing.pixPrice != null && pricing.currentPrice != null && pricing.pixPrice < pricing.currentPrice;
   const card = listing.commerceConfig?.paymentPricing?.card;
 
@@ -103,7 +135,7 @@ export function ClassifiedListingCard({ listing, compact = false, onFavoriteChan
       <button type="button" onClick={toggleFavorite} disabled={savingFavorite} aria-label={favorited ? 'Remover dos favoritos' : 'Salvar nos favoritos'} className="absolute right-2.5 top-2.5 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white/94 text-[#3e3029] shadow-sm backdrop-blur transition hover:scale-105 disabled:opacity-60 sm:right-3 sm:top-3"><Heart className={`h-4.5 w-4.5 ${favorited ? 'fill-[#c96847] text-[#c96847]' : ''}`} /></button>
       {auction && <div className="absolute inset-x-3 bottom-3 flex items-end justify-between gap-2 text-white"><div><p className="text-[8px] font-black uppercase tracking-[.15em] text-white/55">Lance atual</p><p className="mt-0.5 text-lg font-black tracking-tight sm:text-xl">{money(auctionCurrentValue(auction))}</p></div><div className="rounded-xl border border-white/15 bg-black/30 px-2.5 py-2 text-right backdrop-blur-md"><p className="flex items-center justify-end gap-1 text-[9px] font-black"><Clock3 className="h-3 w-3 text-[#ff9a75]" /> {remaining}</p><p className="mt-1 flex items-center gap-1 text-[8px] font-bold text-white/55"><Users className="h-3 w-3" /> {auction.bidCount} lance{auction.bidCount === 1 ? '' : 's'}</p></div></div>}
     </div>
-    <div className={`p-3 sm:p-4 ${auction ? 'bg-gradient-to-b from-[#fff8f4] to-white' : ''}`}>{auction ? <><div className="flex items-center justify-between gap-2"><div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-[.12em] text-[#d15132]"><Gavel className="h-3.5 w-3.5" /> Disputa aberta</div>{listing.sellerVerifiedSnapshot && <ShieldCheck className="h-4 w-4 text-emerald-600" aria-label="Anunciante verificado" />}</div><h3 className="mt-2 overflow-hidden text-[13px] font-black leading-[1.3] text-[#2d211c] sm:text-[15px]" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{listing.title}</h3><div className="mt-3 flex items-center justify-between gap-3 border-t border-[#e8d7ce] pt-3"><span className="text-[9px] font-bold text-[#8c776c]">Próximo a partir de <strong className="text-[#3e2a21]">{money(auction.nextMinimum)}</strong></span><span className="rounded-full bg-[#2d211c] px-3 py-1.5 text-[9px] font-black text-white">Entrar no leilão</span></div></> : <><div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[.12em] text-[#9b8275] sm:text-[10px]"><span>{listing.condition === 'NEW' ? 'Novo' : listing.condition === 'REFURBISHED' ? 'Recondicionado' : listing.condition === 'NOT_APPLICABLE' ? 'Serviço' : 'Usado'}</span>{listing.sellerVerifiedSnapshot && <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" aria-label="Anunciante verificado" />}</div>{pricing.promotionActive && pricing.basePrice != null && <p className="mt-1.5 text-[10px] font-bold text-[#a69389] line-through sm:text-xs">{money(pricing.basePrice)}</p>}<p className={`${pricing.promotionActive ? 'mt-0.5 text-[#b74435]' : 'mt-1.5 text-[#2d211c]'} text-[15px] font-black leading-tight tracking-[-.025em] sm:text-lg`}>{classifiedPrice(listing)}</p>{pixSpecial && <p className="mt-1 text-[10px] font-black text-emerald-700 sm:text-xs">{money(pricing.pixPrice)} no Pix</p>}{card?.enabled && pricing.cardPrice != null && <p className="mt-1 text-[9px] font-semibold text-[#8c776c] sm:text-[10px]">Cartão {money(pricing.cardPrice)} · até {pricing.maxInstallments}x{pricing.interestFreeInstallments > 0 ? ` · ${pricing.interestFreeInstallments}x sem juros` : ''}</p>}<h3 className="mt-1.5 overflow-hidden text-[12px] font-semibold leading-[1.35] text-[#554239] sm:text-sm" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{listing.title}</h3></>}<p className="mt-2 flex min-w-0 items-center gap-1 text-[10px] font-medium text-[#9b8275] sm:text-xs"><MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{listing.neighborhood ? `${listing.neighborhood}, ` : ''}{listing.city} - {listing.state}</span></p></div>
+    <div className={`p-3 sm:p-4 ${auction ? 'bg-gradient-to-b from-[#fff8f4] to-white' : ''}`}>{auction ? <><div className="flex items-center justify-between gap-2"><div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-[.12em] text-[#d15132]"><Gavel className="h-3.5 w-3.5" /> Disputa aberta</div>{listing.sellerVerifiedSnapshot && <ShieldCheck className="h-4 w-4 text-emerald-600" aria-label="Anunciante verificado" />}</div><h3 className="mt-2 overflow-hidden text-[13px] font-black leading-[1.3] text-[#2d211c] sm:text-[15px]" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{listing.title}</h3><div className="mt-3 flex items-center justify-between gap-3 border-t border-[#e8d7ce] pt-3"><span className="text-[9px] font-bold text-[#8c776c]">Próximo a partir de <strong className="text-[#3e2a21]">{money(auction.nextMinimum)}</strong></span><span className="rounded-full bg-[#2d211c] px-3 py-1.5 text-[9px] font-black text-white">Entrar no leilão</span></div></> : <><div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[.12em] text-[#9b8275] sm:text-[10px]"><span>{listing.condition === 'NEW' ? 'Novo' : listing.condition === 'REFURBISHED' ? 'Recondicionado' : listing.condition === 'NOT_APPLICABLE' ? 'Serviço' : 'Usado'}</span>{listing.sellerVerifiedSnapshot && <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" aria-label="Anunciante verificado" />}</div>{pricing.promotionActive && pricing.basePrice != null && <p className="mt-1.5 text-[10px] font-bold text-[#a69389] line-through sm:text-xs">{money(pricing.basePrice)}</p>}<div className={`${pricing.promotionActive ? 'mt-0.5' : 'mt-1.5'} flex flex-wrap items-center gap-1.5`}><p className={`${pricing.promotionActive ? 'text-[#b74435]' : 'text-[#2d211c]'} text-[15px] font-black leading-tight tracking-[-.025em] sm:text-lg`}>{classifiedPriceForValue(listing, bestOffer.price)}</p>{bestOffer.method && <span className="inline-flex shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[8px] font-black uppercase tracking-[.08em] text-emerald-800 sm:text-[9px]">{bestOffer.discountPercent}% off no {bestOffer.method === 'PIX' ? 'Pix' : 'cartão'}</span>}</div>{pixSpecial && bestOffer.method !== 'PIX' && <p className="mt-1 text-[10px] font-black text-emerald-700 sm:text-xs">{money(pricing.pixPrice)} no Pix</p>}{card?.enabled && pricing.cardPrice != null && bestOffer.method !== 'CARD' && <p className="mt-1 text-[9px] font-semibold text-[#8c776c] sm:text-[10px]">Cartão {money(pricing.cardPrice)} · até {pricing.maxInstallments}x{pricing.interestFreeInstallments > 0 ? ` · ${pricing.interestFreeInstallments}x sem juros` : ''}</p>}<h3 className="mt-1.5 overflow-hidden text-[12px] font-semibold leading-[1.35] text-[#554239] sm:text-sm" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{listing.title}</h3></>}<p className="mt-2 flex min-w-0 items-center gap-1 text-[10px] font-medium text-[#9b8275] sm:text-xs"><MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{listing.neighborhood ? `${listing.neighborhood}, ` : ''}{listing.city} - {listing.state}</span></p></div>
     <style>{`@keyframes auctionSweep{0%{transform:translateX(-120%)}50%,100%{transform:translateX(240%)}}`}</style>
   </Link>;
 }
