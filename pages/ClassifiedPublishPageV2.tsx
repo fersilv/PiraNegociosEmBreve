@@ -210,7 +210,11 @@ export default function ClassifiedPublishPageV2() {
     try {
       let id = draftId;
       if (id) await api.patch(`/classifieds/me/listings/${id}`,payload());
-      else { const created = await api.post('/classifieds/me/listings',{...payload(),status:'DRAFT'}); id = created.data?.id; }
+      else {
+        const created = await api.post('/classifieds/me/listings',{...payload(),status:'DRAFT'});
+        id = created.data?.id;
+        if (id) setDraftId(id);
+      }
       if (!id) throw new Error('Rascunho não identificado.');
       const response = await api.post(`/classifieds/me/listings/${id}/publish`);
       navigate(`/classificados/explorar/${response.data.slug}`);
@@ -223,7 +227,7 @@ export default function ClassifiedPublishPageV2() {
   return <div className="mx-auto max-w-5xl pb-12 text-[#2d211c]">
     <header className="mb-6 flex items-center gap-3"><Link to="/classificados/painel" className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-black/[.06]"><ArrowLeft className="h-4 w-4" /></Link><div><p className={`text-[9px] font-black uppercase tracking-[.16em] ${business ? 'text-[#397c75]' : 'text-[#b06448]'}`}>PiraNegócios {business ? 'Business' : 'Personal'}</p><h1 className="font-serif text-2xl font-black">{draftId ? 'Editar anúncio' : 'Criar anúncio'}</h1></div><button type="button" disabled={saving} onClick={() => void saveDraft()} className="ml-auto hidden items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-black text-stone-600 ring-1 ring-stone-200 sm:inline-flex">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Salvar</button></header>
     <div className="h-1.5 overflow-hidden rounded-full bg-black/[.08]"><div className="h-full bg-stone-900 transition-all" style={{width:`${((step+1)/STEPS.length)*100}%`}} /></div><div className="mt-3 flex justify-between text-[9px] font-black uppercase tracking-[.12em] text-stone-400"><span>Etapa {step+1} de {STEPS.length}</span><span>{STEPS[step]}</span></div>
-    {error && <div className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}{notice && <div className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">{notice}</div>}
+    {error && <div className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700"><div>{error}</div>{/verifica|selfie|identidade/i.test(error) && !business && <Link to="/user/verificacao" className="mt-3 inline-flex rounded-xl bg-red-700 px-4 py-2 text-xs font-black text-white">Fazer verificação com selfie</Link>}{/empresa precisa|verificação simplificada/i.test(error) && business && <Link to="/company/verificacao" className="mt-3 inline-flex rounded-xl bg-red-700 px-4 py-2 text-xs font-black text-white">Verificar empresa</Link>}</div>}{notice && <div className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">{notice}</div>}
     <section className="mt-5 rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-black/[.06] sm:p-8">
       {step === 0 && <TypeStep form={form} patch={patch} categories={categories} business={business} company={company} />}
       {step === 1 && <InfoStep form={form} patch={patch} />}
