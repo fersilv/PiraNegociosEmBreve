@@ -80,7 +80,7 @@ export class IdentityComplianceService {
         email: user.email || null,
         phone: user.whatsappPhoneE164 || user.phone || null,
         phoneVerified: Boolean(user.whatsappVerifiedAt),
-        contactReady: Boolean(user.email && user.whatsappVerifiedAt),
+        contactReady: Boolean(user.email),
       },
       company: user.companyId ? {
         id: user.companyId,
@@ -233,9 +233,8 @@ export class IdentityComplianceService {
     const verification = await this.upsertVerification(uid, companyId, context);
     if (verification.status === 'APPROVED') return this.presentVerification(verification);
 
-    const users = await this.dataSource.query(`SELECT email,"whatsappVerifiedAt" FROM users WHERE id=$1 LIMIT 1`, [uid]);
+    const users = await this.dataSource.query(`SELECT email FROM users WHERE id=$1 LIMIT 1`, [uid]);
     if (!users[0]?.email) throw new BadRequestException('Sua conta precisa ter um e-mail antes da verificação. Em login social, o e-mail da conta já é suficiente.');
-    if (!users[0]?.whatsappVerifiedAt) throw new BadRequestException('Valide seu telefone/WhatsApp antes de solicitar a análise.');
 
     const documents = await this.dataSource.query(`SELECT kind FROM identity_verification_documents WHERE "verificationId"=$1`, [verification.id]);
     const kinds = new Set(documents.map((item: any) => item.kind));
@@ -380,7 +379,7 @@ export class IdentityComplianceService {
       return true;
     }
     if (!(await this.hasApprovedIdentity(uid))) {
-      throw new ForbiddenException('Antes da primeira publicação, conclua a verificação simples com selfie e telefone validado. A análise pode levar até 48 horas.');
+      throw new ForbiddenException('Antes da primeira publicação, conclua a verificação simples com selfie. A análise pode levar até 48 horas.');
     }
     return true;
   }
