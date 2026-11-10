@@ -12,7 +12,10 @@ export default function JobsEntryPage() {
     return <RegionalLoader context="jobs" className="min-h-screen" />;
   }
 
-  if (user && profile?.type !== "ADMIN") {
+  // Browsing job openings is public. A newly authenticated person may not have
+  // completed phone/profile onboarding yet; do not trap them on onboarding
+  // merely for visiting /vagas. They can still enter the personalized area later.
+  if (user && profile?.type !== "ADMIN" && profile?.phone?.trim()) {
     return <Navigate to="/user/vagas" replace />;
   }
 
