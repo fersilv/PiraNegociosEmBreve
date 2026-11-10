@@ -23,3 +23,11 @@
 4. Não ativar canais futuros enquanto seus módulos não tiverem operações e políticas próprias.
 
 A configuração de publicação *não* depende apenas do parâmetro `channel`: o filtro exige canal público habilitado e autorização por anúncio. Aplicações com recursos privados exigirão autenticação específica e controle de escopos, ainda não implementados.
+
+## Segunda entrega (10/11/2026, noite)
+- O filtro de datas (`checkIn`, `checkOut`) da nova API consulta `GET /api/properties?start=&end=` na Splash em tempo real, antes da paginação. Períodos inválidos e falhas de disponibilidade não produzem resultados falsamente disponíveis.
+- A vitrine `SplashListingsSection` usa `/api/classifieds/catalog?module=rentals&channel=piranegocios` e recebeu campos de entrada, saída, hóspedes e comodidades.
+- A sincronização agora consulta a listagem pública da Splash, que aplica as regras de aprovação e elegibilidade do anfitrião; não lê mais anúncios diretamente da tabela bruta.
+- API, vitrine e serviços systemd reiniciados e verificados em produção.
+- Limitação conhecida: a listagem de origem retorna no máximo 80 propriedades. A sincronização não arquiva ausentes quando a página está cheia. Próximo passo: paginação autenticada ou evento incremental para escalabilidade.
+- A filtragem por datas é um indicador para pesquisa, não um bloqueio de calendário: a reserva definitiva continua validada pela Splash.

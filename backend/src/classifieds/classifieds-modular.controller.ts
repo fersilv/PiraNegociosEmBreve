@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, ServiceUnavailableException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 // Somente canais públicos habilitados. Este endpoint NÃO permite acesso a recursos administrativos.
@@ -38,8 +38,25 @@ export class ClassifiedsModularController {
     if(params.guests!==undefined){const n=Number(params.guests);if(!Number.isInteger(n)||n<1)throw new BadRequestException('Hóspedes inválidos');add('l.capacity >= ?',n);}
     if(params.category)add('l.category=?',clean(params.category,80));
     if(params.amenities){const a=clean(params.amenities,300).split(',').map(x=>x.trim()).filter(Boolean).slice(0,20);add('l.amenities @> ?::text[]',a);}
-    // Datas dependem de confirmação em tempo real pela Splash; nunca afirmar disponibilidade via cache.
-    if(params.checkIn||params.checkOut)throw new BadRequestException('Filtro de datas requer serviço de disponibilidade da Splash');
+    // O serviço Splash é a autoridade sobre conflitos, planos e elegibilidade.
+    if(params.checkIn||params.checkOut){
+      const start=clean(params.checkIn,10),end=clean(params.checkOut,10);
+      const iso=/^\d{4}-\d{2}-\d{2}$/;
+      const valid=(d:string)=>iso.test(d)&&!Number.isNaN(Date.parse(d))&&new Date(d+'T00:00:00Z').toISOString().slice(0,10)===d;
+      if(!valid(start)||!valid(end)||start>=end||Date.parse(end)-Date.parse(start)>90*86400000)
+        throw new BadRequestException('Informe início e fim válidos (até 90 dias)');
+      add('l.module_code=?','rentals');
+      let response:Response;
+      try { response=await fetch(`http://127.0.0.1:3194/api/properties?start=${start}&end=${end}`, {signal:AbortSignal.timeout(5000)}); }
+      catch {throw new ServiceUnavailableException('Disponibilidade da Splash indisponível');}
+      if(!response.ok)throw new ServiceUnavailableException('Não foi possível confirmar a disponibilidade');
+      let body:any;
+      try {body=await response.json();}catch{throw new ServiceUnavailableException('Resposta inválida da Splash');}
+      if(!Array.isArray(body?.properties))throw new ServiceUnavailableException('Resposta inválida da Splash');
+      const ids=body.properties.filter((x:any)=>typeof x?.id==='string').map((x:any)=>x.id);
+      add('l.origin=?','splash');
+      add('l.origin_id=ANY(?::text[])',ids);
+    }
     const where=filters.join(' AND ');
     const total=await this.db.query(`SELECT count(*)::int AS total FROM marketplace.public_catalog l WHERE ${where}`,values);
     const items=await this.db.query(`SELECT l.id,l.module_code AS module,l.origin,l.origin_id AS "originId",l.title,l.description,l.city,l.state,l.price_cents AS "priceCents",l.currency,l.category,l.capacity,l.media,l.public_metadata AS metadata,l.destination_url AS url,l.updated_at AS "updatedAt" FROM marketplace.public_catalog l WHERE ${where} ORDER BY l.updated_at DESC,l.id DESC LIMIT $${values.length+1} OFFSET $${values.length+2}`,[...values,limit,(page-1)*limit]);
