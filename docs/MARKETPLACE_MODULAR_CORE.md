@@ -6,7 +6,7 @@
 - GET `/api/classifieds/catalog/modules` descreve módulos, estados e filtros previstos.
 - GET `/api/classifieds/catalog?channel=piranegocios|splash&module=...` retorna exclusivamente itens publicados no canal permitido. Filtros implementados: q, city, state, category, minPrice, maxPrice, guests, amenities.
 - A Splash continua com reservas, calendários, planos, faturamento e moderação no seu banco.
-- `backend/scripts/sync-splash-catalog.cjs`: sincronização idempotente sob demanda de propriedades publicadas e aprovadas da Splash. **Ainda não agendada**. Revoga anúncios despublicados/removidos. Fotos só são importadas quando têm caminho relativo.
+- `backend/scripts/sync-splash-catalog.cjs`: sincronização idempotente sob demanda de propriedades publicadas e aprovadas da Splash. **Agendada via systemd a cada 2 minutos na VPS-Fainde**. Revoga anúncios despublicados/removidos. Fotos só são importadas quando têm caminho relativo.
 - Endpoints existentes `/api/classifieds/listings` e `/api/classifieds/splash` permanecem operacionais.
 
 ## Não entregue ainda
