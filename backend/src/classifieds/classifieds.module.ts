@@ -61,6 +61,7 @@ import { ClassifiedsOrdersGateway } from './classifieds-orders.gateway';
 import { ClassifiedsPayOnReceiptCheckoutService } from './classifieds-pay-on-receipt-checkout.service';
 import { ClassifiedsPrivateController } from './classifieds-private.controller';
 import { ClassifiedsPublicController } from './classifieds-public.controller';
+import { ClassifiedsSplashController } from './classifieds-splash.controller';
 import { ClassifiedsQuestionsController, ClassifiedsQuestionsPublicController } from './classifieds-questions.controller';
 import { ClassifiedsQuestionsService } from './classifieds-questions.service';
 import { ClassifiedsReceiptPreferencesService } from './classifieds-receipt-preferences.service';
@@ -104,6 +105,7 @@ import { CompanyClassifiedProfile } from './entities/company-classified-profile.
   ],
   controllers: [
     ClassifiedsPublicController,
+    ClassifiedsSplashController,
     ClassifiedsQuestionsPublicController,
     ClassifiedsQuestionsController,
     ClassifiedsAuctionPublicController,

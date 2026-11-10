@@ -39,7 +39,8 @@ function parseLocation(value: string) {
 
 export function Login() {
   const [searchParams] = useSearchParams();
-  const returnTo = searchParams.get("returnTo");
+  const requestedDestination = searchParams.get("returnTo");
+  const returnTo = requestedDestination?.startsWith('/') && !requestedDestination.startsWith('//') && !requestedDestination.includes('\\') && !/[\r\n]/.test(requestedDestination) ? requestedDestination : null;
   const [mode, setMode] = useState<Mode>(searchParams.get("mode") === "register" ? "register" : "login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

@@ -15,6 +15,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { ClassifiedCategoryIcon } from '../components/classifieds/ClassifiedCategoryIcon';
 import { ClassifiedListingCard } from '../components/classifieds/ClassifiedListingCard';
+import SplashListingsSection from '../components/classifieds/SplashListingsSection';
 import { FeedMonetizationSlot } from '../components/FeedMonetizationSlot';
 import { Navbar } from '../components/Navbar';
 import { SeoHead } from '../components/SeoHead';
@@ -128,6 +129,8 @@ export default function ClassifiedsHomePage() {
           <div className="flex items-end justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[.17em] text-[#b06448]">Vitrine</p><h2 className="mt-1 font-serif text-2xl font-bold sm:text-3xl">O que está rolando por perto</h2></div><Link to="/classificados/busca?sort=recent" className="text-xs font-black text-[#a84f34]">Ver tudo</Link></div>
           {loading ? <ListingSkeleton /> : highlightItems.length ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">{highlightItems.map((listing, index) => <React.Fragment key={listing.id}><ClassifiedListingCard listing={listing} />{index === 4 && <FeedMonetizationSlot placement="classifieds-home-highlight" slot={0} className="col-span-full" />}</React.Fragment>)}</div> : <EmptyState />}
         </section>
+
+        <SplashListingsSection mode="home" />
 
         <section className="mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
           <div className="flex items-end justify-between gap-4"><div><p className="text-[10px] font-black uppercase tracking-[.17em] text-[#b06448]">Explore por categoria</p><h2 className="mt-1 font-serif text-2xl font-bold sm:text-3xl">Encontre mais rápido</h2></div><Link to="/classificados/busca" className="hidden text-xs font-black text-[#a84f34] sm:inline-flex">Ver todos</Link></div>

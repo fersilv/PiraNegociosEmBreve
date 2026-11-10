@@ -3,6 +3,7 @@ import { ChevronDown, Filter, LocateFixed, MapPin, Search, SlidersHorizontal, X 
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ClassifiedCategoryIcon } from '../components/classifieds/ClassifiedCategoryIcon';
 import { ClassifiedListingCard } from '../components/classifieds/ClassifiedListingCard';
+import SplashListingsSection from '../components/classifieds/SplashListingsSection';
 import { FeedMonetizationSlot, shouldInsertFeedMonetizationSlot } from '../components/FeedMonetizationSlot';
 import { Navbar } from '../components/Navbar';
 import { SeoHead } from '../components/SeoHead';
@@ -19,6 +20,8 @@ export default function ClassifiedsSearchPage() {
   const [categories, setCategories] = useState<ClassifiedCategory[]>([]);
   const [result, setResult] = useState<ClassifiedSearchResponse>({ items: [], total: 0, page: 1, limit: 24, pages: 1 });
   const [loading, setLoading] = useState(true);
+  const [loadError,setLoadError]=useState('');
+  const [retry,setRetry]=useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [queryText, setQueryText] = useState(searchParams.get('q') || '');
   const { location, status: locationStatus, requestBrowserLocation, usingPreciseLocation } = useVisitorLocation({ autoRequest: true });
@@ -35,12 +38,13 @@ export default function ClassifiedsSearchPage() {
     const params = new URLSearchParams(serializedParams);
     if (categorySlug) params.set('category', categorySlug);
     params.set('limit', '24');
-    setLoading(true);
+    setLoading(true);setLoadError('');
     api.get(`/classifieds/listings?${params.toString()}`)
       .then((response) => { if (active) setResult(response.data as ClassifiedSearchResponse); })
-      .finally(() => active && setLoading(false));
+      .catch(() => {if(active){setLoadError('Não foi possível carregar os anúncios.');setResult({items:[],total:0,page:1,limit:24,pages:1})}})
+      .finally(() => {if(active)setLoading(false)});
     return () => { active = false; };
-  }, [serializedParams, categorySlug]);
+  }, [serializedParams, categorySlug, retry]);
 
   useEffect(() => { setQueryText(searchParams.get('q') || ''); }, [serializedParams]);
 
@@ -111,9 +115,12 @@ export default function ClassifiedsSearchPage() {
               </div>
             </div>
 
+            {loadError&&!loading?<div role="alert" className="rounded-2xl bg-red-50 border border-red-200 p-4 mb-4 text-xs font-bold text-red-700">{loadError} <button className="underline ml-2" onClick={()=>setRetry(v=>v+1)}>Tentar novamente</button></div>:null}
             {loading ? <SearchSkeleton /> : displayItems.length ? (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-4">{displayItems.map((listing, index) => <React.Fragment key={listing.id}><ClassifiedListingCard listing={listing} />{shouldInsertFeedMonetizationSlot(index, 5, 8) && <FeedMonetizationSlot placement="classifieds-public-search" slot={Math.floor((index - 5) / 8)} className="col-span-full" />}</React.Fragment>)}</div>
             ) : <div className="rounded-[24px] border border-dashed border-[#4b3328]/20 bg-white px-6 py-14 text-center"><p className="font-serif text-2xl font-bold">Nada por aqui com esses filtros.</p><p className="mt-2 text-sm text-[#806b60]">Tente ampliar a localização ou remover algum filtro.</p><button onClick={clearFilters} className="mt-5 rounded-xl bg-[#2d211c] px-4 py-2.5 text-xs font-black text-white">Limpar filtros</button></div>}
+
+            {(!activeCategory||['imoveis','esportes-lazer','servicos'].includes(activeCategory))&&<SplashListingsSection mode="search" query={searchParams.get('q')||''} city={searchParams.get('city')||''} state={searchParams.get('state')||''} />}
 
             {result.pages > 1 && <div className="mt-8 flex items-center justify-center gap-2"><button disabled={result.page <= 1} onClick={() => setParam('page', String(Math.max(1, result.page - 1)))} className="rounded-xl bg-white px-4 py-2 text-xs font-bold ring-1 ring-[#4b3328]/10 disabled:opacity-35">Anterior</button><span className="px-2 text-xs font-bold text-[#806b60]">{result.page} / {result.pages}</span><button disabled={result.page >= result.pages} onClick={() => setParam('page', String(Math.min(result.pages, result.page + 1)))} className="rounded-xl bg-white px-4 py-2 text-xs font-bold ring-1 ring-[#4b3328]/10 disabled:opacity-35">Próxima</button></div>}
           </section>

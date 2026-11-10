@@ -35,6 +35,7 @@ const TalentInvitePage = lazy(() => import("./pages/TalentInvitePage"));
 const CompanyVerificationAuthorizationPage = lazy(() => import("./pages/CompanyVerificationAuthorizationPage"));
 const HelpCenterPage = lazy(() => import("./pages/HelpCenterPage"));
 const ClassifiedsEntryPage = lazy(() => import("./pages/ClassifiedsEntryPage"));
+const SplashSsoBridge = lazy(() => import("./pages/SplashSsoBridge"));
 const ClassifiedsTermsPage = lazy(() => import("./pages/ClassifiedsTermsPage"));
 const ClassifiedsWorkspacePage = lazy(() => import("./pages/ClassifiedsWorkspacePage"));
 const ClassifiedsPublicRouteGate = lazy(() => import("./pages/ClassifiedsPublicRouteGate"));
@@ -78,6 +79,7 @@ export default function App() {
               <Route path="/vagas-em/:citySlug" element={<CityJobsPage />} />
               <Route path="/vagas/:slug" element={<PublicJobPage />} />
 
+              <Route path="/splash/entrar" element={<SplashSsoBridge />} />
               <Route path="/classificados" element={<ClassifiedsEntryPage />} />
               <Route path="/classificados/termos" element={<ClassifiedsTermsPage />} />
               <Route path="/classificados/busca" element={<ClassifiedsPublicRouteGate mode="SEARCH" />} />

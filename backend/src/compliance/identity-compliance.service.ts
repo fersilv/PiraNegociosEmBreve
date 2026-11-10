@@ -138,9 +138,9 @@ export class IdentityComplianceService {
 
     const rows = await this.dataSource.query(
       `UPDATE identity_verifications SET
-         relationship=$2,
+         relationship=$2::varchar,
          "partnerPercentage"=NULL,
-         "declaresRepresentationPowers"=CASE WHEN $2='PARTNER' THEN true ELSE false END,
+         "declaresRepresentationPowers"=CASE WHEN $2::varchar='PARTNER' THEN true ELSE false END,
          "selectedQsaName"=$3,
          "selectedQsaQualification"=$4,
          "declaresAtLeast25Percent"=$5,

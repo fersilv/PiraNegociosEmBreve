@@ -6,6 +6,7 @@ import { ClassifiedCheckoutModal } from '../components/classifieds/ClassifiedChe
 import { ClassifiedCommercePriceHero, type AcceptedClassifiedOffer } from '../components/classifieds/ClassifiedCommercePriceHero';
 import { ClassifiedFreightCalculator } from '../components/classifieds/ClassifiedFreightCalculator';
 import { ClassifiedListingCard } from '../components/classifieds/ClassifiedListingCard';
+import SplashListingsSection from '../components/classifieds/SplashListingsSection';
 import { ClassifiedMediaFrame } from '../components/classifieds/ClassifiedMediaFrame';
 import { useAuth } from '../contexts/AuthContext';
 import { useClassifiedsWorkspace } from '../contexts/ClassifiedsWorkspaceContext';
@@ -25,6 +26,8 @@ function ExploreGrid() {
   const [categories, setCategories] = useState<ClassifiedCategory[]>([]);
   const [result, setResult] = useState<ClassifiedSearchResponse>({ items: [], total: 0, page: 1, limit: 24, pages: 1 });
   const [loading, setLoading] = useState(true);
+  const [loadError,setLoadError]=useState('');
+  const [retry,setRetry]=useState(0);
 
   useEffect(() => { api.get('/classifieds/categories').then((response) => setCategories(Array.isArray(response.data) ? response.data : [])).catch(() => setCategories([])); }, []);
   useEffect(() => {
@@ -33,14 +36,16 @@ function ExploreGrid() {
     if (submitted) params.set('q', submitted);
     if (listingType) params.set('listingType', listingType);
     if (category) params.set('category', category);
-    setLoading(true);
-    api.get(`/classifieds/listings?${params.toString()}`).then((response) => active && setResult(response.data as ClassifiedSearchResponse)).finally(() => active && setLoading(false));
+    setLoading(true);setLoadError('');
+    api.get(`/classifieds/listings?${params.toString()}`).then((response) => {if(active)setResult(response.data as ClassifiedSearchResponse)}).catch(() => {if(active){setLoadError('Não foi possível carregar os anúncios.');setResult({items:[],total:0,page:1,limit:36,pages:1})}}).finally(() => {if(active)setLoading(false)});
     return () => { active = false; };
-  }, [submitted, listingType, category]);
+  }, [submitted, listingType, category, retry]);
 
   return <div className="mx-auto max-w-7xl space-y-5">
     <header><p className="text-[10px] font-black uppercase tracking-[.18em] text-[#b06448]">Marketplace</p><h1 className="mt-1 font-serif text-3xl font-black">Explorar</h1><p className="mt-2 text-sm text-stone-500">Produtos e serviços da região, com negociação e compra dentro do PiraNegócios.</p></header>
     <section className="rounded-[24px] bg-white p-4 shadow-sm ring-1 ring-black/[.06]"><form onSubmit={(event) => { event.preventDefault(); setSubmitted(query.trim()); }} className="flex gap-2"><label className="relative min-w-0 flex-1"><Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Produto, serviço ou palavra-chave" className="h-12 w-full rounded-2xl bg-stone-50 pl-11 pr-4 text-sm font-semibold outline-none ring-1 ring-stone-200" /></label><button className="rounded-2xl bg-stone-900 px-5 text-sm font-black text-white">Buscar</button></form><div className="mt-3 flex gap-2 overflow-x-auto">{['', 'PRODUCT', 'SERVICE'].map((value) => <button key={value || 'ALL'} type="button" onClick={() => setListingType(value)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-black ${listingType === value ? 'bg-[#3a222b] text-white' : 'bg-stone-100 text-stone-600'}`}>{value === 'PRODUCT' ? 'Produtos' : value === 'SERVICE' ? 'Serviços' : 'Tudo'}</button>)}<select value={category} onChange={(event) => setCategory(event.target.value)} className="shrink-0 rounded-full bg-stone-100 px-4 py-2 text-xs font-black text-stone-600"><option value="">Todas as categorias</option>{categories.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}</select></div></section>
+    {listingType!=='PRODUCT'&&(!category||['imoveis','esportes-lazer','servicos'].includes(category))&&<SplashListingsSection mode="workspace" query={submitted}/>}
+    {loadError&&!loading?<div role="alert" className="rounded-xl bg-red-50 border border-red-200 p-4 text-xs font-bold text-red-700">{loadError} <button onClick={()=>setRetry(v=>v+1)} className="underline ml-2">Tentar novamente</button></div>:null}
     {loading ? <div className="flex min-h-64 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-stone-400" /></div> : result.items.length ? <><p className="text-xs font-bold text-stone-500">{result.total} anúncios encontrados</p><div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{result.items.map((listing) => <ClassifiedListingCard key={listing.id} listing={listing} detailBasePath="/classificados/explorar" />)}</div></> : <div className="rounded-[26px] border border-dashed border-stone-300 bg-white px-6 py-14 text-center"><h2 className="font-serif text-2xl font-black">Nada encontrado.</h2></div>}
   </div>;
 }
