@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   Post,
   Put,
@@ -15,6 +16,7 @@ import {
   MoreThanOrEqual,
   Or,
   Repository,
+  DataSource,
 } from 'typeorm';
 import { FirebaseAuthGuard } from '../auth/auth.guard';
 import { AdminGuard } from '../admin/admin.guard';
@@ -32,6 +34,7 @@ export class AdvertisingController {
     private readonly configs: Repository<AdvertisingConfig>,
     @InjectRepository(Company) private readonly companies: Repository<Company>,
     @InjectRepository(User) private readonly users: Repository<User>,
+    private readonly dataSource: DataSource,
   ) {}
 
   private async normalizeOwner(
@@ -77,6 +80,68 @@ export class AdvertisingController {
     )
       throw new BadRequestException('Usuário responsável não encontrado.');
     return { companyId, contractedByUserId };
+  }
+
+  // Public marketing placements: expose only fields needed by the frontend.
+  // Billing rates and contracting users are deliberately never returned here.
+  @Get('ads/active')
+  async activeFeedAds() {
+    const rows = await this.publicAds();
+    const safeUrl = (value: unknown, allowRelative = false): string | null => {
+      if (typeof value !== 'string' || value.length > 2048) return null;
+      if (allowRelative && /^\/(?!\/)[A-Za-z0-9/_?=&.%-]+$/.test(value)) return value;
+      try {
+        const url = new URL(value);
+        return url.protocol === 'https:' ? url.href : null;
+      } catch { return null; }
+    };
+    return rows.map((ad) => ({
+      id: ad.id,
+      title: ad.title,
+      description: ad.description,
+      imageUrl: safeUrl(ad.imageURL, true),
+      link: safeUrl(ad.link, true),
+      buttonText: 'Saiba mais',
+    })).filter((ad) => ad.link);
+  }
+
+  private async recordFeedEvent(
+    id: string,
+    body: Record<string, unknown> | undefined,
+    kind: 'impression' | 'click',
+  ) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+      throw new BadRequestException('Anúncio inválido');
+    const placement = String(body?.placement || '').trim();
+    const slot = Number(body?.slot);
+    if (!/^[a-z0-9_-]{1,100}$/.test(placement) || !Number.isInteger(slot) || slot < 0 || slot > 100)
+      throw new BadRequestException('Evento de publicidade inválido');
+    // Aggregate daily event counts only; no IP address, user ID, cookies or fingerprint.
+    // These are raw interaction events, not verified billable impressions.
+    await this.dataSource.query(
+      `INSERT INTO ad_daily_stats(ad_id,event_day,placement,slot,impressions,clicks)
+       SELECT $1::uuid,(now() AT TIME ZONE 'UTC')::date,$2::varchar,$3::integer,$4::bigint,$5::bigint
+       FROM advertisements a
+       WHERE a.id=$1::uuid AND a.active=true
+         AND (a."startsAt" IS NULL OR a."startsAt"<=now())
+         AND (a."endsAt" IS NULL OR a."endsAt">=now())
+       ON CONFLICT(ad_id,event_day,placement,slot) DO UPDATE SET
+         impressions=ad_daily_stats.impressions+EXCLUDED.impressions,
+         clicks=ad_daily_stats.clicks+EXCLUDED.clicks`,
+      [id,placement,slot,kind==='impression'?1:0,kind==='click'?1:0],
+    );
+  }
+
+  @Post('ads/:id/impression')
+  @HttpCode(204)
+  async feedImpression(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+    await this.recordFeedEvent(id,body,'impression');
+  }
+
+  @Post('ads/:id/click')
+  @HttpCode(204)
+  async feedClick(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+    await this.recordFeedEvent(id,body,'click');
   }
 
   @Get('ads')

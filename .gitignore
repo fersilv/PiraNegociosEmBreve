@@ -39,3 +39,10 @@ backend/.secrets/
 *.njsproj
 *.sln
 *.sw?
+
+# PiraNegocios production data after migration (never check into Git).
+backend/firebase-admin.json
+backend/uploads/
+.npm/
+*.dump
+*.backup

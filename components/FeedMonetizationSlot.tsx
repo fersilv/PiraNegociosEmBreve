@@ -30,12 +30,18 @@ type FeedMonetizationSlotProps = {
 };
 
 let activeAdsPromise: Promise<ActiveAd[]> | null = null;
+let lastAdsRequest = 0;
 
 function loadActiveAds() {
-  if (!activeAdsPromise) {
+  // A failed request must not permanently hide paid placements until next reload.
+  if (!activeAdsPromise || Date.now() - lastAdsRequest > 60_000) {
+    lastAdsRequest = Date.now();
     activeAdsPromise = api.get("/ads/active")
       .then((response) => Array.isArray(response.data) ? response.data as ActiveAd[] : [])
-      .catch(() => []);
+      .catch(() => {
+        activeAdsPromise = null;
+        return [];
+      });
   }
   return activeAdsPromise;
 }
@@ -62,11 +68,14 @@ export function FeedMonetizationSlot({
   useEffect(() => {
     if (promotion) return;
     let active = true;
-    void loadActiveAds().then((rows) => {
+    const refresh = () => void loadActiveAds().then((rows) => {
       if (active) setAds(rows);
     });
+    refresh();
+    const interval = window.setInterval(refresh, 60_000);
     return () => {
       active = false;
+      window.clearInterval(interval);
     };
   }, [promotion]);
 
@@ -135,7 +144,13 @@ export function FeedMonetizationSlot({
         href={ad.link || undefined}
         target={ad.link?.startsWith("http") ? "_blank" : undefined}
         rel={ad.link?.startsWith("http") ? "noopener noreferrer sponsored" : undefined}
-        onClick={() => void api.post(`/ads/${ad.id}/click`, { placement, slot }).catch(() => undefined)}
+        onClick={() => void fetch(`/api/ads/${encodeURIComponent(ad.id)}/click`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ placement, slot }),
+          keepalive: true,
+          credentials: 'same-origin',
+        }).catch(() => undefined)}
         className="group grid min-h-[150px] grid-cols-[1fr_auto] items-stretch"
       >
         <div className="flex min-w-0 flex-col justify-center p-5 sm:p-6">

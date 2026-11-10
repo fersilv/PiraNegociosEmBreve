@@ -47,3 +47,22 @@ temporário para DNS antigo. **WhatsApp está aguardando leitura de QR Code para
 nunca declarar conexão ativa apenas porque o Chrome abriu.
 O servidor novo usa usuário exclusivo `piranegocios`; não incluir .env,
 chaves privadas, sessões WhatsApp, arquivos de identidade ou uploads no Git.
+
+## Navegação autenticada validada após migração
+
+No dia 10/11/2026, um teste end-to-end com um usuário de QA criado no Firebase
+navegou por 16 rotas autenticadas em Chrome mobile: perfil, classificados,
+publicação, favoritos, mensagens, compras, avaliações, métricas e configurações.
+O formulário de login autenticou normalmente; a rota de integração abriu
+`https://splash.piranegocios.com.br/perfil` com sessão já criada.
+Nenhuma exceção JavaScript e nenhum HTTP 4xx/5xx durante a navegação amostrada.
+O usuário de QA foi removido do Firebase, do banco PiraNegócios e do banco Splash.
+
+**Correção detectada pelo teste**: usuários recém-autenticados sem telefone eram
+redirecionados de `/vagas` para o onboarding mesmo para consultar oportunidades.
+Agora `/vagas` mantém a navegação pública enquanto o perfil não está completo.
+O onboarding continua exigido para ações que realmente dependem do cadastro.
+
+Execução administrativa opcional: `ENABLE_AUTH_QA=YES node backend/scripts/qa-authenticated-navigation.cjs`.
+O teste cria uma conta temporária com e-mail de domínio inválido, usa Chrome
+separado, não publica anúncios nem faz pagamentos, e limpa os três cadastros.
