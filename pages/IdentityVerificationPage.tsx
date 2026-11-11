@@ -184,7 +184,7 @@ export default function IdentityVerificationPage() {
   return <div className="mx-auto max-w-6xl space-y-6 pb-16">
     <header className="rounded-[30px] bg-stone-950 p-6 text-white sm:p-8">
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-        <div><p className="text-[10px] font-black uppercase tracking-[.18em] text-emerald-300">Segurança sem burocracia</p><h1 className="mt-2 font-serif text-3xl font-black sm:text-4xl">Verificação cadastral</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">Para comprar não precisa verificar. Para vender, validamos quem está por trás do anúncio. No fluxo padrão não pedimos RG, contrato social nem comprovante de endereço.</p></div>
+        <div><p className="text-[10px] font-black uppercase tracking-[.18em] text-emerald-300">Segurança sem burocracia</p><h1 className="mt-2 font-serif text-3xl font-black sm:text-4xl">Verificação cadastral</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">Para comprar não precisa verificar. Para vender, validamos quem está por trás do anúncio. A verificação pessoal inclui selfie pela câmera e documento oficial; a verificação empresarial possui um fluxo próprio.</p></div>
         <StatusBadge status={context==='COMPANY'&&company?.verified?'APPROVED':verification?.status||'DRAFT'}/>
       </div>
     </header>
