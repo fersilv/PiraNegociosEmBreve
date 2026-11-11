@@ -11,10 +11,15 @@ export async function compareIdentityFaces(selfie:{buffer:Buffer;mimeType:string
  try{
   const body=new FormData();body.append('source_image',new Blob([new Uint8Array(selfie.buffer)],{type:selfie.mimeType}),'selfie.jpg');body.append('target_image',new Blob([new Uint8Array(document.buffer)],{type:document.mimeType}),'document.jpg');
   const response=await fetch(new URL('/api/v1/verification/verify',url),{method:'POST',headers:{'x-api-key':key},body,signal:AbortSignal.timeout(20000)});
-  if(!response.ok)return {status:'UNAVAILABLE',reason:'SERVICE_HTTP_'+response.status,similarity:null};
+  if(!response.ok){
+   if(response.status===400){const err=await response.json().catch(()=>null) as any;if(err?.code===28||/no face/i.test(String(err?.message||'')))return {status:'INCONCLUSIVE',reason:'NO_FACE_DETECTED',similarity:null};}
+   return {status:'UNAVAILABLE',reason:'SERVICE_HTTP_'+response.status,similarity:null};
+  }
   const data=await response.json() as any;const faces=Array.isArray(data?.result)?data.result:[];
   if(faces.length!==1)return {status:'INCONCLUSIVE',reason:faces.length?'MULTIPLE_FACES':'NO_FACE_DETECTED',similarity:null};
-  const s=faces[0]?.similarity;
+  const matches=Array.isArray(faces[0]?.face_matches)?faces[0].face_matches:[];
+  if(matches.length!==1)return {status:'INCONCLUSIVE',reason:matches.length?'MULTIPLE_FACES':'NO_TARGET_FACE',similarity:null};
+  const s=matches[0]?.similarity;
   if(typeof s!=='number'||!Number.isFinite(s))return {status:'INCONCLUSIVE',reason:'NO_SCORE',similarity:null};
   const similarity=Math.max(0,Math.min(1,s));
   return {status:similarity>=0.85?'LIKELY_MATCH':similarity<0.45?'POSSIBLE_MISMATCH':'INCONCLUSIVE',reason:'UNCALIBRATED_SCORE',similarity};
