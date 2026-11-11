@@ -8,9 +8,10 @@ import {
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
 import { mkdir, readFile, rename, unlink, writeFile } from 'fs/promises';
 import { join, resolve } from 'path';
+import { compareIdentityFaces } from './identity-face-matching';
 import { DataSource } from 'typeorm';
 
-export const IDENTITY_COMPLIANCE_CONSENT_VERSION = '2026-08-26-simple';
+export const IDENTITY_COMPLIANCE_CONSENT_VERSION = '2026-11-11-face';
 const REQUIRED_STANDARD_FILES = ['SELFIE'] as const;
 const VALID_DOCUMENT_KINDS = new Set(['SELFIE', 'ID_FRONT', 'ID_BACK', 'ADDRESS_PROOF', 'REPRESENTATION_PROOF']);
 const VALID_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
@@ -138,9 +139,9 @@ export class IdentityComplianceService {
 
     const rows = await this.dataSource.query(
       `UPDATE identity_verifications SET
-         relationship=$2,
+         relationship=$2::varchar,
          "partnerPercentage"=NULL,
-         "declaresRepresentationPowers"=CASE WHEN $2='PARTNER' THEN true ELSE false END,
+         "declaresRepresentationPowers"=CASE WHEN $2::varchar='PARTNER' THEN true ELSE false END,
          "selectedQsaName"=$3,
          "selectedQsaQualification"=$4,
          "declaresAtLeast25Percent"=$5,
@@ -185,6 +186,7 @@ export class IdentityComplianceService {
     if (!file?.buffer?.length) throw new BadRequestException('Arquivo não recebido.');
     if (!VALID_MIMES.has(file.mimetype)) throw new BadRequestException('Envie JPG, PNG, WEBP ou PDF.');
     if (kind === 'SELFIE' && file.mimetype === 'application/pdf') throw new BadRequestException('A selfie precisa ser uma imagem.');
+    if (kind === 'SELFIE' && body.captureMode !== 'camera') throw new BadRequestException('A selfie deve ser capturada pela câmera do PiraNegócios.');
     if (file.size > 12 * 1024 * 1024) throw new BadRequestException('O arquivo deve ter no máximo 12 MB.');
     const context = this.context(body.context);
     const companyId = context === 'COMPANY' ? await this.companyForUser(uid) : null;
@@ -240,6 +242,7 @@ export class IdentityComplianceService {
     const kinds = new Set(documents.map((item: any) => item.kind));
     const missing = REQUIRED_STANDARD_FILES.filter((kind) => !kinds.has(kind));
     if (missing.length) throw new BadRequestException('Tire uma selfie atual antes de solicitar a análise.');
+    if (context === 'PERSONAL' && !kinds.has('ID_FRONT')) throw new BadRequestException('Envie também a frente do documento oficial para a verificação facial.');
 
     if (context === 'COMPANY') {
       const companyRows = await this.dataSource.query(`SELECT cnpj,"hasCnpj","cnpjSnapshot" FROM companies WHERE id=$1 LIMIT 1`, [companyId]);
@@ -268,6 +271,18 @@ export class IdentityComplianceService {
     if (context === 'COMPANY' && companyId) {
       await this.dataSource.query(`UPDATE companies SET "complianceStatus"='PENDING',"updatedAt"=now() WHERE id=$1 AND "complianceStatus"<>'APPROVED'`, [companyId]);
     }
+    if(context==='PERSONAL'){
+      const files=await this.dataSource.query(`SELECT id,kind FROM identity_verification_documents WHERE "verificationId"=$1 AND kind IN ('SELFIE','ID_FRONT')`,[verification.id]);
+      const selfieFile=files.find((item:any)=>item.kind==='SELFIE');const documentFile=files.find((item:any)=>item.kind==='ID_FRONT');
+      if(selfieFile&&documentFile){
+        let check;
+        try{
+          const [face,idPhoto]=await Promise.all([this.readDocument(uid,selfieFile.id),this.readDocument(uid,documentFile.id)]);
+          check=await compareIdentityFaces({buffer:face.buffer,mimeType:face.mimeType},{buffer:idPhoto.buffer,mimeType:idPhoto.mimeType});
+        }catch{check={status:'UNAVAILABLE',reason:'IMAGE_PROCESSING_FAILED',similarity:null};}
+        await this.dataSource.query(`INSERT INTO identity_face_checks("verificationId",status,reason,similarity,"checkedAt") VALUES($1,$2,$3,$4,now()) ON CONFLICT("verificationId") DO UPDATE SET status=$2,reason=$3,similarity=$4,"checkedAt"=now()`,[verification.id,check.status,check.reason,check.similarity]).catch(()=>undefined);
+      }
+    }
     return this.presentVerification(rows[0]);
   }
 
@@ -279,9 +294,10 @@ export class IdentityComplianceService {
       `SELECT v.id,v."userId",v."companyId",v.context,v.relationship,v."declaresAtLeast25Percent",v."selectedQsaName",v.status,v."submittedAt",v."createdAt",
               COALESCE(u."socialName",u."displayName",u."fullName",u.email) AS "userName",u.email,u.phone,u."whatsappPhoneE164",u."whatsappVerifiedAt",
               c.name AS "companyName",c."legalName",c.cnpj,c."verificationStatus" AS "companyVerificationStatus",c."complianceStatus",
-              COALESCE(dc.count,0)::int AS "documentCount"
+              COALESCE(dc.count,0)::int AS "documentCount",fc.status AS "faceTriageStatus",fc.similarity AS "faceSimilarity"
        FROM identity_verifications v JOIN users u ON u.id=v."userId" LEFT JOIN companies c ON c.id=v."companyId"
        LEFT JOIN LATERAL (SELECT count(*) AS count FROM identity_verification_documents d WHERE d."verificationId"=v.id) dc ON true
+       LEFT JOIN identity_face_checks fc ON fc."verificationId"=v.id
        ${filter} ORDER BY CASE v.status WHEN 'PENDING' THEN 0 WHEN 'NEEDS_CHANGES' THEN 1 ELSE 2 END,COALESCE(v."submittedAt",v."createdAt") ASC LIMIT 500`,
       params,
     );
@@ -292,9 +308,10 @@ export class IdentityComplianceService {
       `SELECT v.*,COALESCE(u."socialName",u."displayName",u."fullName",u.email) AS "userName",u.email,u.phone,u."whatsappPhoneE164",u."whatsappVerifiedAt",u.city,u.state,u.address,
               c.name AS "companyName",c."legalName",c."registryTradeName",c.cnpj,c."legalAddress",c."legalCity",c."legalState",c."legalZipCode",c."cnpjSituation",c."cnpjSnapshot",c."cnpjDataSource",c."cnpjDataCheckedAt",c."cnpjChangeAlert",
               c.address AS "companyAddress",c.city AS "companyCity",c.state AS "companyState",c."verificationStatus" AS "companyVerificationStatus",c."isVerified",c."complianceStatus",
-              m.role AS "membershipRole",m."isPartner",m.permissions
+              m.role AS "membershipRole",m."isPartner",m.permissions,fc.status AS "faceTriageStatus",fc.reason AS "faceTriageReason",fc.similarity AS "faceSimilarity"
        FROM identity_verifications v JOIN users u ON u.id=v."userId" LEFT JOIN companies c ON c.id=v."companyId"
        LEFT JOIN company_memberships m ON m."companyId"=v."companyId" AND m."userId"=v."userId" AND m.status='ACTIVE'
+       LEFT JOIN identity_face_checks fc ON fc."verificationId"=v.id
        WHERE v.id=$1 LIMIT 1`,
       [verificationId],
     );
@@ -486,6 +503,9 @@ export class IdentityComplianceService {
       submittedAt: row.submittedAt || null,
       reviewedAt: row.reviewedAt || null,
       reviewReason: row.reviewReason || null,
+      faceTriageStatus: row.faceTriageStatus || null,
+      faceTriageReason: row.faceTriageReason || null,
+      faceSimilarity: row.faceSimilarity != null ? Number(row.faceSimilarity) : null,
       documents: Array.isArray(row.documents) ? row.documents : [],
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
