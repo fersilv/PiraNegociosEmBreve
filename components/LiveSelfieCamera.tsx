@@ -5,18 +5,18 @@ import {Camera,X,ShieldCheck} from 'lucide-react';
 /** Fullscreen live-capture camera. This UX does not constitute tamper-proof liveness detection. */
 export default function LiveSelfieCamera({onCapture,disabled=false,label='Abrir câmera'}:{onCapture:(file:File)=>void;disabled?:boolean;label?:string}){
  const video=useRef<HTMLVideoElement|null>(null),stream=useRef<MediaStream|null>(null),alive=useRef(true);
- const [open,setOpen]=useState(false),[ready,setReady]=useState(false),[error,setError]=useState(''),[saving,setSaving]=useState(false);
- const close=()=>{stream.current?.getTracks().forEach(t=>t.stop());stream.current=null;if(video.current){video.current.pause();video.current.srcObject=null}setOpen(false);setReady(false);setSaving(false)};
+ const [open,setOpen]=useState(false),[ready,setReady]=useState(false),[streamReady,setStreamReady]=useState(false),[error,setError]=useState(''),[saving,setSaving]=useState(false);
+ const close=()=>{stream.current?.getTracks().forEach(t=>t.stop());stream.current=null;if(video.current){video.current.pause();video.current.srcObject=null}setOpen(false);setReady(false);setStreamReady(false);setSaving(false)};
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;stream.current?.getTracks().forEach(t=>t.stop())}},[]);
  useEffect(()=>{if(!open)return;const original=document.body.style.overflow;document.body.style.overflow='hidden';return()=>{document.body.style.overflow=original}},[open]);
- useEffect(()=>{if(!open||!stream.current||!video.current)return;const v=video.current;v.srcObject=stream.current;void v.play().then(()=>setReady(true)).catch(()=>setError('Não foi possível iniciar a prévia da câmera.'))},[open]);
- const launch=async()=>{setError('');setReady(false);setOpen(true);try{
+ useEffect(()=>{if(!open||!stream.current||!video.current)return;const v=video.current;v.srcObject=stream.current;void v.play().then(()=>setReady(true)).catch(()=>setError('Não foi possível iniciar a prévia da câmera.'))},[open,streamReady]);
+ const launch=async()=>{setError('');setReady(false);setStreamReady(false);setOpen(true);try{
   if(!navigator.mediaDevices?.getUserMedia)throw new Error('Câmera indisponível. Use HTTPS e um navegador compatível.');
   let feed:MediaStream;
   try{feed=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:'user',width:{ideal:1280}}})}
   catch(e:any){if(['OverconstrainedError','NotFoundError'].includes(e?.name))feed=await navigator.mediaDevices.getUserMedia({audio:false,video:true});else throw e}
   if(!alive.current){feed.getTracks().forEach(t=>t.stop());return}
-  stream.current=feed;
+  stream.current=feed;setStreamReady(true);
   if(video.current){video.current.srcObject=feed;await video.current.play();setReady(true)}
  }catch(e:any){setError(e?.name==='NotAllowedError'?'Permita o acesso à câmera para tirar a selfie.':e?.message||'Câmera indisponível.')}};
  const capture=()=>{const v=video.current;if(!v?.videoWidth||saving)return;setSaving(true);const canvas=document.createElement('canvas');canvas.width=Math.min(v.videoWidth,1280);canvas.height=Math.round(canvas.width*v.videoHeight/v.videoWidth);canvas.getContext('2d')?.drawImage(v,0,0,canvas.width,canvas.height);canvas.toBlob(blob=>{if(!blob){setError('Falha ao capturar a selfie.');setSaving(false);return}onCapture(new File([blob],'selfie-camera.jpg',{type:'image/jpeg'}));close()},'image/jpeg',.85)};
