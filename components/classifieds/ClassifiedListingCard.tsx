@@ -42,7 +42,7 @@ export function classifiedPrice(listing: Pick<ClassifiedListing, 'price' | 'pric
   if (listing.priceType === 'CONTACT') return 'Solicite um orçamento';
   const pricing = classifiedCommercePricing(listing);
   const numeric = pricing.currentPrice;
-  if (numeric == null || !Number.isFinite(numeric)) return 'Preço a combinar';
+  if (numeric == null || !Number.isFinite(numeric) || (listing.priceType === 'STARTING_AT' && numeric <= 0)) return 'Preço a combinar';
   const formatted = money(numeric);
   if (listing.priceType === 'NEGOTIABLE') return `${formatted} · negociável`;
   if (listing.priceType === 'STARTING_AT') return `A partir de ${formatted}`;

@@ -27,7 +27,7 @@ export function ClassifiedListingPreview({ value }: { value: ClassifiedPreviewVa
 function priceText(price: string, type: ClassifiedPriceType) {
   if (type === 'CONTACT') return 'Solicite um orçamento';
   const numeric = Number(String(price || '').replace(',', '.'));
-  if (!Number.isFinite(numeric)) return 'Preço do anúncio';
+  if (!Number.isFinite(numeric) || (type === 'STARTING_AT' && numeric <= 0)) return 'Preço a combinar';
   const formatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numeric);
   if (type === 'NEGOTIABLE') return `${formatted} · negociável`;
   if (type === 'STARTING_AT') return `A partir de ${formatted}`;
