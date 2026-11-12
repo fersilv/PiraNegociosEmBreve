@@ -17,6 +17,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { ClassifiedCategoryIcon } from "../components/classifieds/ClassifiedCategoryIcon";
 import { ClassifiedListingCard } from "../components/classifieds/ClassifiedListingCard";
 import { FeedMonetizationSlot } from "../components/FeedMonetizationSlot";
+import SplashListingsSection from "../components/classifieds/SplashListingsSection";
 import { JobCard } from "../components/JobCard";
 import { Navbar } from "../components/Navbar";
 import { SeoHead } from "../components/SeoHead";
@@ -360,6 +361,8 @@ export default function MarketplaceHome() {
             <EmptyState text="Ainda não há anúncios públicos na vitrine. Os novos classificados vão aparecer aqui." />
           )}
         </section>
+
+        <SplashListingsSection mode="home" />
 
         <section className="border-y border-[#4b3328]/8 bg-white">
           <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-16">

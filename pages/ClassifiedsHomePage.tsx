@@ -16,6 +16,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ClassifiedCategoryIcon } from '../components/classifieds/ClassifiedCategoryIcon';
 import { ClassifiedListingCard } from '../components/classifieds/ClassifiedListingCard';
 import { FeedMonetizationSlot } from '../components/FeedMonetizationSlot';
+import SplashListingsSection from '../components/classifieds/SplashListingsSection';
 import { Navbar } from '../components/Navbar';
 import { SeoHead } from '../components/SeoHead';
 import { useAuth } from '../contexts/AuthContext';
@@ -137,6 +138,8 @@ export default function ClassifiedsHomePage() {
         <section className="border-y border-[#4b3328]/10 bg-white"><div className="mx-auto grid max-w-7xl gap-6 px-4 py-9 sm:px-6 md:grid-cols-[1fr_auto] md:items-center lg:px-8"><div><div className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[.16em] text-[#b06448]"><Tag className="h-3.5 w-3.5" /> Tem algo para vender?</div><h2 className="mt-2 font-serif text-3xl font-bold tracking-[-.025em] sm:text-4xl">Seu anúncio entra na mesma vitrine que você acabou de explorar.</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-[#806b60]">Fotos, preço, localização e pronto. Empresas Elite ainda podem transformar produtos publicados em leilões ao vivo.</p></div><Link to={user ? '/classificados/publicar' : '/login?returnTo=%2Fclassificados%2Fpublicar'} className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-[#c96847] px-6 text-sm font-black text-white shadow-[0_14px_30px_rgba(201,104,71,.20)]">Publicar anúncio <ArrowRight className="h-4 w-4" /></Link></div></section>
 
         <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8"><div className="flex items-end justify-between"><div><p className="text-[10px] font-black uppercase tracking-[.17em] text-[#b06448]">Recém-publicados</p><h2 className="mt-1 font-serif text-2xl font-bold sm:text-3xl">Chegaram agora</h2></div></div>{rankedRecent.length ? <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5">{rankedRecent.slice(0, 10).map((listing, index) => <React.Fragment key={listing.id}><ClassifiedListingCard listing={listing} compact />{index === 4 && <FeedMonetizationSlot placement="classifieds-home-recent" slot={0} className="col-span-full" />}</React.Fragment>)}</div> : !loading && <EmptyState />}</section>
+
+        <SplashListingsSection mode="home" />
 
         <section className="mx-auto max-w-7xl px-4 pb-12 sm:px-6 lg:px-8"><div className="grid gap-3 rounded-[26px] bg-[#2d211c] p-5 text-white sm:grid-cols-2 sm:p-6"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" /><div><p className="text-xs font-black">Anunciantes identificados</p><p className="mt-1 text-[10px] leading-5 text-white/45">Sinais de verificação aparecem nos anúncios e nas salas de leilão.</p></div></div><div className="flex items-start gap-3"><MapPin className="mt-0.5 h-5 w-5 shrink-0 text-[#ff9a78]" /><div><p className="text-xs font-black">Feito para a região</p><p className="mt-1 text-[10px] leading-5 text-white/45">Busca por cidade e localização para negociação realmente próxima.</p></div></div></div></section>
       </main>
